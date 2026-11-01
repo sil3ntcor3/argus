@@ -130,7 +130,7 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
 
   private createMcpServer(workspaceId: string): McpServer {
     const server = new McpServer({
-      name: 'oasm-server',
+      name: 'argus-server',
       version: '1.0.0',
     });
 

@@ -77,7 +77,7 @@ const WORKSPACE_TOOLS: Record<
 };
 
 /**
- * The only tools on the OASM MCP server: workspace data lookups. MCP calls
+ * The only tools on the Argus MCP server: workspace data lookups. MCP calls
  * skip the approval flow, so nothing that runs commands or connectors,
  * fetches URLs or writes may ever be listed here (getMcpTools also drops
  * anything that is not in READ_ONLY_TOOLS).
@@ -103,7 +103,7 @@ export const MCP_TOOLS: ReadonlySet<string> = new Set([
 const SELF_GATED_TOOLS = new Set(['execute_remote_command']);
 
 /**
- * Built-in tools that only read OASM data, so MANUAL runs them without
+ * Built-in tools that only read Argus data, so MANUAL runs them without
  * asking. Not retrieve_web_page: a URL it fetches can carry data out.
  */
 export const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
@@ -217,7 +217,7 @@ export class AgentTool {
   }
 
   /**
-   * The OASM MCP server's tools: MCP_TOOLS only, and never one that is not
+   * The Argus MCP server's tools: MCP_TOOLS only, and never one that is not
    * read-only, whatever MCP_TOOLS says. Ungated: MCP has no approval flow.
    */
   getMcpTools(workspaceId: string): Record<string, ToolType> {

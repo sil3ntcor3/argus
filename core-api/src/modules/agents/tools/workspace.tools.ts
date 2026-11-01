@@ -23,7 +23,7 @@ import {
 import { NEWEST_FIRST, defineTool, pageOf } from './helpers';
 import type { Deps } from './types';
 
-// Tools over the workspace's OASM data, offered in every agent mode.
+// Tools over the workspace's Argus data, offered in every agent mode.
 
 export function getAssetsTool(
   deps: Deps<'assetsService'>,
