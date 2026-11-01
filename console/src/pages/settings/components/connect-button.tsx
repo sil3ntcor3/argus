@@ -31,7 +31,7 @@
 //
 //   const jsonContent = `{
 //   "mcpServers": {
-//     "oasm-platform": {
+//     "argus": {
 //       "url": "${window.location.origin}/api/mcp",
 //       "headers": {
 //         "api-key": "${data?.apiKey}"

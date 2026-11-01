@@ -43,7 +43,7 @@ interface SlackIntegrationConfig {
  * const slack = new SlackConnector();
  * await slack.push({
  *   webhookUrl: 'https://hooks.slack.com/services/T00/B00/xxxxx',
- *   username: 'OpenASM Alert',
+ *   username: 'Argus Alert',
  *   text: ':warning: Vulnerability detected on `app.example.com`',
  * });
  * ```

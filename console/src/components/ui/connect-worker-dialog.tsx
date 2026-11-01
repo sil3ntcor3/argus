@@ -327,7 +327,7 @@ export function ConnectWorkerDialog() {
       case 'devmode':
         return `task worker:dev apiKey=${apiKey} replicas=1 maxJobs=10${networkFlag}`;
       case 'docker':
-        return `docker run -d --name argusasm-worker -e WORKER_API_KEY=${apiKey} -e WORKER_GRPC_HOST=${grpcHost} -e WORKER_GRPC_PORT=16276 -e WORKER_MAX_CONCURRENCY=10 sil3ntcor3/argus-worker:latest`;
+        return `docker run -d --name argus-worker -e WORKER_API_KEY=${apiKey} -e WORKER_GRPC_HOST=${grpcHost} -e WORKER_GRPC_PORT=16276 -e WORKER_MAX_CONCURRENCY=10 sil3ntcor3/argus-worker:latest`;
       case 'windows':
         if (!homePageUrl) return 'Loading...';
         return `powershell irm ${homePageUrl}/install.ps1 -OutFile "$env:TEMP\\install.ps1"; & "$env:TEMP\\install.ps1" -ApiKey "${apiKey}"${grpcFlagPowerShell}${networkFlagPowerShell} -Run`;
