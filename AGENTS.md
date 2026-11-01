@@ -171,7 +171,7 @@ Migration location: `core-api/src/database/migrations/` (58 files, newest last).
 - `cmd/cli` flags: `--mode cli|node`, `--api-key`, `--max-concurrency`, `--grpc-host`, `--grpc-port`, `--tool-path`, `--network`. `cmd/app` is the same thing driven purely by `WORKER_*` env.
 - **Connector model:** the worker node is a *node* that dispatches work to connector containers over the Docker Engine API and serves their callback gRPC on `:26276`. It therefore needs the host Docker socket (docker-outside-of-docker, root-equivalent — trusted images only) and the socket's group (`group_add: ['0']` on Docker Desktop). It auto-adds the `host-gateway` extra-host on Linux so `host.docker.internal` resolves; `WORKER_CONNECTOR_ADDR_ALLOW_AUTODETECT=1` is a **dev-only** escape hatch (compose sets `WORKER_CONNECTOR_NETWORK` instead: connectors join that network and dial the worker container's own IP on it).
 - Join identity is persisted at `WORKER_TOKEN_FILE` on the `worker-state` volume. Losing that file mints a new identity and startup orphan-reconcile can no longer recognise previously spawned containers.
-- Connector catalogue comes from `core-api/resources/connectors/manifest.json`; refresh with `task sync-connectors` (set `MANIFEST_PATH=<local oasm-connectors checkout>/manifest.json` to preview an unmerged connector instead of pulling `main`).
+- Connector catalogue comes from `core-api/resources/connectors/manifest.json`; refresh with `task sync-connectors` (set `MANIFEST_PATH=<local argus-connectors checkout>/manifest.json` to preview an unmerged connector instead of pulling `main`).
 
 ### console
 - `components/{ui,common,<feature>}/` for shared/primitive/feature components, `pages/<page>/components/` for page-local logic.

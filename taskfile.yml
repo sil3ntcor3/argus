@@ -184,9 +184,9 @@ tasks:
       - task: api:migration:revert
 
   # Sync latest connectors manifest
-  # Pulls oasm-connectors/manifest.json into core-api/resources/connectors/manifest.json
+  # Pulls argus-connectors/manifest.json into core-api/resources/connectors/manifest.json
   # (the file the API reads to know which connector images exist). Set
-  # MANIFEST_PATH=<path> to read a local oasm-connectors checkout instead of main.
+  # MANIFEST_PATH=<path> to read a local argus-connectors checkout instead of main.
   sync-connectors:
     cmds:
       - node scripts/sync-tool-manifest.mjs
