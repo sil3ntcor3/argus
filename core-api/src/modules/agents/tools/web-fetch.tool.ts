@@ -106,7 +106,7 @@ export function webFetchTool(): Tool {
           }
           const response = await fetch(url, {
             method: 'GET',
-            headers: { 'User-Agent': 'OASM-Security-Agent/1.0' },
+            headers: { 'User-Agent': 'Argus-Security-Agent/1.0' },
             redirect: 'manual',
             signal,
           });

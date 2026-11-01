@@ -120,7 +120,7 @@ export class AgentsMcpService {
   ): Promise<Record<string, unknown>> {
     const client = new Client(
       {
-        name: 'OASM-Security-Agent',
+        name: 'Argus-Security-Agent',
         version: '1.0.0',
       },
       {
@@ -188,7 +188,7 @@ export class AgentsMcpService {
   ): Promise<unknown> {
     const client = new Client(
       {
-        name: 'OASM-Security-Agent',
+        name: 'Argus-Security-Agent',
         version: '1.0.0',
       },
       {
