@@ -68,7 +68,7 @@ export const ReportHeader: React.FC<ReportHeaderProps> = ({
         <Image src={logoBase64} style={styles.logo} />
       ) : (
         <View style={styles.logoFallback}>
-          <Text style={styles.logoFallbackText}>O</Text>
+          <Text style={styles.logoFallbackText}>A</Text>
         </View>
       )}
     </View>
