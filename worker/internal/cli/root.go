@@ -119,7 +119,7 @@ func Execute() {
 // when no --mode flag is given.
 func rootCommand(defaultMode string) *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "oasm-worker",
+		Use:   "argus-worker",
 		Short: "Argus Worker is an attack surface management agent",
 		Long: `Argus Worker is a high-performance agent used for attack surface management tasks.
 
