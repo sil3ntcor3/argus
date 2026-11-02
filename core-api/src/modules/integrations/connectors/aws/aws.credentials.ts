@@ -44,7 +44,7 @@ export interface AwsCredentialConfig {
   roleArn?: string;
   /** assumeRole + crossAccountRole external id (required). */
   externalId?: string;
-  /** Assumed-role session name; defaults to `oasm-inventory`. */
+  /** Assumed-role session name; defaults to `argus-inventory`. */
   roleSessionName?: string;
   /** workloadIdentity OAuth/OIDC token (required). */
   webIdentityToken?: string;
@@ -91,7 +91,7 @@ export interface ListOrganizationAccountsResult {
   truncated: boolean;
 }
 
-const DEFAULT_ROLE_SESSION_NAME = 'oasm-inventory';
+const DEFAULT_ROLE_SESSION_NAME = 'argus-inventory';
 const DEFAULT_ORGANIZATIONS_REGION = 'us-east-1';
 
 function blank(value: string | undefined): value is undefined {

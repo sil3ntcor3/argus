@@ -149,7 +149,7 @@ describe('resolveAwsCredentials', () => {
         },
         params: {
           RoleArn: 'arn:aws:iam::123456789012:role/Inventory',
-          RoleSessionName: 'oasm-inventory',
+          RoleSessionName: 'argus-inventory',
           ExternalId: 'ext-1',
           DurationSeconds: 3600,
         },
@@ -242,7 +242,7 @@ describe('resolveAwsCredentials', () => {
         },
         params: {
           RoleArn: 'arn:aws:iam::999999999999:role/Cross',
-          RoleSessionName: 'oasm-inventory',
+          RoleSessionName: 'argus-inventory',
           ExternalId: 'ext-2',
           DurationSeconds: 3600,
         },
@@ -279,7 +279,7 @@ describe('resolveAwsCredentials', () => {
       expect(mockFromWebToken).toHaveBeenCalledWith({
         roleArn: 'arn:aws:iam::123456789012:role/Web',
         webIdentityToken: 'jwt-token',
-        roleSessionName: 'oasm-inventory',
+        roleSessionName: 'argus-inventory',
       });
     });
 
@@ -295,6 +295,43 @@ describe('resolveAwsCredentials', () => {
       expect(mockFromWebToken).not.toHaveBeenCalled();
     });
   });
+
+  describe.each(['assumeRole', 'crossAccountRole', 'workloadIdentity'] as const)(
+    '%s custom session names',
+    (connectionMethod) => {
+      it.each(['custom-session', 'oasm-inventory'])(
+        'preserves an explicit %s session name',
+        async (roleSessionName) => {
+          await resolveAwsCredentials(
+            baseConfig({
+              connectionMethod,
+              accessKeyId: 'AKIA',
+              secretAccessKey: 'secret',
+              roleArn: 'arn:aws:iam::123456789012:role/Inventory',
+              externalId: 'ext-1',
+              webIdentityToken: 'jwt-token',
+              roleSessionName,
+            }),
+            '123456789012',
+          );
+
+          if (connectionMethod === 'workloadIdentity') {
+            expect(mockFromWebToken).toHaveBeenCalledWith(
+              expect.objectContaining({ roleSessionName }),
+            );
+            expect(mockFromTemporaryCredentials).not.toHaveBeenCalled();
+          } else {
+            expect(mockFromTemporaryCredentials).toHaveBeenCalledWith(
+              expect.objectContaining({
+                params: expect.objectContaining({ RoleSessionName: roleSessionName }),
+              }),
+            );
+            expect(mockFromWebToken).not.toHaveBeenCalled();
+          }
+        },
+      );
+    },
+  );
 
   describe('sso', () => {
     it('delegates to ssoService and propagates the rotated refresh token', async () => {
