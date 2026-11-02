@@ -26,7 +26,7 @@ const ConnectorConnectTimeout = 5 * time.Minute
 // and orphan the container.
 const ConnectorCleanupTimeout = 30 * time.Second
 
-// ConnectorSDKSendTimeout is a cross-repo contract: the oasm-connectors SDK
+// ConnectorSDKSendTimeout is a cross-repo contract: the argus-connectors SDK
 // sender uses a 30s send timeout per outbound worker message. It lives here so
 // both repos name the same value; if the SDK value ever changes, this constant
 // MUST change with it (worker/internal/proto/sync_test.go guards the .proto).
