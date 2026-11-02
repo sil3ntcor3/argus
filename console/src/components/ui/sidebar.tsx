@@ -22,7 +22,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-const SIDEBAR_STORAGE_KEY = 'oasm_sidebar_state';
+const SIDEBAR_STORAGE_KEY = 'argus_sidebar_state';
+const LEGACY_SIDEBAR_STORAGE_KEY = 'oasm_sidebar_state';
 const SIDEBAR_WIDTH = '16rem';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '3.5rem';
@@ -49,6 +50,7 @@ function useSidebar() {
   return context;
 }
 
+/** Reads saved legacy preferences and persists desktop toggles under the Argus key. */
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -69,7 +71,9 @@ function SidebarProvider({
   // We use openProp and setOpenProp for control from outside the component.
   const [_open, _setOpen] = React.useState(() => {
     try {
-      const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+      const stored =
+        localStorage.getItem(SIDEBAR_STORAGE_KEY) ??
+        localStorage.getItem(LEGACY_SIDEBAR_STORAGE_KEY);
       if (stored !== null) return stored === 'true';
     } catch {
       // localStorage not available
