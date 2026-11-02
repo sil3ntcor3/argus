@@ -52,7 +52,7 @@ Options:
   --api-key KEY          (Required) API key for worker authentication
   --grpc-host HOST       gRPC server host (default: $DEFAULT_GRPC_HOST)
   --grpc-port PORT       gRPC server port (default: $DEFAULT_GRPC_PORT)
-  --grpc-tls             Connect over TLS (required for cloud.oasm.io on port 443)
+  --grpc-tls             Connect over TLS (e.g. grpc.argus.example on port 443)
   --max-concurrency N    Maximum concurrent tasks (default: $DEFAULT_MAX_CONCURRENCY)
   --network NETWORK      Network ID for internal network (optional)
   --install-dir DIR      Installation directory (default: $DEFAULT_INSTALL_DIR)
@@ -63,7 +63,7 @@ Examples:
   ./install.sh --api-key "argus_xxx"
   ./install.sh --api-key "argus_xxx" --run
   ./install.sh --api-key "argus_xxx" --grpc-host "my-server.com" --grpc-port 16276 --run
-  ./install.sh --api-key "argus_xxx" --grpc-host "cloud.oasm.io" --grpc-port 443 --grpc-tls --run
+  ./install.sh --api-key "argus_xxx" --grpc-host "grpc.argus.example" --grpc-port 443 --grpc-tls --run
 EOF
     exit 0
 }
