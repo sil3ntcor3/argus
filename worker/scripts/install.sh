@@ -164,7 +164,7 @@ detect_platform() {
             ;;
         *)
             error "Unsupported architecture: $(uname -m)"
-            error "oasm-worker requires a 64-bit system (amd64 or arm64)."
+            error "Argus worker requires a 64-bit system (amd64 or arm64)."
             exit 1
             ;;
     esac
@@ -509,7 +509,7 @@ start_worker() {
     local binary_path="$1"
 
     info ""
-    info "  Starting oasm-worker..."
+    info "  Starting Argus worker..."
     gray "  Endpoint    : ${GRPC_HOST}:${GRPC_PORT}"
     gray "  Concurrency : ${MAX_CONCURRENCY}"
     if [[ -n "$NETWORK" ]]; then

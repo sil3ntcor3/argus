@@ -116,7 +116,7 @@ function Get-PlatformInfo {
     }
 
     if (-not $arch) {
-        throw "Unsupported or 32-bit architecture. oasm-worker requires a 64-bit system."
+        throw "Unsupported or 32-bit architecture. Argus worker requires a 64-bit system."
     }
 
     $extension = if ($os -eq "windows") { ".exe" } else { "" }
@@ -258,7 +258,7 @@ function Start-Worker {
     }
 
     Write-Host ""
-    Write-Host "  Starting oasm-worker..." -ForegroundColor Cyan
+    Write-Host "  Starting Argus worker..." -ForegroundColor Cyan
     Write-Host "  Endpoint   : $($Config.GrpcHost):$($Config.GrpcPort)" -ForegroundColor Gray
     Write-Host "  Concurrency: $($Config.MaxConcurrency)" -ForegroundColor Gray
     if ($Config.Network -ne "") {
