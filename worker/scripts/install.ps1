@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Installs the latest oasm-worker binary from GitHub releases.
+    Installs the latest Argus worker binary from GitHub releases.
 
 .DESCRIPTION
-    Downloads the latest oasm-worker binary for your platform from
+    Downloads the latest Argus worker binary for your platform from
     https://github.com/sil3ntcor3/argus releases, verifies it,
     and optionally starts the worker immediately.
 
