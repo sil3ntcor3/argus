@@ -462,7 +462,7 @@ export class SummaryReportService {
       type: t.t_type,
       status: t.targetStatus as ScanStatus,
       riskLevel: this.getRiskLevel(parseInt(t.vulnCount, 10)),
-      provider: 'OpenASM',
+      provider: 'Argus',
       lastScan: t.t_lastDiscoveredAt
         ? this.formatDate(t.t_lastDiscoveredAt)
         : 'Never',
@@ -584,7 +584,7 @@ export class SummaryReportService {
     return results.map((r) => ({
       identifier: r.identifier,
       discovered: this.formatDate(r.discovered),
-      provider: 'OpenASM',
+      provider: 'Argus',
       riskLevel: this.getRiskLevel(parseInt(r.vulnCount, 10)),
     }));
   }

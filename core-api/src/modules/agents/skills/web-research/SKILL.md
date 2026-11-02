@@ -5,7 +5,7 @@ description: Perform web research using CVE databases, security advisories, and 
 
 # Web Research
 
-Use this skill when you need to find external security information that is not already in the OASM platform.
+Use this skill when you need to find external security information that is not already in the Argus platform.
 
 ## When to Use
 

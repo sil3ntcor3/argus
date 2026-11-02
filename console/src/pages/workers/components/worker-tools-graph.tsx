@@ -37,15 +37,15 @@ export type WorkerTierInfo = {
 };
 
 /** Node data carried by each node type (react-flow requires a record). */
-type OasmNodeData = Record<string, never>;
+type ArgusNodeData = Record<string, never>;
 type WorkerNodeData = { worker: WorkerTierInfo };
 type ToolNodeData = { tool: WorkerToolDto; hasJobs: boolean };
 type JobNodeData = { job: WorkerToolJobDto; tool: WorkerToolDto };
-type OasmNode = Node<OasmNodeData, 'oasm'>;
+type ArgusNode = Node<ArgusNodeData, 'argus'>;
 type WorkerFlowNode = Node<WorkerNodeData, 'worker'>;
 type ToolFlowNode = Node<ToolNodeData, 'tool'>;
 type JobFlowNode = Node<JobNodeData, 'job'>;
-type AnyFlowNode = OasmNode | WorkerFlowNode | ToolFlowNode | JobFlowNode;
+type AnyFlowNode = ArgusNode | WorkerFlowNode | ToolFlowNode | JobFlowNode;
 
 /** Fixed node widths. Pinned so long names wrap at a known column width instead
  * of reflowing the layout — every position below is arithmetic on these. */
@@ -68,8 +68,8 @@ const LABEL_CLASS = 'mt-1.5 line-clamp-2 w-full text-center text-xs font-medium'
  * child of the tool above them. */
 const JOB_CIRCLE_SIZE = 40;
 const NODE_WIDTH = 92;
-/** Wider than a tool node because `OASM Platform` is fixed copy, not a
- * data-driven name: it needs ~86px at `text-xs` and must not ellipsise. */
+/** Wider than a tool node because `Argus Platform` is fixed copy, not a
+ * data-driven name: it must remain readable at `text-xs` without ellipsis. */
 const HUB_WIDTH = 112;
 /** Same width as a tool node: the worker tier is no longer a chip, so it lines
  * up with the row below it. */
@@ -90,7 +90,7 @@ const WORKER_HEIGHT = CIRCLE_SIZE + ICON_LABEL_GAP + LABEL_HEIGHT;
 const JOB_NODE_HEIGHT = JOB_CIRCLE_SIZE + ICON_LABEL_GAP + LABEL_HEIGHT + 8;
 /** Horizontal gap between neighbours in a row. */
 const COL_GAP = 16;
-/** Vertical gap between tiers (OASM -> worker -> tool). */
+/** Vertical gap between tiers (Argus -> worker -> tool). */
 const TIER_GAP = 36;
 /** Drop between the outer jobs of a fan and the one sitting directly under its
  * tool. The fan is a shallow arc rather than a row: same cross-axis spacing, but
@@ -108,7 +108,7 @@ const ROW_GAP = 40;
 const MAX_COLS = 10;
 
 /** Vertical origin of each tier. The chain is what the diagram documents:
- * OASM (platform backend) -> worker -> connected tools -> the job each tool is
+ * Argus (platform backend) -> worker -> connected tools -> the job each tool is
  * running right now. */
 const HUB_Y = 0;
 const WORKER_Y = HUB_HEIGHT + TIER_GAP;
@@ -166,9 +166,9 @@ function jobPosition(
   };
 }
 
-/** Deterministic four-tier chain: OASM at the top, the worker beneath it, the
+/** Deterministic four-tier chain: Argus at the top, the worker beneath it, the
  * tool nodes wrapped into centred rows, and under each tool the job nodes for
- * the work it is running right now. Wires run job -> tool -> worker -> OASM, so
+ * the work it is running right now. Wires run job -> tool -> worker -> Argus, so
  * nothing connects to the platform directly. No auto-layout library — every
  * position is arithmetic on the index, so the diagram is stable across renders.
  *
@@ -191,8 +191,8 @@ function buildGraph(
 } {
   const nodes: AnyFlowNode[] = [
     {
-      id: 'oasm',
-      type: 'oasm',
+      id: 'argus',
+      type: 'argus',
       position: { x: -HUB_WIDTH / 2, y: HUB_Y },
       // Explicit width on every node: React Flow otherwise learns a node's box
       // from a DOM measurement pass, and a node that mounts in that pass with a
@@ -218,13 +218,13 @@ function buildGraph(
 
   // The single platform link. Every other edge terminates at the worker.
   // Both edges use the same `flow` type: this one is vertically aligned with
-  // the OASM node, so the orthogonal router collapses it to a straight spine
+  // the Argus node, so the orthogonal router collapses it to a straight spine
   // on its own — consistency without a special case.
   const edges: Edge[] = [
     {
-      id: 'e-worker-oasm',
+      id: 'e-worker-argus',
       source: 'worker',
-      target: 'oasm',
+      target: 'argus',
       sourceHandle: 's-center',
       targetHandle: 't-center',
       type: 'flow',
@@ -307,7 +307,7 @@ function buildGraph(
         target: 'worker',
         sourceHandle: 's-center',
         targetHandle: 't-center',
-        // Soft curve, unlike the stepped worker -> OASM spine: a row of tools
+        // Soft curve, unlike the stepped worker -> Argus spine: a row of tools
         // converging on one chip reads as a fan, and bends are for the trunk.
         // The dash animation (`graph-edge-flow`, styled in index.css) is shared
         // by both types.
@@ -367,7 +367,7 @@ function buildGraph(
  * The `position` prop is not cosmetic for stepped edges: `getSmoothStepPath`
  * derives its elbow direction from the handle side, so each handle is declared
  * on the side its wire actually leaves. In this stack every wire travels
- * upward — tools -> worker -> OASM — so uniformly a source exits `Top` and a
+ * upward — tools -> worker -> Argus — so uniformly a source exits `Top` and a
  * target is met from `Bottom`. One convention covers all three tiers. */
 function CenterHandles() {
   const style = { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
@@ -394,7 +394,7 @@ function CenterHandles() {
 
 /** Tier 1 — the platform backend. Same family as the tool nodes below it (a
  * circular framed mark with the label beneath) so the three tiers read as one
- * chain, with the circle one size up to mark it as the root. The `OASM
+ * chain, with the circle one size up to mark it as the root. The `Argus
  * Platform` label replaces the old `Platform` badge — saying it once beats
  * saying it twice.
  *
@@ -410,20 +410,20 @@ function CenterHandles() {
  * the platform root reads as a framed emblem rather than a mark crammed to the
  * edge. Only the image shrinks — the circle stays `size-14`, which keeps
  * `HUB_HEIGHT` and therefore every tier position untouched. */
-function OasmNodeComponent() {
+function ArgusNodeComponent() {
   return (
     <div className="flex w-[112px] flex-col items-center text-center">
       <CenterHandles />
       <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-full border bg-card dark:bg-white">
         <img
           src="/logo.png"
-          alt="OASM Platform"
+          alt="Argus Platform"
           width={32}
           height={32}
           className="object-contain"
         />
       </span>
-      <span className={LABEL_CLASS}>OASM Platform</span>
+      <span className={LABEL_CLASS}>Argus Platform</span>
     </div>
   );
 }
@@ -586,7 +586,7 @@ function EdgeLayers({
   );
 }
 
-/** Stepped edge whose dashes march one way: OASM <-> worker.
+/** Stepped edge whose dashes march one way: Argus <-> worker.
  *
  * `type: 'straight'` was replaced because the user asked for bent (`gấp khúc`)
  * connectors. `smoothstep` with `borderRadius: 0` gives hard 90-degree corners
@@ -594,7 +594,7 @@ function EdgeLayers({
  * orthogonal router instead of a hand-rolled path.
  *
  * The dash layer walks toward the edge target. Every edge here is declared
- * source -> target along the chain — tool -> worker, worker -> OASM — and both
+ * source -> target along the chain — tool -> worker, worker -> Argus — and both
  * endpoints anchor at the node centre via `CenterHandles`, so "toward the
  * target" reads as flowing away from the platform on every wire. */
 function FlowEdge({
@@ -651,13 +651,13 @@ function CurvedEdge({
 const edgeTypes = { flow: FlowEdge, curve: CurvedEdge };
 
 const nodeTypes = {
-  oasm: OasmNodeComponent,
+  argus: ArgusNodeComponent,
   worker: WorkerNodeComponent,
   tool: ToolNodeComponent,
   job: JobNodeComponent,
 };
 
-/** The platform chain for a worker's connected tools: OASM on top, the worker
+/** The platform chain for a worker's connected tools: Argus on top, the worker
  * in the middle, tools wrapped into rows beneath it. The caller supplies the
  * tool list only — the tool count is page furniture, not diagram data. */
 export function WorkerToolsGraph({

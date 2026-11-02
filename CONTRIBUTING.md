@@ -1,4 +1,4 @@
-# Contributing to OASM
+# Contributing to Argus
 
 Thanks for considering a contribution. This guide reflects how this repo actually works — read the [Hard Rules](#hard-rules) first, they are the mistakes every newcomer makes here.
 

@@ -120,8 +120,8 @@ func Execute() {
 func rootCommand(defaultMode string) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "oasm-worker",
-		Short: "OASM Worker is an attack surface management agent",
-		Long: `OASM Worker is a high-performance agent used for attack surface management tasks.
+		Short: "Argus Worker is an attack surface management agent",
+		Long: `Argus Worker is a high-performance agent used for attack surface management tasks.
 
 The worker runs in one of two modes, reported to core-api when it joins:
 

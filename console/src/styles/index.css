@@ -203,7 +203,7 @@
 }
 
 /* ── Worker graph flow edges ────────────────────────────────────────────
- * One directional stream, OASM -> worker -> tool: each edge stacks a single
+ * One directional stream, Argus -> worker -> tool: each edge stacks a single
  * dash layer (`graph-flow`) over a static rail, and the dashes walk toward the
  * edge target. Both endpoints anchor at the node centre (`CenterHandles`), so
  * on every wire the train reads as flowing away from the platform. Applied

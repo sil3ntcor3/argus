@@ -304,7 +304,7 @@ function Get-RerunCommand {
 try {
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  OASM Worker Installer" -ForegroundColor Cyan
+    Write-Host "  Argus Worker Installer" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 

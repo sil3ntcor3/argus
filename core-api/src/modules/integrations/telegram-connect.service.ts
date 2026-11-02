@@ -162,7 +162,7 @@ export class TelegramConnectService implements OnModuleInit {
         await this.telegramBotService.sendMessage(
           botToken,
           chatInfo.chatId,
-          '❌ <b>Connection Failed</b>\n\nThe pairing token is invalid or has expired. Please generate a new pairing code in OpenASM and try again.',
+          '❌ <b>Connection Failed</b>\n\nThe pairing token is invalid or has expired. Please generate a new pairing code in Argus and try again.',
         );
       }
       throw new NotFoundException('Invalid or expired connect token');
@@ -186,7 +186,7 @@ export class TelegramConnectService implements OnModuleInit {
         await this.telegramBotService.sendMessage(
           botToken,
           chatInfo.chatId,
-          '🔁 <b>Already Connected</b>\n\nThis Telegram account is already linked to your workspace. You are already receiving notifications here.\n\nIf you want to reconnect, please disconnect first from the OpenASM dashboard.',
+          '🔁 <b>Already Connected</b>\n\nThis Telegram account is already linked to your workspace. You are already receiving notifications here.\n\nIf you want to reconnect, please disconnect first from the Argus dashboard.',
         );
       }
       throw new BadRequestException(
@@ -199,7 +199,7 @@ export class TelegramConnectService implements OnModuleInit {
         await this.telegramBotService.sendMessage(
           botToken,
           chatInfo.chatId,
-          '❌ <b>Connection Failed</b>\n\nThis pairing token has expired. Please generate a new pairing code in OpenASM and try again.',
+          '❌ <b>Connection Failed</b>\n\nThis pairing token has expired. Please generate a new pairing code in Argus and try again.',
         );
       }
       await this.connectRepo.delete(connect.id);
@@ -306,7 +306,7 @@ You'll now receive security alerts and notifications here. Stay safe! 🔒`,
     }
 
     // Resolve workspace name for the goodbye message
-    let workspaceName = 'OpenASM';
+    let workspaceName = 'Argus';
     try {
       const ws = await this.workspacesService.getWorkspaceConfigValue(
         integration.workspaceId,
@@ -333,7 +333,7 @@ You'll now receive security alerts and notifications here. Stay safe! 🔒`,
         await this.telegramBotService.sendMessage(
           botToken,
           connect.telegramChatId,
-          `🔌 <b>Disconnected from ${escapedWs}</b>\n\nThis chat has been disconnected from <b>${escapedWs}</b>. You will no longer receive security alerts here.\n\nIf you'd like to reconnect, generate a new pairing code in OpenASM.`,
+          `🔌 <b>Disconnected from ${escapedWs}</b>\n\nThis chat has been disconnected from <b>${escapedWs}</b>. You will no longer receive security alerts here.\n\nIf you'd like to reconnect, generate a new pairing code in Argus.`,
         );
       }
     }

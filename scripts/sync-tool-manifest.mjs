@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Sync the aggregate connector manifest from oasm-connectors main branch
+// Sync the aggregate connector manifest from argus-connectors main branch
 // into core-api/resources/connectors/manifest.json
 // Requires Node >= 22 (global fetch).
 
@@ -13,8 +13,8 @@ const DEST_DIR = join(REPO_ROOT, 'core-api', 'resources', 'connectors');
 const DEST_FILE = join(DEST_DIR, 'manifest.json');
 const TMP_FILE = join(DEST_DIR, 'manifest.json.tmp');
 const MANIFEST_URL =
-  'https://raw.githubusercontent.com/oasm-platform/oasm-connectors/refs/heads/main/manifest.json';
-// MANIFEST_PATH points the sync at a local oasm-connectors checkout instead of
+  'https://raw.githubusercontent.com/sil3ntcor3/argus-connectors/refs/heads/main/manifest.json';
+// MANIFEST_PATH points the sync at a local argus-connectors checkout instead of
 // the main branch: a new connector is only on main after it is merged, so
 // reviewers need to sync the manifest they just generated. Unset (the default in
 // CI and for everyone else), the branch is the source of truth.

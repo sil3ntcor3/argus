@@ -1,6 +1,6 @@
 ---
 name: reconnaissance
-description: Methodology for authorized reconnaissance and attack-surface mapping of targets — subdomains, live hosts, ports, technologies and TLS — correlating results with OASM workspace data. Use when enumerating what a target exposes before deeper testing.
+description: Methodology for authorized reconnaissance and attack-surface mapping of targets — subdomains, live hosts, ports, technologies and TLS — correlating results with Argus workspace data. Use when enumerating what a target exposes before deeper testing.
 ---
 
 # Reconnaissance & attack-surface mapping

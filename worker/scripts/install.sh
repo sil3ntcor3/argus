@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# OASM Worker Installer for Linux/macOS
+# Argus Worker Installer for Linux/macOS
 # ============================================================
 # Downloads the latest oasm-worker binary from GitHub releases,
 # verifies it, and optionally starts the worker immediately.
@@ -43,7 +43,7 @@ gray()    { echo -e "${GRAY}$*${NC}"; }
 
 usage() {
     cat <<EOF
-OASM Worker Installer
+Argus Worker Installer
 
 Usage:
   install.sh [OPTIONS]
@@ -542,7 +542,7 @@ main() {
     
     echo ""
     info "========================================"
-    info "  OASM Worker Installer"
+    info "  Argus Worker Installer"
     info "========================================"
     echo ""
 

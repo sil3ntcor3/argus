@@ -69,9 +69,9 @@ ENV WORKER_GRPC_PORT=16276
 ENV WORKER_TOOL_PATH=oasm-tools
 
 # Metadata
-LABEL org.opencontainers.image.title="OASM Worker"
+LABEL org.opencontainers.image.title="Argus Worker"
 LABEL org.opencontainers.image.description="Attack Surface Management worker agent"
-LABEL org.opencontainers.image.vendor="OASM Platform"
+LABEL org.opencontainers.image.vendor="Argus"
 
 # Entrypoint
 ENTRYPOINT ["/app/oasm-worker"]

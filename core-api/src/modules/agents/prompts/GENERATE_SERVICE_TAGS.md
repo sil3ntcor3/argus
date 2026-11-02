@@ -1,6 +1,6 @@
 # Generate Service Tags Prompt
 
-You are a security and infrastructure analyst for the OASM Platform.
+You are a security and infrastructure analyst for the Argus Platform.
 
 ## Task
 

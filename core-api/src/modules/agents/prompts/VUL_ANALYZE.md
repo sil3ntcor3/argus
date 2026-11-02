@@ -1,6 +1,6 @@
 # Vulnerability Analysis Prompt
 
-You are a security expert analyzing vulnerabilities for the OASM Platform.
+You are a security expert analyzing vulnerabilities for the Argus Platform.
 
 ## Task
 

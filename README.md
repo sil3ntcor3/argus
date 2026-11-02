@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="core-api/public/images/logo.png" alt="OASM Logo" width="150" />
+  <img src="core-api/public/images/logo.png" alt="Argus Logo" width="150" />
 </p>
 
-<h1 align="center">Open Attack Surface Management (OASM)</h1>
+<h1 align="center">Argus</h1>
 
 <p align="center"><strong>Open-source Attack Surface Management. Discover assets. Identify exposure. Own your security data.</strong></p>
 
@@ -10,13 +10,10 @@
   <a href="https://github.com/sil3ntcor3/argus/releases"><img src="https://img.shields.io/github/v/release/sil3ntcor3/argus?style=flat-square&label=release" alt="Latest Release"></a>
   <a href="https://github.com/sil3ntcor3/argus/actions/workflows/build-nightly.yml"><img src="https://img.shields.io/github/actions/workflow/status/sil3ntcor3/argus/build-nightly.yml?style=flat-square&label=ci" alt="CI"></a>
   <a href="https://hub.docker.com/r/sil3ntcor3/argus-api"><img src="https://img.shields.io/docker/pulls/sil3ntcor3/argus-api?style=flat-square&logo=docker&logoColor=white" alt="Docker Pulls"></a>
-  <a href="https://discord.gg/fWqbNHXR8H"><img src="https://img.shields.io/badge/discord-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://www.linkedin.com/company/oasm-platform"><img src="https://img.shields.io/badge/linkedin-0A66C2?style=flat-square&logo=linkedin&logoColor=white" alt="LinkedIn"></a>
-  <a href="https://x.com/OasmPlatform"><img src="https://img.shields.io/badge/x-000000?style=flat-square&logo=x&logoColor=white" alt="X"></a>
   <a href="https://docs.oasm.io"><img src="https://img.shields.io/badge/docs-2fc414?style=flat-square&logo=gitbook&logoColor=white" alt="Documentation"></a>
 </p>
 
-OASM is a self-hostable, open-source Attack Surface Management platform. It inventories internet-facing assets, runs distributed scans through pluggable connectors, and tracks the resulting vulnerabilities in one workspace, with AI Studio — a security agent that works directly on that data. Security teams stop stitching together spreadsheets, one-off scanners, and hosted-only tools.
+Argus is a self-hostable, open-source Attack Surface Management platform. It inventories internet-facing assets, runs distributed scans through pluggable connectors, and tracks the resulting vulnerabilities in one workspace, with AI Studio — a security agent that works directly on that data. Security teams stop stitching together spreadsheets, one-off scanners, and hosted-only tools.
 
 📖 **Documentation → [docs.oasm.io](https://docs.oasm.io)**
 
@@ -46,7 +43,7 @@ Attack Surface Management (ASM) in practice means three loops:
 2. **Assess** — run scanners against those assets and normalize findings into trackable vulnerabilities.
 3. **Operate** — group assets, schedule recurring scans, notify the right channel, and audit what changed.
 
-OASM implements these loops as one integrated, self-hosted stack: a web console for daily work, a NestJS core API for business logic and orchestration, and Go workers that execute scans in isolated connector containers. PostgreSQL (pgvector), Redis/BullMQ, S3-compatible storage, and a Geo-IP proxy back the platform. Your data stays in your infrastructure; scanning tools stay decoupled so adding a tool never requires an OASM release.
+Argus implements these loops as one integrated, self-hosted stack: a web console for daily work, a NestJS core API for business logic and orchestration, and Go workers that execute scans in isolated connector containers. PostgreSQL (pgvector), Redis/BullMQ, S3-compatible storage, and a Geo-IP proxy back the platform. Your data stays in your infrastructure; scanning tools stay decoupled so adding a tool never requires an Argus release.
 
 ## Key Features
 
@@ -56,20 +53,20 @@ OASM implements these loops as one integrated, self-hosted stack: a web console 
 | **Vulnerability tracking** | Scan findings normalized into trackable vulnerabilities with severity, status, and evidence detail, so teams triage and follow up in one place. |
 | **Asset groups + schedules** | Bundle related assets, attach scan workflows with cron schedules (or pause with `disabled`), and trigger on-demand runs per group. |
 | **Distributed workers** | Workers join over gRPC, pull queued jobs, run each scan in an isolated container, and stream findings back. Several workers can share one host. |
-| **Pluggable connectors** | Each scanner ships as a versioned container image from a companion repo and is synced locally — adding or upgrading a tool never requires an OASM release. |
+| **Pluggable connectors** | Each scanner ships as a versioned container image from a companion repo and is synced locally — adding or upgrading a tool never requires an Argus release. |
 | **Workflows** | Cron-scheduled or event-triggered scan workflows with a job graph, so recurring coverage runs without manual kicks. |
 | **Notifications** | In-app notifications plus Slack, Discord, Telegram, and generic webhooks, filtered per integration by event type and severity. |
 | **Cloud asset sync** | Scheduled pull of assets from AWS, Cloudflare, and Vercel, keeping the inventory in sync with cloud estates. |
 | **Repositories & ticketing** | Keep GitHub and GitLab repositories in the inventory, and open an issue for every new vulnerability. See [Integrations](#integrations). |
 | **AI Studio** | A security agent that works on your own data and workers: it plans, delegates to subagents, runs commands in a sandboxed terminal, drives a headless browser, and reports back — within the approval level you set. See [AI Studio](#ai-studio). |
-| **MCP server** | Connect any MCP-compatible AI client to your instance with an API key and work with OASM data from the tools you already use. |
+| **MCP server** | Connect any MCP-compatible AI client to your instance with an API key and work with Argus data from the tools you already use. |
 | **Enrichment & storage** | Automatic IP geolocation plus S3-compatible storage for scan artifacts and PDF reports. |
 | **Multi-workspace & access control** | Isolated workspaces per team or project, with owner/member roles, API keys, and an audit log archived as JSONL. |
 | **API & docs** | Versioned REST API with interactive Swagger/Scalar docs, backed by a tracked OpenAPI spec the console client is generated from. |
 
 ## AI Studio
 
-AI Studio is the security agent built into OASM. It works on your workspace data and your own workers, with the model you choose, and it only acts as far as your approval setting allows.
+AI Studio is the security agent built into Argus. It works on your workspace data and your own workers, with the model you choose, and it only acts as far as your approval setting allows.
 
 - **Ask and Agent modes.** Ask answers questions from your inventory and findings. Agent turns a goal into a visible to-do plan and works through it step by step until it reaches an answer.
 - **Subagents.** The main agent hands parts of a task to background subagents that run in parallel, each with its own model and limits — planner, researcher, pentest, retester, reporter, asset analyst, or your own. Every subagent's steps and tool calls are recorded and open in the chat side panel.
@@ -144,7 +141,7 @@ graph TD
 
 ## Connectors
 
-Scanning tools live as isolated Docker images in the companion repo [argus-connectors](https://github.com/sil3ntcor3/argus-connectors), each wrapping a tool in a small adapter. OASM reads that catalog as data (`task sync-connectors`), so a worker resolves the right image and runs the tool on demand inside its own container — adding or upgrading a scanner never needs an OASM release.
+Scanning tools live as isolated Docker images in the companion repo [argus-connectors](https://github.com/sil3ntcor3/argus-connectors), each wrapping a tool in a small adapter. Argus reads that catalog as data (`task sync-connectors`), so a worker resolves the right image and runs the tool on demand inside its own container — adding or upgrading a scanner never needs an Argus release.
 
 Browse every connector in the [marketplace](https://oasm.dev/marketplace), then install the ones you need from **Tools** in the console.
 
@@ -171,11 +168,11 @@ Browse every connector in the [marketplace](https://oasm.dev/marketplace), then 
 
 ## Integrations
 
-Connect OASM to the tools your team already uses. Integrations are set up per workspace from **Integrations** in the console.
+Connect Argus to the tools your team already uses. Integrations are set up per workspace from **Integrations** in the console.
 
 **Alerts — Slack, Discord, Telegram, Webhook**
 
-OASM pushes only the events worth acting on: new vulnerabilities, vulnerability status changes, finished or failed scans, and failed syncs. Each integration chooses which event types and which severity levels it receives.
+Argus pushes only the events worth acting on: new vulnerabilities, vulnerability status changes, finished or failed scans, and failed syncs. Each integration chooses which event types and which severity levels it receives.
 
 - **Slack** and **Discord** post to a channel through an incoming webhook.
 - **Telegram** uses your own bot. Members link a chat with `/pair` (and `/unpair` to stop). It works through a Telegram webhook, or falls back to polling when the instance has no public URL.
@@ -191,7 +188,7 @@ Pull assets straight from your cloud accounts on a schedule, so new infrastructu
 
 **Source code — GitHub, GitLab**
 
-Add a GitHub or GitLab organization as a target and OASM keeps its repositories in the inventory: new ones are added, renamed ones are followed, and deleted ones are disabled with their history kept. Workflows can scan repositories as soon as a sync finishes. GitHub Enterprise Server and self-managed GitLab are supported.
+Add a GitHub or GitLab organization as a target and Argus keeps its repositories in the inventory: new ones are added, renamed ones are followed, and deleted ones are disabled with their history kept. Workflows can scan repositories as soon as a sync finishes. GitHub Enterprise Server and self-managed GitLab are supported.
 
 **Ticketing — GitHub Issues, GitLab Issues**
 
@@ -241,7 +238,7 @@ The same GitHub or GitLab connection can open an issue in a repository you choos
 *Worker fleet — online status, installed toolset, and active jobs for every scanning worker across global and workspace scopes.*
 
 ![McpConnect](docs/images/mcp.png)
-*MCP connect — copy-paste JSON config that plugs any MCP-compatible AI client into your OASM instance via API key.*
+*MCP connect — copy-paste JSON config that plugs any MCP-compatible AI client into your Argus instance via API key.*
 
 ![JobRegistry](docs/images/job_registry.png)
 *Job registry — the scan pipeline per target (subdomain discovery → port scan → HTTP probe → screenshot) with per-job status, timing, and history.*
@@ -349,7 +346,6 @@ See [`SECURITY.md`](SECURITY.md). Short version: report sensitive vulnerabilitie
 - Docs: [docs.oasm.io](https://docs.oasm.io)
 - Connectors repo: [sil3ntcor3/argus-connectors](https://github.com/sil3ntcor3/argus-connectors)
 - Marketplace: [oasm.dev/marketplace](https://oasm.dev/marketplace)
-- Discord / LinkedIn / X: see badges at the top.
 
 ## License
 
@@ -357,10 +353,10 @@ See [`SECURITY.md`](SECURITY.md). Short version: report sensitive vulnerabilitie
 
 ## Star History
 
-If OASM is useful to you, please star the repo — it helps others discover the project.
+If Argus is useful to you, please star the repo — it helps others discover the project.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=sil3ntcor3/argus&type=date&legend=top-left)](https://www.star-history.com/?repos=sil3ntcor3%2Fargus&type=date&legend=top-left)
 
 ## Sponsors
 
-OASM is supported by [Anthropic](https://www.anthropic.com) through its startup program. Thank you for backing open-source security tooling.
+The upstream OASM project is supported by [Anthropic](https://www.anthropic.com) through its startup program. Thank you for backing open-source security tooling.

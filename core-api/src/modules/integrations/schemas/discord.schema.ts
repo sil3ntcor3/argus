@@ -36,7 +36,7 @@ export const discordSchema = {
       title: 'Bot Username',
       description:
         'Optional display name for the bot sending the alert. Defaults to the webhook name if omitted.',
-      'ui:placeholder': 'OpenASM Alert',
+      'ui:placeholder': 'Argus Alert',
     },
     ...notificationTypeProperties,
     ...severityProperties,

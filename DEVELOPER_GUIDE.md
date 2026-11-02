@@ -1,6 +1,6 @@
-# Developer Guide for Open Attack Surface Management (OASM)
+# Developer Guide for Argus
 
-This guide provides detailed instructions for setting up your local development environment, running the services, and contributing to the OASM project.
+This guide provides detailed instructions for setting up your local development environment, running the services, and contributing to the Argus project.
 
 ## Table of Contents
 
@@ -57,7 +57,7 @@ Before you begin, ensure you have the following installed:
 The project is organized into several key directories:
 
 ```
-ArgusASM/
+argus/
 ├── core-api/           # NestJS API server
 │   ├── src/            # Source code
 │   │   ├── database/   # DataSource config + TypeORM migrations
@@ -368,7 +368,7 @@ stubs into `worker/internal/gen/`.
 ### Connector Catalog Sync
 
 Scanning connectors are versioned Docker images maintained in the separate
-[oasm-connectors](https://github.com/oasm-platform/oasm-connectors) repository.
+[argus-connectors](https://github.com/sil3ntcor3/argus-connectors) repository.
 Refresh the local copy of the catalog with:
 
 ```bash
@@ -377,7 +377,7 @@ task sync-connectors
 
 This writes `core-api/resources/connectors/manifest.json`, which core-api reads
 to resolve connector images and input schemas. Set
-`MANIFEST_PATH=<path>/manifest.json` to sync from a local `oasm-connectors`
+`MANIFEST_PATH=<path>/manifest.json` to sync from a local `argus-connectors`
 checkout instead of the `main` branch.
 
 ## Presigned Direct Storage Access

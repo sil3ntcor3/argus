@@ -54,12 +54,12 @@ export class TelegramWebhookService {
   private readonly commands: BotCommand[] = [
     {
       command: 'pair',
-      description: 'Connect this chat to OpenASM',
+      description: 'Connect this chat to Argus',
       fn: (args, ctx) => this.handlePair(args, ctx),
     },
     {
       command: 'unpair',
-      description: 'Disconnect this chat from OpenASM',
+      description: 'Disconnect this chat from Argus',
       fn: (_args, ctx) => this.handleUnpair(ctx),
     },
     {
@@ -133,9 +133,9 @@ export class TelegramWebhookService {
       const firstName = ctx.firstName ?? 'there';
       const instruction =
         `👋 Hi ${firstName}!\n\n` +
-        `To connect your Telegram chat to OpenASM, you need to send a pairing token.\n\n` +
+        `To connect your Telegram chat to Argus, you need to send a pairing token.\n\n` +
         `📋 <b>How to connect:</b>\n` +
-        `1. Open OpenASM Console → Integrations → Telegram\n` +
+        `1. Open Argus Console → Integrations → Telegram\n` +
         `2. Click <b>"Pair"</b> to generate a pairing token\n` +
         `3. Send the token here:\n` +
         `   <code>/pair &lt;your-token&gt;</code>\n\n` +
@@ -183,7 +183,7 @@ export class TelegramWebhookService {
       await this.telegramBotService.sendMessage(
         ctx.botToken,
         ctx.chatId,
-        '🔌 <b>Disconnected</b>\n\nThis chat has been disconnected from OpenASM. You will no longer receive security alerts here.\n\nIf you\'d like to reconnect, generate a new pairing code in OpenASM.',
+        '🔌 <b>Disconnected</b>\n\nThis chat has been disconnected from Argus. You will no longer receive security alerts here.\n\nIf you\'d like to reconnect, generate a new pairing code in Argus.',
       );
       this.logger.log(
         `Telegram chat ${ctx.chatId} disconnected via /unpair`,
@@ -192,7 +192,7 @@ export class TelegramWebhookService {
       await this.telegramBotService.sendMessage(
         ctx.botToken,
         ctx.chatId,
-        'ℹ️ <b>Not Connected</b>\n\nThis chat is not currently connected to any OpenASM workspace.\n\nTo connect, send /pair with your pairing token.',
+        'ℹ️ <b>Not Connected</b>\n\nThis chat is not currently connected to any Argus workspace.\n\nTo connect, send /pair with your pairing token.',
       );
     }
   }

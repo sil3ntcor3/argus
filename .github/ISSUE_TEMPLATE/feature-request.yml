@@ -2,7 +2,7 @@ name: Feature Request
 title: 'Feature: '
 labels: ['enhancement', 'feature']
 assignees: []
-description: Suggest a new feature or enhancement for the OpenASM platform
+description: Suggest a new feature or enhancement for the Argus platform
 body:
   - type: markdown
     attributes:

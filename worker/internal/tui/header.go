@@ -72,7 +72,7 @@ func (h headerModel) renderCompact() string {
 		status = headerConnectedStyle.Render("● Connected")
 	}
 
-	title := headerTitleStyle.Render("OASM Agent")
+	title := headerTitleStyle.Render("Argus Agent")
 	return fmt.Sprintf("%s  %s", title, status)
 }
 
@@ -82,7 +82,7 @@ func (h headerModel) renderFull(width int) string {
 		status = headerConnectedStyle.Render("● Connected")
 	}
 
-	title := headerTitleStyle.Render("OASM Agent")
+	title := headerTitleStyle.Render("Argus Agent")
 	workerIDShort := h.workerID
 	if len(workerIDShort) > 8 {
 		workerIDShort = workerIDShort[:8]

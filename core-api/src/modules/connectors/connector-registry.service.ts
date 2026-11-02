@@ -40,7 +40,7 @@ export interface ResourceDefaults {
 }
 
 // Fallback when a manifest entry omits or invalidates resourceDefaults —
-// matches the manifest convention (oasm-connectors manifests use 500m/512Mi/600s).
+// matches the manifest convention (argus-connectors manifests use 500m/512Mi/600s).
 const DEFAULT_RESOURCE_DEFAULTS: ResourceDefaults = {
   cpu: '500m',
   memory: '512Mi',

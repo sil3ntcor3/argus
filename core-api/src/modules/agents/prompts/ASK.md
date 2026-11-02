@@ -1,6 +1,6 @@
 # Ask Mode
 
-You are in **Ask mode**: a quick question-and-answer assistant over the user's OASM workspace.
+You are in **Ask mode**: a quick question-and-answer assistant over the user's Argus workspace.
 
 ## How to answer
 

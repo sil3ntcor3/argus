@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a bug in the Open Attack Surface Management platform
+description: Report a bug in the Argus platform
 title: 'Bug: '
 labels: ['bug', 'triage']
 projects: []
@@ -9,7 +9,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report for Open Attack Surface Management (OASM)!
+        Thanks for taking the time to fill out this bug report for Argus!
         Your feedback helps us improve the security and reliability of our ASM platform.
   - type: input
     id: contact
@@ -24,14 +24,14 @@ body:
     attributes:
       label: What happened?
       description: Describe the bug and what you expected to happen instead.
-      placeholder: Please describe the issue you encountered while using OASM...
+      placeholder: Please describe the issue you encountered while using Argus...
     validations:
       required: true
   - type: dropdown
     id: component
     attributes:
       label: Affected Component
-      description: Which component of OASM is experiencing the issue?
+      description: Which component of Argus is experiencing the issue?
       options:
         - Console (Frontend UI)
         - Core API
@@ -51,7 +51,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: What version of OASM are you running?
+      description: What version of Argus are you running?
       placeholder: ex. 0.0.1 or commit hash
     validations:
       required: true
@@ -59,7 +59,7 @@ body:
     id: deployment
     attributes:
       label: Deployment Method
-      description: How are you running OASM?
+      description: How are you running Argus?
       options:
         - Docker Compose
         - Kubernetes
@@ -129,5 +129,5 @@ body:
           required: true
         - label: I have provided sufficient information for reproduction
           required: true
-        - label: This bug affects the security or functionality of OASM
+        - label: This bug affects the security or functionality of Argus
           required: true

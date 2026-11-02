@@ -67,12 +67,12 @@ tasks:
 
   build-cli:
     cmds:
-      - echo "Building OASM CLI Worker..."
+      - echo "Building Argus CLI Worker..."
       - go build -o bin/oasm-cli ./cmd/cli
 
   build-app:
     cmds:
-      - echo "Building OASM App Worker..."
+      - echo "Building Argus App Worker..."
       - CGO_ENABLED=0 go build -o bin/oasm-app ./cmd/app
 
   clean:

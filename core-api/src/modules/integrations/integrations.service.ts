@@ -475,7 +475,7 @@ export class IntegrationsService {
     // Merge stored config with a test message text
     const text =
       dto?.text ??
-      `🧪 OpenASM test notification — sent at ${new Date().toISOString()}`;
+      `🧪 Argus test notification — sent at ${new Date().toISOString()}`;
     const testConfig: Record<string, unknown> = {
       ...decryptedConfig,
       text,
@@ -805,7 +805,7 @@ export class IntegrationsService {
     const dek = await this.workspaceEncryption.getDEK(integration.workspaceId);
     const config = decryptSensitiveConfigFields(integration.config, dek);
 
-    const text = `🔗 OpenASM has been successfully connected! You'll receive security alerts and notifications here.`;
+    const text = `🔗 Argus has been successfully connected! You'll receive security alerts and notifications here.`;
 
     const result = await runConnector(
       integration.appType,
