@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-OASM is pre-1.0 (`0.0.1` in `package.json`). Only the latest `main` branch and the most recent [release](https://github.com/sil3ntcor3/argus/releases) receive security fixes. There is no LTS series.
+Argus is pre-1.0 (`0.0.1` in `package.json`). Only the latest `main` branch and the most recent [release](https://github.com/sil3ntcor3/argus/releases) receive security fixes. There is no LTS series.
 
 | Version | Supported |
 |---------|-----------|
@@ -17,7 +17,7 @@ If the issue is clearly **not sensitive** (hardening idea, dependency bump, theo
 
 ### What to include
 
-- Affected component (`core-api`, `console`, `worker`, `oasm-connectors` manifest) and version/commit.
+- Affected component (`core-api`, `console`, `worker`, `argus-connectors` manifest) and version/commit.
 - Steps to reproduce or proof of concept.
 - Impact assessment: what an attacker gains (data access, cross-tenant access, RCE, auth bypass).
 - Your environment if relevant (Docker Compose, dev mode, production build).

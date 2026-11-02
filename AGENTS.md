@@ -8,7 +8,7 @@ Before substantial work:
 - Multiple matches: prefer the most specific local skill for the package or concern you are changing; load additional skills only when the task spans multiple packages or concerns.
 <!-- intent-skills:end -->
 
-# Open-ASM Agent Quick Reference
+# Argus Agent Quick Reference
 
 **Critical**: this file contains only non-obvious, repo-specific facts an agent would otherwise get wrong. Generic language/framework advice is intentionally omitted.
 
