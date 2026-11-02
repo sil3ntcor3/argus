@@ -37,15 +37,15 @@ export type WorkerTierInfo = {
 };
 
 /** Node data carried by each node type (react-flow requires a record). */
-type OasmNodeData = Record<string, never>;
+type ArgusNodeData = Record<string, never>;
 type WorkerNodeData = { worker: WorkerTierInfo };
 type ToolNodeData = { tool: WorkerToolDto; hasJobs: boolean };
 type JobNodeData = { job: WorkerToolJobDto; tool: WorkerToolDto };
-type OasmNode = Node<OasmNodeData, 'oasm'>;
+type ArgusNode = Node<ArgusNodeData, 'argus'>;
 type WorkerFlowNode = Node<WorkerNodeData, 'worker'>;
 type ToolFlowNode = Node<ToolNodeData, 'tool'>;
 type JobFlowNode = Node<JobNodeData, 'job'>;
-type AnyFlowNode = OasmNode | WorkerFlowNode | ToolFlowNode | JobFlowNode;
+type AnyFlowNode = ArgusNode | WorkerFlowNode | ToolFlowNode | JobFlowNode;
 
 /** Fixed node widths. Pinned so long names wrap at a known column width instead
  * of reflowing the layout — every position below is arithmetic on these. */
@@ -191,8 +191,8 @@ function buildGraph(
 } {
   const nodes: AnyFlowNode[] = [
     {
-      id: 'oasm',
-      type: 'oasm',
+      id: 'argus',
+      type: 'argus',
       position: { x: -HUB_WIDTH / 2, y: HUB_Y },
       // Explicit width on every node: React Flow otherwise learns a node's box
       // from a DOM measurement pass, and a node that mounts in that pass with a
@@ -222,9 +222,9 @@ function buildGraph(
   // on its own — consistency without a special case.
   const edges: Edge[] = [
     {
-      id: 'e-worker-oasm',
+      id: 'e-worker-argus',
       source: 'worker',
-      target: 'oasm',
+      target: 'argus',
       sourceHandle: 's-center',
       targetHandle: 't-center',
       type: 'flow',
@@ -410,7 +410,7 @@ function CenterHandles() {
  * the platform root reads as a framed emblem rather than a mark crammed to the
  * edge. Only the image shrinks — the circle stays `size-14`, which keeps
  * `HUB_HEIGHT` and therefore every tier position untouched. */
-function OasmNodeComponent() {
+function ArgusNodeComponent() {
   return (
     <div className="flex w-[112px] flex-col items-center text-center">
       <CenterHandles />
@@ -651,7 +651,7 @@ function CurvedEdge({
 const edgeTypes = { flow: FlowEdge, curve: CurvedEdge };
 
 const nodeTypes = {
-  oasm: OasmNodeComponent,
+  argus: ArgusNodeComponent,
   worker: WorkerNodeComponent,
   tool: ToolNodeComponent,
   job: JobNodeComponent,
