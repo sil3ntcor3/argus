@@ -220,12 +220,12 @@ api_get() {
     if [[ "$HAS_CURL" == true ]]; then
         curl -sL --connect-timeout 30 --max-time 60 \
             -H "Accept: application/vnd.github.v3+json" \
-            -H "User-Agent: oasm-installer/1.0" \
+            -H "User-Agent: argus-installer/1.0" \
             "$url"
     elif [[ "$HAS_WGET" == true ]]; then
         wget -q --timeout=60 \
             --header="Accept: application/vnd.github.v3+json" \
-            --header="User-Agent: oasm-installer/1.0" \
+            --header="User-Agent: argus-installer/1.0" \
             -O- "$url"
     fi
 }
@@ -307,7 +307,7 @@ get_latest_release() {
     if [[ "$HAS_CURL" == true ]]; then
         http_code=$(curl -sL --connect-timeout 30 --max-time 60 \
             -H "Accept: application/vnd.github.v3+json" \
-            -H "User-Agent: oasm-installer/1.0" \
+            -H "User-Agent: argus-installer/1.0" \
             -w '%{http_code}' \
             -o /tmp/oasm_release.json \
             "$latest_url") || true
