@@ -33,16 +33,16 @@
     If set, start the worker immediately after installation.
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "oasm_xxx"
+    .\install.ps1 -ApiKey "argus_xxx"
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "oasm_xxx" -Run
+    .\install.ps1 -ApiKey "argus_xxx" -Run
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "oasm_xxx" -GrpcHost "my-server.com" -GrpcPort 16276 -Run
+    .\install.ps1 -ApiKey "argus_xxx" -GrpcHost "my-server.com" -GrpcPort 16276 -Run
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "oasm_xxx" -GrpcHost "cloud.oasm.io" -GrpcPort 443 -GrpcTls -Run
+    .\install.ps1 -ApiKey "argus_xxx" -GrpcHost "cloud.oasm.io" -GrpcPort 443 -GrpcTls -Run
 #>
 param(
     [Parameter(Mandatory = $true)]
