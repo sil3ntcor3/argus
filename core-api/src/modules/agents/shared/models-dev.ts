@@ -3,7 +3,7 @@ import { LLMProvider } from '../enums/agent.enums';
 /**
  * Pure helpers for the https://models.dev model catalog: trimming the raw
  * `api.json` down to what the agent needs (limits + cost) and resolving an
- * oasm `(provider, modelId)` pair to a catalog entry. No I/O here.
+ * Argus `(provider, modelId)` pair to a catalog entry. No I/O here.
  */
 
 /** Token limits of a model, as published by models.dev. */
@@ -48,7 +48,7 @@ export interface CatalogLookupResult {
   estimated: boolean;
 }
 
-/** oasm provider -> models.dev provider keys, tried in order. */
+/** Argus provider -> models.dev provider keys, tried in order. */
 export const PROVIDER_MAP: Record<LLMProvider, string[]> = {
   [LLMProvider.OPENAI]: ['openai'],
   [LLMProvider.ANTHROPIC]: ['anthropic'],
@@ -235,7 +235,7 @@ export class ModelsCatalogIndex {
   }
 
   /**
-   * Resolves an oasm provider + model id to a catalog entry.
+   * Resolves an Argus provider + model id to a catalog entry.
    *
    * Tiers (first hit wins): mapped provider keys x id variants, canonical id,
    * `vendor/model` split, then the bare id across all providers (smallest
