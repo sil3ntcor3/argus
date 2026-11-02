@@ -8,9 +8,9 @@ set -euo pipefail
 # verifies it, and optionally starts the worker immediately.
 #
 # Usage:
-#   ./install.sh --api-key "oasm_xxx"
-#   ./install.sh --api-key "oasm_xxx" --run
-#   ./install.sh --api-key "oasm_xxx" --grpc-host "my-server.com" --run
+#   ./install.sh --api-key "argus_xxx"
+#   ./install.sh --api-key "argus_xxx" --run
+#   ./install.sh --api-key "argus_xxx" --grpc-host "my-server.com" --run
 #
 # Requirements:
 #   - curl or wget
@@ -60,10 +60,10 @@ Options:
   --help                 Show this help message
 
 Examples:
-  ./install.sh --api-key "oasm_xxx"
-  ./install.sh --api-key "oasm_xxx" --run
-  ./install.sh --api-key "oasm_xxx" --grpc-host "my-server.com" --grpc-port 16276 --run
-  ./install.sh --api-key "oasm_xxx" --grpc-host "cloud.oasm.io" --grpc-port 443 --grpc-tls --run
+  ./install.sh --api-key "argus_xxx"
+  ./install.sh --api-key "argus_xxx" --run
+  ./install.sh --api-key "argus_xxx" --grpc-host "my-server.com" --grpc-port 16276 --run
+  ./install.sh --api-key "argus_xxx" --grpc-host "cloud.oasm.io" --grpc-port 443 --grpc-tls --run
 EOF
     exit 0
 }
