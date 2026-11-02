@@ -125,7 +125,7 @@ describe('JobsRegistryController', () => {
       mockConnectorRegistry.getConnector.mockReturnValue({
         name: 'Nikto - Web Server Scanner',
         slug: 'nikto',
-        image: 'ghcr.io/oasm-platform/connector-nikto:2.6.1',
+        image: 'ghcr.io/sil3ntcor3/connector-nikto:2.6.1',
       });
       mockToolConfigProfilesService.resolveConfigForJob.mockResolvedValue({});
 
@@ -138,7 +138,7 @@ describe('JobsRegistryController', () => {
       // ...but the worker receives the stable slug.
       expect(result.tool).toBe('nikto');
       expect(result.image).toBe(
-        'ghcr.io/oasm-platform/connector-nikto:2.6.1',
+        'ghcr.io/sil3ntcor3/connector-nikto:2.6.1',
       );
       // Host asset: the historical single `target` input.
       expect(result.inputs).toEqual({
@@ -162,7 +162,7 @@ describe('JobsRegistryController', () => {
       mockConnectorRegistry.getConnector.mockReturnValue({
         name: 'Gitleaks',
         slug: 'gitleaks',
-        image: 'ghcr.io/oasm-platform/connector-gitleaks:8',
+        image: 'ghcr.io/sil3ntcor3/connector-gitleaks:8',
       });
       mockToolConfigProfilesService.resolveConfigForJob.mockResolvedValue({});
       mockIntegrationsService.getIntegrationWithDecryptedConfig.mockResolvedValue({
@@ -200,7 +200,7 @@ describe('JobsRegistryController', () => {
       });
       mockConnectorRegistry.getConnector.mockReturnValue({
         slug: 'gitleaks',
-        image: 'ghcr.io/oasm-platform/connector-gitleaks:8',
+        image: 'ghcr.io/sil3ntcor3/connector-gitleaks:8',
       });
       mockToolConfigProfilesService.resolveConfigForJob.mockResolvedValue({});
       mockIntegrationsService.getIntegrationWithDecryptedConfig.mockRejectedValue(
