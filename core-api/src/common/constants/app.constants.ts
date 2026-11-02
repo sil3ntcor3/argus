@@ -58,7 +58,7 @@ export const BOT_EMAIL = 'bot@argus.local';
 export const BOT_NAME = 'Cai';
 export const GITHUB_REPO = 'sil3ntcor3/argus';
 export const GIT_REPO_URL = `https://github.com/${GITHUB_REPO}`;
-export const DOCS_URL = 'https://docs.oasm.io';
+export const DOCS_URL = `${GIT_REPO_URL}#readme`;
 export const HOME_PAGE_URL = 'https://oasm.dev';
 export const DEFAULT_ENCRYPTION_KEY = 'OASM_DEFAULT_ENCRYPTION_KEY';
 
