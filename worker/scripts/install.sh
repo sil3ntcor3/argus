@@ -4,7 +4,7 @@ set -euo pipefail
 # ============================================================
 # Argus Worker Installer for Linux/macOS
 # ============================================================
-# Downloads the latest oasm-worker binary from GitHub releases,
+# Downloads the latest Argus worker binary from GitHub releases,
 # verifies it, and optionally starts the worker immediately.
 #
 # Usage:
