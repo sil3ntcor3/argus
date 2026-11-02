@@ -54,11 +54,11 @@ export const WORKSPACE_COOKIE_NAME = 'wid';
 export const WORKSPACE_HEADER_NAME = 'X-Workspace-Id';
 export const CACHE_STATIC_RESOURCE = 14 * 24 * 60 * 60; // 14 days in seconds
 export const BOT_ID = '019b3ae4-189e-7dfe-b10e-20d847717733';
-export const BOT_EMAIL = 'bot@oasm.local';
+export const BOT_EMAIL = 'bot@argus.local';
 export const BOT_NAME = 'Cai';
 export const GITHUB_REPO = 'sil3ntcor3/argus';
 export const GIT_REPO_URL = `https://github.com/${GITHUB_REPO}`;
-export const DOCS_URL = 'https://docs.oasm.io';
+export const DOCS_URL = `${GIT_REPO_URL}#readme`;
 export const HOME_PAGE_URL = 'https://oasm.dev';
 export const DEFAULT_ENCRYPTION_KEY = 'OASM_DEFAULT_ENCRYPTION_KEY';
 

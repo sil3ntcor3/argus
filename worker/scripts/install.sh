@@ -4,13 +4,13 @@ set -euo pipefail
 # ============================================================
 # Argus Worker Installer for Linux/macOS
 # ============================================================
-# Downloads the latest oasm-worker binary from GitHub releases,
+# Downloads the latest Argus worker binary from GitHub releases,
 # verifies it, and optionally starts the worker immediately.
 #
 # Usage:
-#   ./install.sh --api-key "oasm_xxx"
-#   ./install.sh --api-key "oasm_xxx" --run
-#   ./install.sh --api-key "oasm_xxx" --grpc-host "my-server.com" --run
+#   ./install.sh --api-key "argus_xxx"
+#   ./install.sh --api-key "argus_xxx" --run
+#   ./install.sh --api-key "argus_xxx" --grpc-host "my-server.com" --run
 #
 # Requirements:
 #   - curl or wget
@@ -52,7 +52,7 @@ Options:
   --api-key KEY          (Required) API key for worker authentication
   --grpc-host HOST       gRPC server host (default: $DEFAULT_GRPC_HOST)
   --grpc-port PORT       gRPC server port (default: $DEFAULT_GRPC_PORT)
-  --grpc-tls             Connect over TLS (required for cloud.oasm.io on port 443)
+  --grpc-tls             Connect over TLS (e.g. grpc.argus.example on port 443)
   --max-concurrency N    Maximum concurrent tasks (default: $DEFAULT_MAX_CONCURRENCY)
   --network NETWORK      Network ID for internal network (optional)
   --install-dir DIR      Installation directory (default: $DEFAULT_INSTALL_DIR)
@@ -60,10 +60,10 @@ Options:
   --help                 Show this help message
 
 Examples:
-  ./install.sh --api-key "oasm_xxx"
-  ./install.sh --api-key "oasm_xxx" --run
-  ./install.sh --api-key "oasm_xxx" --grpc-host "my-server.com" --grpc-port 16276 --run
-  ./install.sh --api-key "oasm_xxx" --grpc-host "cloud.oasm.io" --grpc-port 443 --grpc-tls --run
+  ./install.sh --api-key "argus_xxx"
+  ./install.sh --api-key "argus_xxx" --run
+  ./install.sh --api-key "argus_xxx" --grpc-host "my-server.com" --grpc-port 16276 --run
+  ./install.sh --api-key "argus_xxx" --grpc-host "grpc.argus.example" --grpc-port 443 --grpc-tls --run
 EOF
     exit 0
 }
@@ -164,7 +164,7 @@ detect_platform() {
             ;;
         *)
             error "Unsupported architecture: $(uname -m)"
-            error "oasm-worker requires a 64-bit system (amd64 or arm64)."
+            error "Argus worker requires a 64-bit system (amd64 or arm64)."
             exit 1
             ;;
     esac
@@ -220,12 +220,12 @@ api_get() {
     if [[ "$HAS_CURL" == true ]]; then
         curl -sL --connect-timeout 30 --max-time 60 \
             -H "Accept: application/vnd.github.v3+json" \
-            -H "User-Agent: oasm-installer/1.0" \
+            -H "User-Agent: argus-installer/1.0" \
             "$url"
     elif [[ "$HAS_WGET" == true ]]; then
         wget -q --timeout=60 \
             --header="Accept: application/vnd.github.v3+json" \
-            --header="User-Agent: oasm-installer/1.0" \
+            --header="User-Agent: argus-installer/1.0" \
             -O- "$url"
     fi
 }
@@ -307,12 +307,12 @@ get_latest_release() {
     if [[ "$HAS_CURL" == true ]]; then
         http_code=$(curl -sL --connect-timeout 30 --max-time 60 \
             -H "Accept: application/vnd.github.v3+json" \
-            -H "User-Agent: oasm-installer/1.0" \
+            -H "User-Agent: argus-installer/1.0" \
             -w '%{http_code}' \
-            -o /tmp/oasm_release.json \
+            -o /tmp/argus_release.json \
             "$latest_url") || true
-        response=$(cat /tmp/oasm_release.json 2>/dev/null || echo "")
-        rm -f /tmp/oasm_release.json
+        response=$(cat /tmp/argus_release.json 2>/dev/null || echo "")
+        rm -f /tmp/argus_release.json
     else
         response=$(api_get "$latest_url") || true
         http_code="200"
@@ -509,7 +509,7 @@ start_worker() {
     local binary_path="$1"
 
     info ""
-    info "  Starting oasm-worker..."
+    info "  Starting Argus worker..."
     gray "  Endpoint    : ${GRPC_HOST}:${GRPC_PORT}"
     gray "  Concurrency : ${MAX_CONCURRENCY}"
     if [[ -n "$NETWORK" ]]; then

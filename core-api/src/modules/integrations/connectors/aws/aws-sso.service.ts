@@ -15,7 +15,7 @@ import type { SsoCredentialResolver } from '../connector.abstract';
 
 const DEVICE_CODE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 const REFRESH_TOKEN_GRANT = 'refresh_token';
-const REGISTERED_CLIENT_NAME = 'oasm-integration';
+const REGISTERED_CLIENT_NAME = 'argus-integration';
 const REGISTERED_CLIENT_TYPE = 'public';
 const CLIENT_SCOPES = ['sso:account:access'];
 

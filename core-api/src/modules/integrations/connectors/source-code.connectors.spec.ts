@@ -128,7 +128,7 @@ describe('source-code connectors', () => {
       expect(init.method).toBe('POST');
       expect(JSON.parse(init.body as string)).toEqual({
         title: '2 new vulnerabilities found',
-        body: 'body text\n\n<!-- oasm-event-id: evt-1 -->',
+        body: 'body text\n\n<!-- argus-event-id: evt-1 -->',
         labels: ['security'],
       });
     });
@@ -165,6 +165,64 @@ describe('source-code connectors', () => {
       ).rejects.toThrow(/Issues are disabled/);
     });
   });
+
+  describe.each([
+    {
+      provider: 'GitHub',
+      createConnector: () => new GithubConnector(),
+      baseUrl: 'https://ghe.example.test/api/v3/',
+      issueUrl: 'https://ghe.example.test/api/v3/repos/acme/security/issues',
+      bodyField: 'body',
+      headers: {
+        Authorization: 'Bearer test-token',
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      labels: ['security', 'oasm'],
+    },
+    {
+      provider: 'GitLab',
+      createConnector: () => new GitlabConnector(),
+      baseUrl: 'https://gitlab.example.test/',
+      issueUrl: 'https://gitlab.example.test/api/v4/projects/acme%2Fsecurity/issues',
+      bodyField: 'description',
+      headers: { 'PRIVATE-TOKEN': 'test-token' },
+      labels: 'security,oasm',
+    },
+  ])(
+    '$provider ticket event markers',
+    ({ createConnector, baseUrl, issueUrl, bodyField, headers, labels }) => {
+      it.each([
+        ['an event ID', 'evt-42', '\n\n<!-- argus-event-id: evt-42 -->'],
+        ['no event ID', undefined, ''],
+        ['an empty event ID', '', ''],
+      ])('preserves the issue request with %s', async (_case, eventId, marker) => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ id: 7 }, { status: 201 }));
+        const text = 'Custom OASM body\n<!-- oasm-event-id: prior -->';
+
+        await createConnector().createTicket({
+          apiToken: 'test-token',
+          baseUrl,
+          ticketRepository: 'acme/security',
+          ticketLabels: ['security', 'oasm', ''],
+          title: 'Custom notification title',
+          text,
+          eventId,
+        });
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const [url, init] = calls()[0];
+        expect(url).toBe(issueUrl);
+        expect(init.method).toBe('POST');
+        expect(init.headers).toEqual({ 'Content-Type': 'application/json', ...headers });
+        expect(JSON.parse(init.body as string)).toEqual({
+          title: 'Custom notification title',
+          [bodyField]: text + marker,
+          labels,
+        });
+      });
+    },
+  );
 
   describe('GitlabConnector', () => {
     const connector = new GitlabConnector();

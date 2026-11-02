@@ -774,7 +774,7 @@ export const SummaryReportDocument: React.FC<SummaryReportDocumentProps> = ({
       <CoverPage
         coverTitle="Attack Surface Discovery Report"
         coverDescription="Comprehensive security analysis of your external attack surface, including vulnerability assessment, asset discovery, and risk evaluation."
-        docRefPrefix="OASM-RPT"
+        docRefPrefix="ARGUS-RPT"
         dateLabel="Date Exported"
         logoBase64={data.logoBase64}
         systemNameChar={data.systemNameChar}

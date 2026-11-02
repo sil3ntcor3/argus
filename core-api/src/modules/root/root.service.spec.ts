@@ -72,6 +72,19 @@ describe('RootService', () => {
   });
 
   describe('getMetadata', () => {
+    it('returns Argus docs while preserving saved branding and installer URLs', async () => {
+      expect(await service.getMetadata()).toEqual({
+        isInit: true,
+        name: 'Open ASM',
+        logoPath: 'http://localhost:9000/system/logo.png',
+        currentVersion: '1.0.0',
+        storagePresignTtlSeconds: 900,
+        gitRepoUrl: 'https://github.com/sil3ntcor3/argus',
+        docsUrl: 'https://github.com/sil3ntcor3/argus#readme',
+        homePageUrl: 'https://oasm.dev',
+      });
+    });
+
     it('includes storagePresignTtlSeconds from StorageService config', async () => {
       const storageService = module.get<StorageService>(StorageService);
       jest

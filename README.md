@@ -10,12 +10,12 @@
   <a href="https://github.com/sil3ntcor3/argus/releases"><img src="https://img.shields.io/github/v/release/sil3ntcor3/argus?style=flat-square&label=release" alt="Latest Release"></a>
   <a href="https://github.com/sil3ntcor3/argus/actions/workflows/build-nightly.yml"><img src="https://img.shields.io/github/actions/workflow/status/sil3ntcor3/argus/build-nightly.yml?style=flat-square&label=ci" alt="CI"></a>
   <a href="https://hub.docker.com/r/sil3ntcor3/argus-api"><img src="https://img.shields.io/docker/pulls/sil3ntcor3/argus-api?style=flat-square&logo=docker&logoColor=white" alt="Docker Pulls"></a>
-  <a href="https://docs.oasm.io"><img src="https://img.shields.io/badge/docs-2fc414?style=flat-square&logo=gitbook&logoColor=white" alt="Documentation"></a>
+  <a href="DEVELOPER_GUIDE.md"><img src="https://img.shields.io/badge/docs-2fc414?style=flat-square&logo=gitbook&logoColor=white" alt="Documentation"></a>
 </p>
 
 Argus is a self-hostable, open-source Attack Surface Management platform. It inventories internet-facing assets, runs distributed scans through pluggable connectors, and tracks the resulting vulnerabilities in one workspace, with AI Studio — a security agent that works directly on that data. Security teams stop stitching together spreadsheets, one-off scanners, and hosted-only tools.
 
-📖 **Documentation → [docs.oasm.io](https://docs.oasm.io)**
+📖 **Documentation → [Developer Guide](DEVELOPER_GUIDE.md)**
 
 ## Table of Contents
 
@@ -137,7 +137,7 @@ graph TD
     C3 -->|Scan| Internet
 ```
 
-→ Full diagram and scan lifecycle: [docs.oasm.io/architecture](https://docs.oasm.io/architecture)
+→ Repository layout and service setup: [Developer Guide](DEVELOPER_GUIDE.md#project-structure)
 
 ## Connectors
 
@@ -307,7 +307,7 @@ task images:check                        # Dockerfile checks and Compose image r
 task images:build SERVICE=worker         # local build cache only; never pushes
 # Optional: PLATFORMS=linux/arm64 (default: linux/amd64,linux/arm64)
 ```
-- Production deploy: [argus-docker](https://github.com/sil3ntcor3/argus-docker) — see [docs.oasm.io/deployment](https://docs.oasm.io/deployment).
+- Production deploy: follow the [argus-docker deployment README](https://github.com/sil3ntcor3/argus-docker#readme).
 
 ## Development
 
@@ -323,7 +323,7 @@ Key commands: `task build`, `task lint` (API then console, sequential — never 
 
 Layout: `core-api/` (NestJS, `src/modules/*`, `src/mcp/`, `src/proto/`), `console/` (React 19 + Vite + TanStack Router/Query, `src/routes/`, orval client in `src/services/apis/gen/`), `worker/` (Go, `internal/*`, entries `cmd/cli` + `cmd/app`).
 
-→ Full setup, conventions, and CI: [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) · [docs.oasm.io/developer-guide](https://docs.oasm.io/developer-guide)
+→ Full setup, conventions, and CI: [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)
 
 ## Contributing
 
@@ -343,7 +343,7 @@ See [`SECURITY.md`](SECURITY.md). Short version: report sensitive vulnerabilitie
 - Repository: [github.com/sil3ntcor3/argus](https://github.com/sil3ntcor3/argus)
 - Issues: [argus/issues](https://github.com/sil3ntcor3/argus/issues) (bug-report + feature-request templates)
 - Releases: [argus/releases](https://github.com/sil3ntcor3/argus/releases)
-- Docs: [docs.oasm.io](https://docs.oasm.io)
+- Docs: [Developer Guide](DEVELOPER_GUIDE.md)
 - Connectors repo: [sil3ntcor3/argus-connectors](https://github.com/sil3ntcor3/argus-connectors)
 - Marketplace: [oasm.dev/marketplace](https://oasm.dev/marketplace)
 

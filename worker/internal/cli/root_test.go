@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -61,5 +62,36 @@ func TestRootCommandRejectsInvalidMode(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "banana") {
 		t.Fatalf("expected error to mention the invalid mode, got: %v", err)
+	}
+}
+
+// Both mode defaults share branded help without starting a worker or changing flags.
+func TestRootCommandHelpUsesArgusUsage(t *testing.T) {
+	for _, defaultMode := range []string{"cli", "node"} {
+		t.Run(defaultMode, func(t *testing.T) {
+			cmd := rootCommand(defaultMode)
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(&output)
+			cmd.SetArgs([]string{"--help"})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("execute --help: %v", err)
+			}
+			help := output.String()
+			if !strings.Contains(help, "argus-worker [flags]") {
+				t.Fatalf("help must show Argus usage; command usage is %q", cmd.UseLine())
+			}
+			for _, flagName := range []string{"mode", "api-key", "max-concurrency", "grpc-host", "grpc-port", "grpc-tls", "tool-path", "network"} {
+				if cmd.Flags().Lookup(flagName) == nil || !strings.Contains(help, "--"+flagName) {
+					t.Errorf("help must preserve --%s", flagName)
+				}
+			}
+			if got := cmd.Flags().Lookup("mode").DefValue; got != defaultMode {
+				t.Errorf("mode default changed: got %q, want %q", got, defaultMode)
+			}
+			if got := cmd.Flags().Lookup("tool-path").DefValue; got != config.DataPath("oasm-tools") {
+				t.Errorf("tool-path default changed: got %q", got)
+			}
+		})
 	}
 }

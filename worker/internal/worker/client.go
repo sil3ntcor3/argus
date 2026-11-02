@@ -71,7 +71,7 @@ func Start(ctx context.Context, cfg *config.Config, events chan<- TuiEvent) {
 	}
 	grpcClient, err := grpcclient.NewClient(cfg.ApiKey, fmt.Sprintf("%s:%d", cfg.GrpcHost, cfg.GrpcPort), cfg.ToolPath, log, dialOpts...)
 	if err != nil {
-		log.ErrorE("Failed to create OASM client", err)
+		log.ErrorE("Failed to create Argus client", err)
 		return
 	}
 	grpcClient.SetRunMode(cfg.Mode)

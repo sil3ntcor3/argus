@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Installs the latest oasm-worker binary from GitHub releases.
+    Installs the latest Argus worker binary from GitHub releases.
 
 .DESCRIPTION
-    Downloads the latest oasm-worker binary for your platform from
+    Downloads the latest Argus worker binary for your platform from
     https://github.com/sil3ntcor3/argus releases, verifies it,
     and optionally starts the worker immediately.
 
@@ -18,7 +18,7 @@
     gRPC server port. Default: 16276
 
 .PARAMETER GrpcTls
-    Connect over TLS (required for cloud.oasm.io on port 443).
+    Connect over TLS (e.g. grpc.argus.example on port 443).
 
 .PARAMETER MaxConcurrency
     Maximum number of concurrent tasks. Default: 10
@@ -33,16 +33,16 @@
     If set, start the worker immediately after installation.
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "oasm_xxx"
+    .\install.ps1 -ApiKey "argus_xxx"
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "oasm_xxx" -Run
+    .\install.ps1 -ApiKey "argus_xxx" -Run
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "oasm_xxx" -GrpcHost "my-server.com" -GrpcPort 16276 -Run
+    .\install.ps1 -ApiKey "argus_xxx" -GrpcHost "my-server.com" -GrpcPort 16276 -Run
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "oasm_xxx" -GrpcHost "cloud.oasm.io" -GrpcPort 443 -GrpcTls -Run
+    .\install.ps1 -ApiKey "argus_xxx" -GrpcHost "grpc.argus.example" -GrpcPort 443 -GrpcTls -Run
 #>
 param(
     [Parameter(Mandatory = $true)]
@@ -116,7 +116,7 @@ function Get-PlatformInfo {
     }
 
     if (-not $arch) {
-        throw "Unsupported or 32-bit architecture. oasm-worker requires a 64-bit system."
+        throw "Unsupported or 32-bit architecture. Argus worker requires a 64-bit system."
     }
 
     $extension = if ($os -eq "windows") { ".exe" } else { "" }
@@ -138,7 +138,7 @@ function Get-LatestRelease {
 
     $headers = @{
         "Accept"     = "application/vnd.github.v3+json"
-        "User-Agent" = "oasm-installer/1.0"
+        "User-Agent" = "argus-installer/1.0"
     }
 
     try {
@@ -258,7 +258,7 @@ function Start-Worker {
     }
 
     Write-Host ""
-    Write-Host "  Starting oasm-worker..." -ForegroundColor Cyan
+    Write-Host "  Starting Argus worker..." -ForegroundColor Cyan
     Write-Host "  Endpoint   : $($Config.GrpcHost):$($Config.GrpcPort)" -ForegroundColor Gray
     Write-Host "  Concurrency: $($Config.MaxConcurrency)" -ForegroundColor Gray
     if ($Config.Network -ne "") {

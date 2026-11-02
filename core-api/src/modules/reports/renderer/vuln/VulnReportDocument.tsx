@@ -467,7 +467,7 @@ export const VulnReportDocument: React.FC<VulnReportDocumentProps> = ({
     <CoverPage
       coverTitle="Vulnerability Assessment Report"
       coverDescription="Comprehensive vulnerability analysis of your attack surface, including severity distribution, critical findings, and remediation recommendations."
-      docRefPrefix="OASM-VUL"
+      docRefPrefix="ARGUS-VUL"
       logoBase64={data.logoBase64}
       systemNameChar={data.systemNameChar}
       systemName={data.systemName}
