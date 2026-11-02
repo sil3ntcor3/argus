@@ -510,7 +510,7 @@ heading('Publish')
 // of bare bullets. The message also goes through a file rather than `-m`: a
 // long release would otherwise run into the OS argument-length limit, and
 // execFileSync has no shell to expand or quote through.
-const msgFile = resolve(tmpdir(), `oasm-release-${process.pid}.md`)
+const msgFile = resolve(tmpdir(), `argus-release-${process.pid}.md`)
 writeFileSync(msgFile, tagMessage)
 detail(`git tag -a ${tag} --cleanup=whitespace -F <msg> ${head.slice(0, 7)}`)
 try {
