@@ -139,7 +139,7 @@ func TestConsumePullReportsThrottledProgressAndCompletion(t *testing.T) {
 
 	err := r.consumePull(context.Background(), strings.NewReader(stream.String()), JobSpec{
 		JobID: "job-1",
-		Image: "ghcr.io/oasm-platform/connector-nmap:7.97",
+		Image: "ghcr.io/sil3ntcor3/connector-nmap:7.97",
 	})
 	if err != nil {
 		t.Fatalf("consumePull: %v", err)
@@ -157,7 +157,7 @@ func TestConsumePullReportsThrottledProgressAndCompletion(t *testing.T) {
 		t.Fatalf("expected throttled reporting, got %d ticks: %+v", len(rec.ticks), rec.ticks)
 	}
 	for _, tk := range rec.ticks {
-		if tk.jobID != "job-1" || tk.image != "ghcr.io/oasm-platform/connector-nmap:7.97" {
+		if tk.jobID != "job-1" || tk.image != "ghcr.io/sil3ntcor3/connector-nmap:7.97" {
 			t.Fatalf("tick identity = %+v", tk)
 		}
 	}
@@ -180,7 +180,7 @@ func TestConsumePullReportsFrameError(t *testing.T) {
 
 	err := r.consumePull(context.Background(), strings.NewReader(stream), JobSpec{
 		JobID: "job-2",
-		Image: "ghcr.io/oasm-platform/connector-missing:1",
+		Image: "ghcr.io/sil3ntcor3/connector-missing:1",
 	})
 	if err == nil || !strings.Contains(err.Error(), "manifest unknown") {
 		t.Fatalf("err = %v, want manifest unknown", err)
