@@ -7,7 +7,7 @@ export class ConnectorCategoryDto extends ToolCategorySpec {
     type: 'object',
     additionalProperties: true,
     description:
-      'JSON Schema of the inputs OASM passes to the connector for this category.',
+      'JSON Schema of the inputs Argus passes to the connector for this category.',
   })
   inputsSchema?: Record<string, unknown>;
 }
@@ -15,7 +15,7 @@ export class ConnectorCategoryDto extends ToolCategorySpec {
 /**
  * Connector metadata exposed by GET /tools/connectors/:slug. Mirrors the
  * connector manifest entry; description/author/pricingTier fields are optional
- * because not every oasm-connectors manifest provides them.
+ * because not every argus-connectors manifest provides them.
  */
 export class ConnectorDto {
   @ApiProperty()

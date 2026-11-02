@@ -2387,14 +2387,14 @@ export type GetManyToolDto = {
 };
 
 /**
- * JSON Schema of the inputs OASM passes to the connector for this category.
+ * JSON Schema of the inputs Argus passes to the connector for this category.
  */
 export type ConnectorCategoryDtoInputsSchema = { [key: string]: unknown };
 
 export type ConnectorCategoryDto = {
   name: ToolCategory;
   targetTypes: TargetType[];
-  /** JSON Schema of the inputs OASM passes to the connector for this category. */
+  /** JSON Schema of the inputs Argus passes to the connector for this category. */
   inputsSchema?: ConnectorCategoryDtoInputsSchema;
 };
 
