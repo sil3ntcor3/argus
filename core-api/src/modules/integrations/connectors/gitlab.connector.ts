@@ -184,7 +184,7 @@ export class GitlabConnector
     }
 
     const title = (cfg.title ?? cfg.text.split('\n')[0]).slice(0, 255);
-    const marker = cfg.eventId ? `\n\n<!-- oasm-event-id: ${cfg.eventId} -->` : '';
+    const marker = cfg.eventId ? `\n\n<!-- argus-event-id: ${cfg.eventId} -->` : '';
     const labels = (cfg.ticketLabels ?? []).filter((l) => l.trim() !== '');
 
     await this.request(cfg, `/projects/${encodeURIComponent(project)}/issues`, {
