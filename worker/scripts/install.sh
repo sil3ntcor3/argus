@@ -309,10 +309,10 @@ get_latest_release() {
             -H "Accept: application/vnd.github.v3+json" \
             -H "User-Agent: argus-installer/1.0" \
             -w '%{http_code}' \
-            -o /tmp/oasm_release.json \
+            -o /tmp/argus_release.json \
             "$latest_url") || true
-        response=$(cat /tmp/oasm_release.json 2>/dev/null || echo "")
-        rm -f /tmp/oasm_release.json
+        response=$(cat /tmp/argus_release.json 2>/dev/null || echo "")
+        rm -f /tmp/argus_release.json
     else
         response=$(api_get "$latest_url") || true
         http_code="200"
