@@ -138,7 +138,7 @@ function Get-LatestRelease {
 
     $headers = @{
         "Accept"     = "application/vnd.github.v3+json"
-        "User-Agent" = "oasm-installer/1.0"
+        "User-Agent" = "argus-installer/1.0"
     }
 
     try {
