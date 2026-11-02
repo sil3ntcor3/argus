@@ -18,7 +18,7 @@
     gRPC server port. Default: 16276
 
 .PARAMETER GrpcTls
-    Connect over TLS (required for cloud.oasm.io on port 443).
+    Connect over TLS (e.g. grpc.argus.example on port 443).
 
 .PARAMETER MaxConcurrency
     Maximum number of concurrent tasks. Default: 10
@@ -42,7 +42,7 @@
     .\install.ps1 -ApiKey "argus_xxx" -GrpcHost "my-server.com" -GrpcPort 16276 -Run
 
 .EXAMPLE
-    .\install.ps1 -ApiKey "argus_xxx" -GrpcHost "cloud.oasm.io" -GrpcPort 443 -GrpcTls -Run
+    .\install.ps1 -ApiKey "argus_xxx" -GrpcHost "grpc.argus.example" -GrpcPort 443 -GrpcTls -Run
 #>
 param(
     [Parameter(Mandatory = $true)]

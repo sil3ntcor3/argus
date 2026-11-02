@@ -172,7 +172,7 @@ The worker runs in one of two modes, reported to core-api when it joins:
 	rootCmd.Flags().Int("grpc-port", 16276, "gRPC server port")
 	viper.BindPFlag("grpc_port", rootCmd.Flags().Lookup("grpc-port"))
 
-	rootCmd.Flags().Bool("grpc-tls", false, "Connect to the gRPC server over TLS (e.g. cloud.oasm.io:443 behind Cloudflare); overridable with WORKER_TLS_ENABLED")
+	rootCmd.Flags().Bool("grpc-tls", false, "Connect to the gRPC server over TLS (e.g. grpc.argus.example:443 behind Cloudflare); overridable with WORKER_TLS_ENABLED")
 	viper.BindPFlag("tls_enabled", rootCmd.Flags().Lookup("grpc-tls"))
 
 	rootCmd.Flags().String("tool-path", config.DataPath("oasm-tools"), "Tool path")
