@@ -533,12 +533,12 @@ func TestHandleConnectorResultFailureCarriesContainerLogs(t *testing.T) {
 	mgr := execution.NewManager(fakeRT, 0)
 
 	// Logs is keyed on a Manager execution, so the exec must exist in Manager.
-	execID, err := mgr.Submit(context.Background(), execution.JobSpec{Tool: "nmap", Image: "ghcr.io/oasm-platform/connector-nmap:7.97"})
+	execID, err := mgr.Submit(context.Background(), execution.JobSpec{Tool: "nmap", Image: "ghcr.io/sil3ntcor3/connector-nmap:7.97"})
 	if err != nil {
 		t.Fatalf("mgr.Submit: %v", err)
 	}
 	bridgeMu.Lock()
-	bridge[execID] = &bridgeEntry{jobID: "job-log", category: "ports_scanner", release: func() {}, image: "ghcr.io/oasm-platform/connector-nmap:7.97"}
+	bridge[execID] = &bridgeEntry{jobID: "job-log", category: "ports_scanner", release: func() {}, image: "ghcr.io/sil3ntcor3/connector-nmap:7.97"}
 	bridgeMu.Unlock()
 	resultCh := make(chan connector.ResultMsg, 4)
 	proxy.Register(execID, resultCh)
