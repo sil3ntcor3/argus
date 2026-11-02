@@ -48,7 +48,7 @@ const (
 // entries are additionally indexed by PoolKey for Acquire.
 type poolEntry struct {
 	ID             string    // docker container ID (runtime Handle.ID)
-	Name           string    // human-readable OASM container name
+	Name           string    // human-readable Argus container name
 	Image          string    // container image
 	ImageVersion   string    // resolved connector version
 	Tool           string    // connector/tool slug

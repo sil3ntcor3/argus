@@ -7,7 +7,7 @@ import (
 	"oasm-worker/internal/runtime"
 )
 
-// ContainerDescriptor is an immutable view of one OASM-managed container.
+// ContainerDescriptor is an immutable view of one Argus-managed container.
 // Docker inspection deliberately happens after this snapshot is copied so no
 // manager or pool lock is held across network I/O.
 type ContainerDescriptor struct {
