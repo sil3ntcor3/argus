@@ -20,7 +20,8 @@ import {
   HttpAdapterHost,
   MetadataScanner,
 } from '@nestjs/core';
-import { createMiddleware, type Auth } from 'better-auth';
+import type { Auth } from 'better-auth';
+import { createAuthMiddleware } from 'better-auth/api';
 import { toNodeHandler } from 'better-auth/node';
 import type { NodeRequest, NodeResponse } from '@nestjs/platform-node';
 import { APIErrorExceptionFilter } from '../../common/filters/api-error-exception-filter';
@@ -85,7 +86,7 @@ export class AuthModule implements NestModule, OnModuleInit {
       for (const method of methods) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
         const providerMethod = providerPrototype[method];
-        this.setupHooks(providerMethod);
+        this.setupHooks(providerMethod, provider.instance);
       }
     }
   }
@@ -138,8 +139,9 @@ export class AuthModule implements NestModule, OnModuleInit {
     );
   }
 
+  /** Chains a route hook after the existing hook, retaining its provider instance. */
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  private setupHooks(providerMethod: Function) {
+  private setupHooks(providerMethod: Function, instance: unknown) {
     if (!this.auth.options.hooks) return;
 
     for (const { metadataKey, hookType } of HOOKS) {
@@ -148,14 +150,14 @@ export class AuthModule implements NestModule, OnModuleInit {
       if (!hookPath) continue;
 
       const originalHook = this.auth.options.hooks[hookType];
-      this.auth.options.hooks[hookType] = createMiddleware(async (ctx) => {
+      this.auth.options.hooks[hookType] = createAuthMiddleware(async (ctx) => {
         if (originalHook) {
           await originalHook(ctx);
         }
 
         if (hookPath === ctx.path) {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-          await providerMethod(ctx);
+          // The method needs its provider to access injected services.
+          await providerMethod.call(instance, ctx);
         }
       });
     }
