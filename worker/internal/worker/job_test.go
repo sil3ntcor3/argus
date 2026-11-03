@@ -497,6 +497,50 @@ func TestProcessJobLegacyBranch(t *testing.T) {
 	}
 }
 
+// Connector jobs must report the unavailable engine, never use legacy commands.
+func TestProcessJobConnectorWithoutRuntime(t *testing.T) {
+	for _, command := range []struct{ name, value string }{
+		{"no-command", ""},
+		{"legacy-command", "echo legacy-fallback"},
+	} {
+		for _, category := range []string{"", "subdomains", "http_probe", "ports_scanner", "vulnerabilities", "screenshot", "url_discovery"} {
+			t.Run(command.name+"/"+category, func(t *testing.T) {
+				client, jobsSrv, _ := newWorkerTestSetup(t)
+				events := make(chan TuiEvent, 64)
+				image := "ghcr.io/sil3ntcor3/connector-nuclei:3.11.1"
+				jobsSrv.nextFn = func() (*pb.Job, error) {
+					return &pb.Job{Id: "job-nort-1", Image: image, Category: category, Command: strPtr(command.value)}, nil
+				}
+				releases := 0
+				hadJob, usedAsync := processJob(context.Background(), pullJob(t, client), client, nil, "", events, nil, nil, func() { releases++ })
+				if !hadJob || usedAsync || releases != 0 {
+					t.Fatalf("expected synchronous failure with caller-owned release, got hadJob=%v usedAsync=%v releases=%d", hadJob, usedAsync, releases)
+				}
+				results := jobsSrv.getResults()
+				if len(results) != 1 || !results[0].isError || results[0].jobID != "job-nort-1" {
+					t.Fatalf("expected one error result for the claimed job, got %+v", results)
+				}
+				if !strings.Contains(results[0].raw, "container engine unavailable") || !strings.Contains(results[0].raw, image) {
+					t.Fatalf("expected runtime cause and image in the error, got %q", results[0].raw)
+				}
+				close(events)
+				completions := 0
+				for event := range events {
+					if event.Type == EventJobCompleted {
+						completions++
+						if event.Success || event.ErrorMsg != results[0].raw {
+							t.Fatalf("completion disagrees with submitted error: %+v", event)
+						}
+					}
+				}
+				if completions != 1 {
+					t.Fatalf("expected one failure completion, got %d", completions)
+				}
+			})
+		}
+	}
+}
+
 func TestProcessJobNoJob(t *testing.T) {
 	client, jobsSrv, _ := newWorkerTestSetup(t)
 	events := make(chan TuiEvent, 64)
