@@ -5,6 +5,7 @@ import {
   type MouseEvent,
 } from 'react';
 import { ConfirmDialog } from './confirm-dialog';
+import { stageMenuLink } from './open-link-menu';
 
 /**
  * External links behind a confirmation dialog.
@@ -18,6 +19,7 @@ import { ConfirmDialog } from './confirm-dialog';
 
 let pendingHref: string | null = null;
 let activatingLink: HTMLAnchorElement | null = null;
+let menuTrigger: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 
 const setPendingHref = (href: string | null) => {
@@ -62,7 +64,13 @@ export const OpenLink = forwardRef<HTMLAnchorElement, OpenLinkProps>(
 
       event.preventDefault();
       activatingLink = event.currentTarget;
-      setPendingHref(href);
+      // A menu item can unmount before dismissal; retain its labelled trigger.
+      const menu = activatingLink.closest(
+        '[data-slot="dropdown-menu-content"]',
+      );
+      const triggerId = menu?.getAttribute('aria-labelledby');
+      menuTrigger = triggerId ? document.getElementById(triggerId) : null;
+      stageMenuLink(menu, () => setPendingHref(href));
     };
 
     return (
@@ -90,11 +98,15 @@ export function OpenLinkDialog() {
         if (!open) setPendingHref(null);
       }}
       onCloseAutoFocus={(event) => {
-        if (activatingLink?.isConnected) {
+        const target = activatingLink?.isConnected
+          ? activatingLink
+          : menuTrigger;
+        if (target?.isConnected) {
           event.preventDefault();
-          activatingLink.focus();
+          target.focus();
         }
         activatingLink = null;
+        menuTrigger = null;
       }}
       title="Open external link?"
       description="This link will open outside the console."
