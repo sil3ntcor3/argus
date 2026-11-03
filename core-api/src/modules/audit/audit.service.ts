@@ -1,3 +1,4 @@
+import { requestClientIp } from '@/common/config/trusted-proxies';
 import { AuditActorType, AuditOutcome } from '@/common/enums/enum';
 import { MCP_API_KEY_HEADER } from '@/common/constants/app.constants';
 import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
@@ -225,7 +226,7 @@ export class AuditService {
         : AuditActorType.ApiKey,
       actorName: hasUserIdentity ? req.user?.name : apiKeyActorName,
       actorEmail: req.user?.email,
-      sourceIp: req.ip ?? req.session?.ipAddress ?? undefined,
+      sourceIp: requestClientIp(req) ?? req.session?.ipAddress ?? undefined,
       userAgent:
         ((typeof headerUserAgent === 'string'
           ? headerUserAgent

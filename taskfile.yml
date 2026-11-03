@@ -12,6 +12,11 @@ includes:
     dir: ./worker
 
 tasks:
+  security:docker-build:
+    desc: Build the API image locally for security-port verification without publishing
+    cmds:
+      - docker buildx build --load --platform {{.PLATFORM | default "linux/arm64"}} --tag argus-security-api:local --file core-api/Dockerfile .
+
   # Development environment setup and start
   # Starts both API and console development servers with hot-reload enabled
   # Environment: development mode

@@ -478,7 +478,7 @@ describe('StorageService', () => {
       expect(command.input).toMatchObject({
         Bucket: 'default',
         Key: 'b/r.pdf',
-        ResponseContentDisposition: 'attachment; filename="r.pdf"',
+        ResponseContentDisposition: 'attachment; filename="r.pdf"; filename*=UTF-8\'\'r.pdf',
         ResponseContentType: 'application/pdf',
       });
       expect(mockGetSignedUrl).toHaveBeenCalledWith(
@@ -495,6 +495,19 @@ describe('StorageService', () => {
       await expect(
         service.getPresignedDownloadUrl({ bucket: 'default', key: '../a' }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+
+  describe('download filename safety', () => {
+    it.each([
+      ['a"b\r\nc.txt', 'attachment; filename="a_b__c.txt"; filename*=UTF-8\'\'a%22b%0D%0Ac.txt'],
+      ["bá'o(1).pdf", 'attachment; filename="b_\'o(1).pdf"; filename*=UTF-8\'\'b%C3%A1%27o%281%29.pdf'],
+      ['a\\b\0.txt', 'attachment; filename="a_b_.txt"; filename*=UTF-8\'\'a%5Cb%00.txt'],
+      ['a\uD800b.txt', 'attachment; filename="a_b.txt"; filename*=UTF-8\'\'a%EF%BF%BDb.txt'],
+    ])('encodes the user-supplied filename %p', async (fileName, expected) => {
+      await service.getPresignedDownloadUrl({ bucket: 'reports', key: 'a/file', fileName });
+      expect(mockGetSignedUrl.mock.calls.at(-1)?.[1].input.ResponseContentDisposition).toBe(expected);
     });
   });
 

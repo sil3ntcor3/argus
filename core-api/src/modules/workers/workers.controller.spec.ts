@@ -8,6 +8,13 @@ import { Role, WorkerScope, WorkerType } from '@/common/enums/enum';
 import type { UserContextPayload } from '@/common/interfaces/app.interface';
 import { Metadata } from '@grpc/grpc-js';
 import { ForbiddenException } from '@nestjs/common';
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { RpcException } from '@nestjs/microservices';
+import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join as joinPath } from 'path';
+import { lastValueFrom, toArray } from 'rxjs';
+import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
 import { Reflector } from '@nestjs/core';
 import type { GetManyWorkersDto } from './dto/workers.dto';
 import { RemoteExecuteSubscribeService } from './remote-execute-subscribe.service';
@@ -347,5 +354,74 @@ describe('WorkersController.grpcJoin', () => {
     await expect(
       join('172.19.0.5:443', '203.0.113.7, 172.19.0.7'),
     ).resolves.toBe('203.0.113.7');
+  });
+});
+
+
+describe('WorkersController tool archive confinement', () => {
+  const controller = new WorkersController(
+    {} as never, {} as never, {} as never,
+    {} as never, {} as never, {} as never,
+  );
+  let root: string;
+  const download = (path: string) => lastValueFrom(controller.grpcStorage({ path }).pipe(toArray()));
+
+  beforeEach(() => {
+    root = mkdtempSync(joinPath(tmpdir(), 'argus-archive-'));
+    mkdirSync(joinPath(root, 'public/archived/linux_amd64'), { recursive: true });
+    writeFileSync(joinPath(root, 'public/archived/linux_amd64/tool.zip'), 'zip-bytes');
+    writeFileSync(joinPath(root, '.env'), 'fake-sensitive-value');
+    jest.spyOn(process, 'cwd').mockReturnValue(root);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it.each(['grpcStorage', 'grpcBuiltinToolRegistry'] as const)('requires a worker token on %s', (method) => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, WorkersController.prototype[method]))
+      .toContain(GrpcWorkerTokenGuard);
+  });
+
+  it('streams an ordinary archive and marks its end', async () => {
+    const chunks = await download('static/archived/linux_amd64/tool.zip');
+    expect(Buffer.concat(chunks.map((chunk) => chunk.chunk)).toString()).toBe('zip-bytes');
+    expect(chunks.at(-1)?.eof).toBe(true);
+  });
+
+  it.each(['.env', 'static/../.env', 'static/archived/../../.env', '../.env', '/etc/passwd', 'public/archived'])('rejects a path outside the archive: %s', async (path) => {
+      await expect(download(path)).rejects.toThrow(RpcException);
+    });
+
+  it('rejects an archive symlink to a file outside the archive', async () => {
+    symlinkSync(joinPath(root, '.env'), joinPath(root, 'public/archived/linux_amd64/leak.zip'));
+    await expect(download('static/archived/linux_amd64/leak.zip')).rejects.toThrow(RpcException);
+  });
+
+  it('rejects a platform symlink outside the archive', async () => {
+    mkdirSync(joinPath(root, 'outside'));
+    writeFileSync(joinPath(root, 'outside/leak.zip'), 'secret');
+    symlinkSync(joinPath(root, 'outside'), joinPath(root, 'public/archived/linux_arm64'));
+    await expect(download('static/archived/linux_arm64/leak.zip')).rejects.toThrow(RpcException);
+    await expect(controller.grpcBuiltinToolRegistry({ os: 'linux', arch: 'arm64' }))
+      .resolves.toEqual({ toolPaths: [] });
+  });
+
+  it('rejects a symlinked archive root', async () => {
+    renameSync(joinPath(root, 'public/archived'), joinPath(root, 'outside'));
+    symlinkSync(joinPath(root, 'outside'), joinPath(root, 'public/archived'));
+    await expect(download('static/archived/linux_amd64/tool.zip')).rejects.toThrow(RpcException);
+    await expect(controller.grpcBuiltinToolRegistry({ os: 'linux', arch: 'amd64' }))
+      .resolves.toEqual({ toolPaths: [] });
+  });
+
+  it('lists only regular archives for a valid platform', async () => {
+    mkdirSync(joinPath(root, 'public/archived/linux_amd64/directory.zip'));
+    symlinkSync(joinPath(root, '.env'), joinPath(root, 'public/archived/linux_amd64/leak.zip'));
+    await expect(controller.grpcBuiltinToolRegistry({ os: 'linux', arch: 'amd64' }))
+      .resolves.toEqual({ toolPaths: ['static/archived/linux_amd64/tool.zip'] });
+    await expect(controller.grpcBuiltinToolRegistry({ os: '..', arch: '../..' }))
+      .resolves.toEqual({ toolPaths: [] });
   });
 });

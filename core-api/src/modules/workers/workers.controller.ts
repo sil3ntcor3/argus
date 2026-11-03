@@ -33,9 +33,9 @@ import {
 } from '@nestjs/common';
 import { GrpcMethod, RpcException } from '@nestjs/microservices';
 import { ApiTags } from '@nestjs/swagger';
-import { createReadStream } from 'fs';
-import { readdir } from 'fs/promises';
-import { join } from 'path';
+import { constants, type ReadStream } from 'fs';
+import { lstat, open, readdir, realpath, type FileHandle } from 'fs/promises';
+import { join, relative, resolve, sep } from 'path';
 import { Observable } from 'rxjs';
 import {
   GetManyWorkersDto,
@@ -88,6 +88,57 @@ function toGrpcTimestamp(value: string): GrpcTimestamp {
     seconds: Math.floor(milliseconds / 1000).toString(),
     nanos: (milliseconds % 1000) * 1_000_000,
   };
+}
+
+
+const TOOL_ARCHIVE_DIR = 'public/archived';
+
+/** Reject links at the archive boundary, including an indirect public/ link. */
+async function toolArchiveRoot(): Promise<string> {
+  const cwd = await realpath(process.cwd());
+  const root = join(cwd, TOOL_ARCHIVE_DIR);
+  const stat = await lstat(root);
+  if (!stat.isDirectory() || await realpath(root) !== root) {
+    throw new RpcException('Invalid tool archive directory');
+  }
+  return root;
+}
+
+/** Platform directories are direct, non-symlink children of the archive. */
+async function toolArchivePlatform(platform: string): Promise<string> {
+  if (!/^[a-z0-9]+_[a-z0-9]+$/.test(platform)) {
+    throw new RpcException('Invalid tool archive platform');
+  }
+  const path = join(await toolArchiveRoot(), platform);
+  if (!(await lstat(path)).isDirectory() || await realpath(path) !== path) {
+    throw new RpcException('Invalid tool archive platform');
+  }
+  return path;
+}
+
+/** Open only a regular file from a listed platform, refusing final symlinks. */
+async function openToolArchive(requestPath: string): Promise<FileHandle> {
+  if (typeof requestPath !== 'string') throw new RpcException('Invalid archive path');
+  const archive = resolve(process.cwd(), TOOL_ARCHIVE_DIR);
+  const normalized = requestPath.startsWith('static/') ? 'public/' + requestPath.slice(7) : requestPath;
+  const requested = resolve(process.cwd(), normalized);
+  const parts = relative(archive, requested).split(sep);
+  if (parts.length !== 2 || !parts[1] || parts[1] === '..') {
+    throw new RpcException('Path is outside the tool archive');
+  }
+  const platform = await toolArchivePlatform(parts[0]);
+  const filePath = join(platform, parts[1]);
+  if (await realpath(filePath) !== filePath) {
+    throw new RpcException('Archive symlinks are not allowed');
+  }
+  const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    if (!(await handle.stat()).isFile()) throw new RpcException('Archive must be a regular file');
+    return handle;
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
 }
 
 @ApiTags('Workers')
@@ -253,29 +304,31 @@ export class WorkersController {
     };
   }
 
+  @UseGuards(GrpcWorkerTokenGuard)
   @GrpcMethod('WorkersService', 'Storage')
   grpcStorage(request: {
     path: string;
   }): Observable<{ chunk: Buffer; offset: number; eof: boolean }> {
     return new Observable((subscriber) => {
-      const normalizedPath = request.path.replace(/^static/, 'public');
-      const filePath = join(process.cwd(), normalizedPath);
-      const stream = createReadStream(filePath, { highWaterMark: 1024 * 1024 }); // 1MB chunks
-      let offset = 0;
-
-      stream.on('data', (chunk: Buffer) => {
-        subscriber.next({ chunk, offset, eof: false });
-        offset += chunk.length;
-      });
-
-      stream.on('end', () => {
-        subscriber.next({ chunk: Buffer.alloc(0), offset, eof: true });
-        subscriber.complete();
-      });
-
-      stream.on('error', (err) => {
-        subscriber.error(err);
-      });
+      let stream: ReadStream | undefined;
+      void openToolArchive(request.path).then(async (handle) => {
+        if (subscriber.closed) {
+          await handle.close();
+          return;
+        }
+        stream = handle.createReadStream({ highWaterMark: 1024 * 1024 });
+        let offset = 0;
+        stream.on('data', (chunk: Buffer) => {
+          subscriber.next({ chunk, offset, eof: false });
+          offset += chunk.length;
+        });
+        stream.on('end', () => {
+          subscriber.next({ chunk: Buffer.alloc(0), offset, eof: true });
+          subscriber.complete();
+        });
+        stream.on('error', (error) => subscriber.error(new RpcException(error.message)));
+      }).catch(() => subscriber.error(new RpcException('Tool archive is unavailable')));
+      return () => stream?.destroy();
     });
   }
 
@@ -413,18 +466,20 @@ export class WorkersController {
     return this.workersService.connectInternalNetwork(request);
   }
 
+  @UseGuards(GrpcWorkerTokenGuard)
   @GrpcMethod('WorkersService', 'BuiltinToolRegistry')
   async grpcBuiltinToolRegistry(request: {
     os: string;
     arch: string;
   }): Promise<{ toolPaths: string[] }> {
-    const platform = `${request.os.toLowerCase()}_${request.arch.toLowerCase()}`;
-    const platformPath = join(process.cwd(), 'public/archived', platform);
-
     try {
-      const files = await readdir(platformPath);
+      const platform = `${request.os.toLowerCase()}_${request.arch.toLowerCase()}`;
+      const platformPath = await toolArchivePlatform(platform);
+      const files = await readdir(platformPath, { withFileTypes: true });
       return {
-        toolPaths: files.map((file) => `static/archived/${platform}/${file}`),
+        toolPaths: files.filter((file) => file.isFile()).map((file) =>
+          `static/archived/${platform}/${file.name}`,
+        ).sort(),
       };
     } catch {
       return { toolPaths: [] };
