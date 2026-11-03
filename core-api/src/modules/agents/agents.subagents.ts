@@ -578,12 +578,25 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
         workspaceId,
         overrides.skills ?? [],
       );
+      // Only explicitly allowed short-term memory joins the conversation's
+      // scratchpad; long-term memory stays with the main agent.
+      const memoryTools = this.agentTool.getMemoryTools(
+        workspaceId,
+        userId,
+        conversation.id,
+      );
+      const requested = subagentToolNames(def, allowWrite);
       const tools = withoutDisabledTools<Record<string, Tool>>(
         {
           ...Object.fromEntries(
-            subagentToolNames(def, allowWrite)
+            requested
               .filter((t) => allTools[t])
               .map((t) => [t, allTools[t]]),
+          ),
+          ...Object.fromEntries(
+            requested
+              .filter((name) => name.startsWith('stm_') && name in memoryTools)
+              .map((name) => [name, memoryTools[name] as Tool]),
           ),
           ...(skills.length > 0
             ? {
