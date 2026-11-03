@@ -67,6 +67,18 @@ export function getHourBucketedSigningDate(now: Date = new Date()): Date {
   return bucketed;
 }
 
+/** Build an attachment header without allowing a filename to change its syntax. */
+export function attachmentDisposition(fileName: string): string {
+  // UTF-8 round-tripping replaces lone surrogates before URI encoding.
+  const name = Buffer.from(fileName, 'utf8').toString('utf8');
+  const fallback = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const encoded = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (character) => '%' + character.charCodeAt(0).toString(16).toUpperCase(),
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 /** Minimum clamped TTL that may use the hour-bucketed signing date (2h). */
 export const HOUR_BUCKET_MIN_TTL_SECONDS = 7200;
 
@@ -551,7 +563,7 @@ export class StorageService implements OnModuleInit {
       Bucket: bucket,
       Key: key,
       ResponseContentDisposition: fileName
-        ? 'attachment; filename="' + fileName + '"'
+        ? attachmentDisposition(fileName)
         : undefined,
       ResponseContentType: contentType || undefined,
     });

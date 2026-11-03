@@ -150,7 +150,7 @@ Migration location: `core-api/src/database/migrations/` (58 files, newest last).
 | `console/.env` (from `example.env`) | `VITE_API_URL` (dev `http://localhost:6276`) |
 | `worker/.env` (from `.example.env`) | `WORKER_API_KEY`, `WORKER_MAX_CONCURRENCY`, `WORKER_GRPC_HOST/PORT`, plus `WORKER_MODE`, `WORKER_TOOL_PATH`, `WORKER_TOKEN_FILE`, `WORKER_CONNECTOR_ADDR`, `WORKER_CONNECTOR_ADDR_ALLOW_AUTODETECT`, `WORKER_NETWORK` |
 
-`ENCRYPTION_KEYS` semantics matter: the last key encrypts *and* decrypts, earlier keys are decrypt-only — reordering the list locks every encrypted column.
+`ENCRYPTION_KEYS`: the last key encrypts, earlier keys decrypt only. New data uses authenticated AES-256-GCM with stable key IDs; older CBC data stays readable. The original OASM default key value is a compatibility key and must never be rebranded. Outside development/test, startup validates both encryption and auth signing keys. The boot upgrade rewrites known encrypted stores, including inline workflow configs; retain all keys and a pre-upgrade database backup until verification is complete. See `docs/operations/security-port-rollout.md`.
 
 ## Architecture Patterns
 
@@ -215,7 +215,7 @@ Volumes worth knowing: `pgdata`, `redis-data`, `geoip-data`, `rustfs-data`, `wor
 6. **Generated code is read-only**: `console/src/services/apis/gen/`, `console/src/routeTree.gen.ts`, `worker/internal/gen/`, `.open-api/*`, `core-api/resources/connectors/manifest.json`.
 7. **`.open-api/` is generated *and* git-tracked** (it is **not** gitignored, contrary to older docs). core-api rewrites `open-api.json` on every boot, so it shows up as a modified file after any API start — that is expected. When the contract changes, commit the spec together with the regenerated console client.
 8. **Lint autofixes.** `task api:lint` runs with `--fix`; re-read files after linting instead of assuming your version survived.
-9. **`ENCRYPTION_KEYS` is order-sensitive** — the last key is the only one that encrypts.
+9. **Only the last `ENCRYPTION_KEYS` entry encrypts.** Append for rotation; retain older keys until all stored formats are verified. Old application images cannot read new GCM data.
 10. **`task lint` is sequential by design** (two type-aware ESLint processes exhaust RAM). Never run `api:lint` and `console:lint` in parallel/background.
 11. **RustFS/S3 (`RUSTFS_*`) is not optional** — it backs storage, PDF reports, *and* the worker tool registry (`BuiltinToolRegistry` serves the tool archives). Compose only waits for `rustfs` to be *started*, not healthy, so a slow first boot can fail the first worker tool download.
 12. **The worker needs the Docker socket**; without the right group id the daemon returns "permission denied" and API-version negotiation silently falls back to 1.24.

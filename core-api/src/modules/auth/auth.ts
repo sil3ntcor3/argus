@@ -7,11 +7,13 @@ import { admin, openAPI } from 'better-auth/plugins';
 import { randomUUID } from 'crypto';
 import 'dotenv/config';
 import { Pool } from 'pg';
+import { resolveAuthSecret } from './auth-env';
 import { createSessionRedis, createSessionStorage } from './session-storage';
 
 export const auth: unknown = betterAuth({
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
   database: new Pool(databaseConnectionConfig),
+  secret: resolveAuthSecret(),
   // Sessions are resolved from Redis first; the database is only queried on a
   // cache miss. See session-storage.ts. The connection is its own: this
   // instance is built at import time, outside Nest DI, before RedisService.
@@ -77,8 +79,11 @@ export const auth: unknown = betterAuth({
   // `/delete-user*` (self-service) is blocked too, for the same reason.
   // `/admin/list-users` and `/admin/get-user` are replaced by GET /api/admin/users
   // and GET /api/admin/users/:id.
+  // Close public registration at the HTTP router only. Server-side signup
+  // still provisions the first admin; admins use /admin/create-user.
   disabledPaths: [
     ...AUTH_IGNORE_ROUTERS,
+    '/sign-up/email',
     '/admin/remove-user',
     '/admin/list-users',
     '/admin/get-user',
