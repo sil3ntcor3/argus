@@ -138,7 +138,7 @@ describe('AgentsSubagentsService', () => {
   let service: AgentsSubagentsService;
   let repo: Record<string, jest.Mock> & { manager: { transaction: jest.Mock } };
   let conversationRepo: Record<string, unknown>;
-  let agentTool: { getTools: jest.Mock };
+  let agentTool: { getTools: jest.Mock; getMemoryTools: jest.Mock };
   let agentsConfig: Record<string, jest.Mock>;
   let definitions: { listSubagents: jest.Mock };
   let skillRepo: { findOne: jest.Mock; find: jest.Mock };
@@ -177,6 +177,7 @@ describe('AgentsSubagentsService', () => {
       manager: { transaction: jest.fn(() => Promise.resolve(null)) },
     };
     agentTool = {
+      getMemoryTools: jest.fn(),
       getTools: jest.fn(() =>
         Object.fromEntries(
           [
@@ -187,6 +188,13 @@ describe('AgentsSubagentsService', () => {
         ),
       ),
     };
+    agentTool.getMemoryTools = jest.fn(() =>
+      Object.fromEntries(
+        ['stm_write', 'stm_read', 'stm_list', 'ltm_write', 'ltm_read', 'ltm_delete'].map(
+          (name) => [name, { description: name, execute: jest.fn() }],
+        ),
+      ),
+    );
     definitions = {
       listSubagents: jest.fn(() => Promise.resolve([definition()])),
     };
@@ -299,6 +307,117 @@ describe('AgentsSubagentsService', () => {
     expect(Object.keys(call.tools)).toEqual(
       expect.arrayContaining(['inspect_issue', 'execute_remote_command']),
     );
+  });
+
+  describe('declared short-term memory', () => {
+    const job = { id: 's1', conversationId: 'c1', name: 'researcher', task: 't' };
+
+    const run = async () => {
+      (streamText as jest.Mock).mockReturnValue(
+        streamResult({ text: 'ok', steps: [] }),
+      );
+      await (service as unknown as { run: (j: unknown) => Promise<void> }).run(
+        job,
+      );
+      return ((streamText as jest.Mock).mock.calls[0][0].tools ?? {}) as Record<
+        string,
+        unknown
+      >;
+    };
+
+    it('supplies declared STM tools with the parent workspace, owner and conversation', async () => {
+      definitions.listSubagents.mockResolvedValue([
+        definition({
+          metadata: {
+            tools: [
+              'inspect_issue',
+              'stm_write',
+              'stm_read',
+              'stm_list',
+              'ltm_write',
+              'ltm_read',
+              'ltm_delete',
+            ],
+          },
+        }),
+      ]);
+      // Enabling LTM must not make it available to a background subagent.
+      agentsConfig.find.mockResolvedValue({ memoryEnabled: true });
+      expect(Object.keys(await run()).sort()).toEqual([
+        'inspect_issue',
+        'stm_list',
+        'stm_read',
+        'stm_write',
+      ]);
+      expect(agentTool.getMemoryTools).toHaveBeenCalledWith('w1', 'u1', 'c1');
+    });
+
+    it('does not supply unrequested or unknown memory tools', async () => {
+      definitions.listSubagents.mockResolvedValue([
+        definition({
+          metadata: {
+            tools: ['stm_read', 'stm_missing'],
+          },
+        }),
+      ]);
+      expect(Object.keys(await run())).toEqual(['stm_read']);
+    });
+
+    it('respects disabled STM tools while long-term memory is off', async () => {
+      agentsConfig.find.mockResolvedValue({
+        memoryEnabled: false,
+        disabledTools: ['stm_write'],
+      });
+      definitions.listSubagents.mockResolvedValue([
+        definition({
+          metadata: {
+            tools: ['stm_read', 'stm_write'],
+          },
+        }),
+      ]);
+      expect(Object.keys(await run())).toEqual(['stm_read']);
+    });
+
+    it.each(['manual', 'plan'])(
+      'keeps custom %s subagents within their existing read-only allowlist',
+      async (approvalMode) => {
+        (conversationRepo.findOne as jest.Mock).mockResolvedValue({
+          id: 'c1',
+          workspaceId: 'w1',
+          createdBy: 'u1',
+          llmConfigId: 'l1',
+          approvalMode,
+        });
+        definitions.listSubagents.mockResolvedValue([
+          definition({
+            isBuiltin: false,
+            metadata: {
+              tools: ['inspect_issue', 'stm_write', 'stm_read', 'ltm_read'],
+            },
+          }),
+        ]);
+        expect(Object.keys(await run())).toEqual(['inspect_issue']);
+      },
+    );
+
+    it('supplies declared STM tools to an AUTO custom subagent', async () => {
+      (conversationRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'c1',
+        workspaceId: 'w1',
+        createdBy: 'u1',
+        llmConfigId: 'l1',
+        approvalMode: 'auto',
+      });
+      definitions.listSubagents.mockResolvedValue([
+        definition({
+          isBuiltin: false,
+          metadata: {
+            tools: ['stm_write'],
+          },
+        }),
+      ]);
+      expect(Object.keys(await run())).toEqual(['stm_write']);
+    });
   });
 
   it('offers a subagent only the skills it declares, through load_skill', async () => {
