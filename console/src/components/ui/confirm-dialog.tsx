@@ -22,6 +22,8 @@ interface ConfirmDialogProps {
   /** Controlled open state; the dialog manages its own state when omitted. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Restore focus for controlled dialogs opened without a trigger. */
+  onCloseAutoFocus?: React.ComponentProps<typeof DialogContent>['onCloseAutoFocus'];
   confirmText?: string;
   disabled?: boolean;
   cancelText?: string;
@@ -36,6 +38,7 @@ export const ConfirmDialog = ({
   trigger,
   open: controlledOpen,
   onOpenChange,
+  onCloseAutoFocus,
   confirmText = 'Confirm',
   disabled = false,
   cancelText = 'Cancel',
@@ -108,7 +111,7 @@ export const ConfirmDialog = ({
           {clonedTrigger}
         </DialogTrigger>
       )}
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
