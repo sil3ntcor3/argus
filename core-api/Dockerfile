@@ -52,6 +52,8 @@ COPY --from=builder /prod/core-api/dist ./dist
 COPY --from=builder /prod/core-api/public ./public
 COPY --from=builder /prod/core-api/proto ./proto
 COPY --from=builder /prod/core-api/resources ./resources
+# Ship the existing tracked auth fragment without adding a second source copy.
+COPY .open-api/better-auth.json ./resources/openapi/better-auth.json
 
 EXPOSE 6276
 
