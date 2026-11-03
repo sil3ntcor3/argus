@@ -354,22 +354,30 @@ export class AgentsCompletionsService {
   }
 
   /**
-   * Aborts the active run of a conversation. Returns false if there is none.
-   * The run stays registered (so `running` stays true) until it has saved
-   * its stopped state; clearActiveRun removes it then.
+   * Aborts the active run of a conversation and cancels its pending and
+   * running subagents, also when the run itself already ended. Returns false
+   * if there was nothing to stop. The run stays registered (so `running`
+   * stays true) until it has saved its stopped state; clearActiveRun removes
+   * it then.
    */
-  stopRun(conversationId: string): boolean {
+  async stopRun(conversationId: string): Promise<boolean> {
     const controller = this.activeRuns.get(conversationId);
-    if (!controller || controller.signal.aborted) return false;
-    controller.abort();
-    // A user stop leaves no step running: reset the in_progress step back to
-    // pending so the todo list stops spinning (the live stream is closing, so
-    // the client reflects this optimistically / on its next load). Matches the
-    // error path, and lets a later message resume the step.
-    this.resetTodosOnError(conversationId).catch((err) =>
-      this.logger.error('Failed to reset todos on stop', err),
-    );
-    return true;
+    const aborted = !!controller && !controller.signal.aborted;
+    if (aborted) {
+      // First, so the run queues no subagent after the cancel below
+      controller.abort();
+      // A user stop leaves no step running: reset the in_progress step back
+      // to pending so the todo list stops spinning (the live stream is
+      // closing, so the client reflects this optimistically / on its next
+      // load). Matches the error path, and lets a later message resume the
+      // step.
+      this.resetTodosOnError(conversationId).catch((err) =>
+        this.logger.error('Failed to reset todos on stop', err),
+      );
+    }
+    const cancelled =
+      await this.subagents.cancelForConversation(conversationId);
+    return aborted || cancelled > 0;
   }
 
   /**
