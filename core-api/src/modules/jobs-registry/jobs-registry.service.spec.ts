@@ -120,6 +120,7 @@ describe('JobsRegistryService', () => {
 
   const mockWorkerStreamRegistry = {
     publishCancel: jest.fn().mockResolvedValue(undefined),
+    publishJobsAvailable: jest.fn().mockResolvedValue(undefined),
     register: jest.fn(),
     unregister: jest.fn(),
   };
@@ -203,6 +204,7 @@ describe('JobsRegistryService', () => {
     (service as any).toolsService = mockToolsService;
     // The mocks are module-scoped, so cancel pushes must not leak between tests.
     mockWorkerStreamRegistry.publishCancel.mockClear();
+    mockWorkerStreamRegistry.publishJobsAvailable.mockReset().mockResolvedValue(undefined);
   });
 
   describe('reRunJob', () => {
@@ -220,7 +222,8 @@ describe('JobsRegistryService', () => {
       },
     };
 
-    it('should successfully re-run a job', async () => {
+    it.each([false, true])('commits a re-run before its best-effort hint (Redis failure: %s)', async (failHint) => {
+      if (failHint) mockWorkerStreamRegistry.publishJobsAvailable.mockRejectedValueOnce(new Error('Redis unavailable'));
       const mockQueryRunner = {
         connect: jest.fn(),
         startTransaction: jest.fn(),
@@ -238,7 +241,7 @@ describe('JobsRegistryService', () => {
       };
 
       mockDataSource.createQueryRunner.mockReturnValue(mockQueryRunner);
-      mockJobRepository.getOne.mockResolvedValue(mockJob);
+      mockJobRepository.getOne.mockResolvedValue({ ...mockJob, retryCount: 0 });
 
       const result = await service.reRunJob(mockWorkspaceId, mockJobId);
 
@@ -247,6 +250,10 @@ describe('JobsRegistryService', () => {
       expect(mockQueryRunner.startTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(result).toEqual({ message: 'Job re-run successfully' });
+      expect(mockWorkerStreamRegistry.publishJobsAvailable).toHaveBeenCalledWith(mockWorkspaceId);
+      expect(mockQueryRunner.commitTransaction.mock.invocationCallOrder[0]).toBeLessThan(
+        mockWorkerStreamRegistry.publishJobsAvailable.mock.invocationCallOrder[0],
+      );
 
       // Verify the job was updated correctly
       expect(mockQueryRunner.manager.save).toHaveBeenCalledWith({
@@ -303,6 +310,7 @@ describe('JobsRegistryService', () => {
         service.reRunJob(mockWorkspaceId, mockJobId),
       ).rejects.toThrow('Database error');
       expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+      expect(mockWorkerStreamRegistry.publishJobsAvailable).not.toHaveBeenCalled();
     });
   });
 
@@ -1972,12 +1980,30 @@ describe('JobsRegistryService', () => {
       expect(mockAssetServiceQB.distinct).not.toHaveBeenCalled();
 
       expect(result).toHaveLength(2);
+      expect(mockWorkerStreamRegistry.publishJobsAvailable).toHaveBeenCalledTimes(1);
+      expect(mockWorkerStreamRegistry.publishJobsAvailable).toHaveBeenCalledWith('ws-1');
+      expect(mockJobRepo.save.mock.invocationCallOrder[0]).toBeLessThan(
+        mockWorkerStreamRegistry.publishJobsAvailable.mock.invocationCallOrder[0],
+      );
       expect(mockJobRepo.save).toHaveBeenCalledTimes(1);
       expect(mockJobRepo.save).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({ category: ToolCategory.SCREENSHOT }),
         ]),
       );
+    });
+
+    it('does not publish a hint when job persistence fails', async () => {
+      mockAssetServiceQB.getMany.mockResolvedValue([makeService('as-1')]);
+      mockJobRepo.save.mockRejectedValueOnce(new Error('database unavailable'));
+
+      await expect(service.createNewJob({
+        tool: screenshotTool,
+        targetIds: ['target-1'],
+        workspaceId: 'ws-1',
+        workflow: { id: 'wf-1' } as any,
+      })).rejects.toThrow('database unavailable');
+      expect(mockWorkerStreamRegistry.publishJobsAvailable).not.toHaveBeenCalled();
     });
 
     it('SCREENSHOT edge (empty): no live services => 0 jobs inserted, no throw', async () => {
@@ -1992,6 +2018,7 @@ describe('JobsRegistryService', () => {
 
       expect(result).toHaveLength(0);
       expect(mockJobRepo.save).not.toHaveBeenCalled();
+      expect(mockWorkerStreamRegistry.publishJobsAvailable).not.toHaveBeenCalled();
     });
 
     it('SCREENSHOT edge (dedup): EXISTS yields one job per service even with many http_responses', async () => {

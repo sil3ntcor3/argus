@@ -64,6 +64,9 @@ type Client struct {
 	streamCancelMu sync.RWMutex
 	streamCancel   StreamCancelFunc
 
+	// jobsAvailable coalesces a burst of claimable-job hints into one pending wake-up.
+	jobsAvailable chan struct{}
+
 	// agentSandbox is advertised on RemoteExecuteSubscribe (x-agent-sandbox)
 	// when agent shell commands run in a per-session sandbox container.
 	agentSandbox atomic.Bool
@@ -120,6 +123,7 @@ func NewClient(apiKey, grpcHost, toolPath string, logger Logger, dialOpts ...grp
 		telemetryBaseDelay:   1 * time.Second,
 		telemetryMaxDelay:    30 * time.Second,
 		telemetryCallTimeout: 3 * time.Second,
+		jobsAvailable:        make(chan struct{}, 1),
 	}
 
 	c.tokenFile, c.tokenLock = claimTokenFile(resolveTokenFilePath(), logger)
@@ -228,6 +232,11 @@ func (c *Client) streamCancelHandler() StreamCancelFunc {
 	c.streamCancelMu.RLock()
 	defer c.streamCancelMu.RUnlock()
 	return c.streamCancel
+}
+
+// JobsAvailable notifies the poller that it may claim without waiting for idle backoff.
+func (c *Client) JobsAvailable() <-chan struct{} {
+	return c.jobsAvailable
 }
 
 // SetRunMode stores the worker run mode ("cli", "node", or "") which is

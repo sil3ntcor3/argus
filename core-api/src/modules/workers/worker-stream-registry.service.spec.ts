@@ -1,8 +1,10 @@
+import { WorkerScope } from '@/common/enums/enum';
 import { Test } from '@nestjs/testing';
 import { Subject } from 'rxjs';
 import { RedisService } from '@/services/redis/redis.service';
 import {
   WORKER_STREAM_CANCEL_CHANNEL,
+  WORKER_STREAM_JOBS_CHANNEL,
   WorkerStreamRegistry,
 } from './worker-stream-registry.service';
 
@@ -141,4 +143,102 @@ describe('WorkerStreamRegistry', () => {
       expect.stringContaining('"jobId":"job-1"'),
     );
   });
+  it('routes cross-instance hints to matching workspace and cloud streams only', async () => {
+    const peerHandlers = new Map<string, (channel: string, message: string) => void>();
+    const peer = new WorkerStreamRegistry({
+      subscribe: jest.fn((channel: string, handler: (channel: string, message: string) => void) => {
+        peerHandlers.set(channel, handler);
+        return Promise.resolve();
+      }),
+      unsubscribe: jest.fn().mockResolvedValue(undefined),
+    } as unknown as RedisService);
+    await peer.onModuleInit();
+    const collect = () => {
+      const subject = new Subject<Record<string, unknown>>();
+      const messages: Record<string, unknown>[] = [];
+      subject.subscribe((message) => messages.push(message));
+      return { subject, messages };
+    };
+    const own = collect();
+    const other = collect();
+    const cloud = collect();
+    const unscoped = collect();
+    peer.register('own', own.subject, { workspaceId: 'workspace-a' });
+    peer.register('other', other.subject, { workspaceId: 'workspace-b' });
+    peer.register('cloud', cloud.subject, { scope: WorkerScope.CLOUD });
+    peer.register('unknown', unscoped.subject);
+    publish.mockImplementation((channel: string, message: string) => {
+      for (const handler of [...handlers.values(), ...peerHandlers.values()]) {
+        handler(channel, message);
+      }
+      return Promise.resolve(2);
+    });
+
+    try {
+      await registry.publishJobsAvailable('workspace-a');
+      expect(publish).toHaveBeenCalledWith(WORKER_STREAM_JOBS_CHANNEL, 'workspace-a');
+      expect(own.messages).toEqual([{ jobsAvailable: {} }]);
+      expect(cloud.messages).toEqual([{ jobsAvailable: {} }]);
+      expect(other.messages).toEqual([]);
+      expect(unscoped.messages).toEqual([]);
+    } finally {
+      peer.onModuleDestroy();
+    }
+  });
+
+  it('uses the reconnected stream owner and ignores stale teardown and empty hints', () => {
+    const stale = new Subject<Record<string, unknown>>();
+    const live = new Subject<Record<string, unknown>>();
+    const messages: Record<string, unknown>[] = [];
+    live.subscribe((message) => messages.push(message));
+    registry.register('worker-1', stale, { workspaceId: 'workspace-a' });
+    registry.register('worker-1', live, { workspaceId: 'workspace-b' });
+    registry.unregister('worker-1', stale);
+    const deliverHint = (workspace: string) => handlers.get(WORKER_STREAM_JOBS_CHANNEL)?.(
+      WORKER_STREAM_JOBS_CHANNEL, workspace,
+    );
+
+    deliverHint('workspace-a');
+    deliverHint('');
+    expect(messages).toEqual([]);
+    deliverHint('workspace-b');
+    expect(messages).toEqual([{ jobsAvailable: {} }]);
+    registry.unregister('worker-1', live);
+    deliverHint('workspace-b');
+    expect(messages).toHaveLength(1);
+  });
+
+  it('isolates Redis channels even when another channel carries a valid cancel', () => {
+    const subject = new Subject<Record<string, unknown>>();
+    const messages: Record<string, unknown>[] = [];
+    subject.subscribe((message) => messages.push(message));
+    registry.register('worker-1', subject, { workspaceId: 'workspace-a' });
+    handlers.get(WORKER_STREAM_CANCEL_CHANNEL)?.(
+      WORKER_STREAM_JOBS_CHANNEL,
+      JSON.stringify({ workerId: 'worker-1', jobId: 'job-1' }),
+    );
+    handlers.get(WORKER_STREAM_JOBS_CHANNEL)?.(WORKER_STREAM_CANCEL_CHANNEL, 'workspace-a');
+    expect(messages).toEqual([]);
+  });
+
+  it('continues routing a hint after another stream fails', () => {
+    const broken = new Subject<Record<string, unknown>>();
+    jest.spyOn(broken, 'next').mockImplementation(() => { throw new Error('stream closed'); });
+    const live = new Subject<Record<string, unknown>>();
+    const messages: Record<string, unknown>[] = [];
+    live.subscribe((message) => messages.push(message));
+    registry.register('broken', broken, { workspaceId: 'workspace-a' });
+    registry.register('live', live, { scope: WorkerScope.CLOUD });
+
+    expect(() => handlers.get(WORKER_STREAM_JOBS_CHANNEL)?.(
+      WORKER_STREAM_JOBS_CHANNEL, 'workspace-a',
+    )).not.toThrow();
+    expect(messages).toEqual([{ jobsAvailable: {} }]);
+  });
+
+  it('surfaces Redis publication failure so the caller can retain fallback polling', async () => {
+    publish.mockRejectedValueOnce(new Error('Redis unavailable'));
+    await expect(registry.publishJobsAvailable('workspace-a')).rejects.toThrow('Redis unavailable');
+  });
+
 });

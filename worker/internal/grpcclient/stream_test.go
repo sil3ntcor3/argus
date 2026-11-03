@@ -51,6 +51,7 @@ func newStreamTestClient(
 	workers.RegisterWorkersServiceServer(grpcSrv, svc)
 	go func() { _ = grpcSrv.Serve(lis) }()
 
+	t.Setenv("WORKER_TOKEN_FILE", filepath.Join(t.TempDir(), ".worker-token"))
 	client, err := NewClient("test-api-key", "passthrough:///bufnet", "test-tools", &noOpLogger{},
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return lis.DialContext(ctx)
@@ -59,7 +60,6 @@ func newStreamTestClient(
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	client.tokenFile = filepath.Join(t.TempDir(), ".worker-token")
 	t.Cleanup(func() {
 		_ = client.Close()
 		grpcSrv.Stop()
@@ -183,5 +183,118 @@ func TestRunWorkerStream_IgnoresCancelWithoutJobID(t *testing.T) {
 	case <-called:
 		t.Fatal("a cancel without a job id must not reach the handler")
 	default:
+	}
+}
+
+// A descriptor assertion catches a missing generated contract without depending on new Go symbols.
+func TestWorkerStreamContract_JobsAvailable(t *testing.T) {
+	message := workers.File_workers_proto.Messages().ByName("JobsAvailable")
+	if message == nil {
+		t.Fatal("worker stream contract has no JobsAvailable message")
+	}
+	field := workers.File_workers_proto.Messages().ByName("CoreToWorker").Fields().ByNumber(4)
+	if field == nil || field.Name() != "jobs_available" || field.ContainingOneof() == nil || field.Message() == nil || field.Message().FullName() != message.FullName() {
+		t.Fatal("CoreToWorker field 4 must carry the JobsAvailable hint")
+	}
+}
+
+// jobsAvailableFrame uses the additive field's wire bytes, including on an older
+// generated descriptor: field 4, length-delimited empty JobsAvailable message.
+func jobsAvailableFrame() *workers.CoreToWorker {
+	frame := &workers.CoreToWorker{}
+	frame.ProtoReflect().SetUnknown([]byte{0x22, 0})
+	return frame
+}
+
+func TestRunWorkerStream_JobsAvailableBurstDoesNotBlockCancel(t *testing.T) {
+	client, _ := newStreamTestClient(t, acceptingConnect(t, true, func(srv grpc.BidiStreamingServer[workers.WorkerToCore, workers.CoreToWorker]) error {
+		for range 128 {
+			if err := srv.Send(jobsAvailableFrame()); err != nil {
+				return err
+			}
+		}
+		return srv.Send(&workers.CoreToWorker{Payload: &workers.CoreToWorker_Cancel{Cancel: &workers.CancelRequest{JobId: "after-hint-burst"}}})
+	}))
+	hints := client.JobsAvailable()
+	cancelled := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- client.RunWorkerStream(ctx, func(jobID, _ string) { cancelled <- jobID }) }()
+	select {
+	case got := <-cancelled:
+		if got != "after-hint-burst" {
+			t.Fatalf("unexpected cancellation %q", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a full hint channel blocked a later cancellation")
+	}
+	select {
+	case <-hints:
+	default:
+		t.Fatal("burst must retain one pending job hint")
+	}
+	select {
+	case <-hints:
+		t.Fatal("burst must coalesce into only one pending hint")
+	default:
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stream did not stop after session cancellation")
+	}
+}
+
+func TestRunWorkerStream_JobsAvailableAfterReconnect(t *testing.T) {
+	firstEnds := make(chan struct{})
+	var attempts atomic.Int32
+	client, service := newStreamTestClient(t, func(srv grpc.BidiStreamingServer[workers.WorkerToCore, workers.CoreToWorker]) error {
+		if _, err := srv.Recv(); err != nil {
+			return err
+		}
+		attempt := attempts.Add(1)
+		if err := srv.Send(&workers.CoreToWorker{Payload: &workers.CoreToWorker_RegisterResp{RegisterResp: &workers.RegisterResponse{Accepted: true}}}); err != nil {
+			return err
+		}
+		if err := srv.Send(jobsAvailableFrame()); err != nil {
+			return err
+		}
+		if attempt == 1 {
+			select {
+			case <-firstEnds:
+				return nil
+			case <-srv.Context().Done():
+				return srv.Context().Err()
+			}
+		}
+		<-srv.Context().Done()
+		return srv.Context().Err()
+	})
+	hints := client.JobsAvailable()
+	client.reconnectDelay = 10 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { client.runWorkerStream(ctx); close(done) }()
+	for attempt := 1; attempt <= 2; attempt++ {
+		select {
+		case <-hints:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("no job hint on stream attempt %d", attempt)
+		}
+		if attempt == 1 {
+			close(firstEnds)
+		}
+	}
+	if service.connects.Load() < 2 {
+		t.Fatal("precondition: stream did not reconnect")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("reconnecting stream did not stop after session cancellation")
 	}
 }

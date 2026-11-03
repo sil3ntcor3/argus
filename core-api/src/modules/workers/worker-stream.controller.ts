@@ -22,10 +22,10 @@ interface InboundFrame {
  *
  * The worker opens one long-lived stream and the two sides exchange:
  *   worker → core: register (handshake), heartbeat
- *   core → worker: register response, heartbeat ack, cancel
+ *   core → worker: register response, heartbeat ack, cancel, jobs available
  *
- * Stage 1 only adds the push channel (cancel). Job results, telemetry and job
- * pull deliberately keep their existing RPCs.
+ * Job results, telemetry and authoritative job claims keep their existing
+ * RPCs; a jobs-available frame only asks an idle worker to claim sooner.
  *
  * NestJS hands the request stream to the handler as an Observable that buffers
  * until the handler returns, so the subscription must be created SYNCHRONOUSLY
@@ -121,7 +121,10 @@ export class WorkerStreamController {
         if (closed) return;
         workerId = worker.id;
         authenticated = true;
-        this.registry.register(workerId, outbound$);
+        this.registry.register(workerId, outbound$, {
+          workspaceId: worker.workspaceId,
+          scope: worker.scope,
+        });
         this.logger.log(
           `[worker-stream] stream opened for worker ${workerId}`,
         );

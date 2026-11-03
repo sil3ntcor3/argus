@@ -5,8 +5,8 @@ import "time"
 const (
 	// pollIdleBackoff is the starting wait between empty polls.
 	pollIdleBackoff = time.Second
-	// pollMaxBackoff caps the idle backoff.
-	pollMaxBackoff = 5 * time.Second
+	// pollMaxBackoff caps fallback polling; stream hints wake idle workers sooner.
+	pollMaxBackoff = 30 * time.Second
 	// pollRefillDelay is the short wait before refilling freed slots while jobs
 	// are flowing.
 	pollRefillDelay = 100 * time.Millisecond
@@ -50,10 +50,11 @@ func (p *pollPolicy) flowing() bool {
 	return p.backoff <= pollIdleBackoff
 }
 
-// nextDelay returns how long to wait before the next cycle.
+// nextDelay follows a claim with free capacity: zero means empty or failed, not busy.
 func (p *pollPolicy) nextDelay(dispatched int) time.Duration {
 	if dispatched == 0 {
-		return pollBusyDelay // every slot is busy
+		p.feedback(false)
+		return p.backoff
 	}
 	if p.flowing() {
 		return pollRefillDelay // refill freed slots quickly
