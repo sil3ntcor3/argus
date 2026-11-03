@@ -35,7 +35,7 @@ const (
 //
 // It is purely additive: identity (Join), liveness (Alive), job pull (Next) and
 // results keep their existing RPCs. The stream adds the missing push channel —
-// core-api telling this worker to stop a job.
+// core-api telling this worker to stop a job or claim newly available work.
 func (c *Client) RunWorkerStream(ctx context.Context, onCancel StreamCancelFunc) error {
 	svc := workers.NewWorkersServiceClient(c.conn)
 	streamCtx, cancelStream := context.WithCancel(ctx)
@@ -140,6 +140,13 @@ func (c *Client) RunWorkerStream(ctx context.Context, onCancel StreamCancelFunc)
 
 			case *workers.CoreToWorker_HeartbeatAck:
 				// Liveness acknowledgement; nothing to do.
+
+			case *workers.CoreToWorker_JobsAvailable:
+				// A pending hint already covers the burst; never block later cancels or heartbeats.
+				select {
+				case c.jobsAvailable <- struct{}{}:
+				default:
+				}
 
 			case *workers.CoreToWorker_Cancel:
 				cancel := payload.Cancel

@@ -1,6 +1,9 @@
 package worker
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestPollPolicy_FlowFillsAllSlots(t *testing.T) {
 	p := newPollPolicy()
@@ -49,9 +52,19 @@ func TestPollPolicy_JobResetsBackoff(t *testing.T) {
 	}
 }
 
-func TestPollPolicy_BusyReturnsShortDelay(t *testing.T) {
+// Empty or failed claims have free capacity; they must not use the busy-slot retry.
+func TestPollPolicy_EmptyClaimsBackOff(t *testing.T) {
 	p := newPollPolicy()
-	if got := p.nextDelay(0); got != pollBusyDelay {
-		t.Fatalf("nextDelay(0) = %v, want %v (all slots busy)", got, pollBusyDelay)
+	for i, want := range []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 30 * time.Second, 30 * time.Second} {
+		if got := p.nextDelay(0); got != want {
+			t.Fatalf("empty claim %d delay = %v, want %v", i+1, got, want)
+		}
+		if p.flowing() {
+			t.Fatal("an empty claim must leave flowing mode")
+		}
+	}
+	p.feedback(true)
+	if got := p.nextDelay(1); got != pollRefillDelay {
+		t.Fatalf("job after idle delay = %v, want refill %v", got, pollRefillDelay)
 	}
 }
