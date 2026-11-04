@@ -4,7 +4,9 @@ This is the persistence foundation from upstream open-asm #811
 (commit 668e35606b275f5495952027e079ed67ddab6066), adapted for Argus.
 It adds a non-null JSONB settings column with an empty-object default to
 system_configs and workspaces. Existing rows receive the same default.
-No feature settings API or UI is enabled by this batch.
+No feature settings API or UI is enabled by this batch. The subsequent
+[system settings API](system-settings.md) batch documents the admin
+configuration endpoints built on this storage.
 
 ## Storage boundary
 
@@ -14,7 +16,8 @@ select the column when needed. Swagger hides both properties. Existing request
 DTOs do not accept settings, and existing configuration responses stay unchanged.
 The TypeScript aliases describe internal values, not a validated public contract.
 The database enforces non-null JSONB, not the shape of each feature section.
-Do not place credentials in this unencrypted store.
+Do not place plaintext credentials in this store. Services must encrypt secrets
+before persisting them.
 
 ## Local validation
 

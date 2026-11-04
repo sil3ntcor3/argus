@@ -1024,6 +1024,65 @@ export type UpdateSystemConfigDto = {
   logoPath?: UpdateSystemConfigDtoLogoPath;
 };
 
+export type AuthSettingsDto = {
+  /**
+   * Stored sign-up preference. Public registration remains closed until verification and approval are available.
+   * @nullable
+   */
+  allowSignUp?: boolean | null;
+};
+
+export type MailProvider = (typeof MailProvider)[keyof typeof MailProvider];
+
+export const MailProvider = {
+  smtp: 'smtp',
+  resend: 'resend',
+  sendgrid: 'sendgrid',
+  postmark: 'postmark',
+  mailgun: 'mailgun',
+  ses: 'ses',
+  brevo: 'brevo',
+  gmail: 'gmail',
+} as const;
+
+export type MailServerSettingsDto = {
+  /** @nullable */
+  enabled?: boolean | null;
+  provider?: MailProvider | null;
+  /** @nullable */
+  host?: string | null;
+  /** @nullable */
+  port?: number | null;
+  /**
+   * Implicit TLS, usually port 465; off means STARTTLS
+   * @nullable
+   */
+  secure?: boolean | null;
+  /** @nullable */
+  username?: string | null;
+  /**
+   * Write-only password or API key, stored encrypted. Leave out or empty to keep the saved one.
+   * @nullable
+   */
+  password?: string | null;
+  /** Read-only: whether a password is saved */
+  readonly hasPassword?: boolean;
+  /** @nullable */
+  fromEmail?: string | null;
+  /**
+   * Defaults to the system name
+   * @nullable
+   */
+  fromName?: string | null;
+};
+
+export type SystemSettingsDto = {
+  /** @nullable */
+  auth?: AuthSettingsDto | null;
+  /** @nullable */
+  mailServer?: MailServerSettingsDto | null;
+};
+
 export type LogoPresignRequestDto = {
   /** Original file name of the object */
   fileName: string;
@@ -16944,6 +17003,257 @@ export const useSystemConfigsControllerUpdateConfig = <
 > => {
   return useMutation(
     getSystemConfigsControllerUpdateConfigMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Retrieves admin feature settings with defaults. Mail credentials are redacted.
+ * @summary Get system settings
+ */
+export const systemConfigsControllerGetSettings = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<SystemSettingsDto>(
+    { url: `/api/admin/system-configs/settings`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getSystemConfigsControllerGetSettingsQueryKey = () => {
+  return [`/api/admin/system-configs/settings`] as const;
+};
+
+export const getSystemConfigsControllerGetSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getSystemConfigsControllerGetSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>
+  > = ({ signal }) =>
+    systemConfigsControllerGetSettings(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type SystemConfigsControllerGetSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>
+>;
+export type SystemConfigsControllerGetSettingsQueryError = unknown;
+
+export function useSystemConfigsControllerGetSettings<
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+          TError,
+          Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useSystemConfigsControllerGetSettings<
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+          TError,
+          Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useSystemConfigsControllerGetSettings<
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get system settings
+ */
+
+export function useSystemConfigsControllerGetSettings<
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getSystemConfigsControllerGetSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Merges supplied fields into stored settings. Omitted or null fields retain their value; an empty password retains the saved credential. Saving these preferences does not activate public registration or send email.
+ * @summary Update system settings
+ */
+export const systemConfigsControllerUpdateSettings = (
+  systemSettingsDto: NonReadonly<SystemSettingsDto>,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    {
+      url: `/api/admin/system-configs/settings`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: systemSettingsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getSystemConfigsControllerUpdateSettingsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+    TError,
+    { data: NonReadonly<SystemSettingsDto> },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+  TError,
+  { data: NonReadonly<SystemSettingsDto> },
+  TContext
+> => {
+  const mutationKey = ['systemConfigsControllerUpdateSettings'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+    { data: NonReadonly<SystemSettingsDto> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return systemConfigsControllerUpdateSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SystemConfigsControllerUpdateSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>
+>;
+export type SystemConfigsControllerUpdateSettingsMutationBody =
+  NonReadonly<SystemSettingsDto>;
+export type SystemConfigsControllerUpdateSettingsMutationError = unknown;
+
+/**
+ * @summary Update system settings
+ */
+export const useSystemConfigsControllerUpdateSettings = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+      TError,
+      { data: NonReadonly<SystemSettingsDto> },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+  TError,
+  { data: NonReadonly<SystemSettingsDto> },
+  TContext
+> => {
+  return useMutation(
+    getSystemConfigsControllerUpdateSettingsMutationOptions(options),
     queryClient,
   );
 };

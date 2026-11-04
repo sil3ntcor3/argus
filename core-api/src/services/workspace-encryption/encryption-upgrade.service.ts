@@ -20,6 +20,7 @@ interface SecretColumn {
   table: string;
   column: string;
   jsonb: boolean;
+  systemWide?: boolean;
   map: (value: unknown, reencrypt: Reencrypt) => unknown;
 }
 
@@ -71,6 +72,12 @@ const SECRET_COLUMNS: SecretColumn[] = [
   { table: 'integrations', column: 'config', jsonb: true, map: mapConfigStrings },
   { table: 'tool_config_profiles', column: 'config', jsonb: true, map: mapConfigStrings },
   { table: 'workflows', column: 'content', jsonb: true, map: mapWorkflow },
+  {
+    table: 'system_configs', column: 'settings', jsonb: true, systemWide: true,
+    map: (value, reencrypt) => isObject(value) && isObject(value.mailServer) && typeof value.mailServer.password === 'string'
+      ? { ...value, mailServer: { ...value.mailServer, password: reencrypt(value.mailServer.password) } }
+      : value,
+  },
 ];
 
 const affectedRows = (result: unknown): number =>
@@ -155,12 +162,13 @@ export class EncryptionUpgradeService implements OnApplicationBootstrap {
   }
 
   private async reencryptColumn(
-    { table, column, jsonb, map }: SecretColumn,
+    { table, column, jsonb, systemWide, map }: SecretColumn,
     counts: UpgradeCounts,
   ): Promise<void> {
+    const workspace = systemWide ? 'NULL' : '"workspaceId"';
     const rows: { id: string; workspaceId: string | null; value: unknown }[] =
       await this.dataSource.query(
-        `SELECT id, "workspaceId", "${column}" AS value FROM "${table}" WHERE "${column}" IS NOT NULL`,
+        `SELECT id, ${workspace} AS "workspaceId", "${column}" AS value FROM "${table}" WHERE "${column}" IS NOT NULL`,
       );
     for (const { id, workspaceId, value } of rows) {
       let dek: Buffer | null;
