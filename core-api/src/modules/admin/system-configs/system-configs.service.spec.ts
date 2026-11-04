@@ -219,4 +219,49 @@ describe('SystemConfigsService', () => {
       });
     });
   });
+
+  describe('feature settings reads', () => {
+    it('fills defaults while preserving stored sections internally', async () => {
+      (mockSystemConfigRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'config',
+        settings: {
+          mailServer: { host: 'smtp.example.com' },
+          future: { value: 7 },
+        },
+      });
+      const settings = await service.getSettings();
+      expect(settings.auth).toEqual({ allowSignUp: false });
+      expect(settings.mailServer).toMatchObject({
+        host: 'smtp.example.com',
+        port: 587,
+        enabled: false,
+      });
+      expect(settings.future).toEqual({ value: 7 });
+    });
+    it('redacts credentials and unknown stored fields from the admin view', async () => {
+      const settings = {
+        mailServer: { password: 'encrypted-secret', internal: 'private' },
+        future: { secret: 'hidden' },
+      };
+      (mockSystemConfigRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'config',
+        settings,
+      });
+      const view = await service.getSettingsView();
+      expect(view.mailServer).toMatchObject({ hasPassword: true });
+      expect(view.mailServer).not.toHaveProperty('password');
+      expect(view.mailServer).not.toHaveProperty('internal');
+      expect(view).not.toHaveProperty('future');
+      expect(settings.mailServer.password).toBe('encrypted-secret');
+    });
+    it('returns defaults and no password marker for legacy rows', async () => {
+      (mockSystemConfigRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'config',
+      });
+      await expect(service.getSettingsView()).resolves.toMatchObject({
+        auth: { allowSignUp: false },
+        mailServer: { hasPassword: false, provider: 'smtp' },
+      });
+    });
+  });
 });

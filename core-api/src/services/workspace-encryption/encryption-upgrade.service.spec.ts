@@ -213,4 +213,19 @@ describe('EncryptionUpgradeService', () => {
     expect(Logger.prototype.error).toHaveBeenCalled();
     expect(Logger.prototype.log).not.toHaveBeenCalledWith(expect.stringMatching(/no longer needed|every stored secret/i));
   });
+
+  it('rotates only the system mail password and preserves unreadable values', async () => {
+    const broken = 'v2:0000000000000000:000000000000000000000000:00000000000000000000000000000000:00';
+    store.system_configs = [
+      { id: 'mail', value: { auth: { allowSignUp: false }, mailServer: { password: '0:' + legacy(kek(OLD_KEY), 'smtp-secret'), host: 'smtp.example.com' }, future: { password: 'unchanged' } } },
+      { id: 'broken-mail', value: { mailServer: { password: broken } } },
+    ];
+    const counts = await createService().upgrade();
+    expect(counts).toMatchObject({ reencrypted: 1, unreadable: 1 });
+    process.env.ENCRYPTION_KEYS = NEW_KEY;
+    const value = store.system_configs[0].value as { mailServer: { password: string; host: string }; future: unknown };
+    expect(decryptWithDEK(value.mailServer.password, null)).toBe('smtp-secret');
+    expect(value.mailServer.host).toBe('smtp.example.com'); expect(value.future).toEqual({ password: 'unchanged' });
+    expect(store.system_configs[1].value).toEqual({ mailServer: { password: broken } });
+  });
 });

@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { DataSource, type QueryRunner } from 'typeorm';
 import { dataSourceOptions } from '@/database/database-config';
 import { decryptWithDEK, unwrapDEK } from '@/common/utils/workspace-encryption.util';
+import { SystemConfig } from '@/modules/admin/system-configs/entities/system-config.entity';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { RedisLockService } from '@/services/redis/distributed-lock.service';
 import { EncryptionUpgradeService } from '@/services/workspace-encryption/encryption-upgrade.service';
@@ -30,6 +31,7 @@ describe('Encryption upgrade SQL integration', () => {
   let workspaceId: string;
   let badWorkspaceId: string;
   let workflowId: string;
+  let systemConfigId: string;
   let integrationId: string;
   let conflictId: string | undefined;
 
@@ -66,11 +68,17 @@ describe('Encryption upgrade SQL integration', () => {
       ['bad-upgrade', 'test', 'test', badWorkspaceId, JSON.stringify({ token: unavailable })],
     );
 
+    const system = await runner.manager.getRepository(SystemConfig).save({ name: 'Argus rotation test', settings: { auth: { allowSignUp: false }, mailServer: { host: 'smtp.example.com', password: '0:' + legacy(createHash('sha256').update(OLD_KEY).digest(), 'smtp-secret') } } });
+    systemConfigId = system.id;
+
     // Use real SQL/DEK resolution, but restrict reads to this transaction's
     // fixtures. Key rotation cannot rewrite other concurrently running suites.
     // UPDATE statements are executed unchanged, including their CAS predicate.
     const scopedSource = {
       query: async (sql: string, parameters: unknown[] = []): Promise<unknown> => {
+        if (sql.startsWith('SELECT') && sql.includes('FROM "system_configs"')) {
+          return runner.query(sql + ' AND id = $1', [systemConfigId]);
+        }
         if (sql.startsWith('SELECT')) {
           const scopeColumn = sql.includes('FROM workspaces') ? 'id' : '"workspaceId"';
           return runner.query(`${sql} AND ${scopeColumn} = ANY($1::uuid[])`, [[workspaceId, badWorkspaceId]]);
@@ -99,10 +107,14 @@ describe('Encryption upgrade SQL integration', () => {
 
   it('rewraps DEKs and nested JSONB secrets without touching unreadable or plain values', async () => {
     const counts = await upgrade.upgrade();
-    expect(counts).toMatchObject({ rewrapped: 1, reencrypted: 2, unreadable: 3 });
+    expect(counts).toMatchObject({ rewrapped: 1, reencrypted: 3, unreadable: 3 });
     const [workspace] = await runner.manager.query<{ dek: string }[]>('SELECT dek FROM workspaces WHERE id = $1', [workspaceId]);
     const [bad] = await runner.manager.query<{ dek: string }[]>('SELECT dek FROM workspaces WHERE id = $1', [badWorkspaceId]);
     process.env.ENCRYPTION_KEYS = NEW_KEY;
+    const [system] = await runner.manager.query<{ settings: { mailServer: { password: string; host: string }; auth: unknown } }[]>('SELECT settings FROM system_configs WHERE id = $1', [systemConfigId]);
+    expect(decryptWithDEK(system.settings.mailServer.password, null)).toBe('smtp-secret');
+    expect(system.settings.mailServer.host).toBe('smtp.example.com');
+    expect(system.settings.auth).toEqual({ allowSignUp: false });
     expect(workspace.dek).toMatch(/^v2:/);
     expect(unwrapDEK(workspace.dek).equals(DEK)).toBe(true);
     expect(bad.dek).toBe(unavailable);

@@ -10,6 +10,7 @@ import {
   Delete,
   Get,
   Logger,
+  Patch,
   Post,
   Put,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import {
   LogoPresignRequestDto,
   LogoPresignResponseDto,
   SystemConfigResponseDto,
+  SystemSettingsDto,
   UpdateSystemConfigDto,
 } from './dto/system-configs.dto';
 import { SystemConfigsService } from './system-configs.service';
@@ -82,6 +84,30 @@ export class SystemConfigsController {
     @Body() dto: UpdateSystemConfigDto,
   ): Promise<DefaultMessageResponseDto> {
     return this.systemConfigsService.updateConfig(dto);
+  }
+
+  @Get('settings')
+  @Doc<SystemSettingsDto>({
+    summary: 'Get system settings',
+    description:
+      'Retrieves admin feature settings with defaults. Mail credentials are redacted.',
+    response: { serialization: SystemSettingsDto },
+  })
+  getSettings(): Promise<SystemSettingsDto> {
+    return this.systemConfigsService.getSettingsView();
+  }
+
+  @Patch('settings')
+  @Doc<DefaultMessageResponseDto>({
+    summary: 'Update system settings',
+    description:
+      'Merges supplied fields into stored settings. Omitted or null fields retain their value; an empty password retains the saved credential. Saving these preferences does not activate public registration or send email.',
+    response: { serialization: DefaultMessageResponseDto },
+  })
+  updateSettings(
+    @Body() dto: SystemSettingsDto,
+  ): Promise<DefaultMessageResponseDto> {
+    return this.systemConfigsService.updateSettings(dto);
   }
 
   /**
