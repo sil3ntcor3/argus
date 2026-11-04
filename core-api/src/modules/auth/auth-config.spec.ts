@@ -46,4 +46,22 @@ describe('auth startup policy', () => {
       expect(auth.emailAndPassword.disableSignUp).not.toBe(true);
     });
   });
+  it.each([undefined, '', 'https://argus.example.test'])(
+    'uses the canonical BASE_URL option when set (BASE_URL=%s)',
+    (BASE_URL) => {
+      jest.replaceProperty(process, 'env', {
+        NODE_ENV: 'test',
+        ...(BASE_URL === undefined ? {} : { BASE_URL }),
+        BETTER_AUTH_URL: 'https://legacy.example.test',
+      });
+      jest.isolateModules(() => {
+        const { auth } = jest.requireActual<{
+          auth: { baseURL?: string; logger?: { log?: unknown } };
+        }>('./auth');
+        expect(auth.baseURL).toBe(BASE_URL || undefined);
+        expect(auth.logger?.log).toEqual(expect.any(Function));
+      });
+    },
+  );
+
 });

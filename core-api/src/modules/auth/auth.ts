@@ -8,12 +8,17 @@ import { randomUUID } from 'crypto';
 import 'dotenv/config';
 import { Pool } from 'pg';
 import { resolveAuthSecret } from './auth-env';
+import { logBetterAuth } from './auth-logger';
 import { createSessionRedis, createSessionStorage } from './session-storage';
 
 export const auth: unknown = betterAuth({
   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
   database: new Pool(databaseConnectionConfig),
+  // The public console origin shared with Telegram takes precedence over
+  // Better Auth's legacy URL aliases. Unset locally, keep SDK fallback.
+  baseURL: process.env.BASE_URL || undefined,
   secret: resolveAuthSecret(),
+  logger: { log: logBetterAuth },
   // Sessions are resolved from Redis first; the database is only queried on a
   // cache miss. See session-storage.ts. The connection is its own: this
   // instance is built at import time, outside Nest DI, before RedisService.
