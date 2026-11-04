@@ -777,3 +777,48 @@ describe('useAgentChat stream resume', () => {
     expect(mocks.resumeStream).not.toHaveBeenCalled();
   });
 });
+
+
+describe('useAgentChat browser views', () => {
+  const shot = { toolCallId: 'b1', command: 'browser open http://local.test', image: 'jpg', browserSessionId: 'b-' + 'a'.repeat(32) };
+  beforeEach(() => {
+    mocks.status = 'streaming';
+    mocks.orvalClient.mockReset();
+    mocks.orvalClient.mockResolvedValue({ id: 'c1' });
+    mocks.locationState = null;
+  });
+  afterEach(() => { mocks.locationState = null; mocks.status = 'streaming'; });
+
+  it('retains its screenshot when the first turn starts loading history', async () => {
+    mocks.locationState = { pendingMessage: 'local synthetic browser task' };
+    const { result, rerender } = renderHook(() => useAgentChat({ conversationId: 'c1' }));
+    act(() => { mocks.onData?.({ type: 'data-browser-screenshot', data: shot }); });
+    expect(result.current.browserScreenshots).toMatchObject([shot]);
+    mocks.status = 'ready';
+    await act(async () => { rerender(); await Promise.resolve(); });
+    expect(result.current.browserScreenshots).toMatchObject([shot]);
+  });
+  it('updates one session at a time and clears views on navigation or remount', () => {
+    const { result, rerender, unmount } = renderHook(
+      ({ id }) => useAgentChat({ conversationId: id }),
+      { initialProps: { id: 'c1' } },
+    );
+    const other = { ...shot, toolCallId: 's1', browserSessionId: 'b-' + 'b'.repeat(32), subagent: { id: 's1', name: 'recon' } };
+    act(() => {
+      for (const data of [shot, other, { ...shot, toolCallId: 'b2', image: 'new' }]) {
+        mocks.onData?.({ type: 'data-browser-screenshot', data });
+      }
+    });
+    expect(result.current.browserScreenshots).toMatchObject([
+      { ...shot, toolCallId: 'b2', image: 'new', receivedAt: expect.any(Number) }, other,
+    ]);
+    rerender({ id: 'c2' });
+    expect(result.current.browserScreenshots).toEqual([]);
+    rerender({ id: 'c1' });
+    expect(result.current.browserScreenshots).toEqual([]);
+    unmount();
+    const fresh = renderHook(() => useAgentChat({ conversationId: 'c1' }));
+    expect(fresh.result.current.browserScreenshots).toEqual([]);
+  });
+
+});
