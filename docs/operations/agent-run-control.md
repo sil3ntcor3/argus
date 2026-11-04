@@ -39,3 +39,11 @@ Review both generated OpenAPI files and the generated console client together. E
 Validation uses a fresh disposable Docker project, synthetic users and a local OpenAI-compatible streaming model. It requires no paid model account or external scan target. Existing migrations are applied through `task migration:run` only to the disposable local database.
 
 Regression tests cover the dispatch/cancel lock and abort signal, local and remote subagent aborts, shutdown with partial results, a late abort while final text resolves, Stop after the parent ends, ownership checks, trimmed replay, backlog/pubsub ordering, assistant continuation seeding, saved-progress fallback, and cancelled UI state.
+
+## Subagent results between model steps
+
+Completed or failed subagent results are handed to the main Agent before its next model step, using the existing result-delivery records. The first step keeps the results already present in its initial prompt. Ask mode keeps its existing behavior.
+
+A receiving step must finish before its newly injected results count as consumed. If a provider fails before that step starts, a later iteration replays the evidence; if the turn stops or fails first, delivery is released for the next user turn. Earlier results remain available when continuation rebuilds the prompt.
+
+This update uses existing APIs and database columns. Deploy or roll back the API image through the normal rollout; the console contract and Auto/Manual/Plan behavior are unchanged.
