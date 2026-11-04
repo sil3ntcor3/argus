@@ -7,7 +7,7 @@ import { WorkspaceTool } from '@/modules/tools/entities/workspace_tools.entity';
 import { WorkerInstance } from '@/modules/workers/entities/worker.entity';
 import { Workflow } from '@/modules/workflows/entities/workflow.entity';
 import { InternalNetwork } from '@/modules/internal-networks/entities/internal-network.entity';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import { IsBoolean, IsDateString, IsOptional, IsString } from 'class-validator';
 import {
   Column,
@@ -22,6 +22,8 @@ import {
 } from 'typeorm';
 import { WorkspaceMembers } from './workspace-members.entity';
 import { WorkspacePermission } from './workspace-permission.entity';
+
+export type WorkspaceSettings = Record<string, Record<string, unknown>>;
 
 @Entity('workspaces')
 @Index('IDX_workspaces_owner', ['owner'])
@@ -133,4 +135,8 @@ export class Workspace extends BaseEntity {
   @IsOptional()
   @Column({ type: 'timestamp', nullable: true })
   dekAt?: Date | null;
+
+  @ApiHideProperty()
+  @Column({ type: 'jsonb', default: {}, select: false })
+  settings: WorkspaceSettings;
 }

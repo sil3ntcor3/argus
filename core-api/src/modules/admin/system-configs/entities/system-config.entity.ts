@@ -1,6 +1,8 @@
 import { BaseEntity } from '@/common/entities/base.entity';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import { Column, Entity } from 'typeorm';
+
+export type SystemSettings = Record<string, Record<string, unknown>>;
 
 /**
  * System configuration entity - singleton pattern
@@ -15,4 +17,8 @@ export class SystemConfig extends BaseEntity {
   @ApiProperty({ description: 'Path to system logo', nullable: true })
   @Column('text', { nullable: true })
   logoPath?: string | null;
+
+  @ApiHideProperty()
+  @Column({ type: 'jsonb', default: {}, select: false })
+  settings: SystemSettings;
 }
