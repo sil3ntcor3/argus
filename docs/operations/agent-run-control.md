@@ -47,3 +47,9 @@ Completed or failed subagent results are handed to the main Agent before its nex
 A receiving step must finish before its newly injected results count as consumed. If a provider fails before that step starts, a later iteration replays the evidence; if the turn stops or fails first, delivery is released for the next user turn. Earlier results remain available when continuation rebuilds the prompt.
 
 This update uses existing APIs and database columns. Deploy or roll back the API image through the normal rollout; the console contract and Auto/Manual/Plan behavior are unchanged.
+
+## Waiting for subagents
+
+Agent mode offers `wait_for_subagents({})` through the existing plan/tool gates. It returns ready completed or failed results and the jobs still running, or returns immediately when nothing remains. Each call waits at most two minutes, wakes on local status events, and rechecks the database at most every two seconds for work completed on another instance. Ask mode does not offer this tool.
+
+Stop aborts the wait. An already-aborted call cannot claim results; a claim that finishes after cancellation is released. Normal reads use the existing delivery ownership and recovery mechanism. `get_subagent_result` remains an immediate status lookup and advises against polling running jobs. The model-facing tool is additive; REST responses, schema and Auto/Manual/Plan behavior are unchanged.

@@ -958,6 +958,7 @@ describe('AgentsSubagentsService', () => {
     expect(Object.keys(tools)).toEqual([
       'dispatch_subagent',
       'get_subagent_result',
+      'wait_for_subagents',
     ]);
 
     repo.findOne.mockResolvedValueOnce({
@@ -983,6 +984,187 @@ describe('AgentsSubagentsService', () => {
     );
     // The running iteration owns the read (released if it never completes)
     expect(onResultRead).toHaveBeenCalledWith('s1');
+  });
+
+  describe('waiting for results', () => {
+    const ctx = (onResultRead = jest.fn()) => ({
+      conversationId: 'c1',
+      workspaceId: 'w1',
+      userId: 'u1',
+      onResultRead,
+    });
+    type Execute = (input: object, options: unknown) => Promise<unknown>;
+
+    it('get_subagent_result answers a running subagent at once and says not to poll', async () => {
+      const onResultRead = jest.fn();
+      const tools = service.createTools(ctx(onResultRead));
+      repo.findOne.mockResolvedValueOnce({
+        id: 's1',
+        name: 'researcher',
+        status: SubagentStatus.IN_PROGRESS,
+        result: null,
+        error: null,
+        deliveredAt: null,
+      });
+
+      await expect(
+        (tools.get_subagent_result.execute as Execute)({ id: 's1' }, {}),
+      ).resolves.toMatchObject({
+        status: SubagentStatus.IN_PROGRESS,
+        note: expect.stringContaining('wait_for_subagents'),
+      });
+      expect(repo.query).not.toHaveBeenCalled();
+      expect(onResultRead).not.toHaveBeenCalled();
+    });
+
+    it('wait_for_subagents hands back finished results and lists the running ones', async () => {
+      const onResultRead = jest.fn();
+      const tools = service.createTools(ctx(onResultRead));
+      repo.query.mockResolvedValueOnce([
+        [
+          {
+            id: 's1',
+            name: 'recon',
+            status: SubagentStatus.COMPLETED,
+            result: 'found 3 hosts',
+            error: null,
+            sortOrder: 0,
+          },
+        ],
+        1,
+      ]);
+      repo.find.mockResolvedValueOnce([
+        { id: 's2', name: 'researcher', status: SubagentStatus.IN_PROGRESS },
+      ]);
+
+      await expect(
+        (tools.wait_for_subagents.execute as Execute)({}, {}),
+      ).resolves.toEqual({
+        results: [
+          {
+            id: 's1',
+            name: 'recon',
+            status: SubagentStatus.COMPLETED,
+            result: 'found 3 hosts',
+            error: null,
+          },
+        ],
+        running: [
+          { id: 's2', name: 'researcher', status: SubagentStatus.IN_PROGRESS },
+        ],
+      });
+      expect(onResultRead).toHaveBeenCalledWith('s1');
+      expect(repo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ conversationId: 'c1' }),
+        }),
+      );
+    });
+
+    it('releases ready results if the running-status lookup fails', async () => {
+      const tools = service.createTools(ctx());
+      repo.query.mockResolvedValueOnce([[{ id: 's1', sortOrder: 0 }], 1]);
+      repo.find.mockRejectedValueOnce(new Error('status query failed'));
+
+      await expect((tools.wait_for_subagents.execute as Execute)({}, {}))
+        .rejects.toThrow('status query failed');
+
+      expect(repo.query).toHaveBeenLastCalledWith(
+        expect.stringContaining('"deliveredAt" = NULL'), [['s1']],
+      );
+    });
+
+    it('wait_for_subagents returns at once when nothing is running', async () => {
+      const tools = service.createTools(ctx());
+
+      await expect(
+        (tools.wait_for_subagents.execute as Execute)({}, {}),
+      ).resolves.toEqual({
+        results: [],
+        running: [],
+        note: expect.stringContaining('No subagent is running'),
+      });
+    });
+
+    it('wakes on the status event of a finished subagent', async () => {
+      repo.query
+        .mockResolvedValueOnce([[], 0])
+        .mockResolvedValueOnce([[{ id: 's1', sortOrder: 0 }], 1]);
+      repo.count.mockResolvedValueOnce(1);
+      const started = Date.now();
+
+      const waiting = service.waitForResults('c1', 60_000);
+      await new Promise((r) => setImmediate(r));
+      (service as unknown as { notify: (id: string) => void }).notify('c1');
+
+      await expect(waiting).resolves.toMatchObject([{ id: 's1' }]);
+      // The event, not the 2s re-poll, ended the wait
+      expect(Date.now() - started).toBeLessThan(1_000);
+    });
+
+    it('does not claim ready results after Stop already aborted the run', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      repo.query.mockResolvedValueOnce([[{ id: 's1', sortOrder: 0 }], 1]);
+
+      await expect(service.waitForResults('c1', 60_000, controller.signal))
+        .resolves.toEqual([]);
+      expect(repo.query).not.toHaveBeenCalled();
+    });
+
+    it('releases a claim when Stop arrives during its database request', async () => {
+      const controller = new AbortController();
+      const release = jest.spyOn(service, 'releaseDelivery');
+      jest.spyOn(service, 'takeUndelivered').mockImplementationOnce(() => {
+        controller.abort();
+        return Promise.resolve([{ id: 's1' }] as never);
+      });
+
+      await expect(service.waitForResults('c1', 60_000, controller.signal))
+        .resolves.toEqual([]);
+      expect(release).toHaveBeenCalledWith(['s1']);
+    });
+
+    it('aborts an event wait and removes its listener', async () => {
+      repo.count.mockResolvedValue(1);
+      const controller = new AbortController();
+      const events = (service as unknown as {
+        events: { listenerCount: (key: string) => number };
+      }).events;
+      const waiting = service.waitForResults('c1', 60_000, controller.signal);
+      await new Promise((r) => setImmediate(r));
+      expect(events.listenerCount('updated:c1')).toBe(1);
+
+      controller.abort();
+
+      await expect(waiting).resolves.toEqual([]);
+      expect(events.listenerCount('updated:c1')).toBe(0);
+    });
+
+    it('finds results from another instance on the bounded database recheck', async () => {
+      jest.useFakeTimers();
+      try {
+        repo.query.mockResolvedValueOnce([[], 0])
+          .mockResolvedValueOnce([[{ id: 's1', sortOrder: 0 }], 1]);
+        repo.count.mockResolvedValue(1);
+        const waiting = service.waitForResults('c1', 60_000);
+        await jest.advanceTimersByTimeAsync(2_000);
+        await expect(waiting).resolves.toMatchObject([{ id: 's1' }]);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('stops waiting on timeout or abort', async () => {
+      repo.count.mockResolvedValue(1);
+      await expect(service.waitForResults('c1', 0)).resolves.toEqual([]);
+
+      const controller = new AbortController();
+      controller.abort();
+      await expect(
+        service.waitForResults('c1', 60_000, controller.signal),
+      ).resolves.toEqual([]);
+    });
   });
 
   it('requeues or fails stale runs in a single statement', async () => {
