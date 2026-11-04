@@ -2,10 +2,15 @@ import { AgentApprovalMode, AgentMode } from '@/common/enums/enum';
 import type { ApprovalSettings } from './agents.approvals';
 import { Logger } from '@nestjs/common';
 import { EventEmitter } from 'node:events';
-import { AgentsCompletionsService, planningState } from './agents.completions';
+import {
+  AgentsCompletionsService,
+  planningState,
+  withStepResults,
+} from './agents.completions';
 import { formatTodosToPrompt, type AgentTodoItem } from './agents.todo';
 import { AgentTool } from './agents.tools';
 import type { TodoStatus } from './entities/agent-conversation-todo.entity';
+import { stepLimit } from './shared/step-limit';
 import { emptyStats } from './shared/turn-stats';
 
 jest.mock('better-auth/node', () => ({
@@ -895,6 +900,130 @@ describe('AgentsCompletionsService plan execution', () => {
       expect(service.subagents.waitForSettled).not.toHaveBeenCalled();
     });
 
+    /** An iteration whose run takes subagent results at a later step. */
+    const iterationTakingResults =
+      (
+        handed: Array<string | undefined>,
+        end: (c: ReadableStreamDefaultController) => void = (c) => c.close(),
+        outcome = 'answer',
+        receivingStepFinished = true,
+      ) =>
+      (opts: {
+        takeSubagentResults?: () => Promise<string | undefined>;
+        onSubagentResultsConsumed?: () => void;
+      }) => {
+        iteration();
+        return {
+          aiStream: new ReadableStream({
+            start: async (c) => {
+              handed.push(await opts.takeSubagentResults?.());
+              if (receivingStepFinished) opts.onSubagentResultsConsumed?.();
+              end(c);
+            },
+          }),
+          finishPromise: Promise.resolve(),
+          settle: jest.fn(() => Promise.resolve(outcome)),
+          getFinishReason: () => undefined,
+        };
+      };
+
+    it('hands results that finish mid-iteration to its next step and repeats them later', async () => {
+      repo.rows = [row('a', 'pending', 0), row('b', 'pending', 1)];
+      const order = ['a', 'b'];
+      iteration.mockImplementation(() =>
+        setStatus(order.shift()!, 'completed'),
+      );
+      const handed: Array<string | undefined> = [];
+      service.executeStreamText.mockImplementation(
+        iterationTakingResults(handed),
+      );
+      service.subagents.takeUndelivered.mockResolvedValueOnce(finished);
+
+      await run();
+
+      expect(handed).toEqual(['RESULTS', undefined]);
+      const second = service.executeStreamText.mock.calls[1][0];
+      expect(second.modelMessages.at(-1).content).toContain('RESULTS');
+      expect(service.subagents.releaseDelivery).not.toHaveBeenCalled();
+    });
+
+    it('releases results handed over mid-iteration when the iteration fails', async () => {
+      repo.rows = [row('a', 'pending', 0)];
+      service.executeStreamText.mockImplementation(
+        // The run failed after a step: its partial answer is kept
+        iterationTakingResults(
+          [],
+          (c) => c.error(new Error('connection reset')),
+          'partial',
+        ),
+      );
+      service.subagents.takeUndelivered.mockResolvedValueOnce(finished);
+
+      await run();
+
+      expect(service.subagents.releaseDelivery).toHaveBeenCalledWith(['s1']);
+    });
+
+    it('takes no results mid-iteration outside Agent mode', async () => {
+      await run(AgentMode.ASK, AgentApprovalMode.MANUAL);
+
+      expect(
+        service.executeStreamText.mock.calls[0][0].takeSubagentResults,
+      ).toBeUndefined();
+    });
+
+    it('releases mid-step results when the SDK ends before their receiving step', async () => {
+      const handed: Array<string | undefined> = [];
+      service.executeStreamText.mockImplementation(
+        iterationTakingResults(handed, undefined, undefined, false),
+      );
+      service.subagents.takeUndelivered.mockResolvedValueOnce(finished);
+
+      await run();
+
+      expect(handed).toEqual(['RESULTS']);
+      expect(service.subagents.releaseDelivery).toHaveBeenCalledWith(['s1']);
+    });
+
+    it('keeps unreceived results pending alongside later claims when a retry fails', async () => {
+      repo.rows = [row('a', 'pending', 0), row('b', 'pending', 1)];
+      iteration.mockImplementationOnce(() => setStatus('a', 'completed'));
+      service.executeStreamText
+        .mockImplementationOnce(
+          iterationTakingResults([], undefined, undefined, false),
+        )
+        .mockImplementation(() => {
+          throw new Error('provider setup failed');
+        });
+      service.subagents.takeUndelivered
+        .mockResolvedValueOnce(finished)
+        .mockResolvedValueOnce([{ id: 's2', status: 'completed', sortOrder: 1 }]);
+
+      await run();
+
+      expect(service.subagents.releaseDelivery).toHaveBeenCalledWith(['s1', 's2']);
+    });
+
+    it('acknowledges retained results when a later iteration receives their replay', async () => {
+      repo.rows = [row('a', 'pending', 0), row('b', 'pending', 1)];
+      const order = ['a', 'b'];
+      iteration.mockImplementation(() => setStatus(order.shift()!, 'completed'));
+      const handed: Array<string | undefined> = [];
+      service.executeStreamText
+        .mockImplementationOnce(
+          iterationTakingResults(handed, undefined, undefined, false),
+        )
+        .mockImplementation(iterationTakingResults(handed));
+      service.subagents.takeUndelivered.mockResolvedValueOnce(finished);
+
+      await run();
+
+      expect(handed).toEqual(['RESULTS', undefined]);
+      expect(service.executeStreamText.mock.calls[1][0].modelMessages.at(-1).content)
+        .toContain('RESULTS');
+      expect(service.subagents.releaseDelivery).not.toHaveBeenCalled();
+    });
+
     it('forwards subagent updates and unsubscribes when the turn ends', async () => {
       const unsubscribe = jest.fn();
       service.subagents.subscribe.mockReturnValue(unsubscribe);
@@ -1106,6 +1235,54 @@ describe('subagents by agent mode', () => {
     expect(service.getSubagentTools(AgentMode.ASK, ctx)).toEqual({});
     expect(service.subagents.buildSubagentsPrompt).not.toHaveBeenCalled();
     expect(service.subagents.createTools).not.toHaveBeenCalled();
+  });
+});
+
+describe('withStepResults', () => {
+  const messages = [{ role: 'user', content: 'scan example.com' }];
+  const prepare = (
+    limit: ReturnType<typeof stepLimit>,
+    take: () => Promise<string | undefined>,
+    stepNumber: number,
+  ) =>
+    withStepResults(limit, take).prepareStep!({
+      stepNumber,
+      instructions: 'sys',
+      messages,
+    } as any);
+
+  it('changes nothing without a source of results', () => {
+    const limit = stepLimit(3, { forceSummary: false });
+    expect(withStepResults(limit)).toBe(limit);
+  });
+
+  it('leaves the first step alone', async () => {
+    const take = jest.fn(() => Promise.resolve('RESULTS'));
+    await expect(
+      prepare(stepLimit(5, { forceSummary: false }), take, 0),
+    ).resolves.toEqual({});
+    expect(take).not.toHaveBeenCalled();
+  });
+
+  it('adds results that finished to a later step as a user message', async () => {
+    const limit = stepLimit(5, { forceSummary: false });
+    await expect(
+      prepare(limit, () => Promise.resolve('RESULTS'), 1),
+    ).resolves.toEqual({
+      messages: [...messages, { role: 'user', content: 'RESULTS' }],
+    });
+    await expect(
+      prepare(limit, () => Promise.resolve(undefined), 2),
+    ).resolves.toEqual({});
+  });
+
+  it('keeps the forced summary of the last step', async () => {
+    await expect(
+      prepare(stepLimit(3), () => Promise.resolve('RESULTS'), 2),
+    ).resolves.toMatchObject({
+      toolChoice: 'none',
+      messages: [...messages, { role: 'user', content: 'RESULTS' }],
+    });
   });
 });
 
