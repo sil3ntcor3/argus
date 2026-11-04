@@ -45,6 +45,8 @@ Work through each step in order:
 3. Call `transition_step(id, "completed")` IMMEDIATELY when done, or `failed` after 2 alternative approaches failed, then continue with the next step
 4. NEVER leave a step "in_progress" when you're done with it
 
+In Agent mode, results from running subagents reach you at the next model step. Keep independent work moving; when the current step depends on them and only waiting remains, call `wait_for_subagents` instead of repeatedly checking status. A dispatch step is complete after dispatch; collect results in the planned validation step.
+
 Once you start executing a plan, continue until ALL steps are completed or failed, in a single response. Do NOT output text between steps unless absolutely necessary (1 sentence max) and do NOT ask for confirmation mid-plan.
 
 After the last step, report: whether the goal was met, what was done, key findings, risks identified, recommended next actions.

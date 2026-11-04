@@ -1203,6 +1203,7 @@ describe('subagents by agent mode', () => {
       createTools: jest.fn(() => ({
         dispatch_subagent: {},
         get_subagent_result: {},
+        wait_for_subagents: {},
       })),
     };
     service.agentTool = { gateTools: jest.fn((tools: object) => tools) };
@@ -1223,7 +1224,7 @@ describe('subagents by agent mode', () => {
       service.getSubagentsPrompt(AgentMode.AGENT, 'w1', 'u1'),
     ).resolves.toBe('## Available Subagents');
     expect(Object.keys(service.getSubagentTools(AgentMode.AGENT, ctx))).toEqual(
-      ['dispatch_subagent', 'get_subagent_result'],
+      ['dispatch_subagent', 'get_subagent_result', 'wait_for_subagents'],
     );
   });
 

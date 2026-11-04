@@ -1233,8 +1233,8 @@ export class AgentsCompletionsService {
   }
 
   /**
-   * dispatch_subagent / get_subagent_result, AGENT mode only. They only
-   * read or queue, but stay gated so PLAN mode blocks them.
+   * dispatch_subagent / get_subagent_result / wait_for_subagents, AGENT only.
+   * They read, queue or wait, but stay gated so PLAN mode blocks them.
    */
   private getSubagentTools(
     agentMode: AgentMode,
