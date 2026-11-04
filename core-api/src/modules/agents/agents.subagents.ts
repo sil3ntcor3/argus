@@ -26,6 +26,7 @@ import { AgentsModelsCatalogService } from './agents.models-catalog';
 import { AgentsSkillsService } from './agents.skills';
 import { AgentTool, READ_ONLY_TOOLS } from './agents.tools';
 import { currentToolName } from './tools/helpers';
+import type { BrowserScreenshotEvent } from './tools/remote-execute.tool';
 import type { AgentDefinitionResponseDto } from './dto/agent-definition.dto';
 import type {
   SubagentDetailResponseDto,
@@ -570,10 +571,20 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
       const approval: ApprovalSettings | undefined = allowWrite
         ? { userId, mode: AgentApprovalMode.AUTO }
         : undefined;
+      // The pages its browser commands load go to the conversation's Browser
+      // panel, labelled with this run. Nothing here waits on the user: the
+      // tools are auto-allowed or never offered.
+      const toolEvents = new EventEmitter();
+      toolEvents.on('browser-screenshot', (shot: BrowserScreenshotEvent) => {
+        this.events.emit(this.screenshotKey(job.conversationId), {
+          ...shot,
+          subagent: { id: job.id, name: job.name },
+        } satisfies BrowserScreenshotEvent);
+      });
       const allTools = this.agentTool.getTools(
         workspaceId,
         AgentMode.AGENT,
-        undefined,
+        toolEvents,
         conversation.id,
         approval,
       ) as Record<string, Tool>;
@@ -758,8 +769,24 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  /** Listens to the browser screenshots of one conversation's subagents. */
+  subscribeScreenshots(
+    conversationId: string,
+    listener: (shot: BrowserScreenshotEvent) => void,
+  ): () => void {
+    const key = this.screenshotKey(conversationId);
+    this.events.on(key, listener);
+    return () => {
+      this.events.off(key, listener);
+    };
+  }
+
   private eventKey(conversationId: string): string {
     return `updated:${conversationId}`;
+  }
+
+  private screenshotKey(conversationId: string): string {
+    return `screenshot:${conversationId}`;
   }
 
   private notify(conversationId: string): void {

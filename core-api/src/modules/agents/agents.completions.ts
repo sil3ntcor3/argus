@@ -67,6 +67,7 @@ import {
 } from './shared/conversation-metadata';
 import { DEFAULT_MAX_STEPS, stepLimit } from './shared/step-limit';
 import { TokenCounter } from './shared/token-counter';
+import type { BrowserScreenshotEvent } from './tools/remote-execute.tool';
 import {
   addSteps,
   addWait,
@@ -2340,11 +2341,7 @@ export class AgentsCompletionsService {
 
       // The page after each browser command, for the live Browser panel.
       // Transient: never part of the saved message.
-      const onBrowserScreenshot = (data: {
-        toolCallId: string;
-        command: string;
-        image: string;
-      }) => {
+      const onBrowserScreenshot = (data: BrowserScreenshotEvent) => {
         if (controllerClosed) return;
         controller.enqueue({
           type: 'data-browser-screenshot',
@@ -2407,6 +2404,10 @@ export class AgentsCompletionsService {
           } as unknown as UIMessageChunk);
         },
       );
+
+      // Subagent browser pages share the conversation's live view.
+      const unsubscribeSubagentScreenshots =
+        this.subagents.subscribeScreenshots(conversationId, onBrowserScreenshot);
 
       // Emit initial conversation-created event
       controller.enqueue({
@@ -2672,6 +2673,7 @@ export class AgentsCompletionsService {
         }
       } finally {
         unsubscribeSubagents();
+        unsubscribeSubagentScreenshots();
         // A placeholder no iteration finished (stopped mid-iteration or
         // between iterations, or every retry failed) must not stay
         // 'streaming'

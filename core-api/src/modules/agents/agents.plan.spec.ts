@@ -577,6 +577,7 @@ describe('AgentsCompletionsService plan execution', () => {
     service.persistTurnMetadata = jest.fn(() => Promise.resolve(null));
     service.subagents = {
       subscribe: jest.fn(() => () => {}),
+      subscribeScreenshots: jest.fn(() => () => {}),
       hasActive: jest.fn(() => Promise.resolve(false)),
       countUndelivered: jest.fn(() => Promise.resolve(0)),
       takeUndelivered: jest.fn(() => Promise.resolve([])),
@@ -1023,6 +1024,80 @@ describe('AgentsCompletionsService plan execution', () => {
         .toContain('RESULTS');
       expect(service.subagents.releaseDelivery).not.toHaveBeenCalled();
     });
+
+    it("streams the subagents' browser pages as live screenshots", async () => {
+      const unsubscribe = jest.fn();
+      service.subagents.subscribeScreenshots.mockImplementation(
+        (_id: string, listener: (shot: object) => void) => {
+          listener({
+            toolCallId: 't1',
+            command: 'browser open x',
+            image: 'jpg',
+            browserSessionId: 'b-' + 'a'.repeat(32),
+            subagent: { id: 's1', name: 'recon' },
+          });
+          return unsubscribe;
+        },
+      );
+
+      const stream: ReadableStream = service.createContinuationStream({
+        llmConfig: {},
+        model: {},
+        modelMessages: [],
+        contextParts: ['ctx'],
+        assistantMessageId: 'm1',
+        conversationId: 'c1',
+        assistantMessageMetadata: {},
+        tools: undefined,
+        todosEmitter: new EventEmitter(),
+        agentMode: AgentMode.ASK,
+        approvalMode: AgentApprovalMode.MANUAL,
+        workspaceId: 'w1',
+        userId: 'u1',
+      });
+      const chunks: Array<{ type: string; data?: unknown }> = [];
+      const reader = stream.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+
+      expect(chunks).toContainEqual(
+        expect.objectContaining({
+          type: 'data-browser-screenshot',
+          transient: true,
+          data: expect.objectContaining({
+            subagent: { id: 's1', name: 'recon' },
+            browserSessionId: 'b-' + 'a'.repeat(32),
+          }),
+        }),
+      );
+      expect(unsubscribe).toHaveBeenCalled();
+    });
+
+    it.each(['stopped', 'failed'])(
+      'cleans up screenshot subscriptions after a %s turn',
+      async (outcome) => {
+        const unsubscribe = jest.fn();
+        service.subagents.subscribeScreenshots.mockReturnValue(unsubscribe);
+        service.executeStreamText.mockImplementation(() => ({
+          aiStream: new ReadableStream({
+            start: (c) => {
+              if (outcome === 'failed') c.error(new Error('provider disconnected'));
+              else c.close();
+            },
+          }),
+          finishPromise: Promise.resolve(),
+          settle: jest.fn(() =>
+            Promise.resolve(outcome === 'stopped' ? 'aborted' : 'error'),
+          ),
+          getFinishReason: () => undefined,
+        }));
+        await run(AgentMode.ASK, AgentApprovalMode.MANUAL);
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+      },
+    );
 
     it('forwards subagent updates and unsubscribes when the turn ends', async () => {
       const unsubscribe = jest.fn();

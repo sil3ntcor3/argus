@@ -287,6 +287,44 @@ describe('AgentsSubagentsService', () => {
     expect(Object.keys(call.tools).sort()).toEqual([...READ_ONLY_TOOLS].sort());
   });
 
+  it("sends its browser pages to the conversation's live view, labelled with the run", async () => {
+    (streamText as jest.Mock).mockReturnValue(
+      streamResult({ text: 'ok', steps: [] }),
+    );
+    const shots: unknown[] = [];
+    const other = jest.fn();
+    const unsubscribeOther = service.subscribeScreenshots('c2', other);
+    const unsubscribe = service.subscribeScreenshots('c1', (shot) =>
+      shots.push(shot),
+    );
+    await (service as unknown as { run: (j: unknown) => Promise<void> }).run({
+      id: 's1',
+      conversationId: 'c1',
+      name: 'researcher',
+      task: 't',
+    });
+
+    const emitter = agentTool.getTools.mock.calls[0][2] as {
+      emit: (event: string, data: unknown) => void;
+    };
+    const shot = {
+      toolCallId: 't1',
+      command: 'browser open x',
+      image: 'jpg',
+      browserSessionId: 'b-' + 'a'.repeat(32),
+    };
+    emitter.emit('browser-screenshot', shot);
+    expect(shots).toEqual([
+      { ...shot, subagent: { id: 's1', name: 'researcher' } },
+    ]);
+
+    expect(other).not.toHaveBeenCalled();
+    unsubscribeOther();
+    unsubscribe();
+    emitter.emit('browser-screenshot', shot);
+    expect(shots).toHaveLength(1);
+  });
+
   it('gives a built-in subagent its declared write/exec tools even in a non-auto conversation', async () => {
     // Default conversation has no AUTO mode; the default definition() is
     // built-in with execute_remote_command declared
@@ -734,7 +772,7 @@ describe('AgentsSubagentsService', () => {
     expect(agentTool.getTools).toHaveBeenCalledWith(
       'w1',
       'agent',
-      undefined,
+      expect.anything(),
       'c1',
       undefined,
     );
