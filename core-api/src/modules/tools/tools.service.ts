@@ -272,6 +272,7 @@ export class ToolsService {
   /**
    * Install a tool to a workspace, checking for duplicates before insertion.
    * @throws BadRequestException if the tool already exists in this workspace.
+   * @throws NotFoundException if the tool is no longer in the catalog.
    * @returns The newly created workspace-tool entry.
    */
   async installTool(
@@ -290,6 +291,14 @@ export class ToolsService {
       throw new BadRequestException(
         'Tool already installed in this workspace.',
       );
+    }
+
+    const tool = await this.toolsRepository.findOne({
+      where: { id: dto.toolId },
+      select: { id: true },
+    });
+    if (!tool) {
+      throw new NotFoundException(`Tool with ID "${dto.toolId}" not found.`);
     }
 
     // Create and save the new workspace-tool entry
