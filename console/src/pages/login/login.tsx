@@ -11,12 +11,13 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { getWorkspaceListQueryOptions } from '@/hooks/useWorkspaceSelector';
+import { useRootControllerGetMetadata } from '@/services/apis/gen/queries';
 import { authClient } from '@/utils/authClient';
 import { safeRedirectPath } from '@/utils/safe-redirect';
 import { verificationCallbackURL } from '@/utils/verification-url';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRouter, useSearch } from '@tanstack/react-router';
+import { Link, useRouter, useSearch } from '@tanstack/react-router';
 import { Loader2Icon, MailCheck, MailWarning } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -49,6 +50,13 @@ export default function Login() {
     verified,
     error: verificationError,
   } = useSearch({ strict: false });
+  const {
+    data: metadata,
+    isError: metadataError,
+    isFetchedAfterMount: metadataReady,
+  } = useRootControllerGetMetadata({
+    query: { staleTime: 0, retry: false, refetchOnMount: 'always' },
+  });
 
   // Warm the post-login route chunks (JS + CSS) while the user is typing, so
   // a cold cache on a slow network doesn't leave them stuck here after a
@@ -223,6 +231,22 @@ export default function Login() {
               )}
             </form>
           </Form>
+          {metadata?.allowSignUp === true &&
+            !metadataError &&
+            metadataReady && (
+              <p className="text-center text-sm text-muted-foreground">
+                Don&apos;t have an account?{' '}
+                <Link
+                  to="/signup"
+                  search={{
+                    redirect: redirect ? safeRedirectPath(redirect) : undefined,
+                  }}
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  Sign up
+                </Link>
+              </p>
+            )}
         </div>
       </div>
     </AuthLayout>
