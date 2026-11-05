@@ -70,7 +70,7 @@ send closes its transport on success or failure, and delivery errors propagate
 to the internal caller. This service has no boot-time sending behavior.
 
 Provider names remain labels; the explicit SMTP fields control delivery.
-The mail settings UI and signup/verification wiring belong to later batches.
+Signup and verification wiring belong to later batches.
 Validate this foundation against a disposable local SMTP sink;
 never use real recipient addresses or production credentials for smoke tests.
 Rolling back the API can retain saved settings and keys without reverting schema.
