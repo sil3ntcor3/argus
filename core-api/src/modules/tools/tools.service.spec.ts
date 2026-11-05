@@ -1,5 +1,5 @@
 import { ToolCategory, WorkerType } from '@/common/enums/enum';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { Repository } from 'typeorm';
 import { And, ILike, In, Not } from 'typeorm';
@@ -749,6 +749,51 @@ describe('ToolsService — readiness flags', () => {
       const withoutProfile = await service.hasProfile('ws-001', 'tool-002');
       expect(withoutProfile).toBe(false);
     });
+  });
+});
+
+describe('installTool — validates the catalog entry', () => {
+  let service: ToolsService;
+  let tools: ReturnType<typeof mockRepo>;
+  let installs: ReturnType<typeof mockRepo>;
+
+  beforeEach(() => {
+    tools = mockRepo();
+    installs = mockRepo();
+    tools.findOne.mockResolvedValue({ id: 'tool-1', name: 'nuclei' });
+    installs.findOne.mockResolvedValue(null);
+    installs.create.mockImplementation((value: Record<string, unknown>) => value);
+    installs.save.mockImplementation((value: Record<string, unknown>) => Promise.resolve({ id: 'install-1', ...value }));
+    service = new ToolsService(
+      tools as unknown as Repository<Tool>, installs as unknown as Repository<WorkspaceTool>,
+      {} as never, {} as never, mockWorkersService() as never, mockRepo() as never, {} as never,
+    );
+  });
+
+  it('rejects an unknown tool before creating or saving an installation', async () => {
+    tools.findOne.mockResolvedValue(null);
+    await expect(service.installTool({ toolId: 'missing' }, 'ws-1')).rejects.toThrow(
+      new NotFoundException('Tool with ID "missing" not found.'),
+    );
+    expect(installs.create).not.toHaveBeenCalled();
+    expect(installs.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps successful responses scoped to the existing tool and workspace ids', async () => {
+    const result = await service.installTool({ toolId: 'tool-1' }, 'ws-1');
+    expect(result).toEqual({ id: 'install-1', tool: { id: 'tool-1' }, workspace: { id: 'ws-1' } });
+    expect(installs.findOne).toHaveBeenCalledWith({
+      where: { tool: { id: 'tool-1' }, workspace: { id: 'ws-1' } },
+    });
+  });
+
+  it('retains the existing duplicate error without attempting a second write', async () => {
+    installs.findOne.mockResolvedValue({ id: 'install-1' });
+    await expect(service.installTool({ toolId: 'tool-1' }, 'ws-1')).rejects.toThrow(
+      new BadRequestException('Tool already installed in this workspace.'),
+    );
+    expect(tools.findOne).not.toHaveBeenCalled();
+    expect(installs.save).not.toHaveBeenCalled();
   });
 });
 
