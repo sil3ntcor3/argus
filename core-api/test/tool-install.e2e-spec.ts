@@ -1,6 +1,9 @@
+import { AuditOutcome } from '@/common/enums/enum';
+import { AuditEvent } from '@/modules/audit/entities/audit-event.entity';
 import { Tool } from '@/modules/tools/entities/tools.entity';
 import { WorkspaceTool } from '@/modules/tools/entities/workspace_tools.entity';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
@@ -11,6 +14,7 @@ describe('Tool installation (e2e)', () => {
   let app: TestApp;
   let owner: Awaited<ReturnType<typeof createUserWithWorkspace>>;
   let other: Awaited<ReturnType<typeof createUserWithWorkspace>>;
+  let audited: Awaited<ReturnType<typeof createUserWithWorkspace>>;
   let toolId: string;
   const missing = randomUUID();
 
@@ -18,6 +22,7 @@ describe('Tool installation (e2e)', () => {
     app = await createTestApp();
     owner = await createUserWithWorkspace(app.server, 'tool-install-owner');
     other = await createUserWithWorkspace(app.server, 'tool-install-other');
+    audited = await createUserWithWorkspace(app.server, 'tool-audit-owner');
     toolId = (
       await app.dataSource
         .getRepository(Tool)
@@ -27,8 +32,16 @@ describe('Tool installation (e2e)', () => {
 
   afterAll(async () => {
     await cleanupE2eData(app.dataSource, {
-      workspaceIds: [owner?.workspace.id, other?.workspace.id].filter(Boolean),
-      userIds: [owner?.user.userId, other?.user.userId].filter(Boolean),
+      workspaceIds: [
+        owner?.workspace.id,
+        other?.workspace.id,
+        audited?.workspace.id,
+      ].filter(Boolean),
+      userIds: [
+        owner?.user.userId,
+        other?.user.userId,
+        audited?.user.userId,
+      ].filter(Boolean),
     });
     await closeTestApp(app.app);
   });
@@ -55,7 +68,7 @@ describe('Tool installation (e2e)', () => {
         .set(headers)
         .send({ toolId });
     const first = await install(owner.headers).expect(201);
-    expect(first.body.tool).toEqual({ id: toolId });
+    expect(first.body.tool).toEqual({ id: toolId, name: 'nuclei' });
     expect(first.body.workspace).toEqual({ id: owner.workspace.id });
     await install(owner.headers)
       .expect(400)
@@ -80,5 +93,72 @@ describe('Tool installation (e2e)', () => {
         .send({ toolId: id })
         .expect(403);
     }
+  });
+
+  it('persists attributed success and failure events without crossing workspace boundaries', async () => {
+    const operate = (operation: string, id = toolId) =>
+      request(app.server)
+        .post(`/api/tools/${operation}`)
+        .set(audited.headers)
+        .send({ toolId: id });
+    await operate('install').expect(201);
+    await operate('install').expect(400);
+    const removed = await operate('uninstall').expect(201);
+    expect(removed.body).toEqual({
+      message: 'Tool uninstalled successfully.',
+      toolId,
+      toolName: 'nuclei',
+    });
+    await operate('uninstall').expect(400);
+    await operate('install', missing).expect(404);
+
+    const repository = app.dataSource.getRepository(AuditEvent);
+    const where = { workspaceId: audited.workspace.id, resourceType: 'tool' };
+    let rows: AuditEvent[] = [];
+    for (let attempt = 0; attempt < 100; attempt++) {
+      rows = await repository.find({ where });
+      if (rows.length >= 5) break;
+      await delay(100);
+    }
+    expect(rows).toHaveLength(5);
+    const successful = rows.filter(
+      (row) => row.outcome === AuditOutcome.Success,
+    );
+    expect(successful).toHaveLength(2);
+    for (const [action, changes] of [
+      ['tool.installed', { tool: { after: 'nuclei' } }],
+      ['tool.uninstalled', { tool: { before: 'nuclei' } }],
+    ] as const) {
+      expect(successful.find((row) => row.action === action)).toMatchObject({
+        actorId: audited.user.userId,
+        resourceType: 'tool',
+        resourceId: toolId,
+        changes,
+      });
+    }
+    expect(
+      rows.filter((row) => row.outcome === AuditOutcome.Failure),
+    ).toHaveLength(3);
+    expect(rows.every((row) => row.actorId === audited.user.userId)).toBe(true);
+    const listed = await request(app.server)
+      .get(
+        `/api/workspaces/${audited.workspace.id}/audit?action=tool.installed`,
+      )
+      .set(audited.headers)
+      .expect(200);
+    expect(listed.body.data).toHaveLength(3);
+    await request(app.server)
+      .get(`/api/workspaces/${audited.workspace.id}/audit`)
+      .set(other.headers)
+      .expect(403);
+    expect(
+      await repository.count({
+        where: {
+          workspaceId: other.workspace.id,
+          resourceType: 'tool',
+          outcome: AuditOutcome.Success,
+        },
+      }),
+    ).toBe(1);
   });
 });

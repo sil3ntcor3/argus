@@ -77,6 +77,9 @@ export const AUDIT_ACTION_CATALOG = [
   { action: 'api_key.revoked', label: 'Revoked API key', controller: 'ApiKeysController', method: 'revoke' },
   // audit (35)
   { action: 'audit.exported', label: 'Exported audit log', controller: 'AuditEventsController', method: 'exportAuditEvents' },
+  // tools (36–37)
+  { action: 'tool.installed', label: 'Installed tool', controller: 'ToolsController', method: 'installTool' },
+  { action: 'tool.uninstalled', label: 'Uninstalled tool', controller: 'ToolsController', method: 'uninstallTool' },
 ] as const satisfies readonly AuditActionEntry[];
 
 /** Union of every catalog action key — the type for the audit DTOs' `@IsIn`. */
