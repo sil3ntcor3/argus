@@ -14,6 +14,12 @@ export class GetMetadataDto {
   })
   logoPath?: string | null;
 
+  @ApiProperty({
+    description:
+      'Whether public signup is currently allowed by signup and mail settings',
+  })
+  allowSignUp: boolean;
+
   @ApiProperty({ description: 'Current system version' })
   currentVersion: string | null;
 

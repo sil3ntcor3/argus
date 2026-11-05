@@ -25,8 +25,8 @@ Updates lock the singleton row so validation and concurrent field merges use the
 same database state. Failed validation leaves the stored settings unchanged.
 
 Public HTTP registration is closed by default and requires both allowSignUp
-and an enabled mail server. Metadata and the login page do not yet advertise
-signup; those console changes are a later batch. Saving settings alone sends no
+and an enabled mail server. Public metadata reports the effective eligibility;
+the login/signup UI remains a later batch. Saving settings alone sends no
 message. Existing brand and workspace settings retain their current APIs.
 
 ## Credential rotation and rollback
@@ -154,6 +154,19 @@ reads keep the switch unavailable; failed saves retain the saved value. The page
 links to mail settings when email verification mail is disabled.
 
 The preference controls port upstream #811 (668e3560). Public registration
-requires both this preference and enabled mail. Signup discovery and the public
-signup page remain a later batch. Saving this preference sends no email. Rollback
+requires both this preference and enabled mail. Public metadata exposes that
+eligibility; the signup page remains a later batch. Saving this preference sends no email. Rollback
 can retain the saved setting and schema.
+
+## Public signup metadata
+
+GET /api/metadata includes allowSignUp as a boolean, without authentication or
+workspace context. It is true only when both auth.allowSignUp and
+mailServer.enabled are true. Eligibility is read after configuration
+initialization on every request, so later setting changes appear on the next
+read. Mail settings, credentials and private settings remain absent.
+
+This additive response field ports upstream #811 (668e3560). Existing clients
+can ignore it; registration remains enforced by the signup endpoint. Cached
+metadata is a discovery hint and must not authorize registration. The public
+signup page is deferred. Rollback can omit this field without a schema change.

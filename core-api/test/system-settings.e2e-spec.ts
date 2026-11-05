@@ -200,7 +200,7 @@ describe('Admin system settings (e2e)', () => {
     expect(res.body).not.toHaveProperty('settings');
     expect(
       (await request(ctx.server).get('/api/metadata').expect(200)).body,
-    ).not.toHaveProperty('allowSignUp');
+    ).toHaveProperty('allowSignUp', false);
     await request(ctx.server)
       .post('/api/auth/sign-up/email')
       .send({
@@ -210,6 +210,60 @@ describe('Admin system settings (e2e)', () => {
       })
       .expect(403);
   });
+  it.each([
+    [false, false, false],
+    [false, true, false],
+    [true, false, false],
+    [true, true, true],
+  ])(
+    'publishes signup=%s and mail=%s as public eligibility=%s',
+    async (allowSignUp, enabled, expected) => {
+      await patch({
+        auth: { allowSignUp },
+        mailServer: {
+          enabled,
+          host: 'mailpit',
+          fromEmail: 'argus@example.com',
+          password,
+        },
+      }).expect(200);
+      const { body } = await request(ctx.server)
+        .get('/api/metadata')
+        .expect(200);
+      expect(body.allowSignUp).toBe(expected);
+      for (const key of ['auth', 'mailServer', 'settings'])
+        expect(body).not.toHaveProperty(key);
+      expect(JSON.stringify(body)).not.toContain(password);
+      expect(JSON.stringify(body)).not.toContain(
+        (await readStored()).settings.mailServer.password,
+      );
+    },
+  );
+
+  it('refreshes public eligibility after saved settings change without restarting', async () => {
+    const read = async () =>
+      ((await request(ctx.server).get('/api/metadata').expect(200)).body as {
+        allowSignUp: boolean;
+      }).allowSignUp;
+    expect(await read()).toBe(false);
+    await patch({
+      auth: { allowSignUp: true },
+      mailServer: {
+        enabled: true,
+        host: 'mailpit',
+        fromEmail: 'argus@example.com',
+      },
+    }).expect(200);
+    expect(await read()).toBe(true);
+    await patch({ mailServer: { enabled: false } }).expect(200);
+    expect(await read()).toBe(false);
+    await patch({
+      mailServer: { enabled: true },
+      auth: { allowSignUp: false },
+    }).expect(200);
+    expect(await read()).toBe(false);
+  });
+
   it('retains encrypted settings during normal brand updates', async () => {
     const cipher = encrypt(password);
     await ctx.dataSource
