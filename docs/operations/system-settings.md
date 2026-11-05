@@ -107,3 +107,16 @@ loading or failed settings keep approval disabled and provide Retry. With mail
 disabled, administrators can approve manually. Ordinary ban controls remain for
 other accounts. The backend signup/verification batch is a separate prerequisite
 for public registration and server-enforced verification; this UI changes no API.
+
+## Authentication preference
+
+The admin Authentication page at /admin/authentication manages the existing
+settings.auth.allowSignUp preference through the settings API. It saves only the
+auth section and refreshes the settings and metadata caches. Loading or failed
+reads keep the switch unavailable; failed saves retain the saved value. The page
+links to mail settings when email verification mail is disabled.
+
+This UI ports the preference controls from upstream #811 (668e3560). The backend
+signup/verification batch remains a separate prerequisite: on this API version,
+public registration stays closed even when the saved preference is true. Saving
+this preference sends no email. Rollback can retain the saved setting and schema.

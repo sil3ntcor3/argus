@@ -20,6 +20,7 @@ import { Route as AuthedReportsRouteImport } from './routes/_authed/reports'
 import { Route as AuthedSearchRouteImport } from './routes/_authed/search'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAboutRouteImport } from './routes/admin/about'
+import { Route as AdminAuthenticationRouteImport } from './routes/admin/authentication'
 import { Route as AdminBrandRouteImport } from './routes/admin/brand'
 import { Route as AdminMailServerRouteImport } from './routes/admin/mail-server'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
@@ -121,6 +122,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AdminAboutRoute = AdminAboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAuthenticationRoute = AdminAuthenticationRouteImport.update({
+  id: '/authentication',
+  path: '/authentication',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminBrandRoute = AdminBrandRouteImport.update({
@@ -385,6 +391,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AuthedReportsRoute
   '/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
+  '/admin/authentication': typeof AdminAuthenticationRoute
   '/admin/brand': typeof AdminBrandRoute
   '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -442,6 +449,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AuthedReportsRoute
   '/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
+  '/admin/authentication': typeof AdminAuthenticationRoute
   '/admin/brand': typeof AdminBrandRoute
   '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -504,6 +512,7 @@ export interface FileRoutesById {
   '/_authed/reports': typeof AuthedReportsRoute
   '/_authed/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
+  '/admin/authentication': typeof AdminAuthenticationRoute
   '/admin/brand': typeof AdminBrandRoute
   '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -567,6 +576,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/search'
     | '/admin/about'
+    | '/admin/authentication'
     | '/admin/brand'
     | '/admin/mail-server'
     | '/invite/$token'
@@ -624,6 +634,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/search'
     | '/admin/about'
+    | '/admin/authentication'
     | '/admin/brand'
     | '/admin/mail-server'
     | '/invite/$token'
@@ -685,6 +696,7 @@ export interface FileRouteTypes {
     | '/_authed/reports'
     | '/_authed/search'
     | '/admin/about'
+    | '/admin/authentication'
     | '/admin/brand'
     | '/admin/mail-server'
     | '/invite/$token'
@@ -824,6 +836,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/admin/about'
       preLoaderRoute: typeof AdminAboutRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/authentication': {
+      id: '/admin/authentication'
+      path: '/authentication'
+      fullPath: '/admin/authentication'
+      preLoaderRoute: typeof AdminAuthenticationRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/brand': {
@@ -1257,6 +1276,7 @@ const AuthedRouteWithChildren =
 
 interface AdminRouteChildren {
   AdminAboutRoute: typeof AdminAboutRoute
+  AdminAuthenticationRoute: typeof AdminAuthenticationRoute
   AdminBrandRoute: typeof AdminBrandRoute
   AdminMailServerRoute: typeof AdminMailServerRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -1268,6 +1288,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAboutRoute: AdminAboutRoute,
+  AdminAuthenticationRoute: AdminAuthenticationRoute,
   AdminBrandRoute: AdminBrandRoute,
   AdminMailServerRoute: AdminMailServerRoute,
   AdminIndexRoute: AdminIndexRoute,
