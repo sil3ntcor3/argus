@@ -956,6 +956,8 @@ export type GetMetadataDto = {
    * @nullable
    */
   logoPath: string | null;
+  /** Whether public signup is currently allowed by signup and mail settings */
+  allowSignUp: boolean;
   /** Current system version */
   currentVersion: GetMetadataDtoCurrentVersion;
   /** TTL in seconds for storage presigned URLs */

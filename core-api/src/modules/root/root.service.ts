@@ -53,6 +53,8 @@ export class RootService {
       },
     });
     const systemConfig = await this.systemConfigsService.getConfig();
+    // Resolve after config initialization on every request; consent can change.
+    const allowSignUp = await this.systemConfigsService.isSignUpAllowed();
 
     const currentVersion = this.configService.get<string>('APP_VERSION');
 
@@ -60,6 +62,7 @@ export class RootService {
       isInit,
       name: systemConfig.name,
       logoPath: systemConfig.logoPath,
+      allowSignUp,
       currentVersion: currentVersion || null,
       storagePresignTtlSeconds: this.storageService.getPresignTtlSeconds(),
       gitRepoUrl: GIT_REPO_URL,
