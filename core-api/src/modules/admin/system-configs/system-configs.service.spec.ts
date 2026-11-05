@@ -221,6 +221,22 @@ describe('SystemConfigsService', () => {
   });
 
   describe('feature settings reads', () => {
+    it('reads internal mail settings with defaults and encrypted credentials', async () => {
+      (mockSystemConfigRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'config',
+        settings: { mailServer: { password: 'stored-ciphertext' } },
+      });
+      await expect(service.getMailServer()).resolves.toMatchObject({
+        enabled: false,
+        host: '',
+        port: 587,
+        password: 'stored-ciphertext',
+      });
+      expect(mockSystemConfigRepository.findOne).toHaveBeenCalledWith({
+        where: {},
+        select: { id: true, settings: true },
+      });
+    });
     it('fills defaults while preserving stored sections internally', async () => {
       (mockSystemConfigRepository.findOne as jest.Mock).mockResolvedValue({
         id: 'config',
