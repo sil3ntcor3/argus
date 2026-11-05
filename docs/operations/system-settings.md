@@ -70,7 +70,7 @@ send closes its transport on success or failure, and delivery errors propagate
 to the internal caller. This service has no boot-time sending behavior.
 
 Provider names remain labels; the explicit SMTP fields control delivery.
-The mail settings UI and signup/verification wiring belong to later batches.
+Signup and verification wiring belong to later batches.
 Validate this foundation against a disposable local SMTP sink;
 never use real recipient addresses or production credentials for smoke tests.
 Rolling back the API can retain saved settings and keys without reverting schema.
@@ -97,3 +97,29 @@ recipients. Cover real admin delivery, denied callers, invalid recipients,
 disabled mail, connection refusal, credential redaction and retained ciphertext.
 Regenerate both OpenAPI documents and the console client using task gen-api
 after starting the new API. Existing routes and schemas must remain unchanged.
+
+## Admin mail settings page
+
+Open Admin > Mail server (/admin/mail-server). The existing parent admin guard
+requires a platform administrator. Load failures show Retry rather than an
+editable default form. Provider presets fill SMTP fields; the host remains
+editable for regional endpoints or self-hosted relays. All providers use SMTP.
+
+Set the host, port, TLS mode, credentials and sender, turn on mail if required,
+and select Save. Enabling mail requires a host and valid sender email. The
+password field is always blank on load; a saved marker reports its presence.
+Leaving it blank preserves the saved credential. A successful save clears the
+locally typed password. Discard restores the current saved values and clears
+local credentials. Background refetches preserve fields currently being edited.
+
+The test-email card uses the signed-in admin email by default. Change Send to
+if needed, then select Send test email. It is disabled for unsaved edits,
+disabled mail, invalid recipients, or an in-flight request. Saving settings alone
+sends no message. Public registration remains closed.
+
+Run task lint, task test, task console:test:run and task console:build. The console
+build regenerates the route tree. For Docker/browser validation use only local
+Mailpit and synthetic credentials; confirm save/discard, presets, validation,
+password retention, reload, test delivery, server errors, admin route protection
+and desktop/mobile layouts. Retain the existing schema and keys when rolling
+back; the preceding API supports the saved settings unchanged.

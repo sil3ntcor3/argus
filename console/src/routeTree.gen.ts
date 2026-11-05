@@ -21,6 +21,7 @@ import { Route as AuthedSearchRouteImport } from './routes/_authed/search'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAboutRouteImport } from './routes/admin/about'
 import { Route as AdminBrandRouteImport } from './routes/admin/brand'
+import { Route as AdminMailServerRouteImport } from './routes/admin/mail-server'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsTabRouteImport } from './routes/settings/$tab'
@@ -125,6 +126,11 @@ const AdminAboutRoute = AdminAboutRouteImport.update({
 const AdminBrandRoute = AdminBrandRouteImport.update({
   id: '/brand',
   path: '/brand',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminMailServerRoute = AdminMailServerRouteImport.update({
+  id: '/mail-server',
+  path: '/mail-server',
   getParentRoute: () => AdminRoute,
 } as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -380,6 +386,7 @@ export interface FileRoutesByFullPath {
   '/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
   '/admin/brand': typeof AdminBrandRoute
+  '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
   '/settings/$tab': typeof SettingsTabRoute
   '/admin/': typeof AdminIndexRoute
@@ -436,6 +443,7 @@ export interface FileRoutesByTo {
   '/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
   '/admin/brand': typeof AdminBrandRoute
+  '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
   '/settings/$tab': typeof SettingsTabRoute
   '/': typeof AuthedIndexRoute
@@ -497,6 +505,7 @@ export interface FileRoutesById {
   '/_authed/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
   '/admin/brand': typeof AdminBrandRoute
+  '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
   '/settings/$tab': typeof SettingsTabRoute
   '/_authed/': typeof AuthedIndexRoute
@@ -559,6 +568,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/admin/about'
     | '/admin/brand'
+    | '/admin/mail-server'
     | '/invite/$token'
     | '/settings/$tab'
     | '/admin/'
@@ -615,6 +625,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/admin/about'
     | '/admin/brand'
+    | '/admin/mail-server'
     | '/invite/$token'
     | '/settings/$tab'
     | '/'
@@ -675,6 +686,7 @@ export interface FileRouteTypes {
     | '/_authed/search'
     | '/admin/about'
     | '/admin/brand'
+    | '/admin/mail-server'
     | '/invite/$token'
     | '/settings/$tab'
     | '/_authed/'
@@ -819,6 +831,13 @@ declare module '@tanstack/react-router' {
       path: '/brand'
       fullPath: '/admin/brand'
       preLoaderRoute: typeof AdminBrandRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/mail-server': {
+      id: '/admin/mail-server'
+      path: '/mail-server'
+      fullPath: '/admin/mail-server'
+      preLoaderRoute: typeof AdminMailServerRouteImport
       parentRoute: typeof AdminRoute
     }
     '/invite/$token': {
@@ -1239,6 +1258,7 @@ const AuthedRouteWithChildren =
 interface AdminRouteChildren {
   AdminAboutRoute: typeof AdminAboutRoute
   AdminBrandRoute: typeof AdminBrandRoute
+  AdminMailServerRoute: typeof AdminMailServerRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminUsersIdRoute: typeof AdminUsersIdRoute
   AdminWorkspacesIdRoute: typeof AdminWorkspacesIdRoute
@@ -1249,6 +1269,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAboutRoute: AdminAboutRoute,
   AdminBrandRoute: AdminBrandRoute,
+  AdminMailServerRoute: AdminMailServerRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminUsersIdRoute: AdminUsersIdRoute,
   AdminWorkspacesIdRoute: AdminWorkspacesIdRoute,
