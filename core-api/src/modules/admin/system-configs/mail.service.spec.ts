@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
+import type { Auth } from 'better-auth';
 import { encrypt } from '@/common/utils/encryption.util';
 import { createTransport } from 'nodemailer';
 import { MailProvider } from './dto/system-configs.dto';
@@ -9,6 +10,11 @@ import type {
 } from './system-configs.service';
 
 jest.mock('nodemailer', () => ({ createTransport: jest.fn() }));
+
+type VerificationSender = (
+  data: { user: { id: string; name: string; email: string }; url: string },
+  request?: Request,
+) => Promise<void>;
 
 const server = (
   overrides: Partial<MailServerConfig> = {},
@@ -36,6 +42,7 @@ describe('MailService', () => {
   let getConfig: jest.Mock;
   let sendMail: jest.Mock;
   let close: jest.Mock;
+  let emailVerification: { sendVerificationEmail?: VerificationSender };
 
   beforeEach(() => {
     sendMail = jest.fn().mockResolvedValue({});
@@ -45,10 +52,77 @@ describe('MailService', () => {
       .mockReturnValue({ sendMail, close });
     getMailServer = jest.fn().mockResolvedValue(server());
     getConfig = jest.fn().mockResolvedValue({ name: 'Argus' });
-    service = new MailService({
-      getMailServer,
-      getConfig,
-    } as unknown as SystemConfigsService);
+    emailVerification = {};
+    service = new MailService(
+      {
+        getMailServer,
+        getConfig,
+      } as unknown as SystemConfigsService,
+      { options: { emailVerification } } as unknown as Auth,
+    );
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  describe('verification email', () => {
+    const user = {
+      id: 'user-1',
+      name: 'Ada <b> & "team"',
+      email: 'ada@example.com',
+    };
+    const url =
+      'https://argus.example.test/api/auth/verify-email?token=private&callbackURL=%2Flogin';
+    const send = () => {
+      service.onModuleInit();
+      return emailVerification.sendVerificationEmail as VerificationSender;
+    };
+
+    it.each(['Argus', 'Acme <Security>'])(
+      'uses saved %s branding and escapes HTML while retaining the plain link',
+      async (name) => {
+        getConfig.mockResolvedValue({ name });
+        await send()({ user, url }, new Request('https://argus.example.test'));
+        expect(sendMail).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: user.email,
+            subject: 'Verify your email for ' + name,
+            text: expect.stringContaining(url),
+            html: expect.stringContaining(
+              'Ada &lt;b&gt; &amp; &quot;team&quot;',
+            ),
+          }),
+        );
+        const sent = sendMail.mock.calls[0][0] as {
+          text: string;
+          html: string;
+        };
+        expect(sent.html).toContain('token=private&amp;callbackURL=');
+        expect(sent.html).not.toContain('<Security>');
+        expect(sent.text).toContain('24 hours');
+        expect(sent.text).toContain('administrator approves');
+        expect(close).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('never mails server-side first-admin bootstrap', async () => {
+      await send()({ user, url });
+      expect(getMailServer).not.toHaveBeenCalled();
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('keeps the account recoverable without logging SMTP credentials or verification tokens', async () => {
+      const log = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      sendMail.mockRejectedValue(new Error('smtp-secret ' + url));
+      await expect(
+        send()({ user, url }, new Request('https://argus.example.test')),
+      ).resolves.toBeUndefined();
+      expect(log).toHaveBeenCalledWith(
+        'Failed to send verification email. Check the mail server settings.',
+      );
+      expect(JSON.stringify(log.mock.calls)).not.toContain('smtp-secret');
+      expect(JSON.stringify(log.mock.calls)).not.toContain('token=private');
+      expect(close).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('uses the saved SMTP fields and decrypts the credential only for transport', async () => {

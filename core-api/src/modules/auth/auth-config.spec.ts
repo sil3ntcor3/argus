@@ -1,6 +1,8 @@
 // Isolate import-time policy from database, Redis and Better Auth initialization.
 jest.mock('dotenv/config', () => ({}));
-jest.mock('@/database/database-config', () => ({ databaseConnectionConfig: {} }));
+jest.mock('@/database/database-config', () => ({
+  databaseConnectionConfig: {},
+}));
 jest.mock('pg', () => ({ Pool: jest.fn() }));
 jest.mock('better-auth', () => ({
   betterAuth: (options: unknown) => options,
@@ -30,20 +32,37 @@ describe('auth startup policy', () => {
     },
   );
 
-  it('keeps public registration closed without disabling internal signup', () => {
+  it('routes signup through hooks without signing new users in', () => {
     jest.replaceProperty(process, 'env', { NODE_ENV: 'test' });
 
     jest.isolateModules(() => {
       const { auth } = jest.requireActual<{
         auth: {
           disabledPaths: string[];
-          emailAndPassword: { enabled: boolean; disableSignUp?: boolean };
+          emailAndPassword: {
+            enabled: boolean;
+            disableSignUp?: boolean;
+            autoSignIn?: boolean;
+          };
+          emailVerification: {
+            sendOnSignUp: boolean;
+            autoSignInAfterVerification: boolean;
+            expiresIn: number;
+          };
+          hooks?: object;
         };
       }>('./auth');
-      expect(auth.disabledPaths).toContain('/sign-up/email');
+      expect(auth.disabledPaths).not.toContain('/sign-up/email');
       expect(auth.disabledPaths).not.toContain('/admin/create-user');
       expect(auth.emailAndPassword.enabled).toBe(true);
       expect(auth.emailAndPassword.disableSignUp).not.toBe(true);
+      expect(auth.emailAndPassword.autoSignIn).toBe(false);
+      expect(auth.emailVerification).toEqual({
+        sendOnSignUp: true,
+        autoSignInAfterVerification: false,
+        expiresIn: 86400,
+      });
+      expect(auth.hooks).toEqual({});
     });
   });
   it.each([undefined, '', 'https://argus.example.test'])(
@@ -63,5 +82,4 @@ describe('auth startup policy', () => {
       });
     },
   );
-
 });

@@ -154,6 +154,12 @@ export class SystemConfigsService implements OnModuleInit {
     return mailServer as unknown as MailServerConfig;
   }
 
+  /** Public signup requires administrator consent and an enabled mail server. */
+  async isSignUpAllowed(): Promise<boolean> {
+    const { auth, mailServer } = await this.getSettings();
+    return auth?.allowSignUp === true && mailServer?.enabled === true;
+  }
+
   /** Only documented sections and fields cross the admin response boundary. */
   async getSettingsView(): Promise<SystemSettingsDto> {
     const settings = await this.getSettings();

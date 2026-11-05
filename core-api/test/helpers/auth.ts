@@ -6,7 +6,7 @@ import * as request from 'supertest';
 
 /**
  * Provisions an account through the same server-side API as first-admin setup.
- * Public HTTP registration is disabled. Signing in over real HTTP still proves
+ * Public HTTP registration is gated separately. Signing in over real HTTP proves
  * password hashing, session creation and cookie handling against the real app.
  */
 export async function signUp(
