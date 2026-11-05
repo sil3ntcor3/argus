@@ -15,6 +15,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as InitAdminRouteImport } from './routes/init-admin'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedReportsRouteImport } from './routes/_authed/reports'
 import { Route as AuthedSearchRouteImport } from './routes/_authed/search'
@@ -97,6 +98,11 @@ const LoginRoute = LoginRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
@@ -388,6 +394,7 @@ export interface FileRoutesByFullPath {
   '/init-admin': typeof InitAdminRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/signup': typeof SignupRoute
   '/reports': typeof AuthedReportsRoute
   '/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
@@ -446,6 +453,7 @@ export interface FileRoutesByTo {
   '/$': typeof SplatRoute
   '/init-admin': typeof InitAdminRoute
   '/login': typeof LoginRoute
+  '/signup': typeof SignupRoute
   '/reports': typeof AuthedReportsRoute
   '/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
@@ -509,6 +517,7 @@ export interface FileRoutesById {
   '/init-admin': typeof InitAdminRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/signup': typeof SignupRoute
   '/_authed/reports': typeof AuthedReportsRoute
   '/_authed/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
@@ -573,6 +582,7 @@ export interface FileRouteTypes {
     | '/init-admin'
     | '/login'
     | '/settings'
+    | '/signup'
     | '/reports'
     | '/search'
     | '/admin/about'
@@ -631,6 +641,7 @@ export interface FileRouteTypes {
     | '/$'
     | '/init-admin'
     | '/login'
+    | '/signup'
     | '/reports'
     | '/search'
     | '/admin/about'
@@ -693,6 +704,7 @@ export interface FileRouteTypes {
     | '/init-admin'
     | '/login'
     | '/settings'
+    | '/signup'
     | '/_authed/reports'
     | '/_authed/search'
     | '/admin/about'
@@ -756,6 +768,7 @@ export interface RootRouteChildren {
   InitAdminRoute: typeof InitAdminRoute
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRouteWithChildren
+  SignupRoute: typeof SignupRoute
   InviteTokenRoute: typeof InviteTokenRoute
 }
 
@@ -801,6 +814,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/': {
@@ -1327,6 +1347,7 @@ const rootRouteChildren: RootRouteChildren = {
   InitAdminRoute: InitAdminRoute,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRouteWithChildren,
+  SignupRoute: SignupRoute,
   InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport

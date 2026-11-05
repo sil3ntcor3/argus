@@ -25,8 +25,8 @@ Updates lock the singleton row so validation and concurrent field merges use the
 same database state. Failed validation leaves the stored settings unchanged.
 
 Public HTTP registration is closed by default and requires both allowSignUp
-and an enabled mail server. Public metadata reports the effective eligibility;
-the login/signup UI remains a later batch. Saving settings alone sends no
+and an enabled mail server. Public metadata reports the effective eligibility
+to the login and signup pages. Saving settings alone sends no
 message. Existing brand and workspace settings retain their current APIs.
 
 ## Credential rotation and rollback
@@ -155,7 +155,7 @@ links to mail settings when email verification mail is disabled.
 
 The preference controls port upstream #811 (668e3560). Public registration
 requires both this preference and enabled mail. Public metadata exposes that
-eligibility; the signup page remains a later batch. Saving this preference sends no email. Rollback
+eligibility to the login and signup pages. Saving this preference sends no email. Rollback
 can retain the saved setting and schema.
 
 ## Public signup metadata
@@ -168,8 +168,8 @@ read. Mail settings, credentials and private settings remain absent.
 
 This additive response field ports upstream #811 (668e3560). Existing clients
 can ignore it; registration remains enforced by the signup endpoint. Cached
-metadata is a discovery hint and must not authorize registration. The public
-signup page is deferred. Rollback can omit this field without a schema change.
+metadata is a discovery hint and must not authorize registration. Rollback can
+omit this field without a schema change.
 
 ## Login verification recovery
 
@@ -184,5 +184,28 @@ Verification links return to the same console's /login?verified=1 and retain
 only an in-app redirect. The confirmation message still requires administrator
 approval; invalid or expired links show recovery guidance. Query markers only
 control messages and cannot verify or approve an account. Validate resend and
-the verification-to-approval login flow against local Docker Mailpit. The public
-registration form remains a later batch. No API or schema change is required.
+the verification-to-approval login flow against local Docker Mailpit. No API or
+schema change is required.
+
+## Public registration UI
+
+The login page shows Sign up only after a successful fresh eligibility read.
+/signup refreshes metadata even after preloading or restoring a query cache.
+While availability is loading, failed or closed, it offers no registration form;
+failed reads can be retried. Signed-in visitors return to a safe in-app path,
+and a fresh installation still redirects to first-admin setup.
+
+The form validates a trimmed 1–100 character name, email, an 8–128 character
+password and matching confirmation. It uses the existing signup endpoint and
+same-origin verification callback, then returns to login without creating a
+session. Duplicate addresses retain the backend's identical response behavior.
+Concurrent submissions are disabled; request failures permit retry. A 403
+refreshes eligibility so closing registration replaces the form with a notice.
+The backend remains authoritative for signup, verification and approval.
+
+Run task console:routes after route changes, then task console:build. The routes
+task invokes the configured Vite generator; never edit routeTree.gen.ts manually.
+Validate the complete registration-to-approval flow on desktop and mobile with
+local Docker Mailpit, including cached metadata, closure, failures and retry.
+This UI port completes upstream #811's signup flow without API or schema changes.
+Rolling back the UI leaves existing accounts, settings and approval controls intact.
