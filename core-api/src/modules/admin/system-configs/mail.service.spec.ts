@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { encrypt } from '@/common/utils/encryption.util';
 import { createTransport } from 'nodemailer';
 import { MailProvider } from './dto/system-configs.dto';
@@ -143,5 +144,53 @@ describe('MailService', () => {
     );
     expect(sendMail).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+  describe('sendTest', () => {
+    it.each(['Argus', 'Acme Security'])(
+      'brands the test message with %s',
+      async (name) => {
+        getConfig.mockResolvedValue({ name });
+        await expect(service.sendTest('admin@example.com')).resolves.toEqual({
+          message: 'Test email sent',
+        });
+        expect(sendMail).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: 'admin@example.com',
+            subject: 'Test email from ' + name,
+            text:
+              'Your mail server is set up correctly. ' +
+              name +
+              ' can send email.',
+          }),
+        );
+      },
+    );
+
+    it('returns a safe 400 when the mail server is disabled', async () => {
+      getMailServer.mockResolvedValue(server({ enabled: false }));
+      await expect(
+        service.sendTest('admin@example.com'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(createTransport).not.toHaveBeenCalled();
+    });
+
+    it.each([new Error('535 rejected smtp-secret'), 'smtp-secret'])(
+      'keeps SMTP failure details private (%p)',
+      async (error) => {
+        sendMail.mockRejectedValue(error);
+        const failure = await service
+          .sendTest('admin@example.com')
+          .catch((value: unknown) => value);
+        expect(failure).toBeInstanceOf(BadRequestException);
+        expect((failure as BadRequestException).getStatus()).toBe(400);
+        expect((failure as BadRequestException).getResponse()).toMatchObject({
+          message: 'Test email failed. Check the mail server settings.',
+        });
+        expect(
+          JSON.stringify((failure as BadRequestException).getResponse()),
+        ).not.toContain('smtp-secret');
+        expect(close).toHaveBeenCalledTimes(1);
+      },
+    );
   });
 });

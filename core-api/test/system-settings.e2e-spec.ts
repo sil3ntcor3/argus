@@ -1,3 +1,4 @@
+import { MailService } from '@/modules/admin/system-configs/mail.service';
 import { decrypt, encrypt } from '@/common/utils/encryption.util';
 import { Role } from '@/common/enums/enum';
 import { User } from '@/modules/auth/entities/user.entity';
@@ -220,5 +221,70 @@ describe('Admin system settings (e2e)', () => {
       .send({ name: config.name })
       .expect(200);
     expect((await readStored()).settings.mailServer.password).toBe(cipher);
+  });
+  describe('test mail', () => {
+    const path = endpoint + '/mail-server/test';
+    afterEach(() => jest.restoreAllMocks());
+
+    it('rejects unauthenticated and non-admin callers without delivery', async () => {
+      const send = jest.spyOn(ctx.app.get(MailService), 'sendTest');
+      await request(ctx.server)
+        .post(path)
+        .send({ to: 'recipient@example.com' })
+        .expect(401);
+      await request(ctx.server)
+        .post(path)
+        .set('Cookie', member.cookie)
+        .send({ to: 'recipient@example.com' })
+        .expect(403);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {},
+      { to: null },
+      { to: '' },
+      { to: 'not-an-email' },
+      { to: ['recipient@example.com'] },
+      { to: 'a@example.com\r\nBcc: b@example.com' },
+    ])('rejects invalid recipient %j before delivery', async (body) => {
+      const send = jest.spyOn(ctx.app.get(MailService), 'sendTest');
+      await request(ctx.server)
+        .post(path)
+        .set('Cookie', cookie)
+        .send(body)
+        .expect(400);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('returns 201 and ignores client-supplied message and SMTP overrides', async () => {
+      const send = jest
+        .spyOn(ctx.app.get(MailService), 'sendTest')
+        .mockResolvedValue({ message: 'Test email sent' });
+      const response = await request(ctx.server)
+        .post(path)
+        .set('Cookie', cookie)
+        .send({
+          to: 'recipient@example.com',
+          subject: 'ignored',
+          host: 'ignored',
+          password: 'ignored',
+        })
+        .expect(201);
+      expect(response.body).toEqual({ message: 'Test email sent' });
+      expect(send).toHaveBeenCalledWith('recipient@example.com');
+    });
+
+    it('returns a safe 400 while saved mail is disabled', async () => {
+      const response = await request(ctx.server)
+        .post(path)
+        .set('Cookie', cookie)
+        .send({ to: 'recipient@example.com' })
+        .expect(400);
+      expect(response.body.message).toBe(
+        'Test email failed. Check the mail server settings.',
+      );
+      expect((await readStored()).settings).toEqual({});
+    });
   });
 });

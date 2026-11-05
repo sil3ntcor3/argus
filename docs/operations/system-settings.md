@@ -25,9 +25,9 @@ Updates lock the singleton row so validation and concurrent field merges use the
 same database state. Failed validation leaves the stored settings unchanged.
 
 These settings prepare later #811 batches. Public HTTP registration stays closed,
-metadata and the login page do not advertise signup, and no HTTP endpoint or
-authentication hook invokes mail delivery. Existing brand and workspace settings
-continue to use their current APIs.
+metadata and the login page do not advertise signup, and authentication hooks
+do not send mail. Saving settings alone sends no message. Existing brand and
+workspace settings continue to use their current APIs.
 
 ## Credential rotation and rollback
 
@@ -70,7 +70,30 @@ send closes its transport on success or failure, and delivery errors propagate
 to the internal caller. This service has no boot-time sending behavior.
 
 Provider names remain labels; the explicit SMTP fields control delivery.
-The mail-test endpoint, mail settings UI and signup/verification wiring belong
-to later batches. Validate this foundation against a disposable local SMTP sink;
+The mail settings UI and signup/verification wiring belong to later batches.
+Validate this foundation against a disposable local SMTP sink;
 never use real recipient addresses or production credentials for smoke tests.
 Rolling back the API can retain saved settings and keys without reverting schema.
+
+## Admin mail test
+
+POST /api/admin/system-configs/settings/mail-server/test requires a platform
+administrator session and a JSON body such as {"to":"admin@example.com"}.
+It sends one message through the saved SMTP server. Recipient validation rejects
+missing, null, empty, malformed, array and header-injection values. Additional
+message or SMTP fields in the request are ignored; they cannot override the
+stored server, sender, subject or body.
+
+Success returns HTTP 201 with {"message":"Test email sent"}. Anonymous callers
+receive 401 and non-admin users receive 403, before delivery is attempted.
+Invalid recipients receive 400. Disabled mail and delivery failures return 400
+with "Test email failed. Check the mail server settings." Raw SMTP errors and
+credentials are not returned. The subject and text use the saved system name;
+the sender still follows the configured fromName or the saved name (Argus by
+default). Sending a test never changes saved settings or enables registration.
+
+Validate using only a local Docker SMTP sink with synthetic credentials and
+recipients. Cover real admin delivery, denied callers, invalid recipients,
+disabled mail, connection refusal, credential redaction and retained ciphertext.
+Regenerate both OpenAPI documents and the console client using task gen-api
+after starting the new API. Existing routes and schemas must remain unchanged.
