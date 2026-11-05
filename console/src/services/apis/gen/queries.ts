@@ -2437,9 +2437,35 @@ export type AddToolToWorkspaceDto = {
   toolId: string;
 };
 
+export type InstalledToolIdentityDto = {
+  /** The id of the resource */
+  id: string;
+  name: string;
+};
+
+export type IdQueryParamDto = {
+  /** The id of the resource */
+  id: string;
+};
+
+export type InstallToolResponseDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  tool: InstalledToolIdentityDto;
+  workspace: IdQueryParamDto;
+  isEnabled: boolean;
+};
+
 export type InstallToolDto = {
   /** The ID of the tool */
   toolId: string;
+};
+
+export type UninstallToolResponseDto = {
+  message: string;
+  toolId: string;
+  toolName: string;
 };
 
 export type GetManyToolDto = {
@@ -25660,7 +25686,7 @@ export const toolsControllerInstallTool = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<WorkspaceTool>(
+  return orvalClient<InstallToolResponseDto>(
     {
       url: `/api/tools/install`,
       method: 'POST',
@@ -25754,7 +25780,7 @@ export const toolsControllerUninstallTool = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<DefaultMessageResponseDto>(
+  return orvalClient<UninstallToolResponseDto>(
     {
       url: `/api/tools/uninstall`,
       method: 'POST',

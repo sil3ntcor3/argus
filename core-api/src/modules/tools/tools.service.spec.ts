@@ -779,9 +779,12 @@ describe('installTool — validates the catalog entry', () => {
     expect(installs.save).not.toHaveBeenCalled();
   });
 
-  it('keeps successful responses scoped to the existing tool and workspace ids', async () => {
+  it('returns only the catalog identity needed to audit a successful installation', async () => {
     const result = await service.installTool({ toolId: 'tool-1' }, 'ws-1');
-    expect(result).toEqual({ id: 'install-1', tool: { id: 'tool-1' }, workspace: { id: 'ws-1' } });
+    expect(result).toEqual({ id: 'install-1', tool: { id: 'tool-1', name: 'nuclei' }, workspace: { id: 'ws-1' } });
+    expect(tools.findOne).toHaveBeenCalledWith({
+      where: { id: 'tool-1' }, select: { id: true, name: true },
+    });
     expect(installs.findOne).toHaveBeenCalledWith({
       where: { tool: { id: 'tool-1' }, workspace: { id: 'ws-1' } },
     });
@@ -828,16 +831,17 @@ describe('uninstallTool — cascades config profile deletion', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('removes the workspace_tools row AND deletes config profiles for the (workspace, tool) pair', async () => {
-    workspaceToolRepo.findOne.mockResolvedValue({ id: 'wt-1' });
+    workspaceToolRepo.findOne.mockResolvedValue({ id: 'wt-1', tool: { id: 'tool-001', name: 'nuclei' } });
 
     const result = await service.uninstallTool(
       { toolId: 'tool-001' },
       'ws-001',
     );
 
-    expect(result).toEqual({ message: 'Tool uninstalled successfully.' });
+    expect(result).toEqual({ message: 'Tool uninstalled successfully.', toolId: 'tool-001', toolName: 'nuclei' });
     expect(workspaceToolRepo.findOne).toHaveBeenCalledWith({
       where: { tool: { id: 'tool-001' }, workspace: { id: 'ws-001' } },
+      relations: { tool: true },
     });
     expect(workspaceToolRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(txManager.remove).toHaveBeenCalledTimes(1);
@@ -859,7 +863,7 @@ describe('uninstallTool — cascades config profile deletion', () => {
       'ws-002',
     );
 
-    expect(result).toEqual({ message: 'Tool uninstalled successfully.' });
+    expect(result).toEqual({ message: 'Tool uninstalled successfully.', toolId: 'tool-002', toolName: '' });
     expect(workspaceToolRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(txManager.delete).toHaveBeenCalledTimes(1);
     expect(txManager.delete).toHaveBeenCalledWith(ToolConfigProfile, {
