@@ -25,6 +25,19 @@ import {
   type SystemSettings,
 } from './entities/system-config.entity';
 
+/** Stored SMTP settings; the password remains encrypted until a send. */
+export interface MailServerConfig {
+  enabled: boolean;
+  provider: MailProvider;
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password?: string;
+  fromEmail: string;
+  fromName: string;
+}
+
 /**
  * Service for managing system configuration
  * Implements singleton pattern - only one config record exists
@@ -133,6 +146,12 @@ export class SystemConfigsService implements OnModuleInit {
         (section) => [section, { ...defaults[section], ...stored[section] }],
       ),
     );
+  }
+
+  /** Read the private mail section with defaults, retaining ciphertext. */
+  async getMailServer(): Promise<MailServerConfig> {
+    const { mailServer } = await this.getSettings();
+    return mailServer as unknown as MailServerConfig;
   }
 
   /** Only documented sections and fields cross the admin response boundary. */
