@@ -170,3 +170,19 @@ This additive response field ports upstream #811 (668e3560). Existing clients
 can ignore it; registration remains enforced by the signup endpoint. Cached
 metadata is a discovery hint and must not authorize registration. The public
 signup page is deferred. Rollback can omit this field without a schema change.
+
+## Login verification recovery
+
+The login page ports verification recovery from upstream #811 (668e3560).
+An EMAIL_NOT_VERIFIED sign-in response offers Send the verification email again
+for that attempted address, using the existing send-verification-email endpoint.
+Resend and sign-in are disabled while delivery is pending; failures permit retry.
+A new sign-in attempt clears the previous resend target. Other credential and
+ban errors keep their existing behavior and do not offer resend.
+
+Verification links return to the same console's /login?verified=1 and retain
+only an in-app redirect. The confirmation message still requires administrator
+approval; invalid or expired links show recovery guidance. Query markers only
+control messages and cannot verify or approve an account. Validate resend and
+the verification-to-approval login flow against local Docker Mailpit. The public
+registration form remains a later batch. No API or schema change is required.
