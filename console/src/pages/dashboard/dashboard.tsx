@@ -15,12 +15,19 @@ import TopPorts from './components/top-ports';
 import TopTechnologies from './components/top-technologies';
 import VulnerabilityStatistic from './components/vulnerabilities-statistic';
 
+/** Workspace overview; tenant queries wait for the selected workspace. */
 export default function Dashboard() {
-  const { workspaces, isLoading: workspacesLoading } = useWorkspaceSelector();
+  const {
+    workspaces,
+    selectedWorkspace,
+    isLoading: workspacesLoading,
+  } = useWorkspaceSelector();
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
 
   const { data: locations, isLoading: locationsLoading } =
-    useStatisticControllerGetAssetLocations();
+    useStatisticControllerGetAssetLocations({
+      query: { enabled: !!selectedWorkspace },
+    });
 
   const { data: ipLocationData, totalIps } = useIpLocationData({
     locations,
