@@ -1,5 +1,8 @@
 import { parseTrustedProxies } from '@/common/config/trusted-proxies';
-import { AUTH_IGNORE_ROUTERS } from '@/common/constants/app.constants';
+import {
+  AUTH_IGNORE_ROUTERS,
+  PENDING_APPROVAL_REASON,
+} from '@/common/constants/app.constants';
 import { Role } from '@/common/enums/enum';
 import { databaseConnectionConfig } from '@/database/database-config';
 import { betterAuth, type Auth } from 'better-auth';
@@ -30,6 +33,8 @@ export const auth: unknown = betterAuth({
     admin({
       defaultRole: Role.USER,
       adminRoles: [Role.ADMIN],
+      bannedUserMessage:
+        'Your account is not active. Contact your administrator.',
     }),
     openAPI({
       path: '/docs',
@@ -70,7 +75,46 @@ export const auth: unknown = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+    autoSignIn: false,
+    // The admin plugin's synthetic defaults would reveal an existing email:
+    // real HTTP signups are pending, so duplicate responses must be too.
+    customSyntheticUser: ({ coreFields, additionalFields, id }) => ({
+      ...coreFields,
+      ...additionalFields,
+      id,
+      role: Role.USER,
+      banned: true,
+      banReason: PENDING_APPROVAL_REASON,
+      banExpires: null,
+    }),
   },
+  emailVerification: {
+    sendOnSignUp: true,
+    autoSignInAfterVerification: false,
+    expiresIn: 24 * 60 * 60,
+  },
+  databaseHooks: {
+    user: {
+      create: {
+        // HTTP signup waits for approval; internal bootstrap and admin creation
+        // keep their existing provisioning behavior.
+        before: (user, ctx) =>
+          Promise.resolve(
+            ctx?.path === '/sign-up/email' && ctx.request
+              ? {
+                  data: {
+                    ...user,
+                    banned: true,
+                    banReason: PENDING_APPROVAL_REASON,
+                  },
+                }
+              : undefined,
+          ),
+      },
+    },
+  },
+  // Enables Nest-discovered route hooks in AuthModule.
+  hooks: {},
   session: {
     freshAge: 10,
     modelName: 'sessions',
@@ -84,11 +128,9 @@ export const auth: unknown = betterAuth({
   // `/delete-user*` (self-service) is blocked too, for the same reason.
   // `/admin/list-users` and `/admin/get-user` are replaced by GET /api/admin/users
   // and GET /api/admin/users/:id.
-  // Close public registration at the HTTP router only. Server-side signup
-  // still provisions the first admin; admins use /admin/create-user.
+  // SignUpHook gates HTTP signup using system settings, closed by default.
   disabledPaths: [
     ...AUTH_IGNORE_ROUTERS,
-    '/sign-up/email',
     '/admin/remove-user',
     '/admin/list-users',
     '/admin/get-user',

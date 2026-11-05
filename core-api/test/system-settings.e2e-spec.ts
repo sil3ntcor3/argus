@@ -183,11 +183,11 @@ describe('Admin system settings (e2e)', () => {
       },
     });
   });
-  it('keeps signup closed and ordinary configuration responses private', async () => {
+  it('keeps signup closed without mail and ordinary configuration responses private', async () => {
     await patch({
       auth: { allowSignUp: true },
       mailServer: {
-        enabled: true,
+        enabled: false,
         host: 'smtp.example.com',
         fromEmail: 'argus@example.com',
         password,
@@ -208,7 +208,7 @@ describe('Admin system settings (e2e)', () => {
         email: 'blocked-settings@example.com',
         password: 'Password123!',
       })
-      .expect(404);
+      .expect(403);
   });
   it('retains encrypted settings during normal brand updates', async () => {
     const cipher = encrypt(password);

@@ -1,6 +1,6 @@
 # System settings API
 
-Argus ports the backend configuration part of upstream open-asm #811
+Argus ports system settings and the backend signup flow from upstream open-asm #811
 (commit 668e35606b275f5495952027e079ed67ddab6066). The existing private JSONB
 columns hold the data. The SMTP foundation adds nodemailer 10.2.1, with no
 additional migration.
@@ -24,10 +24,10 @@ An enabled mail configuration requires a nonblank host and sender email.
 Updates lock the singleton row so validation and concurrent field merges use the
 same database state. Failed validation leaves the stored settings unchanged.
 
-These settings prepare later #811 batches. Public HTTP registration stays closed,
-metadata and the login page do not advertise signup, and authentication hooks
-do not send mail. Saving settings alone sends no message. Existing brand and
-workspace settings continue to use their current APIs.
+Public HTTP registration is closed by default and requires both allowSignUp
+and an enabled mail server. Metadata and the login page do not yet advertise
+signup; those console changes are a later batch. Saving settings alone sends no
+message. Existing brand and workspace settings retain their current APIs.
 
 ## Credential rotation and rollback
 
@@ -70,7 +70,7 @@ send closes its transport on success or failure, and delivery errors propagate
 to the internal caller. This service has no boot-time sending behavior.
 
 Provider names remain labels; the explicit SMTP fields control delivery.
-Signup and verification wiring belong to later batches.
+Configure and test the saved server through /admin/mail-server.
 Validate this foundation against a disposable local SMTP sink;
 never use real recipient addresses or production credentials for smoke tests.
 Rolling back the API can retain saved settings and keys without reverting schema.
@@ -98,6 +98,42 @@ disabled mail, connection refusal, credential redaction and retained ciphertext.
 Regenerate both OpenAPI documents and the console client using task gen-api
 after starting the new API. Existing routes and schemas must remain unchanged.
 
+## Signup, verification and approval
+
+A previously saved allowSignUp: true becomes active once this batch is deployed
+with mail enabled. Save allowSignUp: false before upgrading if registration
+should remain closed.
+
+POST /api/auth/sign-up/email returns 403 with "Sign-up is disabled" unless both
+auth.allowSignUp and mailServer.enabled are true. When open, Better Auth creates
+a normal user with banned: true and banReason: "Pending approval". It returns
+no session and sends a verification link through the saved SMTP server. The link
+expires after 24 hours. Verification marks the email confirmed without signing
+the user in or approving the account. HTML mail escapes names and link attributes;
+plain text retains the complete link and uses Argus or the saved custom name.
+
+Before confirmation, correct-password sign-in returns EMAIL_NOT_VERIFIED. Wrong
+passwords retain INVALID_EMAIL_OR_PASSWORD. After confirmation, sign-in returns
+BANNED_USER until a platform administrator approves using the existing
+POST /api/auth/admin/unban-user endpoint. The verification check only looks up
+the target after an admin session is established. Anonymous and non-admin
+callers retain Better Auth's authorization errors. Ordinary bans are unaffected.
+
+While mail is enabled, pending accounts must verify before approval. If an admin
+disables mail, approval can proceed without verification, matching upstream's
+manual recovery behavior. Disabling signup alone prevents new accounts without
+blocking existing verification links or approval. Server-side first-admin setup
+and admin-created accounts stay outside the public-signup approval path.
+
+Delivery failure leaves the account pending and logs a generic message without
+SMTP details or verification tokens. POST /api/auth/send-verification-email can
+retry delivery; existing and unknown addresses receive the same success shape.
+Validate signup, resend, invalid links, authorization and login against local
+Docker Mailpit using task api:test:e2e:one SPEC=test/signup-approval.e2e-spec.ts.
+To close registration, save auth.allowSignUp: false. Pending accounts remain
+banned after rollback; administrators can review them through existing user
+management. Retain saved SMTP credentials and encryption keys.
+
 ## Pending account review
 
 Admin user tables and detail pages show Pending approval for banned accounts
@@ -105,8 +141,9 @@ whose existing banReason is "Pending approval". The Edit tab offers Approve via
 the existing unban endpoint. Unverified accounts wait while mail is enabled;
 loading or failed settings keep approval disabled and provide Retry. With mail
 disabled, administrators can approve manually. Ordinary ban controls remain for
-other accounts. The backend signup/verification batch is a separate prerequisite
-for public registration and server-enforced verification; this UI changes no API.
+other accounts. The backend enforces email verification before approval while
+mail is enabled.
+The approval UI continues to use the existing unban endpoint.
 
 ## Authentication preference
 
@@ -116,7 +153,7 @@ auth section and refreshes the settings and metadata caches. Loading or failed
 reads keep the switch unavailable; failed saves retain the saved value. The page
 links to mail settings when email verification mail is disabled.
 
-This UI ports the preference controls from upstream #811 (668e3560). The backend
-signup/verification batch remains a separate prerequisite: on this API version,
-public registration stays closed even when the saved preference is true. Saving
-this preference sends no email. Rollback can retain the saved setting and schema.
+The preference controls port upstream #811 (668e3560). Public registration
+requires both this preference and enabled mail. Signup discovery and the public
+signup page remain a later batch. Saving this preference sends no email. Rollback
+can retain the saved setting and schema.

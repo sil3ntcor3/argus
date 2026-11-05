@@ -281,3 +281,23 @@ describe('SystemConfigsService', () => {
     });
   });
 });
+
+describe('signup settings gate', () => {
+  it.each([
+    [false, false, false],
+    [false, true, false],
+    [true, false, false],
+    [true, true, true],
+  ])(
+    'allowSignUp=%s and mail enabled=%s yields %s',
+    async (allowSignUp, enabled, allowed) => {
+      const service = Object.create(
+        SystemConfigsService.prototype,
+      ) as SystemConfigsService;
+      jest
+        .spyOn(service, 'getSettings')
+        .mockResolvedValue({ auth: { allowSignUp }, mailServer: { enabled } });
+      await expect(service.isSignUpAllowed()).resolves.toBe(allowed);
+    },
+  );
+});

@@ -76,7 +76,7 @@ describe('Auth and tenancy matrix', () => {
     const createdUser = await dataSource.getRepository(User).findOneBy({ email });
 
     try {
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(403);
       expect(res.headers['set-cookie']).toBeUndefined();
       expect(createdUser).toBeNull();
     } finally {
