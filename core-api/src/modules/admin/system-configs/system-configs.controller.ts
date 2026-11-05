@@ -9,6 +9,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpStatus,
   Logger,
   Patch,
   Post,
@@ -19,10 +20,12 @@ import {
   ConfirmLogoRequestDto,
   LogoPresignRequestDto,
   LogoPresignResponseDto,
+  SendTestMailDto,
   SystemConfigResponseDto,
   SystemSettingsDto,
   UpdateSystemConfigDto,
 } from './dto/system-configs.dto';
+import { MailService } from './mail.service';
 import { SystemConfigsService } from './system-configs.service';
 
 const LOGO_MAX_SIZE_BYTES = 5 * 1024 * 1024;
@@ -38,6 +41,7 @@ export class SystemConfigsController {
   constructor(
     private readonly systemConfigsService: SystemConfigsService,
     private readonly storageService: StorageService,
+    private readonly mailService: MailService,
   ) {}
 
   private readonly logger = new Logger(SystemConfigsController.name);
@@ -108,6 +112,33 @@ export class SystemConfigsController {
     @Body() dto: SystemSettingsDto,
   ): Promise<DefaultMessageResponseDto> {
     return this.systemConfigsService.updateSettings(dto);
+  }
+
+  /** Send a test message to one validated recipient through the saved server. */
+  @Post('settings/mail-server/test')
+  @Doc<DefaultMessageResponseDto>({
+    summary: 'Send a test email',
+    description:
+      'Sends a branded test message through the saved mail configuration. Requires a platform administrator.',
+    response: {
+      httpStatus: HttpStatus.CREATED,
+      serialization: DefaultMessageResponseDto,
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Invalid recipient, disabled mail or delivery failure. SMTP details are not returned.',
+  })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({
+    status: 403,
+    description: 'Platform administrator role required',
+  })
+  sendTestMail(
+    @Body() dto: SendTestMailDto,
+  ): Promise<DefaultMessageResponseDto> {
+    return this.mailService.sendTest(dto.to);
   }
 
   /**

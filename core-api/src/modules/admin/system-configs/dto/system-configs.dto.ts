@@ -193,6 +193,13 @@ export class SystemSettingsDto {
   mailServer?: MailServerSettingsDto | null;
 }
 
+/** Recipient of a test message using the saved mail configuration. */
+export class SendTestMailDto {
+  @ApiProperty({ example: 'admin@example.com', format: 'email' })
+  @IsEmail()
+  to: string;
+}
+
 export class LogoPresignRequestDto extends OmitType(PresignUploadRequestDto, [
   'bucket',
 ] as const) {}

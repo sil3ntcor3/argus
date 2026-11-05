@@ -1083,6 +1083,10 @@ export type SystemSettingsDto = {
   mailServer?: MailServerSettingsDto | null;
 };
 
+export type SendTestMailDto = {
+  to: string;
+};
+
 export type LogoPresignRequestDto = {
   /** Original file name of the object */
   fileName: string;
@@ -17254,6 +17258,100 @@ export const useSystemConfigsControllerUpdateSettings = <
 > => {
   return useMutation(
     getSystemConfigsControllerUpdateSettingsMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Sends a branded test message through the saved mail configuration. Requires a platform administrator.
+ * @summary Send a test email
+ */
+export const systemConfigsControllerSendTestMail = (
+  sendTestMailDto: SendTestMailDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    {
+      url: `/api/admin/system-configs/settings/mail-server/test`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: sendTestMailDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getSystemConfigsControllerSendTestMailMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+    TError,
+    { data: SendTestMailDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+  TError,
+  { data: SendTestMailDto },
+  TContext
+> => {
+  const mutationKey = ['systemConfigsControllerSendTestMail'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+    { data: SendTestMailDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return systemConfigsControllerSendTestMail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SystemConfigsControllerSendTestMailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>
+>;
+export type SystemConfigsControllerSendTestMailMutationBody = SendTestMailDto;
+export type SystemConfigsControllerSendTestMailMutationError = void;
+
+/**
+ * @summary Send a test email
+ */
+export const useSystemConfigsControllerSendTestMail = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+      TError,
+      { data: SendTestMailDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+  TError,
+  { data: SendTestMailDto },
+  TContext
+> => {
+  return useMutation(
+    getSystemConfigsControllerSendTestMailMutationOptions(options),
     queryClient,
   );
 };
