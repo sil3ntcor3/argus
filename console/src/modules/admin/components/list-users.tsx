@@ -1,3 +1,4 @@
+import { isPendingApproval } from '../utils';
 import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
@@ -43,7 +44,9 @@ const buildUserColumns = (ownerId?: string): ColumnDef<AdminUserDto>[] => [
     accessorKey: 'banned',
     header: 'Status',
     cell: ({ row }) =>
-      row.original.banned ? (
+      isPendingApproval(row.original) ? (
+        <Badge variant="outline">Pending approval</Badge>
+      ) : row.original.banned ? (
         <Badge variant="destructive">Banned</Badge>
       ) : (
         <Badge variant="secondary">Active</Badge>

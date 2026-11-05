@@ -1,3 +1,4 @@
+import { isPendingApproval } from '../utils';
 import type { AdminUserDto } from '@/services/apis/gen/queries';
 import {
   DetailField,
@@ -25,7 +26,7 @@ export function UserInfo({ user }: { user: AdminUserDto }) {
       <DetailField label="Last active">
         <UserPresence lastActiveAt={user.lastActiveAt} />
       </DetailField>
-      {user.banned && (
+      {user.banned && !isPendingApproval(user) && (
         <>
           <DetailField label="Ban reason">{user.banReason || '—'}</DetailField>
           <DetailField label="Ban expires">
