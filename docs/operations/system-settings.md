@@ -97,3 +97,13 @@ recipients. Cover real admin delivery, denied callers, invalid recipients,
 disabled mail, connection refusal, credential redaction and retained ciphertext.
 Regenerate both OpenAPI documents and the console client using task gen-api
 after starting the new API. Existing routes and schemas must remain unchanged.
+
+## Pending account review
+
+Admin user tables and detail pages show Pending approval for banned accounts
+whose existing banReason is "Pending approval". The Edit tab offers Approve via
+the existing unban endpoint. Unverified accounts wait while mail is enabled;
+loading or failed settings keep approval disabled and provide Retry. With mail
+disabled, administrators can approve manually. Ordinary ban controls remain for
+other accounts. The backend signup/verification batch is a separate prerequisite
+for public registration and server-enforced verification; this UI changes no API.
