@@ -1247,6 +1247,7 @@ describe('DataAdapterService', () => {
 
     it('S2c: missing assetServiceId skips insert with warn, no throw', async () => {
       const noServiceJob = { ...mockJob, assetServiceId: undefined } as unknown as Job;
+      mockQueryRunner.manager.getRepository = jest.fn().mockReturnValue({ find: jest.fn().mockResolvedValue([]) });
       const warnSpy = jest
         .spyOn((service as any).logger, 'warn')
         .mockImplementation(() => undefined);
@@ -1260,6 +1261,26 @@ describe('DataAdapterService', () => {
 
       expect(mockQueryRunner.manager.insert).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalled();
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+
+    it('files host-wide URLs under the service on their port', async () => {
+      const find = jest.fn().mockResolvedValue([{ id: 's-443', port: 443 }, { id: 's-8443', port: 8443 }]);
+      mockQueryRunner.manager.getRepository = jest.fn().mockReturnValue({ find });
+      await service.urlDiscovery({ data: [{ url: 'https://example.com:8443/admin' }, { url: 'https://example.com/login' }] as any, job: { ...mockJob, assetServiceId: undefined } });
+      expect(find).toHaveBeenCalledWith({ where: { assetId: 'asset-id' }, select: { id: true, port: true } });
+      expect(mockQueryRunner.manager.values).toHaveBeenCalledWith([
+        { url: 'https://example.com:8443/admin', assetServiceId: 's-8443', jobHistoryId: 'history-id' },
+        { url: 'https://example.com/login', assetServiceId: 's-443', jobHistoryId: 'history-id' },
+      ]);
+    });
+
+    it('never looks up unrelated services when a host-wide job lacks its asset', async () => {
+      mockQueryRunner.manager.getRepository = jest.fn();
+      await service.urlDiscovery({ data: [{ url: 'https://example.com/a' }] as any, job: { ...mockJob, asset: undefined, assetServiceId: undefined } as unknown as Job });
+      expect(mockQueryRunner.manager.getRepository).not.toHaveBeenCalled();
+      expect(mockQueryRunner.manager.insert).not.toHaveBeenCalled();
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
     });

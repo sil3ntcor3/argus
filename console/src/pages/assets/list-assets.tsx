@@ -109,7 +109,7 @@ export function ListAssets({
         <TriggerList tabTriggerList={tabList} />
         {/* mb-2 + the Tabs gap-2 = the 16px DataTable leaves between its toolbar and table (vulns, targets). */}
         {!isExtraTab && (
-          <div className="mb-2 flex justify-between items-center gap-2">
+          <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <AssetFilterBar />
             {/* <ExportDataButton api="api/assets/services/export" prefix="assets" /> */}
             {tab === 'urls' && urlsActions}
