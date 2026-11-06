@@ -103,7 +103,13 @@ describe('Private project metadata foundation (e2e)', () => {
         .set(owner.headers)
         .send(input)
         .expect(201);
-      assertPrivate(created.body as Record<string, unknown>);
+      if (prefix === 'projects') {
+        expect(created.body).toMatchObject({
+          description: input.description,
+          autoAddAssets: false,
+        });
+        expect(created.body).not.toHaveProperty('archivedAt');
+      } else assertPrivate(created.body as Record<string, unknown>);
       const id = (created.body as { id: string }).id;
       const detail = await request(app.server)
         .get(`/api/${prefix}/${id}`)
@@ -111,8 +117,8 @@ describe('Private project metadata foundation (e2e)', () => {
         .expect(200);
       if (prefix === 'projects') {
         expect(detail.body).toMatchObject({
-          description: null,
-          autoAddAssets: true,
+          description: input.description,
+          autoAddAssets: false,
         });
         expect(detail.body).not.toHaveProperty('archivedAt');
       } else assertPrivate(detail.body as Record<string, unknown>);
@@ -124,8 +130,8 @@ describe('Private project metadata foundation (e2e)', () => {
       expect(list.body.data).toHaveLength(1);
       if (prefix === 'projects') {
         expect(list.body.data[0]).toMatchObject({
-          description: null,
-          autoAddAssets: true,
+          description: input.description,
+          autoAddAssets: false,
         });
         expect(list.body.data[0]).not.toHaveProperty('archivedAt');
       } else assertPrivate(list.body.data[0] as Record<string, unknown>);
@@ -134,13 +140,25 @@ describe('Private project metadata foundation (e2e)', () => {
         .set(owner.headers)
         .send({ ...input, name: name + ' saved' })
         .expect(200);
-      assertPrivate(updated.body as Record<string, unknown>);
+      if (prefix === 'projects') {
+        expect(updated.body).toMatchObject({
+          description: input.description,
+          autoAddAssets: false,
+        });
+        expect(updated.body).not.toHaveProperty('archivedAt');
+      } else assertPrivate(updated.body as Record<string, unknown>);
       expect(
         await app.dataSource.query(
           'SELECT description, "autoAddAssets", "archivedAt" FROM projects WHERE id=$1',
           [id],
         ),
-      ).toEqual([{ description: null, autoAddAssets: true, archivedAt: null }]);
+      ).toEqual([
+        {
+          description: prefix === 'projects' ? input.description : null,
+          autoAddAssets: prefix !== 'projects',
+          archivedAt: null,
+        },
+      ]);
     },
   );
 });

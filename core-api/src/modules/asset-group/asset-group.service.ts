@@ -35,6 +35,10 @@ import { AssetGroupAssetService } from './asset-group-asset.service';
 import { isGroupOwnedWorkflow } from './workflow-ownership';
 import { buildPipelineJobs } from './pipeline';
 
+type ProjectMetadataInput = Partial<
+  Pick<AssetGroup, 'description' | 'autoAddAssets'>
+>;
+
 @Injectable()
 export class AssetGroupService {
   private readonly logger = new Logger(AssetGroupService.name);
@@ -228,7 +232,11 @@ export class AssetGroupService {
   /**
    * Creates a new asset group
    */
-  async create(createAssetGroupDto: CreateAssetGroupDto, workspaceId: string) {
+  async create(
+    createAssetGroupDto: CreateAssetGroupDto,
+    workspaceId: string,
+    metadata?: ProjectMetadataInput,
+  ) {
     try {
       // Validate the workspace exists
       const workspace = await this.assetGroupRepo.manager.findOneBy(Workspace, {
@@ -268,6 +276,12 @@ export class AssetGroupService {
       const assetGroup = this.assetGroupRepo.create({
         name: createAssetGroupDto.name,
         hexColor: createAssetGroupDto.hexColor,
+        ...(metadata
+          ? {
+              description: metadata.description?.trim() || null,
+              autoAddAssets: metadata.autoAddAssets ?? true,
+            }
+          : {}),
         workspace: { id: workspaceId },
       });
 
@@ -551,6 +565,7 @@ export class AssetGroupService {
     id: string,
     updateAssetGroupDto: UpdateAssetGroupDto,
     workspaceId: string,
+    metadata?: ProjectMetadataInput,
   ): Promise<AssetGroup> {
     try {
       // Find the asset group
@@ -573,6 +588,10 @@ export class AssetGroupService {
       }
 
       // Save the updated asset group
+      if (metadata?.description !== undefined)
+        assetGroup.description = metadata.description?.trim() || null;
+      if (metadata?.autoAddAssets !== undefined)
+        assetGroup.autoAddAssets = metadata.autoAddAssets;
       const updatedAssetGroup = await this.assetGroupRepo.save(assetGroup);
 
       return updatedAssetGroup;

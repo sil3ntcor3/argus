@@ -35,7 +35,7 @@ export class AssetGroup extends BaseEntity {
   @Column({ nullable: true, default: '#78716C' }) // stone-500 tailwind css
   hexColor: string;
 
-  // Persistence foundation only; public project metadata follows separately.
+  // Private entity fields; canonical project DTOs expose selected metadata.
   @ApiHideProperty()
   @Column({ type: 'text', nullable: true, select: false })
   description: string | null;

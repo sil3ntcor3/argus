@@ -110,30 +110,32 @@ describe('Canonical project metadata reads (e2e)', () => {
     expect(empty.body.data).toEqual([]);
   });
 
-  it('keeps metadata writes and mutation responses outside the read contract', async () => {
+  it('retains default metadata when canonical mutations omit it', async () => {
     const created = await request(app.server)
       .post('/api/projects')
       .set(owner.headers)
       .send({
         name: randomUUID(),
-        description: 'Ignored input',
-        autoAddAssets: false,
       })
       .expect(201);
     const createdId = (created.body as { id: string }).id;
-    for (const key of ['description', 'autoAddAssets', 'archivedAt'])
-      expect(created.body).not.toHaveProperty(key);
+    expect(created.body).toMatchObject({
+      description: null,
+      autoAddAssets: true,
+    });
+    expect(created.body).not.toHaveProperty('archivedAt');
     const changed = await request(app.server)
       .patch(`/api/projects/${createdId}`)
       .set(owner.headers)
       .send({
         name: randomUUID(),
-        description: 'Ignored again',
-        autoAddAssets: false,
       })
       .expect(200);
-    for (const key of ['description', 'autoAddAssets', 'archivedAt'])
-      expect(changed.body).not.toHaveProperty(key);
+    expect(changed.body).toMatchObject({
+      description: null,
+      autoAddAssets: true,
+    });
+    expect(changed.body).not.toHaveProperty('archivedAt');
     const view = await request(app.server)
       .get(`/api/projects/${createdId}`)
       .set(owner.headers)
