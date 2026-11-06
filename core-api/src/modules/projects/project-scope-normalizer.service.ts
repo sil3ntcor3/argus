@@ -3,7 +3,7 @@ import {
   ProjectScopeRuleType as Kind,
 } from '@/common/enums/enum';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { normalizeScopeRuleValue, type ScopeRuleLike } from './scope-rules';
 
 export type ScopeRuleInput = Omit<ScopeRuleLike, 'id'>;
@@ -16,7 +16,9 @@ export class ProjectScopeNormalizer {
   async normalizeRules(
     workspaceId: string,
     rules: ScopeRuleInput[],
+    manager?: EntityManager,
   ): Promise<ScopeRuleInput[]> {
+    const executor = manager ?? this.dataSource;
     const normalized = rules.map((rule) => {
       if (rule.mode !== Mode.INCLUDE && rule.mode !== Mode.EXCLUDE) {
         throw new BadRequestException('Invalid scope rule mode');
@@ -39,7 +41,7 @@ export class ProjectScopeNormalizer {
     ];
     const targetIds = idsOf(Kind.TARGET);
     if (targetIds.length) {
-      const found = await this.dataSource.query<{ id: string }[]>(
+      const found = await executor.query<{ id: string }[]>(
         `SELECT id FROM targets WHERE id = ANY($1::uuid[]) AND "workspaceId" = $2`,
         [targetIds, workspaceId],
       );
@@ -47,7 +49,7 @@ export class ProjectScopeNormalizer {
     }
     const assetIds = idsOf(Kind.ASSET);
     if (assetIds.length) {
-      const found = await this.dataSource.query<{ id: string }[]>(
+      const found = await executor.query<{ id: string }[]>(
         `SELECT a.id FROM assets a JOIN targets t ON t.id = a."targetId"
          WHERE t."workspaceId" = $1 AND a.id = ANY($2::uuid[])`,
         [workspaceId, assetIds],
