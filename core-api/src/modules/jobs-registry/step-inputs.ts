@@ -112,7 +112,7 @@ export function webUrl(host: string, scheme: string, port: number): string {
     : `${scheme}://${authority}:${port}`;
 }
 
-function scopedHttpUrl(value: string, host: string): boolean {
+export function isScopedHttpUrl(value: string, host: string): boolean {
   try {
     const url = new URL(value);
     const scopedHost = new URL(webUrl(host, 'https', 443)).hostname;
@@ -166,7 +166,7 @@ function itemsOf(
 
     case DataKind.URL:
       return (scope.urls?.get(asset.id) ?? [])
-        .filter((found) => scopedHttpUrl(found.url, asset.value))
+        .filter((found) => isScopedHttpUrl(found.url, asset.value))
         .map((found) => ({
           kind,
           assetId: asset.id,

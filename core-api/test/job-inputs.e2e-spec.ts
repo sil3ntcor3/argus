@@ -1,8 +1,10 @@
-import { ToolCategory } from '@/common/enums/enum';
+import { DataKind, TargetType, ToolCategory } from '@/common/enums/enum';
 import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
 import { JobsRegistryController } from '@/modules/jobs-registry/jobs-registry.controller';
 import { JobsRegistryService } from '@/modules/jobs-registry/jobs-registry.service';
 import { Job } from '@/modules/jobs-registry/entities/job.entity';
+import { StepScopeLoader } from '@/modules/jobs-registry/step-scope.loader';
+import { planStepInputs } from '@/modules/jobs-registry/step-inputs';
 import * as request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
@@ -171,4 +173,50 @@ describe('Job input foundation (e2e)', () => {
       .findOneByOrFail({ id: stored.id });
     expect(normalRead.inputs).toBeUndefined();
   });
+
+  it.each([
+    ['microseconds', '2026-11-06 00:00:00.123455'],
+    ['timestamp/UUID tie', '2026-11-06 00:00:00.123456'],
+  ])(
+    'retains an older eligible URL across a full excluded page (%s)',
+    async (_, validTime) => {
+      const serviceId = await insert(
+        'INSERT INTO asset_services (value,port,"assetId") VALUES ($1,8443,$2) ON CONFLICT ("assetId",port) DO UPDATE SET value=EXCLUDED.value',
+        [`${host}:8443`, assetId],
+      );
+      const prefix = randomUUID().slice(0, 24);
+      await app.dataSource.query(
+        `INSERT INTO discovered_urls (id,url,"assetServiceId","jobHistoryId","createdAt")
+       SELECT ($1 || lpad(to_hex(i),12,'0'))::uuid,
+         CASE WHEN i%3=0 THEN 'invalid-'||i
+              WHEN i%3=1 THEN 'https://external.example.net/'||i
+              ELSE 'ftp://'||$2||'/'||i END,
+         $3::uuid,$4::uuid,$5::timestamp FROM generate_series(1,250) i`,
+        [prefix, host, serviceId, runId, '2026-11-06 00:00:00.123456'],
+      );
+      const url = `https://${host}:8443/eligible`;
+      await app.dataSource.query(
+        'INSERT INTO discovered_urls (id,url,"assetServiceId","jobHistoryId","createdAt") VALUES ($1,$2,$3,$4,$5::timestamp)',
+        [prefix + '000000000000', url, serviceId, runId, validTime],
+      );
+      const loader = new StepScopeLoader(app.dataSource);
+      const filter = {
+        workspaceId: owner.workspace.id,
+        assetIds: [assetId],
+        targetTypes: [TargetType.DOMAIN],
+      };
+      const loaded = await loader.load([DataKind.URL, DataKind.HOST], filter);
+      expect(
+        planStepInputs([DataKind.URL, DataKind.HOST], loaded.scope).map(
+          (p) => p.connectorInputs,
+        ),
+      ).toEqual([{ target: url }]);
+      expect(loaded.services.get(serviceId)?.id).toBe(serviceId);
+      const foreign = await loader.load([DataKind.URL], {
+        ...filter,
+        workspaceId: other.workspace.id,
+      });
+      expect(foreign.scope.assets).toEqual([]);
+    },
+  );
 });
