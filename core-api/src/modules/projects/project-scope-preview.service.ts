@@ -1,4 +1,7 @@
-import { ProjectScopeRuleMode as Mode } from '@/common/enums/enum';
+import {
+  ProjectScopeRuleMode as Mode,
+  ProjectScopeRuleType as Kind,
+} from '@/common/enums/enum';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import {
@@ -26,9 +29,31 @@ export async function countScopeRules(
   rules: ScopeRuleLike[],
 ): Promise<number[]> {
   const includes = rules.filter((rule) => rule.mode === Mode.INCLUDE);
+  const assetExcludes = rules.filter(
+    (rule) => rule.mode === Mode.EXCLUDE && rule.type === Kind.ASSET,
+  );
+  let matchedAssets: Set<string> | undefined;
+  if (includes.length && assetExcludes.length > 1) {
+    const ids = [
+      ...new Set(assetExcludes.map((rule) => rule.value.toLowerCase())),
+    ];
+    const params = new SqlParams([workspaceId, ids]);
+    const rows = await dataSource.query<{ id: string }[]>(
+      `SELECT a.id::text AS id FROM assets a JOIN targets t ON t.id = a."targetId"
+       WHERE t."workspaceId" = $1 AND a.id = ANY($2::uuid[]) AND ${scopeRulesSql(includes, params)!.where}`,
+      params.values,
+    );
+    matchedAssets = new Set(rows.map((row) => row.id.toLowerCase()));
+  }
   return Promise.all(
     rules.map(async (rule) => {
       if (rule.mode === Mode.EXCLUDE && !includes.length) return 0;
+      if (
+        matchedAssets &&
+        rule.mode === Mode.EXCLUDE &&
+        rule.type === Kind.ASSET
+      )
+        return matchedAssets.has(rule.value.toLowerCase()) ? 1 : 0;
       const params = new SqlParams([workspaceId]);
       let where = scopeRuleMatchSql(rule, params);
       if (rule.mode === Mode.EXCLUDE)
