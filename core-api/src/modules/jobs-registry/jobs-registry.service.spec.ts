@@ -2481,6 +2481,7 @@ describe('JobsRegistryService', () => {
 
     const buildQueryRunner = (jobs: unknown[]) => {
       const qb = {
+        addSelect: jest.fn().mockReturnThis(),
         innerJoinAndSelect: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
         leftJoin: jest.fn().mockReturnThis(),
@@ -2541,6 +2542,23 @@ describe('JobsRegistryService', () => {
       expect(queryRunner.commitTransaction).toHaveBeenCalled();
       expect(queryRunner.rollbackTransaction).not.toHaveBeenCalled();
     });
+
+    it.each([WorkerType.BUILT_IN, WorkerType.CONNECTOR])(
+      'hydrates private input snapshots for %s worker claims',
+      async (type) => {
+        const inputs = { target: 'https://app.example.com:8443' };
+        const tool = { id: 'nuclei-id', name: 'nuclei' };
+        const { qb } = givenWorkerAndQueue(buildWorker({ type, tool }), [
+          {
+            id: 'job-inputs', tool, inputs,
+            asset: { value: 'app.example.com', target: { workspaceId: 'ws-1' } },
+          },
+        ]);
+        const [job] = await service.getNextJobs('worker-uuid', 1);
+        expect(qb.addSelect).toHaveBeenCalledWith('jobs.inputs');
+        expect(job).toMatchObject({ inputs, tool, workspaceId: 'ws-1' });
+      },
+    );
 
     it('caps the claim so a worker cannot drain the whole queue', async () => {
       // Given: a worker asking for far more than the server-side ceiling

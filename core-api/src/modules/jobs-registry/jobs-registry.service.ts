@@ -767,6 +767,7 @@ export class JobsRegistryService {
     try {
       const queryBuilder = queryRunner.manager
         .createQueryBuilder(Job, 'jobs')
+        .addSelect('jobs.inputs')
         .innerJoinAndSelect('jobs.asset', 'asset')
         .innerJoinAndSelect('asset.target', 'target')
         .leftJoinAndSelect('jobs.tool', 'tool')
@@ -878,7 +879,8 @@ export class JobsRegistryService {
 
   /**
    * Shapes a claimed Job row into the payload a worker consumes. Kept separate
-   * from the claim so `getNextJobs` stays a pure query/claim concern.
+   * from the claim so `getNextJobs` stays a pure query/claim concern. Private
+   * input snapshots are carried here for connector dispatch only.
    */
   private toGetNextJobResult(
     worker: WorkerInstance,
@@ -887,6 +889,7 @@ export class JobsRegistryService {
   ): GetNextJobResult {
     const base: GetNextJobResult = {
       id: job.id,
+      inputs: job.inputs,
       category: job.category,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,

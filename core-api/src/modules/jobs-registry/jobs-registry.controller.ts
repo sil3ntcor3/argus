@@ -162,9 +162,13 @@ export class JobsRegistryController {
   @WorkerTokenAuth()
   @Public()
   @Get('/:workerId/next')
+  /** Legacy HTTP claims keep their existing response without private snapshots. */
   async getNextJob(@Param() { workerId }: WorkerIdParams) {
     const job = await this.jobsRegistryService.getNextJob(workerId);
-    return job;
+    if (!job) return job;
+    const response = { ...job };
+    delete response.inputs;
+    return response;
   }
 
   @Doc({ summary: 'Updates the result of a job with the given worker ID.' })
@@ -475,7 +479,8 @@ export class JobsRegistryController {
    * `NextBatch` so the two paths can never drift apart.
    */
   /**
-   * Inputs of a connector job. A repository asset (GIT_ORG target) gets its
+   * Inputs of a connector job, preferring a stored non-repository target.
+   * A repository asset (GIT_ORG target) gets its
    * clone URL plus the integration's token, decrypted here for this dispatch
    * only — never persisted on the job. Without a usable integration the job
    * still runs, unauthenticated (public repositories).
@@ -489,7 +494,8 @@ export class JobsRegistryController {
       target?: { type?: string; integrationId?: string | null } | null;
     };
     if (!isRepositoryAsset(asset)) {
-      return buildConnectorInputs(asset);
+      // Planned service/URL targets survive dispatch; older jobs use the asset.
+      return job.inputs ?? buildConnectorInputs(asset);
     }
 
     const integrationId = asset.target?.integrationId;
