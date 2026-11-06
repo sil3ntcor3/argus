@@ -16,6 +16,7 @@ import { AssetGroup } from './asset-groups.entity';
 @Entity('project_assets')
 @Index('IDX_pa_projectId', ['assetGroup'])
 @Index('IDX_pa_assetId', ['asset'])
+@Index('IDX_pa_scopeRuleId', ['scopeRuleId'])
 @Index('UQ_pa_projectId_assetId', ['assetGroup', 'asset'], { unique: true })
 export class AssetGroupAsset extends BaseEntity {
   @ManyToOne(() => AssetGroup, (assetGroup) => assetGroup.assetGroupAssets, {
