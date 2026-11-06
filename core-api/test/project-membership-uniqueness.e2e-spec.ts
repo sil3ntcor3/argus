@@ -1,6 +1,7 @@
 import { AssetGroupAsset } from '@/modules/asset-group/entities/asset-groups-assets.entity';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
+import { Repository, type FindManyOptions } from 'typeorm';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
 
@@ -87,16 +88,32 @@ describe('Unique atomic legacy project memberships (e2e)', () => {
   it('rolls back the real database save when the duplicate precheck is stale', async () => {
     const id = await group();
     await add(id, [assetIds[1]]).expect(201);
-    const repo = app.dataSource.getRepository(AssetGroupAsset);
-    const stale = jest.spyOn(repo, 'find').mockResolvedValueOnce([]);
-    const saving = jest.spyOn(repo, 'save');
+    const find = Repository.prototype
+      .find as Repository<AssetGroupAsset>['find'];
+    let bypassed = false;
+    const stale = jest
+      .spyOn(Repository.prototype, 'find')
+      .mockImplementation(function (
+        this: Repository<AssetGroupAsset>,
+        options?: FindManyOptions<AssetGroupAsset>,
+      ) {
+        if (
+          this.target === AssetGroupAsset &&
+          this.manager.queryRunner?.isTransactionActive &&
+          JSON.stringify(options?.where).includes(id)
+        ) {
+          bypassed = true;
+          return Promise.resolve([]);
+        }
+        const original = find.bind(this) as Repository<AssetGroupAsset>['find'];
+        return original(options);
+      });
     try {
       await add(id, assetIds).expect(400);
-      expect(saving).toHaveBeenCalled();
+      expect(bypassed).toBe(true);
       expect(await rows(id)).toEqual([{ assetId: assetIds[1] }]);
     } finally {
       stale.mockRestore();
-      saving.mockRestore();
     }
   });
 
