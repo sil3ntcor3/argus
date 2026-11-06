@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ToolLogo } from '@/components/ui/tool-logo';
 import { Input } from '@/components/ui/input';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import {
   Popover,
   PopoverAnchor,
@@ -200,6 +201,7 @@ const ToolProfileSelect = memo(function ToolProfileSelect({
       disabled={disabled}
     >
       <SelectTrigger
+        aria-label="Configuration profile"
         size="sm"
         className="w-full"
         title={orphan ? `Linked profile ${value} was deleted` : undefined}
@@ -270,11 +272,12 @@ const PipelineToolLogo = memo(
     {
       tool: Tool;
       added: boolean;
+      stage?: number;
       disabled?: boolean;
       onClick: (tool: Tool) => void;
     }
   >(function PipelineToolLogo(
-    { tool, added, disabled, onClick, ...rest },
+    { tool, added, stage, disabled, onClick, ...rest },
     ref,
   ) {
     return (
@@ -322,17 +325,14 @@ const PipelineToolLogo = memo(
       <span className="text-center text-xs font-medium capitalize">
         {tool.name}
       </span>
+      {added && <span className="text-xs text-muted-foreground">Stage {stage ?? 1}</span>}
       </button>
     );
   }),
 );
 
 /**
- * Action panel for a selected tool: config profile, inline config, remove.
- *
- * There is no ordering control: the selected tools are saved as jobs without
- * `needs`, so they all run at once, and the map key order is not preserved by
- * jsonb anyway — a "move up" here would snap back on the next refetch.
+ * Action panel for a selected tool: stage, config profile, inline config, remove.
  */
 const SelectedToolPanel = memo(function SelectedToolPanel({
   tool,
@@ -386,6 +386,26 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
         {usesDefault && <Badge variant="soft">Using default</Badge>}
 
       </div>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor={`pipeline-stage-${tool.id}`}>Pipeline stage</FieldLabel>
+          <Select
+            value={String(entry.stage ?? 1)}
+            onValueChange={(value) => onPatchEntry(tool.id, { stage: Number(value) })}
+            disabled={disabled}
+          >
+            <SelectTrigger id={`pipeline-stage-${tool.id}`} size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 20 }, (_, index) => index + 1).map((stage) => (
+                <SelectItem key={stage} value={String(stage)}>Stage {stage}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldDescription>Tools in one stage run together; later stages wait.</FieldDescription>
+        </Field>
+      </FieldGroup>
       {tool.categories && tool.categories.length > 1 && (
         <Select
           value={entry.category ?? tool.categories[0].name}
@@ -772,6 +792,7 @@ function ToolPipelineBuilderComponent({
       <PipelineToolLogo
         tool={tool}
         added={added}
+        stage={entry?.stage}
         disabled={disabled}
         onClick={handleLogoClick}
       />
@@ -875,6 +896,7 @@ function ToolPipelineBuilderComponent({
                   <PipelineToolLogo
                     tool={tool}
                     added={added}
+                    stage={entry.stage}
                     disabled={disabled}
                     onClick={handleLogoClick}
                   />

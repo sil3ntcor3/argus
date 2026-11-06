@@ -142,6 +142,15 @@ describe('CreateAssetGroup wizard page', () => {
     });
   });
 
+  it('offers installed HTTP probes in the pipeline tools step', async () => {
+    installedToolsRef.current = [{ ...mockTools[0], name: 'httpx', categories: [{ name: 'http_probe', targetTypes: [] }] }];
+    const { user } = renderWithProviders(<CreateAssetGroup />, { routePath: '/groups/create' });
+    await user.type(await screen.findByLabelText('Name'), 'Probed hosts');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByRole('button', { name: 'Add httpx to pipeline' })).toBeVisible();
+  });
+
   it('navigates to /groups when Cancel is clicked', async () => {
     const { user, router } = renderWithProviders(<CreateAssetGroup />, {
       routePath: '/groups/create',

@@ -9,9 +9,14 @@ removing a tool rebuilds barriers between the remaining populated stages, using
 existing job IDs and avoiding collisions with newly added tools. Legacy array
 workflows retain their name-based job identities when converted to a map.
 
-Stage and input controls follow separately. This foundation prevents edits
-through the existing tool panel from flattening API-authored staged pipelines
-or silently resetting their input preferences.
+Each selected tool has a stage caption and a labelled selector for stages 1–20.
+Tools in one stage run together; later populated stages wait for the previous
+stage. All installed categories, including HTTP probes and screenshots, are
+available in create and edit flows. Configuration readiness checks still apply.
+
+Stage numbers show relative dependency layers: saving compresses empty stage
+numbers. The editor preserves ordered input preferences; input controls follow
+separately.
 
 Pipelines containing multiple jobs for one tool are read-only in this tool grid,
 which selects tools by ID. Scheduling and running remain available; edits are
