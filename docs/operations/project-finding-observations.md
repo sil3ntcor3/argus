@@ -2,9 +2,17 @@
 
 The private `project_vulnerability_observations` table records a known run that
 reported a project finding. Its unique `(projectVulnerabilityId, jobHistoryId)`
-pair provides the persistence needed to deduplicate callbacks from the same run.
-Runtime ingestion of observations and repeat-count updates follow separately;
-this foundation does not change existing finding responses or notifications.
+pair deduplicates callbacks from the same run, including callbacks from different
+jobs and interleaved A/B/A retries. Ingestion updates the link and its observation
+inside the finding transaction. Each new run increments `timesSeen` once; duplicate
+observations leave aggregate dates and counts unchanged. The last-sighting date cannot move backward
+when concurrent transactions complete in a different order.
+
+Finding upserts use fingerprint order to avoid deadlocks between batches that
+report the same findings in opposite order. Project identity and workspace checks
+come from saved jobs and runs. Standalone and inconsistent cross-workspace results
+do not create project observations. Notifications retain their existing new-finding
+behavior; this change does not add recurring-finding alerts or public fields.
 
 Deleting a run sets its observation's `jobHistoryId` to null. The observation,
 its `seenAt` timestamp, and the finding link's aggregate count and dates survive.
@@ -23,6 +31,11 @@ Unknown history and inconsistent legacy references remain unattributed. The
 backfill does not infer intermediate runs or rewrite existing `timesSeen`,
 `firstSeenAt`, or `lastSeenAt` values. An existing count can therefore exceed the
 number of recoverable historical observations.
+
+During a rolling upgrade, older application instances may create links without
+observations. Ingestion preserves both already-counted first and last runs as
+observations using their stored dates before a new run can replace a pointer.
+Later retries of those known runs do not increment the count.
 
 Back up the database before deployment and apply migrations through the normal
 migration service. For a local database, use `task migration:run` after checking
