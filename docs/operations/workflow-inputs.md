@@ -53,6 +53,16 @@ offline CLI, canonical-precedence and atomic-failure regression checks.
 
 ## Verification
 
+The pure step planner now chooses the first available input kind per asset,
+creating one planned job per service or URL. Web targets retain their observed
+scheme and non-default port; IPv6 authorities are bracketed. URL inputs must be
+valid HTTP(S) links on the scoped asset's host, so captured external links cannot
+expand a scan's scope. If no eligible URL remains, later input kinds still apply.
+Repository inputs remain deferred until claim time for live credential lookup.
+The planner is not yet wired into job creation; scope loading follows separately.
+Run `task api:test:one SPEC=src/modules/jobs-registry/step-inputs.spec.ts` for
+ordered fallbacks, endpoint fan-out, scope filtering and repository behavior.
+
 Run `task api:test:one SPEC=src/modules/tools/tool-io.spec.ts` and
 `task api:test:one SPEC=src/common/enums/enum.spec.ts` for defaults,
 normalization, compatibility and ordered input validation. Each batch also runs
