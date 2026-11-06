@@ -128,7 +128,10 @@ describe('ToolsController.getConnectorBySlug', () => {
 
     expect(result.capabilities).toEqual(['vulnerabilities']);
     expect(result.categories).toEqual([
-      { name: 'vulnerabilities', targetTypes: ['DOMAIN', 'IP'], inputsSchema },
+      {
+        name: 'vulnerabilities', targetTypes: ['DOMAIN', 'IP'], inputsSchema,
+        inputs: ['host'], produces: ['vulnerability'],
+      },
     ]);
     expect(result).not.toHaveProperty('inputsSchema');
     expect(result).not.toHaveProperty('configSchema');
