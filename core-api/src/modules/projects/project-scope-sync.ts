@@ -45,7 +45,7 @@ export async function syncProjectScope(
     );
     return { added: [], removed: deletedCount(removed) };
   }
-  const desired = `WITH desired AS (
+  const desired = `WITH desired AS MATERIALIZED (
     SELECT a.id AS "assetId", ${built.ruleIdSql()} AS "ruleId"
     FROM assets a JOIN targets t ON t.id = a."targetId"
     WHERE t."workspaceId" = $2 AND ${built.where})`;

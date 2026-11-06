@@ -135,9 +135,23 @@ export function scopeRulesSql(
   const includeSql = includes.map((rule) => scopeRuleMatchSql(rule, params));
   let where = `(${includeSql.join(' OR ')})`;
   if (excludes.length > 0) {
-    where += ` AND NOT (${excludes
-      .map((rule) => scopeRuleMatchSql(rule, params))
-      .join(' OR ')})`;
+    const assetExcludes = excludes.filter(
+      (r) => r.type === ProjectScopeRuleType.ASSET,
+    );
+    const individual =
+      assetExcludes.length > 1
+        ? excludes.filter((r) => r.type !== ProjectScopeRuleType.ASSET)
+        : excludes;
+    const predicates = individual.map((rule) =>
+      scopeRuleMatchSql(rule, params),
+    );
+    // Durable removals can create many exact exclusions; keep SQL and bindings bounded.
+    if (assetExcludes.length > 1) {
+      predicates.push(
+        `a.id = ANY(${params.add(assetExcludes.map((r) => r.value))}::uuid[])`,
+      );
+    }
+    where += ` AND NOT (${predicates.join(' OR ')})`;
   }
   let projection: string | undefined;
   const ruleIdSql = () =>

@@ -137,3 +137,30 @@ it('keeps prefix bindings independent and never interpolates untrusted patterns'
   expect(sql).not.toContain(value);
   expect(params.values).toEqual(['workspace', "x\\%' OR true --"]);
 });
+
+it('bounds bindings and SQL size for large asset exclusions alongside other rule kinds', () => {
+  const excluded = Array.from({ length: 65_536 }, (_, i) => ({
+    mode: EXCLUDE,
+    type: ASSET,
+    value: '00000000-0000-4000-8000-' + i.toString(16).padStart(12, '0'),
+  }));
+  const params = new SqlParams(['workspace']);
+  const built = scopeRulesSql(
+    [
+      { id: ID, mode: INCLUDE, type: HOSTNAME, value: '*.argus.test' },
+      { mode: EXCLUDE, type: HOSTNAME, value: 'manual.argus.test' },
+      ...excluded,
+    ],
+    params,
+  )!;
+  expect(params.values.length).toBe(4);
+  expect((params.values[3] as string[]).length).toBe(65_536);
+  expect(built.where.includes('a.value ILIKE $3')).toBe(true);
+  expect(built.where.includes('a.id = ANY($4::uuid[])')).toBe(true);
+  expect(built.where.length).toBeLessThan(200);
+  const projection = built.ruleIdSql();
+  expect(params.values.length).toBe(5);
+  expect(params.values[4]).toBe(ID);
+  expect(built.ruleIdSql()).toBe(projection);
+  expect(params.values.length).toBe(5);
+});
