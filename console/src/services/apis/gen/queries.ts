@@ -1401,9 +1401,23 @@ export type PortsResultDto = {
   payload: number[];
 };
 
+export type DataKind = (typeof DataKind)[keyof typeof DataKind];
+
+export const DataKind = {
+  target: 'target',
+  host: 'host',
+  service: 'service',
+  web: 'web',
+  url: 'url',
+  repository: 'repository',
+  vulnerability: 'vulnerability',
+} as const;
+
 export type ToolCategorySpec = {
   name: ToolCategory;
   targetTypes: TargetType[];
+  inputs?: DataKind[];
+  produces?: DataKind[];
 };
 
 export type ToolType = (typeof ToolType)[keyof typeof ToolType];
@@ -2485,6 +2499,8 @@ export type ConnectorCategoryDtoInputsSchema = { [key: string]: unknown };
 export type ConnectorCategoryDto = {
   name: ToolCategory;
   targetTypes: TargetType[];
+  inputs?: DataKind[];
+  produces?: DataKind[];
   /** JSON Schema of the inputs Argus passes to the connector for this category. */
   inputsSchema?: ConnectorCategoryDtoInputsSchema;
 };

@@ -1,4 +1,4 @@
-import { AuditOutcome } from '@/common/enums/enum';
+import { AuditOutcome, DataKind } from '@/common/enums/enum';
 import { AuditEvent } from '@/modules/audit/entities/audit-event.entity';
 import { Tool } from '@/modules/tools/entities/tools.entity';
 import { WorkspaceTool } from '@/modules/tools/entities/workspace_tools.entity';
@@ -44,6 +44,24 @@ describe('Tool installation (e2e)', () => {
       ].filter(Boolean),
     });
     await closeTestApp(app.app);
+  });
+
+  it('exposes backward-compatible input/output metadata on the tool catalog', async () => {
+    for (const [name, inputs, produces] of [
+      ['nuclei', [DataKind.HOST], [DataKind.VULNERABILITY]],
+      ['gitleaks', [DataKind.REPOSITORY], [DataKind.VULNERABILITY]],
+      ['subfinder', [DataKind.TARGET], [DataKind.HOST]],
+    ] as const) {
+      const response = await request(app.server)
+        .get('/api/tools')
+        .query({ search: name })
+        .set(owner.headers)
+        .expect(200);
+      const tool = response.body.data.find((row: { name: string }) => row.name === name);
+      expect(tool.categories[0]).toMatchObject({ inputs, produces });
+      const stored = await app.dataSource.getRepository(Tool).findOneByOrFail({ name });
+      expect(stored.categories?.[0]).toMatchObject({ inputs, produces });
+    }
   });
 
   it('returns 404 for an unknown tool without exposing an FK failure or creating a row', async () => {

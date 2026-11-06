@@ -16,11 +16,26 @@ can allow a step to narrow or reorder those inputs. Repository-only vulnerabilit
 scanners default to repository inputs; mixed or host target types retain host
 defaults. An empty produced list means a tool produces no additional data.
 
-This first batch adds the vocabulary and pure helpers only. It does not change
-catalog responses, job planning, worker dispatch, workflow files or the schema.
-Catalog metadata, scoped planning and the Fast scan endpoint fix follow in
-separate batches. The private `jobs.inputs` column and dispatch support were
-ported previously.
+The first batch added the vocabulary and pure helpers. The private `jobs.inputs`
+column and dispatch support were ported previously.
+
+## Catalog metadata
+
+Tool category responses now describe ordered `inputs` and unordered `produces`.
+Built-in tools, newly created provider tools and synchronized connectors store
+these lists. Connector declarations take precedence; older manifests receive
+category defaults. Unsupported kinds are reported and filtered, and capabilities
+sharing a category merge their data kinds without duplicates.
+
+The response fields are optional for compatibility with historical provider rows
+that lack I/O metadata. Runtime resolution still supplies defaults for those
+rows. No schema migration is required because categories already use JSONB.
+The generated OpenAPI documents and console client include the additive fields.
+
+The Argus connector manifest has not yet been enriched with upstream's
+per-connector I/O declarations. That catalog update, scoped planning and the
+Fast scan endpoint fix follow in separate batches. No dispatch or workflow-file
+behavior changes in this metadata batch.
 
 ## Verification
 
