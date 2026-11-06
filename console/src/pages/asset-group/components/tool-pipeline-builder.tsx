@@ -50,6 +50,8 @@ import {
   useState,
 } from 'react';
 import { toast } from 'sonner';
+import { capabilityOf, pipelineHint } from './tool-io';
+import { ToolIOInfo, ToolInputSelect } from './tool-input-fields';
 
 /** A selected tool, including saved stage and input preferences. */
 export interface PipelineToolEntry {
@@ -344,6 +346,7 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
   onRemove,
   onOpenSheet,
   onProfilesLoaded,
+  ioHint,
 }: {
   tool: Tool;
   entry: PipelineToolEntry;
@@ -354,12 +357,14 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
   onRemove: (id: string) => void;
   onOpenSheet: (toolId: string) => void;
   onProfilesLoaded: (toolId: string, ids: string[]) => void;
+  ioHint?: string;
 }) {
   const orphan = isProfileOrphan(entry, knownProfileIds);
   const custom = hasInlineConfig(entry);
   const linked = !!entry.configProfileId && !orphan;
   const usesDefault = !custom && !linked ? getBackendHasProfile(tool) : false;
   const toolLabel = tool.name;
+  const capability = capabilityOf(tool, entry.category);
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
@@ -409,9 +414,12 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
       {tool.categories && tool.categories.length > 1 && (
         <Select
           value={entry.category ?? tool.categories[0].name}
-          onValueChange={(value) =>
-            onPatchEntry(tool.id, { category: value as ToolCategory })
-          }
+          onValueChange={(value) => {
+            const category = value as ToolCategory;
+            const accepted = capabilityOf(tool, category)?.inputs;
+            const incompatible = entry.input?.some((kind) => accepted && !accepted.includes(kind));
+            onPatchEntry(tool.id, { category, ...(incompatible ? { input: undefined } : {}) });
+          }}
           disabled={disabled}
         >
           <SelectTrigger aria-label="Category" className="h-8">
@@ -426,6 +434,9 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
           </SelectContent>
         </Select>
       )}
+      <ToolIOInfo capability={capability} input={entry.input} />
+      <ToolInputSelect id={`pipeline-input-${tool.id}`} accepted={capability?.inputs ?? []} value={entry.input} disabled={disabled} onChange={(input) => onPatchEntry(tool.id, { input })} />
+      {ioHint && <p className="rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">{ioHint}</p>}
       <ToolProfileSelect
         toolId={tool.id}
         value={entry.configProfileId}
@@ -502,6 +513,7 @@ const PendingToolPanel = memo(function PendingToolPanel({
           <X className="size-3.5" />
         </Button>
       </div>
+      <ToolIOInfo capability={capabilityOf(tool)} input={pending?.input} />
       <ToolProfileSelect
         toolId={tool.id}
         value={pending?.configProfileId as string | undefined}
@@ -662,6 +674,13 @@ function ToolPipelineBuilderComponent({
     () => new Map(value.map((e) => [e.toolId, e])),
     [value],
   );
+  const hintFor = useCallback((tool: Tool, entry: PipelineToolEntry) => {
+    const earlier = value.filter((other) => (other.stage ?? 1) < (entry.stage ?? 1)).flatMap((other) => {
+      const prior = byId.get(other.toolId);
+      return prior ? capabilityOf(prior, other.category)?.produces ?? [] : [];
+    });
+    return pipelineHint(entry.input?.length ? entry.input : capabilityOf(tool, entry.category)?.inputs ?? [], earlier);
+  }, [value, byId]);
   const filteredTools = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return tools;
@@ -905,6 +924,7 @@ function ToolPipelineBuilderComponent({
                   <SelectedToolPanel
                     tool={tool}
                     entry={entry}
+                    ioHint={hintFor(tool, entry)}
                     knownProfileIds={knownProfilesByTool[tool.id]}
                     disabled={disabled}
                     onClose={handleCloseActive}
