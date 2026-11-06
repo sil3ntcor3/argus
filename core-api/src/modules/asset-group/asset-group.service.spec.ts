@@ -221,6 +221,21 @@ describe('AssetGroupService', () => {
       expect(mockScanScheduleQueue.add).not.toHaveBeenCalled();
     });
 
+    it('persists canonical metadata in the initial save before attaching assets', async () => {
+      await service.create(
+        { name: 'Metadata', hostIds: ['asset'] },
+        workspaceId,
+        { description: '  Saved  ', autoAddAssets: false },
+      );
+      expect(mockAssetGroupRepo.save.mock.calls[0][0]).toMatchObject({
+        description: 'Saved',
+        autoAddAssets: false,
+      });
+      expect(mockAssetGroupRepo.save.mock.invocationCallOrder[0]).toBeLessThan(
+        mockAssetAssetService.addManyAssets.mock.invocationCallOrder[0],
+      );
+    });
+
     it('should persist the hexColor passed at creation', async () => {
       const dto = {
         name: 'Web Servers',
@@ -865,6 +880,27 @@ describe('AssetGroupService', () => {
 
       expect(builder.orderBy).toHaveBeenCalledWith('assetGroup.name', 'ASC');
     });
+  });
+
+  it('applies explicit metadata updates and leaves omitted fields intact', async () => {
+    const saved = {
+      id: 'project',
+      name: 'Old',
+      description: 'Old',
+      autoAddAssets: true,
+    };
+    mockAssetGroupRepo.findOne.mockResolvedValue(saved);
+    mockAssetGroupRepo.save.mockImplementation((entity) =>
+      Promise.resolve(entity),
+    );
+    const metadata = { description: null, autoAddAssets: false };
+    await service.updateAssetGroupById(saved.id, {}, 'workspace', metadata);
+    expect(saved).toMatchObject(metadata);
+    await service.updateAssetGroupById(saved.id, { name: 'New' }, 'workspace', {
+      description: undefined,
+      autoAddAssets: undefined,
+    });
+    expect(saved).toMatchObject({ ...metadata, name: 'New' });
   });
 
   describe('delete', () => {

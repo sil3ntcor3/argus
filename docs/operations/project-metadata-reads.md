@@ -15,8 +15,7 @@ A separate view DTO exposes only the two selected metadata fields. It preserves
 the entity's ordinary public properties without inheriting the private entity
 JSON serializer. Legacy `/api/asset-group` responses continue excluding metadata.
 
-This batch adds reads only. POST/PATCH request and response shapes remain
-unchanged, and metadata inputs are still ignored by their existing DTOs. A later
-batch adds explicit metadata writes. Scope matching, automatic membership and
-archive activation follow separately; this read path does not run scanners or
-change schedules. No database migration is required.
+Canonical POST/PATCH also accept description and automatic-membership preference;
+see [metadata writes](project-metadata-writes.md). Scope matching, automatic
+membership and archive activation follow separately. Reads do not run scanners
+or change schedules. No database migration is required.

@@ -4580,6 +4580,49 @@ export type GetManyProjectViewDtoDto = {
   pageCount: number;
 };
 
+export type CreateProjectDto = {
+  /**
+   * Name of the project
+   * @maxLength 120
+   */
+  name: string;
+  /** Hex color of the asset group */
+  hexColor?: string;
+  /** Array of asset (host) IDs to add to the group */
+  hostIds?: string[];
+  /** Cron schedule for the group workflow (e.g. "0 0 *\/3 * *"). Requires toolIds. */
+  schedule?: string;
+  /** Tool IDs used to build the group workflow. When provided, a workflow is created and assigned to the group. */
+  toolIds?: string[];
+  /** Per-tool config inputs for the group workflow. When provided, overrides toolIds — each entry specifies a tool ID plus optional inline config or a config profile reference. */
+  tools?: AssetGroupToolInput[];
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  description?: string | null;
+  autoAddAssets?: boolean;
+};
+
+export type UpdateProjectDto = {
+  /**
+   * Name of the project
+   * @maxLength 120
+   */
+  name?: string;
+  /**
+   * Hex color of the asset group
+   * @pattern ^#[0-9a-fA-F]{6}$
+   */
+  hexColor?: string;
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  description?: string | null;
+  autoAddAssets?: boolean;
+};
+
 export type CreateFirstAdminDto = {
   email: string;
   password: string;
@@ -43084,16 +43127,16 @@ export function useProjectsControllerGetMany<
  * @summary Create project
  */
 export const projectsControllerCreate = (
-  createAssetGroupDto: CreateAssetGroupDto,
+  createProjectDto: CreateProjectDto,
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<AssetGroup>(
+  return orvalClient<ProjectViewDto>(
     {
       url: `/api/projects`,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      data: createAssetGroupDto,
+      data: createProjectDto,
       signal,
     },
     options,
@@ -43107,14 +43150,14 @@ export const getProjectsControllerCreateMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof projectsControllerCreate>>,
     TError,
-    { data: CreateAssetGroupDto },
+    { data: CreateProjectDto },
     TContext
   >;
   request?: SecondParameter<typeof orvalClient>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof projectsControllerCreate>>,
   TError,
-  { data: CreateAssetGroupDto },
+  { data: CreateProjectDto },
   TContext
 > => {
   const mutationKey = ['projectsControllerCreate'];
@@ -43128,7 +43171,7 @@ export const getProjectsControllerCreateMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof projectsControllerCreate>>,
-    { data: CreateAssetGroupDto }
+    { data: CreateProjectDto }
   > = (props) => {
     const { data } = props ?? {};
 
@@ -43141,7 +43184,7 @@ export const getProjectsControllerCreateMutationOptions = <
 export type ProjectsControllerCreateMutationResult = NonNullable<
   Awaited<ReturnType<typeof projectsControllerCreate>>
 >;
-export type ProjectsControllerCreateMutationBody = CreateAssetGroupDto;
+export type ProjectsControllerCreateMutationBody = CreateProjectDto;
 export type ProjectsControllerCreateMutationError = unknown;
 
 /**
@@ -43155,7 +43198,7 @@ export const useProjectsControllerCreate = <
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof projectsControllerCreate>>,
       TError,
-      { data: CreateAssetGroupDto },
+      { data: CreateProjectDto },
       TContext
     >;
     request?: SecondParameter<typeof orvalClient>;
@@ -43164,7 +43207,7 @@ export const useProjectsControllerCreate = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof projectsControllerCreate>>,
   TError,
-  { data: CreateAssetGroupDto },
+  { data: CreateProjectDto },
   TContext
 > => {
   return useMutation(
@@ -43344,16 +43387,16 @@ export function useProjectsControllerGetById<
  */
 export const projectsControllerUpdate = (
   id: string,
-  updateAssetGroupDto: UpdateAssetGroupDto,
+  updateProjectDto: UpdateProjectDto,
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<AssetGroup>(
+  return orvalClient<ProjectViewDto>(
     {
       url: `/api/projects/${id}`,
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      data: updateAssetGroupDto,
+      data: updateProjectDto,
       signal,
     },
     options,
@@ -43367,14 +43410,14 @@ export const getProjectsControllerUpdateMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof projectsControllerUpdate>>,
     TError,
-    { id: string; data: UpdateAssetGroupDto },
+    { id: string; data: UpdateProjectDto },
     TContext
   >;
   request?: SecondParameter<typeof orvalClient>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof projectsControllerUpdate>>,
   TError,
-  { id: string; data: UpdateAssetGroupDto },
+  { id: string; data: UpdateProjectDto },
   TContext
 > => {
   const mutationKey = ['projectsControllerUpdate'];
@@ -43388,7 +43431,7 @@ export const getProjectsControllerUpdateMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof projectsControllerUpdate>>,
-    { id: string; data: UpdateAssetGroupDto }
+    { id: string; data: UpdateProjectDto }
   > = (props) => {
     const { id, data } = props ?? {};
 
@@ -43401,7 +43444,7 @@ export const getProjectsControllerUpdateMutationOptions = <
 export type ProjectsControllerUpdateMutationResult = NonNullable<
   Awaited<ReturnType<typeof projectsControllerUpdate>>
 >;
-export type ProjectsControllerUpdateMutationBody = UpdateAssetGroupDto;
+export type ProjectsControllerUpdateMutationBody = UpdateProjectDto;
 export type ProjectsControllerUpdateMutationError = unknown;
 
 /**
@@ -43415,7 +43458,7 @@ export const useProjectsControllerUpdate = <
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof projectsControllerUpdate>>,
       TError,
-      { id: string; data: UpdateAssetGroupDto },
+      { id: string; data: UpdateProjectDto },
       TContext
     >;
     request?: SecondParameter<typeof orvalClient>;
@@ -43424,7 +43467,7 @@ export const useProjectsControllerUpdate = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof projectsControllerUpdate>>,
   TError,
-  { id: string; data: UpdateAssetGroupDto },
+  { id: string; data: UpdateProjectDto },
   TContext
 > => {
   return useMutation(
