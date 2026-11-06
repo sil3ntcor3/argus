@@ -9,5 +9,5 @@ underscores, percent signs and backslashes safely.
 IPv4/IPv6 addresses become /32 or /128 when no prefix is supplied. CIDR prefixes
 must be decimal and within the address-family range. Zones, malformed addresses
 and extra slash components are rejected. Public DTO length and workspace checks
-will accompany scope APIs separately. SQL compilation and Argus HTTP-observation
-compatibility follow in the next batch. No schema or dependency changes are needed.
+will accompany scope APIs separately. Bound SQL matching is described in
+[project-scope-sql.md](project-scope-sql.md). No schema or dependency changes are needed.
