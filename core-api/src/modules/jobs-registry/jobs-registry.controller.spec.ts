@@ -67,6 +67,7 @@ describe('JobsRegistryController', () => {
     beforeEach(async () => {
       mockJobsRegistryService = {
         getNextJob: jest.fn(),
+        getNextJobs: jest.fn(),
       };
       mockConnectorRegistry = {
         getConnector: jest.fn(),
@@ -146,7 +147,59 @@ describe('JobsRegistryController', () => {
       });
     });
 
-    it('sends repository inputs with the integration token for a Git organization asset', async () => {
+    it.each([
+      { target: 'https://app.example.com:8443' },
+      { target: 'http://app.example.com:8080/path' },
+      { target: 'app.example.com:22' },
+      null,
+      undefined,
+    ])(
+      'uses stored inputs %j in both claim handlers, with legacy fallback',
+      async (inputs) => {
+        const job = {
+          id: 'stored-input-job',
+          workspaceId: 'ws-1',
+          asset: { value: 'app.example.com' },
+          inputs,
+          tool: { id: 'nuclei', name: 'nuclei' },
+        };
+        mockJobsRegistryService.getNextJob.mockResolvedValue(job);
+        mockJobsRegistryService.getNextJobs.mockResolvedValue([job]);
+        mockConnectorRegistry.getConnector.mockReturnValue({
+          slug: 'nuclei', image: 'sil3ntcor3/connector-nuclei:test',
+        });
+        const single = await controller.next({ id: 'worker-1' });
+        const batch = await controller.nextBatch({ id: 'worker-1', limit: 1 });
+        const expected = {
+          fields: { target: { stringValue: inputs?.target ?? job.asset.value } },
+        };
+        expect(single.inputs).toEqual(expected);
+        expect(batch.values[0].inputs).toEqual(expected);
+        expect(mockIntegrationsService.getIntegrationWithDecryptedConfig)
+          .not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([null, undefined, { target: 'https://app.example.com:8443' }])(
+      'keeps snapshot %j out of the legacy HTTP claim response',
+      async (inputs) => {
+        const job = { id: 'job-1', asset: { value: 'app.example.com' }, inputs };
+        mockJobsRegistryService.getNextJob.mockResolvedValue(job);
+        expect(await controller.getNextJob({ workerId: 'worker-1' })).toEqual({
+          id: job.id, asset: job.asset,
+        });
+        expect(await controller.getNextJob({ workerId: 'worker-1' }))
+          .not.toHaveProperty('inputs');
+        expect(job.inputs).toBe(inputs);
+      },
+    );
+
+    it('preserves the empty legacy HTTP claim response', async () => {
+      mockJobsRegistryService.getNextJob.mockResolvedValue(null);
+      expect(await controller.getNextJob({ workerId: 'worker-1' })).toBeNull();
+    });
+
+    it('ignores stored repository inputs and resolves current integration credentials', async () => {
       mockJobsRegistryService.getNextJob.mockResolvedValue({
         id: 'job-2',
         workspaceId: 'ws-1',
@@ -157,6 +210,7 @@ describe('JobsRegistryController', () => {
           target: { type: 'GIT_ORG', integrationId: 'int-1' },
         },
         config: null,
+        inputs: { target: 'stale.example.com', token: 'stale-token' },
         tool: { id: 'gitleaks', name: 'gitleaks' },
       });
       mockConnectorRegistry.getConnector.mockReturnValue({
@@ -196,6 +250,7 @@ describe('JobsRegistryController', () => {
           target: { type: 'GIT_ORG', integrationId: 'int-gone' },
         },
         config: null,
+        inputs: { target: 'stale.example.com', token: 'stale-token' },
         tool: { id: 'gitleaks', name: 'gitleaks' },
       });
       mockConnectorRegistry.getConnector.mockReturnValue({

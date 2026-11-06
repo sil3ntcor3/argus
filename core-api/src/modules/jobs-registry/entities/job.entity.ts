@@ -147,6 +147,14 @@ export class Job extends BaseEntity {
   config?: Record<string, unknown> | null;
 
   /**
+   * Resolved connector target (host, service or URL). Private to persistence
+   * and worker claims; legacy jobs and repositories keep this null. Repository
+   * credentials are resolved only at dispatch and must never be stored here.
+   */
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  inputs?: Record<string, string> | null;
+
+  /**
    * The asset service this job belongs to.
    */
   @ApiProperty()

@@ -43,6 +43,8 @@ export class GetNextJobResponseDto extends PickType(Job, [
 
 /** Extended result returned by getNextJob for connector-capable workers. */
 export interface GetNextJobResult extends GetNextJobResponseDto {
+  /** Private dispatch snapshot, explicitly selected only for worker claims. */
+  inputs?: Record<string, string> | null;
   tool?: { id: string; name: string };
   workspaceId?: string;
   configProfileId?: string;
