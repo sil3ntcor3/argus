@@ -503,7 +503,13 @@ export class JobsRegistryService {
 
     // Step 4: save all jobs
     if (jobsToInsert.length > 0) {
-      await jobRepo.save(jobsToInsert);
+      // Bound INSERT parameters as typed input planning increases job fan-out.
+      await this.dataSource.transaction(async (manager) => {
+        const jobs = manager.getRepository(Job);
+        for (let offset = 0; offset < jobsToInsert.length; offset += 500) {
+          await jobs.save(jobsToInsert.slice(offset, offset + 500));
+        }
+      });
       this.notifyJobsAvailable(workspaceId);
     }
 

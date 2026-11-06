@@ -14,7 +14,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, type EntityManager } from 'typeorm';
 import { AssetGroupWorkflow } from '../asset-group/entities/asset-groups-workflows.entity';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
 import { DataAdapterService } from '../data-adapter/data-adapter.service';
@@ -88,6 +88,7 @@ describe('JobsRegistryService', () => {
   const mockDataSource = {
     createQueryRunner: jest.fn(),
     getRepository: jest.fn(),
+    transaction: jest.fn(),
   };
 
   const mockDataAdapterService = {
@@ -126,6 +127,10 @@ describe('JobsRegistryService', () => {
   };
 
   beforeEach(async () => {
+    mockDataSource.transaction.mockImplementation(
+      async (callback: (manager: EntityManager) => Promise<unknown>) =>
+        callback({ getRepository: mockDataSource.getRepository } as unknown as EntityManager),
+    );
     mockAssetGroupWorkflowQB = {
       select: jest.fn().mockReturnThis(),
       innerJoin: jest.fn().mockReturnThis(),
