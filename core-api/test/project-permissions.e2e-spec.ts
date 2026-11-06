@@ -95,15 +95,28 @@ describe('Project permission compatibility (e2e)', () => {
         expect.arrayContaining([`group.${action}`, `project.${action}`]),
       );
       expect(current.body.currentPermission).toHaveLength(2);
-      await request(app.server)
-        .get(`/api/asset-group/${projectId}`)
-        .set(headers())
-        .expect(200);
-      await request(app.server)
-        .patch(`/api/asset-group/${projectId}`)
-        .set(headers())
-        .send({ name: 'Argus ' + key })
-        .expect(action === 'write' ? 200 : 403);
+      for (const prefix of ['asset-group', 'projects']) {
+        await request(app.server)
+          .get(`/api/${prefix}/${projectId}`)
+          .set(headers())
+          .expect(200);
+        await request(app.server)
+          .patch(`/api/${prefix}/${projectId}`)
+          .set(headers())
+          .send({ name: 'Argus ' + key })
+          .expect(action === 'write' ? 200 : 403);
+        if (action === 'read') {
+          await request(app.server)
+            .post(`/api/${prefix}`)
+            .set(headers())
+            .send({ name: 'Denied' })
+            .expect(403);
+          await request(app.server)
+            .delete(`/api/${prefix}/${projectId}`)
+            .set(headers())
+            .expect(403);
+        }
+      }
       expect(
         await app.dataSource.query(
           'SELECT permissions FROM workspace_permissions WHERE id = $1',
