@@ -16,6 +16,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { JobHistory } from './entities/job-history.entity';
+import { randomUUID } from 'node:crypto';
 import type { Job } from './entities/job.entity';
 import { WorkflowRunnerService } from './workflow-runner.service';
 
@@ -223,6 +224,33 @@ describe('WorkflowRunnerService', () => {
   }
 
   describe('startRun', () => {
+    it('persists project provenance supplied by a binding', async () => {
+      await setup(createFakeDb());
+      getToolByNames.mockResolvedValue([tool('naabu', ToolCategory.PORTS_SCANNER)]);
+      const provenance = { projectId: randomUUID(), projectWorkflowId: randomUUID() };
+      await service.startRun({
+        workflow: workflow([{ run: 'naabu' }]),
+        workspaceId: 'workspace-1',
+        jobName: 'Renamed project',
+        assetIds: ['asset-1'],
+        ...provenance,
+      });
+      expect(db.history).toMatchObject(provenance);
+      expect(db.history.scope).toEqual({ assetIds: ['asset-1'] });
+    });
+
+    it('leaves target runs unattributed when no binding is supplied', async () => {
+      await setup(createFakeDb());
+      getToolByNames.mockResolvedValue([tool('naabu', ToolCategory.PORTS_SCANNER)]);
+      await service.startRun({
+        workflow: workflow([{ run: 'naabu' }]),
+        workspaceId: 'workspace-1',
+        jobName: 'Project name is not an identity',
+        targetIds: ['target-1'],
+      });
+      expect(db.history).toMatchObject({ projectId: null, projectWorkflowId: null });
+    });
+
     it('creates one run and dispatches every root in parallel', async () => {
       await setup(createFakeDb());
       getToolByNames.mockResolvedValue([

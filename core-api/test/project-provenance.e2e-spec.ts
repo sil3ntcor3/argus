@@ -115,7 +115,7 @@ describe('Project provenance foundation (e2e)', () => {
     }
   });
 
-  it('leaves newly created runs unattributed until runtime attribution is ported', async () => {
+  it('keeps provenance nullable for runs created without a project binding', async () => {
     const id = await insert(
       `INSERT INTO job_histories ("workflowId", "jobHistoryName") VALUES ($1, $2)`,
       [workflowId, 'New standalone run'],

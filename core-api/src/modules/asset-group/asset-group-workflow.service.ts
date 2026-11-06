@@ -391,7 +391,7 @@ export class AssetGroupWorkflowService {
 async getBindingWorkspace(assetGroupWorkflowId: string): Promise<string> {
     const binding = await this.assetGroupWorkflowRepo.findOne({
       where: { id: assetGroupWorkflowId },
-      relations: ['workflow', 'assetGroup'],
+      relations: { workflow: { workspace: true }, assetGroup: { workspace: true } },
     });
 
     const workspaceId =
@@ -424,6 +424,7 @@ async getBindingWorkspace(assetGroupWorkflowId: string): Promise<string> {
         assetGroupWorkflowId,
       })
       .andWhere('workspace.id = :workspaceId', { workspaceId })
+      .andWhere('assetGroup.workspaceId = :workspaceId', { workspaceId })
       .getOne();
 
     if (!assetGroupWorkflow) {
@@ -462,6 +463,8 @@ async getBindingWorkspace(assetGroupWorkflowId: string): Promise<string> {
       // Group runs stay pinned to the assets the group selected — the scope is
       // what stops a subdomain step from fanning the run out to the whole target.
       assetIds: assets.map((asset) => asset.id),
+      projectId: assetGroupWorkflow.assetGroup.id,
+      projectWorkflowId: assetGroupWorkflow.id,
     });
 
     return {
