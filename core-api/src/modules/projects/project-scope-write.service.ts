@@ -1,6 +1,10 @@
 import { AssetGroup } from '@/modules/asset-group/entities/asset-groups.entity';
+import { AuditOutcome } from '@/common/enums/enum';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
+import type { ProjectAssetsAddedPayload } from '../event-bridge/contracts/event-payloads';
+import { EventBridgeService } from '../event-bridge/publishing/event-bridge.service';
 import { ProjectScopeRule } from './entities/project-scope-rule.entity';
 import {
   ProjectScopeNormalizer,
@@ -18,6 +22,7 @@ export class ProjectScopeWriteService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly normalizer: ProjectScopeNormalizer,
+    private readonly bridge: EventBridgeService,
   ) {}
 
   async replaceRules(
@@ -41,8 +46,10 @@ export class ProjectScopeWriteService {
     if (autoAddAssets !== undefined && typeof autoAddAssets !== 'boolean') {
       throw new BadRequestException('autoAddAssets must be a boolean');
     }
-    return this.dataSource.transaction(async (manager) => {
+    let canonicalId = projectId;
+    const result = await this.dataSource.transaction(async (manager) => {
       const id = await lockProjectScope(manager, projectId, workspaceId);
+      canonicalId = id;
       const rules = await this.normalizer.normalizeRules(
         workspaceId,
         input,
@@ -60,5 +67,22 @@ export class ProjectScopeWriteService {
       }
       return syncProjectScope(manager, id, workspaceId);
     });
+    if (result.added.length) {
+      await this.bridge.publishSafely(
+        EVENT_CATALOG.project.assets.added,
+        {
+          workspaceId,
+          outcome: AuditOutcome.Success,
+          resourceType: 'project',
+          resourceId: canonicalId,
+          payload: {
+            projectId: canonicalId,
+            assetIds: result.added,
+          } satisfies ProjectAssetsAddedPayload,
+        },
+        { subject: `workspace:${workspaceId}/project:${canonicalId}` },
+      );
+    }
+    return result;
   }
 }

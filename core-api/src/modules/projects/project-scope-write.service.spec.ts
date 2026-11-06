@@ -10,6 +10,8 @@ import { ProjectScopeRule } from './entities/project-scope-rule.entity';
 import type { ProjectScopeNormalizer } from './project-scope-normalizer.service';
 import { lockProjectScope, syncProjectScope } from './project-scope-sync';
 import { ProjectScopeWriteService } from './project-scope-write.service';
+import type { EventBridgeService } from '../event-bridge/publishing/event-bridge.service';
+import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 
 jest.mock('./project-scope-sync', () => ({
   lockProjectScope: jest.fn(),
@@ -24,9 +26,12 @@ describe('ProjectScopeWriteService', () => {
     async (work: (scoped: unknown) => Promise<unknown>) => work(manager),
   );
   const normalizer = { normalizeRules: jest.fn() };
+  const bridge = { publishSafely: jest.fn() };
   let service: ProjectScopeWriteService;
   beforeEach(() => {
     jest.clearAllMocks();
+    transaction.mockImplementation(async (work) => work(manager));
+    bridge.publishSafely.mockReset().mockResolvedValue('1-0');
     manager.delete.mockResolvedValue({});
     manager.save.mockResolvedValue([]);
     manager.update.mockResolvedValue({});
@@ -38,6 +43,7 @@ describe('ProjectScopeWriteService', () => {
     service = new ProjectScopeWriteService(
       { transaction } as unknown as DataSource,
       normalizer as unknown as ProjectScopeNormalizer,
+      bridge as unknown as EventBridgeService,
     );
   });
   it.each(
@@ -102,6 +108,55 @@ describe('ProjectScopeWriteService', () => {
       { ...rule, projectId: project },
     ]);
   });
+  it('reports only added IDs on the canonical project subject after commit, without changing the result', async () => {
+    let committed = false;
+    transaction.mockImplementation(async (work) => {
+      const result = await work(manager);
+      expect(bridge.publishSafely).not.toHaveBeenCalled();
+      committed = true;
+      return result;
+    });
+    bridge.publishSafely.mockImplementation(() => {
+      expect(committed).toBe(true);
+      return Promise.resolve('1-0');
+    });
+    await expect(
+      service.replaceRules(project.toUpperCase(), workspace, []),
+    ).resolves.toEqual({ added: [asset], removed: 2 });
+    expect(bridge.publishSafely).toHaveBeenCalledTimes(1);
+    expect(bridge.publishSafely).toHaveBeenCalledWith(
+      EVENT_CATALOG.project.assets.added,
+      {
+        workspaceId: workspace,
+        outcome: 'success',
+        resourceType: 'project',
+        resourceId: project,
+        payload: { projectId: project, assetIds: [asset] },
+      },
+      { subject: `workspace:${workspace}/project:${project}` },
+    );
+  });
+  it.each([0, 2])(
+    'does not report empty additions when removing %s members',
+    async (removed) => {
+      jest.mocked(syncProjectScope).mockResolvedValue({ added: [], removed });
+      await expect(service.replaceRules(project, workspace, [])).resolves.toEqual(
+        { added: [], removed },
+      );
+      expect(bridge.publishSafely).not.toHaveBeenCalled();
+    },
+  );
+  it('does not report staged additions when committing fails', async () => {
+    const failure = new Error('scope commit failed');
+    transaction.mockImplementation(async (work) => {
+      await work(manager);
+      throw failure;
+    });
+    await expect(service.replaceRules(project, workspace, [])).rejects.toBe(
+      failure,
+    );
+    expect(bridge.publishSafely).not.toHaveBeenCalled();
+  });
   it.each(['normalize', 'sync'])(
     'propagates %s failures to the transaction owner',
     async (stage) => {
@@ -112,6 +167,7 @@ describe('ProjectScopeWriteService', () => {
       await expect(service.replaceRules(project, workspace, [])).rejects.toBe(
         failure,
       );
+      expect(bridge.publishSafely).not.toHaveBeenCalled();
     },
   );
 });

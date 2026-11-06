@@ -26,4 +26,4 @@ These initial assets have no originating run ID. Ownership checks, CIDR policy,
 chunked inserts and primary flags are unchanged. No scans are started by the
 discovery report itself; it lets the project consumer attach matching assets.
 
-Explicit scope-edit reporting follows separately.
+Explicit scope edits use the [scope membership report](project-scope-events.md).

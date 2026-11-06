@@ -6,6 +6,10 @@ import { dataSourceOptions } from '@/database/database-config';
 import { ProjectScopeNormalizer } from '@/modules/projects/project-scope-normalizer.service';
 import type { ScopeSyncResult } from '@/modules/projects/project-scope-sync';
 import { ProjectScopeWriteService } from '@/modules/projects/project-scope-write.service';
+import type { EventBridgeService } from '@/modules/event-bridge/publishing/event-bridge.service';
+import { EVENT_CATALOG } from '@/modules/event-bridge/contracts/event-catalog';
+import type { EventEnvelopeData } from '@/modules/event-bridge/contracts/event-envelope';
+import type { ProjectAssetsAddedPayload } from '@/modules/event-bridge/contracts/event-payloads';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DataSource, type EntityManager } from 'typeorm';
@@ -22,6 +26,7 @@ describe('Atomic project scope replacement (e2e)', () => {
     foreign: string,
     foreignTarget: string;
   const assets: Record<string, string> = {};
+  const bridge = { publishSafely: jest.fn() };
   const input = (value: string) => ({
     mode: Mode.INCLUDE,
     type: Kind.ASSET,
@@ -57,7 +62,11 @@ describe('Atomic project scope replacement (e2e)', () => {
         throw new Error('Validation escaped transaction');
       },
     } as never);
-    service = new ProjectScopeWriteService(ds, normalizer);
+    service = new ProjectScopeWriteService(
+      ds,
+      normalizer,
+      bridge as unknown as EventBridgeService,
+    );
     owner = await insert(
       'INSERT INTO users (id,name,email,"emailVerified") VALUES ($1,$2,$3,false)',
       [randomUUID(), 'Argus scope writes', randomUUID() + '@example.test'],
@@ -91,6 +100,7 @@ describe('Atomic project scope replacement (e2e)', () => {
     }
   });
   beforeEach(async () => {
+    bridge.publishSafely.mockReset().mockResolvedValue('1-0');
     await ds.query('DELETE FROM project_assets WHERE "projectId"=$1', [
       project,
     ]);
@@ -169,6 +179,50 @@ describe('Atomic project scope replacement (e2e)', () => {
       ],
     });
   });
+  it('reports committed newly inserted IDs once, preserving manual members and suppressing repeated or removal-only reports', async () => {
+    bridge.publishSafely.mockImplementation(
+      async (name, data: EventEnvelopeData, options) => {
+        expect(name).toBe(EVENT_CATALOG.project.assets.added);
+        const payload = data.payload as ProjectAssetsAddedPayload;
+        expect(data).toMatchObject({
+          workspaceId: workspace,
+          resourceId: project,
+          outcome: 'success',
+          resourceType: 'project',
+        });
+        expect(payload).toEqual({ projectId: project, assetIds: [assets.api] });
+        expect(options).toEqual({
+          subject: `workspace:${workspace}/project:${project}`,
+        });
+        const rows = await ds.query<
+          { assetId: string; source: string; scopeRuleId: string }[]
+        >(
+          'SELECT "assetId",source,"scopeRuleId" FROM project_assets WHERE "projectId"=$1 AND "assetId"=ANY($2::uuid[])',
+          [project, payload.assetIds],
+        );
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ assetId: assets.api, source: 'rule' });
+        expect(rows[0].scopeRuleId).toBeTruthy();
+        return '1-0';
+      },
+    );
+    const rules = [input(assets.api), input(assets.manual)];
+    await expect(
+      service.replaceRules(project.toUpperCase(), workspace, rules),
+    ).resolves.toEqual({ added: [assets.api], removed: 0 });
+    expect(bridge.publishSafely).toHaveBeenCalledTimes(1);
+    await expect(
+      service.replaceRules(project, workspace, rules),
+    ).resolves.toEqual({ added: [], removed: 0 });
+    await expect(service.replaceRules(project, workspace, [])).resolves.toEqual({
+      added: [],
+      removed: 1,
+    });
+    expect(bridge.publishSafely).toHaveBeenCalledTimes(1);
+    expect((await state()).members).toEqual([
+      { assetId: assets.manual, source: 'manual', scopeRuleId: null },
+    ]);
+  });
   it('rejects foreign projects and references without changing saved state', async () => {
     await service.replaceRules(project, workspace, [input(assets.api)]);
     const before = await state();
@@ -227,11 +281,14 @@ describe('Atomic project scope replacement (e2e)', () => {
     const failing = new ProjectScopeWriteService(
       failingSource as never,
       normalizer,
+      bridge as unknown as EventBridgeService,
     );
+    bridge.publishSafely.mockClear();
     await expect(
       failing.replaceRules(project, workspace, [input(assets.mail)], false),
     ).rejects.toBe(error);
     expect(await state()).toEqual(before);
+    expect(bridge.publishSafely).not.toHaveBeenCalled();
   });
   it('serializes competing replacements into one coherent rule, preference and membership set', async () => {
     await Promise.all(
