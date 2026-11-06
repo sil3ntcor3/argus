@@ -1,4 +1,5 @@
-import { ToolCategory } from '@/common/enums/enum';
+import { ToolCategory, type DataKind } from '@/common/enums/enum';
+import { INPUT_KINDS } from '../tools/tool-io';
 
 const KNOWN_TOOL_CATEGORIES = new Set<string>(Object.values(ToolCategory));
 
@@ -26,6 +27,8 @@ export interface WorkflowStepDefinition {
    */
   category?: string;
   needs?: string | string[];
+  /** One input kind or an ordered preference list; omitted uses tool defaults. */
+  input?: string | string[];
   /**
    * A fan-out step runs one job per asset/service, and some of those inputs are
    * routinely unroutable (they simply have nothing to scan). By default the step
@@ -56,6 +59,7 @@ export interface WorkflowStep {
   run: string;
   /** Declared category; the runner fills in the default (see withResolvedCategories). */
   category?: ToolCategory;
+  input?: DataKind[];
   needs: string[];
   /** Original position — fallback ordering only. */
   order: number;
@@ -156,6 +160,15 @@ export function normalizeNeeds(needs: string | string[] | undefined): string[] {
   return list
     .map((need) => String(need).trim())
     .filter((need) => need.length > 0);
+}
+
+/** Normalize authored kinds without changing their preference order. */
+export function normalizeInput(input: string | string[] | undefined): DataKind[] {
+  if (!input) return [];
+  const list = Array.isArray(input) ? input : [input];
+  return [...new Set(
+    list.map((value) => String(value).trim().toLowerCase()).filter(Boolean),
+  )] as DataKind[];
 }
 
 /**
@@ -329,6 +342,20 @@ export function buildWorkflowGraph(content: {
       errors.push(`Unknown category "${category}" for job "${id}"`);
       return;
     }
+    if (
+      job.input !== undefined && job.input !== null &&
+      typeof job.input !== 'string' &&
+      (!Array.isArray(job.input) || job.input.some((kind) => typeof kind !== 'string'))
+    ) {
+      errors.push(`Invalid input for job "${id}": expected a kind or a list of kinds`);
+      return;
+    }
+    const input = normalizeInput(job.input);
+    const unknownInputs = input.filter((kind) => !INPUT_KINDS.includes(kind));
+    if (unknownInputs.length) {
+      errors.push(`Unknown input "${unknownInputs.join(', ')}" for job "${id}" (expected one of ${INPUT_KINDS.join(', ')})`);
+      return;
+    }
     const usage = runs.get(run) ?? { count: 0, implicit: false };
     runs.set(run, { count: usage.count + 1, implicit: usage.implicit || !category });
     const key = `${run}#${category ?? ''}`;
@@ -345,6 +372,7 @@ export function buildWorkflowGraph(content: {
       name: String(job.name ?? '').trim() || id,
       run,
       ...(category ? { category: category as ToolCategory } : {}),
+      ...(input.length ? { input } : {}),
       needs: normalizeNeeds(job.needs),
       order,
       // Tolerate partial failure unless the author asked for strict.
@@ -458,6 +486,7 @@ export function normalizeWorkflowContent<T extends { jobs?: WorkflowJobsInput }>
       ...(step.name !== step.id ? { name: step.name } : {}),
       run: step.run,
       ...(step.category ? { category: step.category } : {}),
+      ...(step.input ? { input: step.input } : {}),
       ...(step.needs.length > 0 ? { needs: step.needs } : {}),
       ...(step.allowFailure === false ? { allowFailure: false } : {}),
       ...(step.config !== undefined ? { config: step.config } : {}),

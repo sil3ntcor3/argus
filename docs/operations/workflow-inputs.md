@@ -2,6 +2,20 @@
 
 This port is implemented in separate batches from upstream #827 and #823.
 
+## Workflow input selection
+
+A job may set `input: web` or `input: [web, host]` to narrow or reorder its
+tool's accepted inputs. Omission uses the tool's declaration. Writes normalize
+kinds to lowercase, remove duplicates without changing order, and store arrays.
+Unknown, output-only, malformed, and unsupported declarations are rejected before
+saving. Existing unknown-tool handling remains deferred until the run.
+
+The runner and run-detail workflow snapshots preserve that selection. Fast scan
+uses the saved scan job's preference; its shipped Nuclei template now declares
+`[web, host]`, preferring each live HTTP(S) endpoint before falling back to an
+unprobed host. Explicit host-only preferences remain host-only. Templates refresh
+through the existing startup synchronization. No database migration is needed.
+
 ## Data-kind foundation
 
 `DataKind` describes what a step consumes or produces: `target`, `host`,
