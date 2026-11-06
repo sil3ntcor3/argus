@@ -32,8 +32,8 @@ that lack I/O metadata. Runtime resolution still supplies defaults for those
 rows. No schema migration is required because categories already use JSONB.
 The generated OpenAPI documents and console client include the additive fields.
 
-Scoped planning and the Fast scan endpoint fix follow separately. Catalog
-metadata alone does not change dispatch or workflow-file behavior.
+Catalog metadata drives the scoped planning below. Explicit workflow input
+controls and the Fast scan endpoint preference follow separately.
 
 ## Connector declarations
 
@@ -57,9 +57,11 @@ Asset- and service-based job creation now load eligible entities through
 `StepScopeLoader`, including large bound ID selections. Existing category selection, primary-only
 subdomain jobs, configuration-failure handling, command binding and job flags
 remain in place. Probes include every scoped service; screenshots require a
-successful HTTP response. URL discovery retains one preferred live service per
-asset (443, then 80, then lowest port). Explicit service selections and tenant
-boundaries apply before those choices. Service-category planning follows separately.
+successful HTTP response. URL-discovery tools declaring `web` create one job per
+live endpoint with precise connector targets. Shipped `gau` and `katana` declare
+`host`, so they create host-wide jobs, including unprobed hosts. Asset selections
+and tenant boundaries apply to every kind; service IDs narrow service, web and
+URL collections. Duplicate HTTP responses do not duplicate web jobs.
 
 Asset-category steps now use their declared ordered input kinds. A vulnerability
 connector declaring `[web, host]` creates jobs for every successful HTTP endpoint,
@@ -107,7 +109,7 @@ scheme and non-default port; IPv6 authorities are bracketed. URL inputs must be
 valid HTTP(S) links on the scoped asset's host, so captured external links cannot
 expand a scan's scope. If no eligible URL remains, later input kinds still apply.
 Repository inputs remain deferred until claim time for live credential lookup.
-The service-category branch is integrated in a later batch.
+All job categories now use this planner and the same job-construction path.
 Run `task api:test:one SPEC=src/modules/jobs-registry/step-inputs.spec.ts` for
 ordered fallbacks, endpoint fan-out, scope filtering and repository behavior.
 

@@ -46,10 +46,17 @@ function mockServiceScope(getRows: () => Promise<AssetService[]>) {
       for (const row of rows) {
         web.set(row.assetId, [...(web.get(row.assetId) ?? []), { ...row, scheme: 'https' }]);
       }
+      const assets = new Map(rows.map((row) => [row.assetId, row.asset]));
       return {
-        assets: new Map(rows.map((row) => [row.assetId, row.asset])),
+        assets,
         services: new Map(rows.map((row) => [row.id, row])),
-        scope: { assets: [], web },
+        scope: {
+          assets: [...assets.values()].map((asset) => ({
+            id: asset.id, value: asset.value, isPrimary: asset.isPrimary,
+            targetType: TargetType.DOMAIN,
+          })),
+          services: web, web,
+        },
       };
     },
   );
@@ -1946,7 +1953,7 @@ describe('JobsRegistryService', () => {
       id,
       value: `${id}.example.com`,
       port: 443,
-      asset: { id: `asset-${id}`, isPrimary: true },
+      asset: { id: `asset-${id}`, isPrimary: true, value: `${id}.example.com` },
     });
 
     beforeEach(() => {
@@ -2197,9 +2204,9 @@ describe('JobsRegistryService', () => {
       }
     });
 
-    it('S1b: URL_DISCOVERY keeps one service per asset, preferring 443 then 80', async () => {
-      const assetA = { id: 'asset-a', isPrimary: true };
-      const assetB = { id: 'asset-b', isPrimary: false };
+    it('S1b: URL_DISCOVERY plans every live web service of each asset', async () => {
+      const assetA = { id: 'asset-a', isPrimary: true, value: 'a.example.com' };
+      const assetB = { id: 'asset-b', isPrimary: false, value: 'b.example.com' };
       mockAssetServiceQB.getMany.mockResolvedValue([
         { id: 'a-8080', value: 'a.example.com', port: 8080, asset: assetA },
         { id: 'a-80', value: 'a.example.com', port: 80, asset: assetA },
@@ -2220,12 +2227,15 @@ describe('JobsRegistryService', () => {
       );
       expect(serviceIds.sort()).toEqual([
         'a-443',
+        'a-80',
+        'a-8080',
         'b-80',
+        'b-8443',
       ]);
     });
 
     it('S1c regression: SCREENSHOT still creates one job per live service', async () => {
-      const asset = { id: 'asset-a', isPrimary: true };
+      const asset = { id: 'asset-a', isPrimary: true, value: 'a.example.com' };
       mockAssetServiceQB.getMany.mockResolvedValue([
         { id: 'a-80', value: 'a.example.com', port: 80, asset },
         { id: 'a-443', value: 'a.example.com', port: 443, asset },

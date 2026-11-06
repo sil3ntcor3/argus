@@ -7,7 +7,6 @@ import {
 } from '@/common/constants/app.constants';
 import {
   BullMQName,
-  DataKind,
   EventTriggerType,
   JobPriority,
   JobRunType,
@@ -37,8 +36,6 @@ import {
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
-import type { AssetService } from '../assets/entities/asset-services.entity';
-import type { TargetType } from '@/common/enums/enum';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
 import { StorageService } from '../storage/storage.service';
 import { ToolConfigProfilesService } from '../tools/tool-config-profiles.service';
@@ -150,30 +147,6 @@ const JOB_HISTORY_STATUS_SQL = `CASE
           WHEN COUNT(*) FILTER (WHERE job.status = '${JobStatus.SKIPPED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.SKIPPED}'
           ELSE '${JobStatus.PENDING}'
         END`;
-
-/** Default HTTPS and HTTP ports win, then the lowest port. */
-const urlDiscoveryPortRank = (port: number): number =>
-  port === 443 ? -2 : port === 80 ? -1 : port;
-
-/**
- * Keeps one service per asset. Connector inputs carry only the host
- * (`buildConnectorInputs`), so URL_DISCOVERY jobs for two ports of the same
- * host received identical inputs and stored the same URLs once per port.
- */
-const oneServicePerAsset = (services: AssetService[]): AssetService[] => {
-  const byAsset = new Map<string, AssetService>();
-  for (const service of services) {
-    const assetId = service.asset?.id ?? service.assetId;
-    const kept = byAsset.get(assetId);
-    if (
-      !kept ||
-      urlDiscoveryPortRank(service.port) < urlDiscoveryPortRank(kept.port)
-    ) {
-      byAsset.set(assetId, service);
-    }
-  }
-  return [...byAsset.values()];
-};
 
 @Injectable()
 export class JobsRegistryService {
@@ -410,98 +383,40 @@ export class JobsRegistryService {
     // A step left with no eligible asset produces no job and is skipped.
     const targetTypes = resolveToolTargetTypes(categorySpec);
 
-    // Step 2: find appropriate data source based on the job category
-    if (
-      jobCategory === ToolCategory.HTTP_PROBE ||
-      jobCategory === ToolCategory.SCREENSHOT ||
-      jobCategory === ToolCategory.URL_DISCOVERY
-    ) {
-      // HTTP_PROBE must probe every enabled asset_service port; SCREENSHOT and
-      // URL_DISCOVERY are HTTP-crawl follow-ups and must only target services
-      // httpx actually confirmed live.
-      const liveOnly =
-        jobCategory === ToolCategory.SCREENSHOT ||
-        jobCategory === ToolCategory.URL_DISCOVERY;
-      const services = await this.findAssetServicesForJob(
-        targetIds,
-        assetIds,
-        workspaceId,
-        liveOnly,
-        assetServiceIds,
-        targetTypes,
-      );
-      const assetServices =
-        jobCategory === ToolCategory.URL_DISCOVERY
-          ? oneServicePerAsset(services)
-          : services;
+    // Plan the first available input kind independently for each asset.
+    const inputs = resolveStepInputs(tool.name, categorySpec);
+    const loaded = await this.stepScope.load(inputs, {
+      targetIds, assetIds, assetServiceIds, workspaceId, targetTypes,
+    });
+    const planned = planStepInputs(inputs, loaded.scope);
 
-      // Step 3: iterate tools and create jobs
-      const defaultCommand = builtInTools.find(
-        (t) => t.name === tool.name,
-      )?.command;
+    // Step 3: iterate tools and create jobs
+    const defaultCommand = builtInTools.find(
+      (t) => t.name === tool.name,
+    )?.command;
 
-      // Create jobs for each asset service
-      for (const assetService of assetServices) {
-        const job = jobRepo.create({
-          id: randomUUID(),
-          asset: assetService.asset, // Use the associated asset from asset service
-          assetService, // Store the asset service reference
-          jobName: tool.name,
-          status: JobStatus.PENDING,
-          category: jobCategory,
-          tool,
-          priority: priority ?? 4,
-          jobHistory,
-          command: isConnector
-            ? undefined
-            : bindingCommand(defaultCommand ?? '', {
-                // Use the default command template for HTTP_PROBE
-                value: assetService.value,
-                port: assetService.port.toString(),
-              }),
-          configProfileId: isConnector ? configProfileId : undefined,
-          config: isConnector ? mergedConfig ?? config ?? null : null,
-          isSaveRawResult: isSaveRawResult ?? false,
-          isPublishEvent,
-        } as DeepPartial<Job>);
+    for (const input of planned) {
+      const job = jobRepo.create({
+        id: randomUUID(),
+        asset: loaded.assets.get(input.assetId)!,
+        assetService: input.serviceId ? loaded.services.get(input.serviceId) : undefined,
+        inputs: isConnector ? input.connectorInputs : null,
+        jobName: tool.name,
+        status: JobStatus.PENDING,
+        category: jobCategory,
+        tool,
+        priority: priority ?? 4,
+        jobHistory,
+        command: isConnector
+          ? undefined
+          : bindingCommand(defaultCommand ?? '', input.commandValues),
+        configProfileId: isConnector ? configProfileId : undefined,
+        config: isConnector ? mergedConfig ?? config ?? null : null,
+        isSaveRawResult: isSaveRawResult ?? false,
+        isPublishEvent,
+      } as DeepPartial<Job>);
 
-        jobsToInsert.push(job);
-      }
-    } else {
-      const inputs = resolveStepInputs(tool.name, categorySpec);
-      const loaded = await this.stepScope.load(inputs, {
-        targetIds, assetIds, assetServiceIds, workspaceId, targetTypes,
-      });
-      const planned = planStepInputs(inputs, loaded.scope);
-
-      // Step 3: iterate tools and create jobs
-      const defaultCommand = builtInTools.find(
-        (t) => t.name === tool.name,
-      )?.command;
-
-      for (const input of planned) {
-        const job = jobRepo.create({
-          id: randomUUID(),
-          asset: loaded.assets.get(input.assetId)!,
-          assetService: input.serviceId ? loaded.services.get(input.serviceId) : undefined,
-          inputs: isConnector ? input.connectorInputs : null,
-          jobName: tool.name,
-          status: JobStatus.PENDING,
-          category: jobCategory,
-          tool,
-          priority: priority ?? 4,
-          jobHistory,
-          command: isConnector
-            ? undefined
-            : bindingCommand(defaultCommand ?? '', input.commandValues),
-          configProfileId: isConnector ? configProfileId : undefined,
-          config: isConnector ? mergedConfig ?? config ?? null : null,
-          isSaveRawResult: isSaveRawResult ?? false,
-          isPublishEvent,
-        } as DeepPartial<Job>);
-
-        jobsToInsert.push(job);
-      }
+      jobsToInsert.push(job);
     }
 
     // Step 4: save all jobs
@@ -586,39 +501,6 @@ export class JobsRegistryService {
     });
 
     return failedJob;
-  }
-
-  /**
-   * Finds asset services for HTTP_PROBE / SCREENSHOT job creation based on
-   * targetIds, assetIds, and workspaceId.
-   * @param targetIds list of target IDs to filter asset services
-   * @param assetIds list of asset IDs to filter asset services
-   * @param workspaceId workspace ID to filter asset services
-   * @param liveOnly when true, restrict to services with an http_responses
-   *   row where failed = false (i.e. httpx confirmed live). Used by
-   *   SCREENSHOT so jobs are not created for every open port naabu found.
-   *   The shared loader's web scope requires a successful HTTP response.
-   * @param targetTypes only services whose asset's target has one of these types
-   * @returns Promise<Array<AssetService>> list of filtered asset services
-   */
-  private async findAssetServicesForJob(
-    targetIds: string[] | undefined,
-    assetIds: string[] | undefined,
-    workspaceId: string | undefined,
-    liveOnly: boolean | undefined,
-    assetServiceIds: string[] | undefined,
-    targetTypes: TargetType[],
-  ): Promise<AssetService[]> {
-    const loaded = await this.stepScope.load(
-      [liveOnly ? DataKind.WEB : DataKind.SERVICE],
-      { targetIds, assetIds, workspaceId, assetServiceIds, targetTypes },
-    );
-    const webIds = new Set(
-      [...(loaded.scope.web?.values() ?? [])].flat().map((row) => row.id),
-    );
-    return [...loaded.services.values()]
-      .filter((row) => !liveOnly || webIds.has(row.id))
-      .map((row) => Object.assign(row, { asset: loaded.assets.get(row.assetId)! }));
   }
 
   /**

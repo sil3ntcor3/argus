@@ -341,18 +341,40 @@ describe('Job input foundation (e2e)', () => {
       }
     },
   );
-  it.each([
-    { category: ToolCategory.HTTP_PROBE, ports: [22, 443, 8080] },
-    { category: ToolCategory.SCREENSHOT, ports: [443, 8080] },
-    { category: ToolCategory.URL_DISCOVERY, ports: [443] },
-  ])(
-    'preserves service eligibility for $category',
-    async ({ category, ports }) => {
+  it.each(
+    [
+      { category: ToolCategory.HTTP_PROBE, ports: [22, 443, 8080] },
+      { category: ToolCategory.SCREENSHOT, ports: [443, 8080] },
+      { category: ToolCategory.URL_DISCOVERY, ports: [443, 8080] },
+    ].flatMap((row) =>
+      [false, true].map((connector) => ({ ...row, connector })),
+    ),
+  )(
+    'plans service eligibility for $category (connector=$connector)',
+    async ({ category, ports, connector }) => {
       const scopedTarget = await insert(
         `INSERT INTO targets (value,"workspaceId",type) VALUES ($1,$2,'DOMAIN')`,
         ['service-scope.example.com', owner.workspace.id],
       );
       let scopedTool: string | undefined;
+      const slug = `argus-service-scope-${randomUUID()}`;
+      const connectors = app.app.get(ConnectorRegistryService);
+      const original = connectors.getConnector.bind(
+        connectors,
+      ) as ConnectorRegistryService['getConnector'];
+      const entry = connector
+        ? jest.spyOn(connectors, 'getConnector').mockImplementation((name) =>
+            name === slug
+              ? {
+                  name,
+                  slug,
+                  version: '1',
+                  image: 'local-validation.invalid/argus:fixture',
+                  capabilities: [],
+                }
+              : original(name),
+          )
+        : undefined;
       try {
         const scopedAsset = await insert(
           'INSERT INTO assets (value,"targetId") VALUES ($1,$2)',
@@ -383,7 +405,7 @@ describe('Job input foundation (e2e)', () => {
         scopedTool = await insert(
           'INSERT INTO tools (name,categories) VALUES ($1,$2)',
           [
-            `argus-service-scope-${randomUUID()}`,
+            slug,
             JSON.stringify([
               { name: category, targetTypes: [TargetType.DOMAIN] },
             ]),
@@ -405,6 +427,21 @@ describe('Job input foundation (e2e)', () => {
           jobs.map((job) => job.assetService?.port).sort((a, b) => a! - b!),
         ).toEqual(ports);
         expect(jobs.every((job) => job.asset.id === scopedAsset)).toBe(true);
+        if (connector) {
+          expect(jobs.map((job) => job.inputs?.target).sort()).toEqual(
+            ports
+              .map((port) =>
+                category === ToolCategory.HTTP_PROBE
+                  ? `service-scope.example.com:${port}`
+                  : port === 443
+                    ? 'https://service-scope.example.com'
+                    : 'http://service-scope.example.com:8080',
+              )
+              .sort(),
+          );
+        } else {
+          expect(jobs.every((job) => job.inputs === null)).toBe(true);
+        }
         const selected = await registry.createNewJob({
           ...args,
           assetServiceIds: Array<string>(65_536).fill(services.get(8080)!),
@@ -417,6 +454,7 @@ describe('Job input foundation (e2e)', () => {
           }),
         ).toEqual([]);
       } finally {
+        entry?.mockRestore();
         await app.dataSource.query('DELETE FROM targets WHERE id=$1', [
           scopedTarget,
         ]);
@@ -428,11 +466,24 @@ describe('Job input foundation (e2e)', () => {
     },
   );
   it.each([
-    { inputs: [DataKind.WEB, DataKind.HOST], webFirst: true },
-    { inputs: [DataKind.HOST, DataKind.WEB], webFirst: false },
+    {
+      inputs: [DataKind.WEB, DataKind.HOST],
+      webFirst: true,
+      category: ToolCategory.VULNERABILITIES,
+    },
+    {
+      inputs: [DataKind.HOST, DataKind.WEB],
+      webFirst: false,
+      category: ToolCategory.VULNERABILITIES,
+    },
+    {
+      inputs: [DataKind.HOST],
+      webFirst: false,
+      category: ToolCategory.URL_DISCOVERY,
+    },
   ])(
-    'plans vulnerability connector inputs in preference order ($webFirst)',
-    async ({ inputs, webFirst }) => {
+    'plans $category connector inputs in preference order ($webFirst)',
+    async ({ inputs, webFirst, category }) => {
       const scopedTarget = await insert(
         `INSERT INTO targets (value,"workspaceId",type) VALUES ($1,$2,'DOMAIN')`,
         ['planned.example.com', owner.workspace.id],
@@ -484,7 +535,7 @@ describe('Job input foundation (e2e)', () => {
             slug,
             JSON.stringify([
               {
-                name: ToolCategory.VULNERABILITIES,
+                name: category,
                 targetTypes: [TargetType.DOMAIN],
                 inputs,
               },
@@ -548,6 +599,15 @@ describe('Job input foundation (e2e)', () => {
             .get(JobsRegistryService)
             .createNewJob({ ...args, workspaceId: other.workspace.id }),
         ).toEqual([]);
+        if (category === ToolCategory.URL_DISCOVERY) {
+          const selected = await app.app
+            .get(JobsRegistryService)
+            .createNewJob({ ...args, assetIds: [web] });
+          expect(selected.map((job) => job.inputs?.target)).toEqual([
+            'web.planned.example.com',
+          ]);
+          expect(selected[0].assetService).toBeUndefined();
+        }
       } finally {
         connector.mockRestore();
         await app.dataSource.query('DELETE FROM targets WHERE id=$1', [
