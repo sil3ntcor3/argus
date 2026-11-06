@@ -347,3 +347,15 @@ export enum AgentCommandApprovalStatus {
   APPROVED = 'approved',
   REJECTED = 'rejected',
 }
+
+export enum ProjectScopeRuleMode {
+  INCLUDE = 'include',
+  EXCLUDE = 'exclude',
+}
+
+export enum ProjectScopeRuleType {
+  TARGET = 'target',
+  HOSTNAME = 'hostname',
+  CIDR = 'cidr',
+  ASSET = 'asset',
+}
