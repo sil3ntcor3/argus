@@ -51,6 +51,24 @@ export enum ToolCategory {
   URL_DISCOVERY = 'url_discovery',
 }
 
+/** The data a workflow step consumes or produces, independent of its category. */
+export enum DataKind {
+  /** The primary domain or IP supplied when the target was created. */
+  TARGET = 'target',
+  /** A discovered hostname or IP address. */
+  HOST = 'host',
+  /** An open port addressed as host:port. */
+  SERVICE = 'service',
+  /** A live HTTP(S) service, including its scheme and port. */
+  WEB = 'web',
+  /** A discovered URL, including its path. */
+  URL = 'url',
+  /** A repository belonging to a Git organization target. */
+  REPOSITORY = 'repository',
+  /** A finding; currently an output kind only. */
+  VULNERABILITY = 'vulnerability',
+}
+
 /**
  * Enum representing job statuses
  */
