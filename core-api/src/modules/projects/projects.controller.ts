@@ -32,6 +32,8 @@ import {
   ScopePreviewResultDto,
 } from './dto/project-scope-preview.dto';
 import { ProjectScopePreviewService } from './project-scope-preview.service';
+import { ProjectScopeReadService } from './project-scope-read.service';
+import { ProjectScopeDto } from './dto/project-scope.dto';
 
 /** Canonical CRUD shares the existing tenant-scoped services and persistence. */
 @ApiTags('Projects')
@@ -41,6 +43,7 @@ export class ProjectsController {
     private readonly projects: AssetGroupService,
     private readonly metadata: ProjectMetadataReadService,
     private readonly scopePreview: ProjectScopePreviewService,
+    private readonly scopeRead: ProjectScopeReadService,
   ) {}
 
   @Doc({
@@ -93,6 +96,20 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.scopePreview.preview(workspaceId, dto.rules, dto.projectId);
+  }
+
+  @Doc({
+    summary: 'Get project scope rules',
+    response: { serialization: ProjectScopeDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('project.read')
+  @Get(':id/scope-rules')
+  getScopeRules(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.scopeRead.getScope(id, workspaceId);
   }
 
   @Doc({

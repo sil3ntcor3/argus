@@ -4654,6 +4654,36 @@ export type ScopePreviewDto = {
   projectId?: string;
 };
 
+export type ScopeRuleDto = {
+  id: string;
+  mode: ProjectScopeRuleMode;
+  type: ProjectScopeRuleType;
+  value: string;
+  /** Owned target/asset name, or the stored rule value */
+  label: string;
+  /**
+   * Include matches, or include matches removed by this exclusion
+   * @minimum 0
+   */
+  matched: number;
+};
+
+export type ProjectScopeDto = {
+  rules: ScopeRuleDto[];
+  /** Saved preference for automatic asset membership */
+  autoAddAssets: boolean;
+  /**
+   * Current owned members with rule provenance
+   * @minimum 0
+   */
+  ruleAssets: number;
+  /**
+   * Current owned members with manual provenance
+   * @minimum 0
+   */
+  manualAssets: number;
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -43358,6 +43388,176 @@ export const useProjectsControllerPreviewScope = <
     queryClient,
   );
 };
+
+/**
+ * @summary Get project scope rules
+ */
+export const projectsControllerGetScopeRules = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectScopeDto>(
+    { url: `/api/projects/${id}/scope-rules`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetScopeRulesQueryKey = (id: string) => {
+  return [`/api/projects/${id}/scope-rules`] as const;
+};
+
+export const getProjectsControllerGetScopeRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetScopeRulesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetScopeRules>>
+  > = ({ signal }) =>
+    projectsControllerGetScopeRules(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetScopeRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetScopeRules>>
+>;
+export type ProjectsControllerGetScopeRulesQueryError = unknown;
+
+export function useProjectsControllerGetScopeRules<
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetScopeRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetScopeRules<
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetScopeRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetScopeRules<
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get project scope rules
+ */
+
+export function useProjectsControllerGetScopeRules<
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetScopeRulesQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 /**
  * @summary Get project by ID
