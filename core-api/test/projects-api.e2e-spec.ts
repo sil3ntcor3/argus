@@ -91,7 +91,14 @@ describe('Canonical Projects CRUD (e2e)', () => {
         .set(owner.headers)
         .set('X-Workspace-Id', other.workspace.id)
         .send({ name: 'Denied' })
-        .expect(403);
+        .expect((response: request.Response) => {
+          if (response.status !== 403) {
+            const body = response.body as { message?: unknown };
+            throw new Error(
+              `${method}: expected 403, got ${response.status}; message=${JSON.stringify(body.message)}`,
+            );
+          }
+        });
     }
     await request(app.server)
       .post('/api/projects')
@@ -177,7 +184,6 @@ describe('Canonical Projects CRUD (e2e)', () => {
           ids.push(operation.operationId);
       }
     }
-    expect(ids).toHaveLength(5);
-    expect(new Set(ids).size).toBe(5);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

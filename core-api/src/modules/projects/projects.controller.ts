@@ -9,6 +9,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   Patch,
@@ -26,6 +27,11 @@ import {
   CreateProjectDto,
   UpdateProjectDto,
 } from './dto/project-metadata-input.dto';
+import {
+  ScopePreviewDto,
+  ScopePreviewResultDto,
+} from './dto/project-scope-preview.dto';
+import { ProjectScopePreviewService } from './project-scope-preview.service';
 
 /** Canonical CRUD shares the existing tenant-scoped services and persistence. */
 @ApiTags('Projects')
@@ -34,6 +40,7 @@ export class ProjectsController {
   constructor(
     private readonly projects: AssetGroupService,
     private readonly metadata: ProjectMetadataReadService,
+    private readonly scopePreview: ProjectScopePreviewService,
   ) {}
 
   @Doc({
@@ -68,6 +75,24 @@ export class ProjectsController {
   ) {
     const saved = await this.projects.create(dto, workspaceId, dto);
     return this.metadata.getById(saved.id, workspaceId);
+  }
+
+  @Doc({
+    summary: 'Preview scope rules',
+    response: {
+      serialization: ScopePreviewResultDto,
+      httpStatus: HttpStatus.OK,
+    },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('project.read')
+  @HttpCode(HttpStatus.OK)
+  @Post('scope-preview')
+  previewScope(
+    @Body() dto: ScopePreviewDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.scopePreview.preview(workspaceId, dto.rules, dto.projectId);
   }
 
   @Doc({
