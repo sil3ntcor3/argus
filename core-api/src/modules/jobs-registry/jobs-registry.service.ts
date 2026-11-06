@@ -7,6 +7,7 @@ import {
 } from '@/common/constants/app.constants';
 import {
   BullMQName,
+  DataKind,
   EventTriggerType,
   JobPriority,
   JobRunType,
@@ -37,7 +38,7 @@ import {
   SelectQueryBuilder,
 } from 'typeorm';
 import { AssetService } from '../assets/entities/asset-services.entity';
-import { Asset } from '../assets/entities/assets.entity';
+import type { Asset } from '../assets/entities/assets.entity';
 import type { TargetType } from '@/common/enums/enum';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
 import { StorageService } from '../storage/storage.service';
@@ -50,6 +51,7 @@ import { resolveToolCategory } from '../tools/tool-categories';
 import { resolveToolTargetTypes } from '../tools/tool-target-types';
 import { builtInTools } from '../tools/tools-provider/built-in-tools';
 import { ToolsService } from '../tools/tools.service';
+import { StepScopeLoader } from './step-scope.loader';
 import {
   normalizeNeeds,
   orderedJobEntries,
@@ -174,6 +176,8 @@ const oneServicePerAsset = (services: AssetService[]): AssetService[] => {
 
 @Injectable()
 export class JobsRegistryService {
+  private readonly stepScope: StepScopeLoader;
+
   constructor(
     @InjectRepository(Job) public readonly repo: Repository<Job>,
     @InjectRepository(JobHistory)
@@ -189,7 +193,9 @@ export class JobsRegistryService {
     private readonly connectorRegistry: ConnectorRegistryService,
     private readonly toolConfigProfilesService: ToolConfigProfilesService,
     private readonly workerStreamRegistry: WorkerStreamRegistry,
-  ) {}
+  ) {
+    this.stepScope = new StepScopeLoader(dataSource);
+  }
   private readonly logger = new Logger(JobsRegistryService.name);
   public async getManyJobs(
     workspaceId: string,
@@ -599,32 +605,11 @@ export class JobsRegistryService {
     workspaceId: string | undefined,
     targetTypes: TargetType[],
   ): Promise<Asset[]> {
-    const assetsQueryBuilder = this.dataSource
-      .getRepository(Asset)
-      .createQueryBuilder('assets')
-      .innerJoin('assets.target', 'target')
-      .where('assets.isEnabled = true')
-      .andWhere('target.type IN (:...targetTypes)', { targetTypes });
-
-    if (targetIds && targetIds.length > 0) {
-      assetsQueryBuilder.andWhere('assets.targetId IN (:...targetIds)', {
-        targetIds,
-      });
-    }
-
-    if (assetIds && assetIds.length > 0) {
-      assetsQueryBuilder.andWhere('assets.id IN (:...assetIds)', {
-        assetIds,
-      });
-    }
-
-    if (workspaceId) {
-      assetsQueryBuilder.andWhere('target.workspaceId = :workspaceId', {
-        workspaceId,
-      });
-    }
-
-    return await assetsQueryBuilder.getMany();
+    // HOST requests asset rows only; category eligibility remains with the caller.
+    const { assets } = await this.stepScope.load([DataKind.HOST], {
+      targetIds, assetIds, workspaceId, targetTypes,
+    });
+    return [...assets.values()];
   }
 
   /**
