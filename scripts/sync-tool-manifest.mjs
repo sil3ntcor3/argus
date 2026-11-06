@@ -12,6 +12,7 @@ const REPO_ROOT = join(__dirname, '..');
 const DEST_DIR = join(REPO_ROOT, 'core-api', 'resources', 'connectors');
 const DEST_FILE = join(DEST_DIR, 'manifest.json');
 const TMP_FILE = join(DEST_DIR, 'manifest.json.tmp');
+const IO_DEFAULTS_FILE = join(DEST_DIR, 'io-defaults.json');
 const MANIFEST_URL =
   'https://raw.githubusercontent.com/sil3ntcor3/argus-connectors/refs/heads/main/manifest.json';
 // MANIFEST_PATH points the sync at a local argus-connectors checkout instead of
@@ -61,6 +62,42 @@ async function loadManifest() {
   }
 }
 
+/** Fill legacy catalog declarations; canonical I/O and connector identity win. */
+async function addInputOutputDefaults(data) {
+  const defaults = JSON.parse(await readFile(IO_DEFAULTS_FILE, 'utf-8')).connectors;
+  const allowed = {
+    inputs: new Set(['target', 'host', 'service', 'web', 'url', 'repository']),
+    produces: new Set(['host', 'service', 'web', 'url', 'vulnerability']),
+  };
+  if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults)) {
+    throw new Error('Invalid connector I/O defaults');
+  }
+  for (const categories of Object.values(defaults)) {
+    for (const definition of Object.values(categories)) {
+      for (const field of ['inputs', 'produces']) {
+        if (
+          !Array.isArray(definition[field]) ||
+          definition[field].some((kind) => !allowed[field].has(kind))
+        ) {
+          throw new Error('Invalid connector I/O defaults');
+        }
+      }
+    }
+  }
+  for (const connector of data.connectors) {
+    if (!connector || !Object.hasOwn(defaults, connector.slug)) continue;
+    const categories = defaults[connector.slug];
+    const capabilities = Array.isArray(connector.capabilities) ? connector.capabilities : [];
+    for (const capability of capabilities) {
+      if (!capability || !Object.hasOwn(categories, capability.name)) continue;
+      const definition = categories[capability.name];
+      for (const field of ['inputs', 'produces']) {
+        if (!Object.hasOwn(capability, field)) capability[field] = [...definition[field]];
+      }
+    }
+  }
+}
+
 async function main() {
   // 1. Fetch manifest from GitHub (or read it locally when MANIFEST_PATH is set)
   const data = await loadManifest();
@@ -75,6 +112,8 @@ async function main() {
         `Got keys: ${Object.keys(data).join(', ')}`,
     );
   }
+
+  await addInputOutputDefaults(data);
 
   // 3. Ensure destination directory exists
   await mkdir(DEST_DIR, { recursive: true });

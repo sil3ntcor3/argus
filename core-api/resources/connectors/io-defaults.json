@@ -1,0 +1,171 @@
+{
+  "sourceCommit": "50b147f2e1aff54bee7277f99626c3637636f70f",
+  "connectors": {
+    "acunetix": {
+      "vulnerabilities": {
+        "inputs": [
+          "web",
+          "host"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "arjun": {
+      "url_discovery": {
+        "inputs": [
+          "url",
+          "web"
+        ],
+        "produces": [
+          "url"
+        ]
+      }
+    },
+    "gau": {
+      "url_discovery": {
+        "inputs": [
+          "host"
+        ],
+        "produces": [
+          "url"
+        ]
+      }
+    },
+    "gitleaks": {
+      "secrets": {
+        "inputs": [
+          "repository"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "katana": {
+      "url_discovery": {
+        "inputs": [
+          "host"
+        ],
+        "produces": [
+          "url"
+        ]
+      }
+    },
+    "nessus": {
+      "vulnerabilities": {
+        "inputs": [
+          "host"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "nikto": {
+      "vulnerabilities": {
+        "inputs": [
+          "web",
+          "host"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "nmap": {
+      "ports_scanner": {
+        "inputs": [
+          "host"
+        ],
+        "produces": [
+          "service"
+        ]
+      },
+      "vulnerabilities": {
+        "inputs": [
+          "host"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "nuclei": {
+      "vulnerabilities": {
+        "inputs": [
+          "host",
+          "web"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "zap": {
+      "vulnerabilities": {
+        "inputs": [
+          "web",
+          "host"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "rustscan": {
+      "ports_scanner": {
+        "inputs": [
+          "host"
+        ],
+        "produces": [
+          "service"
+        ]
+      }
+    },
+    "trivy": {
+      "vulnerabilities": {
+        "inputs": [
+          "repository"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "wpscan": {
+      "vulnerabilities": {
+        "inputs": [
+          "web",
+          "host"
+        ],
+        "produces": [
+          "vulnerability"
+        ]
+      }
+    },
+    "dirsearch": {
+      "url_discovery": {
+        "inputs": [
+          "web",
+          "host"
+        ],
+        "produces": [
+          "url"
+        ]
+      }
+    },
+    "ffuf": {
+      "url_discovery": {
+        "inputs": [
+          "web",
+          "host"
+        ],
+        "produces": [
+          "url"
+        ]
+      }
+    }
+  }
+}

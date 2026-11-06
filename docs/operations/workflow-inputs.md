@@ -32,10 +32,24 @@ that lack I/O metadata. Runtime resolution still supplies defaults for those
 rows. No schema migration is required because categories already use JSONB.
 The generated OpenAPI documents and console client include the additive fields.
 
-The Argus connector manifest has not yet been enriched with upstream's
-per-connector I/O declarations. That catalog update, scoped planning and the
-Fast scan endpoint fix follow in separate batches. No dispatch or workflow-file
-behavior changes in this metadata batch.
+Scoped planning and the Fast scan endpoint fix follow separately. Catalog
+metadata alone does not change dispatch or workflow-file behavior.
+
+## Connector declarations
+
+The manifest generator fills missing I/O declarations from the source-controlled
+`core-api/resources/connectors/io-defaults.json`, derived from the pinned upstream
+catalog. Existing canonical declarations win, including empty produced lists.
+Images, versions, target types and other canonical metadata are preserved.
+Unknown custom connectors are left untouched and use category defaults at sync.
+
+Run `task sync-connectors` to fetch the canonical Argus catalog and regenerate
+the manifest with these compatibility defaults. `MANIFEST_PATH` still supports a
+local catalog input. Update the defaults' source commit when auditing newer
+upstream declarations; do not copy upstream image or version fields into them.
+The generator validates defaults before atomically replacing the output. Run
+`task api:test:one SPEC=src/modules/tools/connector-manifest.spec.ts` for its
+offline CLI, canonical-precedence and atomic-failure regression checks.
 
 ## Verification
 

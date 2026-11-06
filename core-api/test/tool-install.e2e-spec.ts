@@ -48,7 +48,7 @@ describe('Tool installation (e2e)', () => {
 
   it('exposes backward-compatible input/output metadata on the tool catalog', async () => {
     for (const [name, inputs, produces] of [
-      ['nuclei', [DataKind.HOST], [DataKind.VULNERABILITY]],
+      ['nuclei', [DataKind.HOST, DataKind.WEB], [DataKind.VULNERABILITY]],
       ['gitleaks', [DataKind.REPOSITORY], [DataKind.VULNERABILITY]],
       ['subfinder', [DataKind.TARGET], [DataKind.HOST]],
     ] as const) {
