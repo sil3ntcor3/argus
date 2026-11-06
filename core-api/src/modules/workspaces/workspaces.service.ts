@@ -60,6 +60,7 @@ import { WorkspacePermission } from './entities/workspace-permission.entity';
 import { Workspace } from './entities/workspace.entity';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { withProjectPermissionAliases } from './project-permission-aliases';
 
 /** Invitation validity window: 7 days */
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -735,7 +736,7 @@ export class WorkspacesService implements OnModuleInit {
       }
     }
 
-    return { membership, permissionKeys: [...keys] };
+    return { membership, permissionKeys: withProjectPermissionAliases(keys) };
   }
 
   /**

@@ -623,6 +623,32 @@ describe('WorkspacesService', () => {
       ],
     };
 
+    it.each([
+      ['group.read', 'project.read'],
+      ['project.read', 'group.read'],
+      ['group.write', 'project.write'],
+      ['project.write', 'group.write'],
+    ])('allows a holder of %s to grant its exact alias %s', async (held, granted) => {
+      (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue({
+        memberPermissions: [{ permission: { permissions: [held] } }],
+      });
+      await expect(service.createPermissionGroup(testWorkspaceId, {
+        name: 'Equivalent project grant', permissions: [granted],
+      }, testUserId)).resolves.toBeDefined();
+    });
+
+    it.each([
+      ['project.read', 'group.write'], ['group.read', 'project.write'],
+      ['project.write', 'group.read'], ['group.write', 'project.read'],
+    ])('does not let %s grant a different action %s', async (held, granted) => {
+      (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue({
+        memberPermissions: [{ permission: { permissions: [held] } }],
+      });
+      await expect(service.createPermissionGroup(testWorkspaceId, {
+        name: 'Different action', permissions: [granted],
+      }, testUserId)).rejects.toThrow(/You can only grant permission keys you already hold/);
+    });
+
     it('should create a permission group', async () => {
       (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue(
         holderMembership,
@@ -812,6 +838,22 @@ describe('WorkspacesService', () => {
       ...overrides,
     });
 
+    it.each([
+      [['group.read'], ['group.read', 'project.read']],
+      [['project.read'], ['project.read', 'group.read']],
+      [['group.write'], ['group.write', 'project.write']],
+      [['project.write'], ['project.write', 'group.write']],
+      [['group.read', 'project.read', 'group.read'], ['group.read', 'project.read']],
+      [['toString', 'GROUP.read', 'group.delete', 'asset.read'], ['toString', 'GROUP.read', 'group.delete', 'asset.read']],
+      [['*'], ['*']], [[], []],
+    ])('resolves only exact project aliases for %j', async (stored, expected) => {
+      (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue({
+        memberPermissions: [{ permission: { permissions: stored } }],
+      });
+      expect((await service.getMembershipWithPermissions(testWorkspaceId, testUserId)).permissionKeys).toEqual(expected);
+      expect((await service.getCurrentPermission(testWorkspaceId, testUserId)).currentPermission).toEqual(expected);
+    });
+
     it('should aggregate permission keys across groups', async () => {
       (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue({
         memberPermissions: [
@@ -828,6 +870,7 @@ describe('WorkspacesService', () => {
       expect(result.permissionKeys.sort()).toEqual([
         '*',
         'group.read',
+        'project.read',
         'target.read',
       ]);
     });
@@ -861,6 +904,7 @@ describe('WorkspacesService', () => {
         expect(result.currentPermission.sort()).toEqual([
           '*',
           'group.read',
+          'project.read',
           'target.read',
         ]);
       });
