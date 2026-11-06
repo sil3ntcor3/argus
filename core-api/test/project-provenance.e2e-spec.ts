@@ -129,6 +129,91 @@ describe('Project provenance foundation (e2e)', () => {
     expect(row).toEqual({ projectId: null, projectWorkflowId: null });
   });
 
+  it('records one observation per finding link/run with valid references', async () => {
+    const sql = `INSERT INTO project_vulnerability_observations ("projectVulnerabilityId", "jobHistoryId") VALUES ($1, $2)`;
+    await app.dataSource.query(sql, [linkId, runId]);
+    await expect(
+      app.dataSource.query(sql, [linkId, runId]),
+    ).rejects.toMatchObject({ code: '23505' });
+    const otherRun = await insert(
+      `INSERT INTO job_histories ("workflowId", "projectId") VALUES ($1, $2)`,
+      [workflowId, projectId],
+    );
+    await app.dataSource.query(sql, [linkId, otherRun]);
+    expect(
+      await app.dataSource.query(
+        `SELECT id FROM project_vulnerability_observations WHERE "projectVulnerabilityId" = $1`,
+        [linkId],
+      ),
+    ).toHaveLength(2);
+    await expect(
+      app.dataSource.query(sql, [randomUUID(), runId]),
+    ).rejects.toMatchObject({ code: '23503' });
+    await expect(
+      app.dataSource.query(sql, [linkId, randomUUID()]),
+    ).rejects.toMatchObject({ code: '23503' });
+  });
+
+  it('retains an observation and aggregate dates/count after deleting its run', async () => {
+    const id = await insert(
+      `INSERT INTO project_vulnerability_observations ("projectVulnerabilityId", "jobHistoryId", "seenAt") VALUES ($1, $2, $3)`,
+      [linkId, runId, '2026-11-06T00:00:00.000Z'],
+    );
+    const [before] = await app.dataSource.query<Record<string, unknown>[]>(
+      `SELECT "firstSeenAt", "lastSeenAt", "timesSeen" FROM project_vulnerabilities WHERE id = $1`,
+      [linkId],
+    );
+    await app.dataSource.query('DELETE FROM job_histories WHERE id = $1', [
+      runId,
+    ]);
+    const [observation] = await app.dataSource.query<
+      { jobHistoryId: string | null; seenAt: Date }[]
+    >(
+      `SELECT "jobHistoryId", "seenAt" FROM project_vulnerability_observations WHERE id = $1`,
+      [id],
+    );
+    expect(observation.jobHistoryId).toBeNull();
+    expect(observation.seenAt.toISOString()).toBe('2026-11-06T00:00:00.000Z');
+    const [after] = await app.dataSource.query<Record<string, unknown>[]>(
+      `SELECT "firstSeenAt", "lastSeenAt", "timesSeen" FROM project_vulnerabilities WHERE id = $1`,
+      [linkId],
+    );
+    expect(after).toEqual(before);
+  });
+
+  it('removes observations with their finding link without removing its source data', async () => {
+    await app.dataSource.query(
+      `INSERT INTO project_vulnerability_observations ("projectVulnerabilityId", "jobHistoryId") VALUES ($1, $2)`,
+      [linkId, runId],
+    );
+    await app.dataSource.query(
+      'DELETE FROM project_vulnerabilities WHERE id = $1',
+      [linkId],
+    );
+    expect(
+      await app.dataSource.query(
+        `SELECT id FROM project_vulnerability_observations WHERE "projectVulnerabilityId" = $1`,
+        [linkId],
+      ),
+    ).toEqual([]);
+    expect(
+      await app.dataSource.query(
+        'SELECT id FROM vulnerabilities WHERE id = $1',
+        [findingId],
+      ),
+    ).toHaveLength(1);
+    expect(
+      await app.dataSource.query('SELECT id FROM job_histories WHERE id = $1', [
+        runId,
+      ]),
+    ).toHaveLength(1);
+    expect(
+      await app.dataSource.query('SELECT id FROM projects WHERE id = $1', [
+        projectId,
+      ]),
+    ).toHaveLength(1);
+  });
+
   it('enforces one link per project/finding and valid provenance references', async () => {
     await expect(
       app.dataSource.query(
