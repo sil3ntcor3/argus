@@ -221,6 +221,8 @@ describe('Durable project scope exclusions (e2e)', () => {
        SELECT 'bulk-' || n || '.argus.test', $1 FROM generate_series(1,65536) n RETURNING id`,
       [asset.targetId],
     );
+    // Refresh statistics before synchronization inserts one FK-backed row per asset.
+    await ds.query('ANALYZE assets');
     const ids = bulk.map((row) => row.id);
     expect((await sync()).added.length).toBe(65_539);
     expect(await exclude(ids)).toBe(65_536);
