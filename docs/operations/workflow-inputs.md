@@ -53,6 +53,12 @@ offline CLI, canonical-precedence and atomic-failure regression checks.
 
 ## Verification
 
+Asset-based job creation now loads eligible entities through `StepScopeLoader`,
+including large bound ID selections. Existing category selection, primary-only
+subdomain jobs, configuration-failure handling, command binding and job flags
+remain in place. Service-based creation and typed input planning are integrated
+in later batches.
+
 `StepScopeLoader` now provides the planner's data: enabled assets filtered by
 workspace, targets, asset IDs and supported target types; services can also be
 narrowed by ID. Web inputs use each service's latest successful HTTP response

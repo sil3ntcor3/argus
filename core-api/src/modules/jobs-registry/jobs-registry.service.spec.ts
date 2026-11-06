@@ -2159,6 +2159,7 @@ describe('JobsRegistryService', () => {
         getMany: jest.fn().mockResolvedValue([]),
       };
       mockAssetQB = {
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -2261,7 +2262,7 @@ describe('JobsRegistryService', () => {
 
     it('S3 regression: SUBDOMAINS uses findAssetsForJob, not asset services', async () => {
       mockAssetQB.getMany.mockResolvedValue([
-        { id: 'asset-1', value: 'example.com', isPrimary: true },
+        { id: 'asset-1', value: 'example.com', isPrimary: true, target: { type: TargetType.DOMAIN } },
       ]);
 
       const result = await service.createNewJob({
@@ -2283,11 +2284,13 @@ describe('JobsRegistryService', () => {
           id: 'group-asset-1',
           value: 'one.example.com',
           isPrimary: true,
+          target: { type: TargetType.DOMAIN },
         },
         {
           id: 'group-asset-2',
           value: 'two.example.com',
           isPrimary: true,
+          target: { type: TargetType.DOMAIN },
         },
       ]);
 
@@ -2299,11 +2302,11 @@ describe('JobsRegistryService', () => {
       });
 
       expect(mockAssetQB.andWhere).toHaveBeenCalledWith(
-        'assets.id IN (:...assetIds)',
+        'assets.id = ANY(:assetIds)',
         { assetIds: selectedAssetIds },
       );
       expect(mockAssetQB.andWhere).not.toHaveBeenCalledWith(
-        'assets.targetId IN (:...targetIds)',
+        'assets.targetId = ANY(:targetIds)',
         expect.anything(),
       );
       expect(result.map((job) => job.asset.id)).toEqual(selectedAssetIds);
@@ -2321,7 +2324,7 @@ describe('JobsRegistryService', () => {
       } as any;
 
       it('defaults job.category and target types to the tool first category', async () => {
-        mockAssetQB.getMany.mockResolvedValue([{ id: 'a-1', value: 'example.com', isPrimary: true }]);
+        mockAssetQB.getMany.mockResolvedValue([{ id: 'a-1', value: 'example.com', isPrimary: true, target: { type: TargetType.DOMAIN } }]);
 
         const jobs = await service.createNewJob({
           tool: nmap,
@@ -2372,7 +2375,7 @@ describe('JobsRegistryService', () => {
           workflow: { id: 'wf-1' } as any,
         });
 
-        expect(mockAssetQB.innerJoin).toHaveBeenCalledWith(
+        expect(mockAssetQB.innerJoinAndSelect).toHaveBeenCalledWith(
           'assets.target',
           'target',
         );

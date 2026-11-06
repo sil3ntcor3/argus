@@ -253,14 +253,20 @@ describe('Job input foundation (e2e)', () => {
   );
 
   it.each([
-    { fail: false, count: 7000 },
-    { fail: true, count: 600 },
+    { fail: false, count: 7000, targetType: TargetType.DOMAIN },
+    { fail: true, count: 600, targetType: TargetType.DOMAIN },
+    { fail: false, count: 1, targetType: TargetType.GIT_ORG },
   ])(
-    'persists native job batches atomically (rollback=$fail)',
-    async ({ fail, count }) => {
+    'persists $targetType native jobs atomically (rollback=$fail)',
+    async ({ fail, count, targetType }) => {
+      const repository = targetType === TargetType.GIT_ORG;
       const bulkTarget = await insert(
-        `INSERT INTO targets (value,"workspaceId",type) VALUES ($1,$2,'DOMAIN')`,
-        ['bulk-bindings.example.com', owner.workspace.id],
+        'INSERT INTO targets (value,"workspaceId",type) VALUES ($1,$2,$3)',
+        [
+          repository ? 'github.com/argus-fixture' : 'bulk-bindings.example.com',
+          owner.workspace.id,
+          targetType,
+        ],
       );
       let bulkTool: string | undefined;
       let inserts = 0;
@@ -283,21 +289,23 @@ describe('Job input foundation (e2e)', () => {
             `argus-bindings-${randomUUID()}`,
             JSON.stringify([
               {
-                name: ToolCategory.PORTS_SCANNER,
-                targetTypes: [TargetType.DOMAIN],
+                name: repository
+                  ? ToolCategory.VULNERABILITIES
+                  : ToolCategory.PORTS_SCANNER,
+                targetTypes: [targetType],
               },
             ]),
           ],
         );
         await app.dataSource.query(
-          `INSERT INTO assets (value,"targetId") SELECT i||'.bulk-bindings.example.com',$1::uuid FROM generate_series(1,$2::int) i`,
-          [bulkTarget, count],
+          `INSERT INTO assets (value,"targetId") SELECT CASE WHEN $3::boolean THEN 'github.com/argus-fixture/repo-'||i ELSE i||'.bulk-bindings.example.com' END,$1::uuid FROM generate_series(1,$2::int) i`,
+          [bulkTarget, count, repository],
         );
         const creating = app.app.get(JobsRegistryService).createNewJob({
           tool: await app.dataSource
             .getRepository(Tool)
             .findOneByOrFail({ id: bulkTool }),
-          targetIds: [bulkTarget],
+          targetIds: Array<string>(65_536).fill(bulkTarget),
           workspaceId: owner.workspace.id,
           jobHistory: await app.dataSource
             .getRepository(JobHistory)
