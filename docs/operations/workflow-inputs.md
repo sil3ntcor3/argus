@@ -53,6 +53,15 @@ offline CLI, canonical-precedence and atomic-failure regression checks.
 
 ## Verification
 
+Host-wide URL-discovery jobs now retain results by assigning each URL to the
+asset's service on that URL's port. When no port matches, capture falls back to
+443, then 80, then the lowest known port. Explicit service jobs keep their
+existing ownership; hosts without services and orphaned jobs skip ingestion.
+Parsed host matching supports IPv6, and deduplication and bounded transactions
+remain in place. External links remain captured data; the planner excludes them
+from active URL inputs. Run `task api:test:e2e:one SPEC=test/url-discovery.e2e-spec.ts`
+against a disposable local database for persistence and retry checks.
+
 The pure step planner now chooses the first available input kind per asset,
 creating one planned job per service or URL. Web targets retain their observed
 scheme and non-default port; IPv6 authorities are bracketed. URL inputs must be

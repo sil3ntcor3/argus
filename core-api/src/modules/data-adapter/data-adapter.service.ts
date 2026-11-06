@@ -28,6 +28,7 @@ import { StorageService } from '../storage/storage.service';
 import { Vulnerability } from '../vulnerabilities/entities/vulnerability.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { DataAdapterInput } from './data-adapter.interface';
+import { serviceForUrl } from './url-owner';
 
 /**
  * Convert a protobuf Timestamp ({seconds, nanos}) to a Date.
@@ -780,7 +781,7 @@ export class DataAdapterService {
    * URL discovery data normalization: one row per unique URL, attached to the
    * job's AssetService and JobHistory. Deduped in-app (Set) and DB-level
    * (unique constraint + orIgnore) so worker retries / workflow re-runs are
-   * idempotent.
+   * idempotent. Host-wide jobs attach each URL to a service on that asset.
    */
   public async urlDiscovery({
     data,
@@ -791,9 +792,17 @@ export class DataAdapterService {
     await queryRunner.startTransaction();
 
     try {
-      if (!job.assetServiceId) {
+      const hostServices = job.assetServiceId || !job.asset?.id
+        ? []
+        : await queryRunner.manager.getRepository(AssetService).find({
+            where: { assetId: job.asset.id },
+            select: { id: true, port: true },
+          });
+      const ownerOf = (url: string): string | undefined =>
+        job.assetServiceId ?? serviceForUrl(url, job.asset?.value ?? '', hostServices);
+      if (!job.assetServiceId && hostServices.length === 0) {
         this.logger.warn(
-          `urlDiscovery: job ${job.id} has no assetServiceId — skipping`,
+          `urlDiscovery: job ${job.id} has no service to attach URLs to — skipping`,
         );
         await queryRunner.commitTransaction();
         return;
@@ -825,7 +834,7 @@ export class DataAdapterService {
             .values(
               batch.map((url) => ({
                 url,
-                assetServiceId: job.assetServiceId,
+                assetServiceId: ownerOf(url),
                 jobHistoryId: job.jobHistory.id,
               })),
             )
