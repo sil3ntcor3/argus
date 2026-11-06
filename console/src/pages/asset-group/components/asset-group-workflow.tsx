@@ -1,3 +1,4 @@
+import { WorkflowFileSheet, workflowYaml } from '@/components/common/workflow-file-sheet';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -90,6 +91,7 @@ export default function AssetGroupWorkflow({
 
   // Only one workflow per group is expected.
   const currentWorkflow = workflows[0];
+  const currentYaml = useMemo(() => workflowYaml(currentWorkflow?.workflow.content), [currentWorkflow?.workflow.content]);
   const workflowId = currentWorkflow?.id;
 
   const timezone = getLocalTimezone();
@@ -363,16 +365,19 @@ export default function AssetGroupWorkflow({
               remove it.
             </div>
           </div>
-          <RunWorkflowButton
-            id={workflowId}
-            disabled={
-              lastRun?.status ===
-                AssetGroupLastRunDtoStatus.pending ||
-              lastRun?.status ===
-                AssetGroupLastRunDtoStatus.in_progress
-            }
-            onSuccess={onRefetch}
-          />
+          <div className="flex items-center gap-2">
+            <WorkflowFileSheet yaml={currentYaml} description="The workflow currently configured for this group." />
+            <RunWorkflowButton
+              id={workflowId}
+              disabled={
+                lastRun?.status ===
+                  AssetGroupLastRunDtoStatus.pending ||
+                lastRun?.status ===
+                  AssetGroupLastRunDtoStatus.in_progress
+              }
+              onSuccess={onRefetch}
+            />
+          </div>
         </div>
         <div className="px-2 py-2 md:px-4">
           {hasRepeatedTools && (

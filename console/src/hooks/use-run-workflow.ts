@@ -1,7 +1,7 @@
 import { orvalClient } from '@/services/apis/axios-client';
 import type { WorkflowStepStatusDto } from '@/services/apis/gen/queries';
 import { useQuery } from '@tanstack/react-query';
-import { stringify } from 'yaml';
+import { workflowYaml } from '@/components/common/workflow-file-sheet';
 
 interface RunWorkflow {
   id: string;
@@ -33,11 +33,8 @@ export function useRunWorkflow(
     enabled: !!runId && options?.enabled !== false,
     select: (data) => ({
       ...data,
-      // The API returns the definition as jsonb; stringify once, here, for the
-      // code view. Default block style — `collectionStyle: 'flow'` would flatten
-      // the whole workflow into one JSON-looking line. Empty when the run has
-      // no workflow attached.
-      yaml: data.content ? stringify(data.content) : '',
+      // Render the authorized definition in file and dependency order.
+      yaml: workflowYaml(data.content),
     }),
   });
 }
