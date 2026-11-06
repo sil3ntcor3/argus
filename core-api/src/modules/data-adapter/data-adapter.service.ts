@@ -1022,6 +1022,31 @@ export class DataAdapterService {
         insertedVulnerabilities.push(...(result.raw as Vulnerability[]));
       }
 
+      // Initial attribution only, in the finding transaction. Read private run
+      // identity from persistence; retries must not overwrite the first sighting.
+      if (insertedVulnerabilities.length > 0) {
+        await manager.query(
+          `INSERT INTO project_vulnerabilities (
+             "projectId", "vulnerabilityId", "firstSeenJobHistoryId",
+             "lastSeenJobHistoryId", "firstSeenAt", "lastSeenAt", "timesSeen"
+           )
+           SELECT project.id, finding.id, history.id, history.id, now(), now(), 1
+           FROM jobs AS source
+           JOIN job_histories AS history ON history.id = source."jobHistoryId"
+           JOIN projects AS project ON project.id = history."projectId"
+           JOIN workflows AS workflow ON workflow.id = history."workflowId"
+           JOIN assets AS asset ON asset.id = source."assetId"
+           JOIN targets AS target ON target.id = asset."targetId"
+           JOIN vulnerabilities AS finding
+             ON finding."assetId" = source."assetId" AND finding."toolId" = source."toolId"
+           WHERE source.id = $1 AND finding.id = ANY($2::uuid[])
+             AND project."workspaceId" = workflow."workspaceId"
+             AND project."workspaceId" = target."workspaceId"
+           ON CONFLICT ("projectId", "vulnerabilityId") DO NOTHING`,
+          [job.id, insertedVulnerabilities.map((finding) => finding.id)],
+        );
+      }
+
       // Only send notifications for truly new vulnerabilities,
       // not for existing ones that were just updated
       const vulsForAlert = insertedVulnerabilities.filter(
