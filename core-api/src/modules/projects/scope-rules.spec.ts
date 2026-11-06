@@ -1,5 +1,15 @@
-import { ProjectScopeRuleType } from '@/common/enums/enum';
-import { hostnamePatternToLike, normalizeScopeRuleValue } from './scope-rules';
+import {
+  ProjectScopeRuleMode,
+  ProjectScopeRuleType,
+} from '@/common/enums/enum';
+import {
+  hostnamePatternToLike,
+  normalizeScopeRuleValue,
+  scopeRuleMatchSql,
+  scopeRulesSql,
+  SqlParams,
+} from './scope-rules';
+const { INCLUDE, EXCLUDE } = ProjectScopeRuleMode;
 const ID = '3F1C2A8E-6C1B-4D5E-9F00-0A1B2C3D4E5F';
 const { TARGET, HOSTNAME, CIDR, ASSET } = ProjectScopeRuleType;
 
@@ -45,4 +55,85 @@ describe('hostnamePatternToLike', () => {
     expect(hostnamePatternToLike('a%b')).toBe('a\\%b');
     expect(hostnamePatternToLike('a\\b.argus.test')).toBe('a\\\\b.argus.test');
   });
+});
+
+describe('scopeRuleMatchSql', () => {
+  it('binds every value as a parameter', () => {
+    const params = new SqlParams(['project', 'workspace']);
+    const sql = scopeRuleMatchSql(
+      { mode: INCLUDE, type: HOSTNAME, value: '*.acme.io' },
+      params,
+    );
+    expect(sql).toBe(`a.value ILIKE $3 ESCAPE '\\'`);
+    expect(params.values).toEqual(['project', 'workspace', '%.acme.io']);
+  });
+
+  it('matches a CIDR on the asset value and its observed addresses', () => {
+    const params = new SqlParams();
+    const sql = scopeRuleMatchSql(
+      { mode: INCLUDE, type: CIDR, value: '10.0.0.0/8' },
+      params,
+    );
+    // The inet cast is guarded: a hostname value must not raise.
+    expect(sql).toContain(`CASE WHEN pg_input_is_valid(a.value, 'inet')`);
+    expect(sql).toContain('FROM ip_observations io');
+    expect(params.values).toEqual(['10.0.0.0/8']);
+  });
+});
+
+describe('scopeRulesSql', () => {
+  it('binds lazy rule ids only once when the projection is reused', () => {
+    const params = new SqlParams();
+    const built = scopeRulesSql(
+      [{ id: ID, mode: INCLUDE, type: ASSET, value: ID }],
+      params,
+    )!;
+    const first = built.ruleIdSql();
+    expect(built.ruleIdSql()).toBe(first);
+    expect(params.values).toEqual([ID, ID]);
+  });
+
+  it('selects nothing without an include rule', () => {
+    expect(
+      scopeRulesSql(
+        [{ mode: EXCLUDE, type: HOSTNAME, value: 'dev.acme.io' }],
+        new SqlParams(),
+      ),
+    ).toBeNull();
+  });
+
+  it('ORs the includes, subtracts the excludes, and records the first include that matched', () => {
+    const params = new SqlParams();
+    const built = scopeRulesSql(
+      [
+        { id: 'r1', mode: INCLUDE, type: TARGET, value: 't-1' },
+        { id: 'r2', mode: INCLUDE, type: HOSTNAME, value: '*.acme.io' },
+        { id: 'r3', mode: EXCLUDE, type: ASSET, value: 'a-9' },
+      ],
+      params,
+    )!;
+    expect(built.where).toBe(
+      `(a."targetId" = $1 OR a.value ILIKE $2 ESCAPE '\\') AND NOT (a.id = CAST($3 AS uuid))`,
+    );
+    // A filter-only query must not bind the rule ids: Postgres refuses a
+    // parameter the statement never uses.
+    expect(params.values).toEqual(['t-1', '%.acme.io', 'a-9']);
+    expect(built.ruleIdSql()).toBe(
+      `CASE WHEN a."targetId" = $1 THEN CAST($4 AS uuid) WHEN a.value ILIKE $2 ESCAPE '\\' THEN CAST($5 AS uuid) END`,
+    );
+    expect(params.values).toEqual(['t-1', '%.acme.io', 'a-9', 'r1', 'r2']);
+  });
+});
+
+it('keeps prefix bindings independent and never interpolates untrusted patterns', () => {
+  const prefix = ['workspace'],
+    params = new SqlParams(prefix);
+  const value = "x%' OR true --";
+  const sql = scopeRuleMatchSql(
+    { mode: INCLUDE, type: HOSTNAME, value },
+    params,
+  );
+  expect(prefix).toEqual(['workspace']);
+  expect(sql).not.toContain(value);
+  expect(params.values).toEqual(['workspace', "x\\%' OR true --"]);
 });
