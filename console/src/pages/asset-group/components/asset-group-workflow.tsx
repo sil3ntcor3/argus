@@ -24,8 +24,6 @@ import { getLocalTimezone, getNextRun } from '@/lib/cron-schedule';
 import RunWorkflowButton from '@/pages/asset-group/components/run-workflow-button';
 import {
   AssetGroupLastRunDtoStatus,
-  ToolCategory,
-  ToolsControllerGetManyToolsType,
   type AssetGroupWorkflow as AssetGroupWorkflowRelation,
   useAssetGroupControllerAddManyWorkflows,
   useAssetGroupControllerRemoveManyWorkflows,
@@ -75,33 +73,19 @@ export default function AssetGroupWorkflow({
   const addWorkflowsMutation = useAssetGroupControllerAddManyWorkflows();
   const removeWorkflowsMutation = useAssetGroupControllerRemoveManyWorkflows();
 
-  // Tools rendered in the group workflow: providers + pipeline-capable
-  // categories (vulnerabilities, url_discovery, ports_scanner)
-  const toolProviders = useMemo(
-    () =>
-      workspaceToolsInstalled?.data?.filter(
-        (tool) =>
-          tool.type === ToolsControllerGetManyToolsType.provider ||
-          tool.categories?.some((c) =>
-            (
-              [
-                ToolCategory.vulnerabilities,
-                ToolCategory.url_discovery,
-                ToolCategory.ports_scanner,
-              ] as ToolCategory[]
-            ).includes(c.name),
-          ),
-      ) || [],
+  // Every installed category can participate in a staged pipeline.
+  const pipelineTools = useMemo(
+    () => workspaceToolsInstalled?.data ?? [],
     [workspaceToolsInstalled?.data],
   );
 
   const toolByName = useMemo(
-    () => new Map(toolProviders.map((tool) => [tool.name, tool])),
-    [toolProviders],
+    () => new Map(pipelineTools.map((tool) => [tool.name, tool])),
+    [pipelineTools],
   );
   const toolById = useMemo(
-    () => new Map(toolProviders.map((tool) => [tool.id, tool])),
-    [toolProviders],
+    () => new Map(pipelineTools.map((tool) => [tool.id, tool])),
+    [pipelineTools],
   );
 
   // Only one workflow per group is expected.
@@ -404,11 +388,11 @@ export default function AssetGroupWorkflow({
               <LoaderCircleIcon className="size-4 animate-spin" />
               Loading installed tools...
             </div>
-          ) : toolProviders.length === 0 ? (
+          ) : pipelineTools.length === 0 ? (
             <NoInstalledToolsState />
           ) : (
             <ToolPipelineBuilder
-              tools={toolProviders as Tool[]}
+              tools={pipelineTools as Tool[]}
               value={pipeline}
               onChange={handlePipelineChange}
               disabled={isProcessing || hasRepeatedTools}

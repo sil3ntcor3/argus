@@ -15,7 +15,8 @@ dependencies to the remaining jobs so that later stages still wait for earlier
 enabled work. Removing an initial discovery step still leaves its successors
 ready to run against existing assets.
 
-This batch exposes stages through the existing group creation API. Console
-stage controls follow separately. Existing workflows keep their saved graph;
-no migration or worker protocol change is required. The current API's unique
-tool selection policy is unchanged.
+Use the stage selector in a selected tool's panel when creating or editing a
+group pipeline. Existing workflows keep their saved graph until a topology
+edit; configuration changes preserve their dependencies. No migration or worker
+protocol change is required. The current API's unique tool selection policy is
+unchanged.

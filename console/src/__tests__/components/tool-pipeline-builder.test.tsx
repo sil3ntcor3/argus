@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
+import { within } from '@testing-library/react';
 import type { Tool } from '@/services/apis/gen/queries';
-import { ToolPipelineBuilder } from '@/pages/asset-group/components/tool-pipeline-builder';
+import { ToolPipelineBuilder, type PipelineToolEntry } from '@/pages/asset-group/components/tool-pipeline-builder';
 
 vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
   const actual = await importOriginal<
@@ -70,9 +71,7 @@ describe('ToolPipelineBuilder — tool click opens its panel', () => {
       await screen.findByRole('button', { name: 'Configure Nuclei' }),
     );
 
-    // The selected panel opens with its config actions. It carries no position
-    // counter any more: the pipeline is an unordered set (no `needs` on the
-    // saved jobs, and jsonb does not preserve the map's key order).
+    // Ordering uses explicit stages, with configuration in the same panel.
     expect(await screen.findByText('Inline config')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Close Nuclei panel' }),
@@ -81,6 +80,32 @@ describe('ToolPipelineBuilder — tool click opens its panel', () => {
       screen.queryByRole('button', { name: /^Move Nuclei/ }),
     ).not.toBeInTheDocument();
     await expectPopoverAnchored();
+  });
+});
+
+describe('ToolPipelineBuilder stages', () => {
+  it('shows the default stage on a selected logo and its labelled control', async () => {
+    const { user } = renderWithProviders(<ToolPipelineBuilder tools={[tool]} value={[{ toolId: tool.id }]} onChange={vi.fn()} />);
+    const button = await screen.findByRole('button', { name: 'Configure Nuclei' });
+    expect(within(button).getByText('Stage 1')).toBeVisible();
+    await user.click(button);
+    expect(await screen.findByRole('combobox', { name: 'Pipeline stage' })).toHaveTextContent('Stage 1');
+  });
+
+  it('changes stage while preserving ordered input, profile, inline configuration and job identity', async () => {
+    const entry: PipelineToolEntry = { toolId: tool.id, jobId: 'scan-web', stage: 1, input: ['web', 'host'], config: { severity: 'high' }, configProfileId: 'profile' };
+    const onChange = vi.fn();
+    const { user } = renderWithProviders(<ToolPipelineBuilder tools={[tool]} value={[entry]} onChange={onChange} />);
+    await user.click(await screen.findByRole('button', { name: 'Configure Nuclei' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Pipeline stage' }));
+    await user.click(await screen.findByRole('option', { name: 'Stage 20', exact: true }));
+    expect(onChange).toHaveBeenCalledWith([{ ...entry, stage: 20 }]);
+  });
+
+  it('does not label unselected tools with a stage', async () => {
+    renderWithProviders(<ToolPipelineBuilder tools={[tool]} value={[]} onChange={vi.fn()} />);
+    const button = await screen.findByRole('button', { name: 'Add Nuclei to pipeline' });
+    expect(within(button).queryByText(/Stage/)).toBeNull();
   });
 });
 
