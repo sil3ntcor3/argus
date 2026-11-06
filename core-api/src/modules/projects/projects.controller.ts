@@ -23,16 +23,21 @@ import { UpdateAssetGroupDto } from '../asset-group/dto/update-asset-group.dto';
 import { AssetGroup } from '../asset-group/entities/asset-groups.entity';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
+import { ProjectMetadataReadService } from './project-metadata-read.service';
+import { ProjectViewDto } from './dto/project-view.dto';
 
 /** Canonical CRUD shares the existing tenant-scoped services and persistence. */
 @ApiTags('Projects')
 @Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projects: AssetGroupService) {}
+  constructor(
+    private readonly projects: AssetGroupService,
+    private readonly metadata: ProjectMetadataReadService,
+  ) {}
 
   @Doc({
     summary: 'List projects',
-    response: { serialization: GetManyResponseDto(AssetGroup) },
+    response: { serialization: GetManyResponseDto(ProjectViewDto) },
     request: { getWorkspaceId: true },
   })
   @WorkspaceAccess('project.read')
@@ -41,7 +46,7 @@ export class ProjectsController {
     @Query() query: GetAllAssetGroupsQueryDto,
     @WorkspaceId() workspaceId: string,
   ) {
-    return this.projects.getManyAssetGroups(query, workspaceId);
+    return this.metadata.getMany(query, workspaceId);
   }
 
   @Doc({
@@ -62,7 +67,7 @@ export class ProjectsController {
 
   @Doc({
     summary: 'Get project by ID',
-    response: { serialization: AssetGroup },
+    response: { serialization: ProjectViewDto },
     request: { getWorkspaceId: true },
   })
   @WorkspaceAccess('project.read')
@@ -71,7 +76,7 @@ export class ProjectsController {
     @Param() { id }: IdQueryParamDto,
     @WorkspaceId() workspaceId: string,
   ) {
-    return this.projects.getAssetGroupById(id, workspaceId);
+    return this.metadata.getById(id, workspaceId);
   }
 
   @Doc({

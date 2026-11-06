@@ -4556,6 +4556,30 @@ export type UpdateAssetGroupWorkflowDto = {
   schedule: string;
 };
 
+export type ProjectViewDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  hexColor?: string;
+  assetGroupWorkflows?: AssetGroupWorkflow[];
+  totalAssets: number;
+  /** @nullable */
+  lastRunAt?: string | null;
+  /** @nullable */
+  readonly description: string | null;
+  readonly autoAddAssets: boolean;
+};
+
+export type GetManyProjectViewDtoDto = {
+  data: ProjectViewDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
 export type CreateFirstAdminDto = {
   email: string;
   password: string;
@@ -42707,7 +42731,7 @@ export const projectsControllerGetMany = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<GetManyAssetGroupDto>(
+  return orvalClient<GetManyProjectViewDtoDto>(
     { url: `/api/projects`, method: 'GET', params, signal },
     options,
   );
@@ -43157,7 +43181,7 @@ export const projectsControllerGetById = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<AssetGroup>(
+  return orvalClient<ProjectViewDto>(
     { url: `/api/projects/${id}`, method: 'GET', signal },
     options,
   );

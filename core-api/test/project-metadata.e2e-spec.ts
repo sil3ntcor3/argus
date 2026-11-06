@@ -109,14 +109,26 @@ describe('Private project metadata foundation (e2e)', () => {
         .get(`/api/${prefix}/${id}`)
         .set(owner.headers)
         .expect(200);
-      assertPrivate(detail.body as Record<string, unknown>);
+      if (prefix === 'projects') {
+        expect(detail.body).toMatchObject({
+          description: null,
+          autoAddAssets: true,
+        });
+        expect(detail.body).not.toHaveProperty('archivedAt');
+      } else assertPrivate(detail.body as Record<string, unknown>);
       const list = await request(app.server)
         .get('/api/' + prefix)
         .query({ search: name })
         .set(owner.headers)
         .expect(200);
       expect(list.body.data).toHaveLength(1);
-      assertPrivate(list.body.data[0] as Record<string, unknown>);
+      if (prefix === 'projects') {
+        expect(list.body.data[0]).toMatchObject({
+          description: null,
+          autoAddAssets: true,
+        });
+        expect(list.body.data[0]).not.toHaveProperty('archivedAt');
+      } else assertPrivate(list.body.data[0] as Record<string, unknown>);
       const updated = await request(app.server)
         .patch(`/api/${prefix}/${id}`)
         .set(owner.headers)
