@@ -16,6 +16,12 @@ uses the saved scan job's preference; its shipped Nuclei template now declares
 unprobed host. Explicit host-only preferences remain host-only. Templates refresh
 through the existing startup synchronization. No database migration is needed.
 
+Asset-group creation also accepts `tools[].input` as an ordered array of input
+kinds. Omitted or empty arrays use the tool's defaults. The generated workflow
+retains accepted selections; unsupported kinds fail before workflow persistence
+and use the existing group-creation rollback. Pipeline UI controls follow in a
+separate batch. Group tools retain their current parallel-root behavior.
+
 ## Data-kind foundation
 
 `DataKind` describes what a step consumes or produces: `target`, `host`,

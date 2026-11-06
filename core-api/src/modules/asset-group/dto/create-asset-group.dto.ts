@@ -1,4 +1,5 @@
-import { ToolCategory } from '@/common/enums/enum';
+import { DataKind, ToolCategory } from '@/common/enums/enum';
+import { INPUT_KINDS } from '@/modules/tools/tool-io';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -6,6 +7,7 @@ import {
   ArrayUnique,
   IsArray,
   IsEnum,
+  IsIn,
   IsObject,
   IsOptional,
   IsString,
@@ -46,6 +48,15 @@ export class AssetGroupToolInput {
   @IsOptional()
   @IsEnum(ToolCategory)
   category?: ToolCategory;
+
+  /** Ordered subset of the tool's accepted data kinds. */
+  @ApiProperty({
+    required: false, enum: DataKind, enumName: 'DataKind', isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(INPUT_KINDS, { each: true })
+  input?: DataKind[];
 }
 
 export class CreateAssetGroupDto {

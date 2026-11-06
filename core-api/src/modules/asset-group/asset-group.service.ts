@@ -19,6 +19,7 @@ import {
   getSensitiveFields,
 } from '../tools/validators/tool-config-profiles.crypto';
 import { resolveToolCategory } from '../tools/tool-categories';
+import { resolveStepInputs } from '../tools/tool-io';
 import { ToolsService } from '../tools/tools.service';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
 import { Workflow } from '../workflows/entities/workflow.entity';
@@ -408,12 +409,13 @@ export class AssetGroupService {
       }
     }
 
-    // A category the tool does not declare would fail every scheduled run.
+    // Invalid categories or input kinds would fail every scheduled run.
     for (const tool of tools) {
-      const category = inputByToolId.get(tool.id!)?.category;
-      if (!category) continue;
+      const input = inputByToolId.get(tool.id!);
+      if (!input?.category && !input?.input?.length) continue;
       try {
-        resolveToolCategory(tool, category);
+        const spec = resolveToolCategory(tool, input?.category);
+        resolveStepInputs(tool.name, spec, input?.input);
       } catch (error) {
         throw new BadRequestException((error as Error).message);
       }
@@ -444,6 +446,7 @@ export class AssetGroupService {
               {
                 run: tool.name,
                 ...(input?.category ? { category: input.category } : {}),
+                ...(input?.input?.length ? { input: input.input } : {}),
                 ...(config ? { config } : {}),
                 ...(input?.configProfileId
                   ? { configProfileId: input.configProfileId }

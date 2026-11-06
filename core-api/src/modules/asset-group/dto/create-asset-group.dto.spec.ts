@@ -1,10 +1,45 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { DataKind } from '@/common/enums/enum';
 import { CreateAssetGroupDto } from './create-asset-group.dto';
 
 const VALID_UUID = '123e4567-e89b-12d3-a456-426614174001';
 
 describe('CreateAssetGroupDto', () => {
+  it.each([
+    { input: undefined },
+    { input: [] },
+    { input: [DataKind.WEB] },
+    { input: [DataKind.WEB, DataKind.HOST] },
+  ])(
+    'retains valid nested tool input $input through whitelisting',
+    async ({ input }) => {
+      const dto = plainToInstance(CreateAssetGroupDto, {
+        name: 'Input selection',
+        tools: [{ toolId: VALID_UUID, input }],
+      });
+      expect(await validate(dto, { whitelist: true })).toHaveLength(0);
+      expect(dto.tools?.[0].input).toEqual(input);
+    },
+  );
+
+  it.each(
+    ['web', 0, ['ssh'], [DataKind.VULNERABILITY], [['web']]].map((input) => ({
+      input,
+    })),
+  )(
+    'rejects malformed or output-only nested input $input',
+    async ({ input }) => {
+      const dto = plainToInstance(CreateAssetGroupDto, {
+        name: 'Invalid selection',
+        tools: [{ toolId: VALID_UUID, input }],
+      });
+      expect((await validate(dto, { whitelist: true })).length).toBeGreaterThan(
+        0,
+      );
+    },
+  );
+
   it('accepts a valid payload', async () => {
     const dto = plainToInstance(CreateAssetGroupDto, {
       name: 'Web Servers',

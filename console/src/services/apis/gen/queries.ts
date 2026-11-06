@@ -4498,6 +4498,7 @@ export type AssetGroupToolInput = {
   configProfileId?: string;
   /** Category to run the tool in (default: its first) */
   category?: ToolCategory;
+  input?: DataKind[];
 };
 
 export type CreateAssetGroupDto = {
