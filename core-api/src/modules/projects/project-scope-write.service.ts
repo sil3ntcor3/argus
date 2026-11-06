@@ -12,7 +12,7 @@ import {
   type ScopeSyncResult,
 } from './project-scope-sync';
 
-/** Internal replacement preparation; public writes follow separately. */
+/** Atomic rule replacement for canonical project scope writes. */
 @Injectable()
 export class ProjectScopeWriteService {
   constructor(

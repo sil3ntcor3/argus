@@ -4684,6 +4684,19 @@ export type ProjectScopeDto = {
   manualAssets: number;
 };
 
+export type ScopeSyncResultDto = {
+  /** @minimum 0 */
+  added: number;
+  /** @minimum 0 */
+  removed: number;
+};
+
+export type ReplaceScopeRulesDto = {
+  /** @maxItems 100 */
+  rules: ScopeRuleInputDto[];
+  autoAddAssets?: boolean;
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -43558,6 +43571,101 @@ export function useProjectsControllerGetScopeRules<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * @summary Replace project scope rules
+ */
+export const projectsControllerReplaceScopeRules = (
+  id: string,
+  replaceScopeRulesDto: ReplaceScopeRulesDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ScopeSyncResultDto>(
+    {
+      url: `/api/projects/${id}/scope-rules`,
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      data: replaceScopeRulesDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerReplaceScopeRulesMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+    TError,
+    { id: string; data: ReplaceScopeRulesDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+  TError,
+  { id: string; data: ReplaceScopeRulesDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerReplaceScopeRules'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+    { id: string; data: ReplaceScopeRulesDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerReplaceScopeRules(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerReplaceScopeRulesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>
+>;
+export type ProjectsControllerReplaceScopeRulesMutationBody =
+  ReplaceScopeRulesDto;
+export type ProjectsControllerReplaceScopeRulesMutationError = unknown;
+
+/**
+ * @summary Replace project scope rules
+ */
+export const useProjectsControllerReplaceScopeRules = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+      TError,
+      { id: string; data: ReplaceScopeRulesDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+  TError,
+  { id: string; data: ReplaceScopeRulesDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerReplaceScopeRulesMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * @summary Get project by ID

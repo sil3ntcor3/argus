@@ -14,6 +14,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -34,6 +35,8 @@ import {
 import { ProjectScopePreviewService } from './project-scope-preview.service';
 import { ProjectScopeReadService } from './project-scope-read.service';
 import { ProjectScopeDto } from './dto/project-scope.dto';
+import { ReplaceScopeRulesDto, ScopeSyncResultDto } from './dto/project-scope-write.dto';
+import { ProjectScopeWriteService } from './project-scope-write.service';
 
 /** Canonical CRUD shares the existing tenant-scoped services and persistence. */
 @ApiTags('Projects')
@@ -44,6 +47,7 @@ export class ProjectsController {
     private readonly metadata: ProjectMetadataReadService,
     private readonly scopePreview: ProjectScopePreviewService,
     private readonly scopeRead: ProjectScopeReadService,
+    private readonly scopeWrite: ProjectScopeWriteService,
   ) {}
 
   @Doc({
@@ -110,6 +114,22 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.scopeRead.getScope(id, workspaceId);
+  }
+
+  @Doc({
+    summary: 'Replace project scope rules',
+    response: { serialization: ScopeSyncResultDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('project.write')
+  @Put(':id/scope-rules')
+  async replaceScopeRules(
+    @Param() { id }: IdQueryParamDto,
+    @Body() dto: ReplaceScopeRulesDto,
+    @WorkspaceId() workspaceId: string,
+  ): Promise<ScopeSyncResultDto> {
+    const result = await this.scopeWrite.replaceRules(id, workspaceId, dto.rules, dto.autoAddAssets);
+    return { added: result.added.length, removed: result.removed };
   }
 
   @Doc({
