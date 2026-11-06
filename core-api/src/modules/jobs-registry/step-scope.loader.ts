@@ -1,4 +1,4 @@
-import { DataKind, type TargetType } from '@/common/enums/enum';
+import type { DataKind, TargetType } from '@/common/enums/enum';
 import type { DataSource } from 'typeorm';
 import { AssetService } from '../assets/entities/asset-services.entity';
 import { Asset } from '../assets/entities/assets.entity';
@@ -8,12 +8,13 @@ import {
   type ScopeService,
   type ScopeWebService,
 } from './step-inputs';
+import { loadScopedUrls } from './step-urls.loader';
 
 /** Which assets a step runs on. Empty lists mean "no filter". */
 export interface StepScopeFilter {
   targetIds?: string[];
   assetIds?: string[];
-  /** Narrows services to these, e.g. to re-run one service. */
+  /** Narrows services and their URLs, e.g. to re-run one service. */
   assetServiceIds?: string[];
   workspaceId?: string;
   /** Target types the tool's category may scan. */
@@ -35,9 +36,6 @@ export class StepScopeLoader {
     inputs: readonly DataKind[],
     filter: StepScopeFilter,
   ): Promise<LoadedStepScope> {
-    if (inputs.includes(DataKind.URL)) {
-      throw new Error('URL scope loading is not yet supported');
-    }
     const assets = await this.loadAssets(filter);
     const assetIds = assets.map((asset) => asset.id);
     const need = kindsToLoad(inputs);
@@ -67,6 +65,28 @@ export class StepScopeLoader {
               scheme: schemes.get(row.id)!,
             })),
         );
+      }
+    }
+
+    if (assetIds.length > 0 && need.urls) {
+      const urls = await loadScopedUrls(
+        this.dataSource,
+        assets,
+        filter.assetServiceIds,
+      );
+      scope.urls = groupByAsset(urls);
+      const ids = [
+        ...new Set(
+          urls.map((url) => url.serviceId).filter((id) => !services.has(id)),
+        ),
+      ];
+      if (ids.length > 0) {
+        const rows = await this.dataSource
+          .getRepository(AssetService)
+          .createQueryBuilder('service')
+          .where('service.id IN (:...ids)', { ids })
+          .getMany();
+        rows.forEach((row) => services.set(row.id, row));
       }
     }
 

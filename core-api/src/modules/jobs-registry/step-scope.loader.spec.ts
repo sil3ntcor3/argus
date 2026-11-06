@@ -164,11 +164,26 @@ describe('StepScopeLoader', () => {
     expect(scope.assets).toEqual([]);
     expect(assetsQB.getMany).not.toHaveBeenCalled();
   });
-  it('rejects URL requests until eligible URL loading is implemented', async () => {
-    await expect(
-      loader.load([DataKind.URL], { targetTypes: [TargetType.DOMAIN] }),
-    ).rejects.toThrow('URL scope loading is not yet supported');
-    expect(assetsQB.getMany).not.toHaveBeenCalled();
-    expect(query).not.toHaveBeenCalled();
+  it('loads eligible URLs and their owning service entities', async () => {
+    const url = 'https://app.example.com:8443/login';
+    query.mockResolvedValueOnce([
+      {
+        url,
+        assetId: asset.id,
+        serviceId: 's-8443',
+        cursorCreatedAt: '2026-11-06 00:00:00.123456',
+        cursorId: 'cursor',
+      },
+    ]);
+    const loaded = await loader.load([DataKind.URL], {
+      targetTypes: [TargetType.DOMAIN],
+    });
+    expect(loaded.scope.urls?.get(asset.id)).toEqual([
+      { url, assetId: asset.id, serviceId: 's-8443' },
+    ]);
+    expect(loaded.services.get('s-8443')).toBe(services[1]);
+    expect(servicesQB.where).toHaveBeenCalledWith('service.id IN (:...ids)', {
+      ids: ['s-8443'],
+    });
   });
 });
