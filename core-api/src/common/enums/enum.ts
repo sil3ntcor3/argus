@@ -364,3 +364,16 @@ export enum ProjectAssetSource {
   MANUAL = 'manual',
   RULE = 'rule',
 }
+
+/** Scalar activity discriminator for canonical project.updated events. */
+export enum ProjectChange {
+  SETTINGS = 'settings',
+  ASSETS_ADDED = 'assets.added',
+  ASSETS_DISCOVERED = 'assets.discovered',
+  ASSETS_REMOVED = 'assets.removed',
+  SCOPE = 'scope',
+  WORKFLOW_ADDED = 'workflow.added',
+  WORKFLOW_UPDATED = 'workflow.updated',
+  WORKFLOW_REMOVED = 'workflow.removed',
+  TRIGGERS = 'triggers',
+}

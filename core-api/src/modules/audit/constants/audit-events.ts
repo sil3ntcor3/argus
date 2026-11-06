@@ -52,6 +52,10 @@ export const AUDIT_ACTION_CATALOG = [
   // asset groups (17–18)
   { action: 'asset_group.created', label: 'Created asset group', controller: 'AssetGroupController', method: 'create' },
   { action: 'asset_group.deleted', label: 'Deleted asset group', controller: 'AssetGroupController', method: 'delete' },
+  // Canonical project routes; legacy group actions remain readable and emitted.
+  { action: 'project.created', label: 'Created project', controller: 'ProjectsController', method: 'create' },
+  { action: 'project.updated', label: 'Updated project', controller: 'ProjectsController', method: 'update' },
+  { action: 'project.deleted', label: 'Deleted project', controller: 'ProjectsController', method: 'delete' },
   // internal networks (19–20)
   { action: 'network.created', label: 'Created network', controller: 'InternalNetworksController', method: 'createInternalNetwork' },
   { action: 'network.deleted', label: 'Deleted network', controller: 'InternalNetworksController', method: 'deleteInternalNetwork' },

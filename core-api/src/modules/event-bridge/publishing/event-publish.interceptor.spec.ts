@@ -193,6 +193,20 @@ describe('EventPublishInterceptor', () => {
   });
 
   describe('envelope', () => {
+    it.each([false, true])('uses route resource attribution only when opted in (%s)', async (enabled) => {
+      await run({ event: EVENT_CATALOG.target.updated, ...{ resourceIdFromRoute: enabled } }, { added: 0 }, makeRequest({ params: { id: 'route-id' } }));
+      expect(published().resourceId).toBe(enabled ? 'route-id' : undefined);
+    });
+
+    it('prefers an explicit result ID over opted-in route attribution', async () => {
+      await run({ event: EVENT_CATALOG.target.updated, resourceId: () => 'result-id', ...{ resourceIdFromRoute: true } }, {}, makeRequest({ params: { id: 'route-id' } }));
+      expect(published().resourceId).toBe('result-id');
+    });
+
+    it('handles a missing route ID without inventing a resource', async () => {
+      await run({ event: EVENT_CATALOG.target.updated, ...{ resourceIdFromRoute: true } }, { count: 1 });
+      expect(published()).not.toHaveProperty('resourceId');
+    });
     it('carries outcome success on the happy path', async () => {
       await run({ event: EVENT_CATALOG.target.created }, { id: 't-1' });
       expect(published()).toMatchObject({ outcome: AuditOutcome.Success });
