@@ -9,7 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 import { Asset } from '../assets/entities/assets.entity';
 import { AssetGroupAsset } from './entities/asset-groups-assets.entity';
 import { AssetGroup } from './entities/asset-groups.entity';
@@ -29,7 +29,7 @@ export class AssetGroupAssetService {
   ) {}
 
   /**
-   * Associates multiple assets with the specified asset group
+   * Associates assets with a group; duplicate pairs are rejected atomically.
    */
   async addManyAssets(
     groupId: string,
@@ -74,6 +74,7 @@ export class AssetGroupAssetService {
           assetGroup: { id: groupId },
           asset: { id: In(assetIds) },
         },
+        relations: ['asset'],
       });
 
       const existingAssetIds = existingAssociations.map(
@@ -96,7 +97,26 @@ export class AssetGroupAssetService {
         }),
       );
 
-      await this.assetGroupAssetRepo.save(newAssociations);
+      try {
+        await this.assetGroupAssetRepo.save(newAssociations);
+      } catch (error) {
+        // A concurrent request can insert the pair after the precheck.
+        const driverError: unknown =
+          error instanceof QueryFailedError ? error.driverError : undefined;
+        if (
+          typeof driverError === 'object' &&
+          driverError !== null &&
+          'code' in driverError &&
+          driverError.code === '23505' &&
+          'constraint' in driverError &&
+          driverError.constraint === 'UQ_pa_projectId_assetId'
+        ) {
+          throw new BadRequestException(
+            `One or more assets are already associated with asset group "${groupId}"`,
+          );
+        }
+        throw error;
+      }
 
       return {
         message: `${newAssociations.length} assets successfully added to asset group "${groupId}"`,
