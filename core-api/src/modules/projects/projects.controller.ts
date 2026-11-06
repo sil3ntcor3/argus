@@ -1,5 +1,6 @@
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
+import { ProjectChange } from '@/common/enums/enum';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
@@ -69,7 +70,8 @@ export class ProjectsController {
     response: { serialization: ProjectViewDto, httpStatus: HttpStatus.CREATED },
     request: { getWorkspaceId: true },
   })
-  @PublishEvent(EVENT_CATALOG.asset_group.created, {
+  @PublishEvent(EVENT_CATALOG.project.created, {
+    resourceId: (result) => (result as ProjectViewDto | undefined)?.id,
     changes: (body) => ({
       name: { after: (body as { name?: string })?.name ?? '' },
     }),
@@ -121,6 +123,13 @@ export class ProjectsController {
     response: { serialization: ScopeSyncResultDto },
     request: { getWorkspaceId: true },
   })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: (_body, result) => ({
+      change: ProjectChange.SCOPE,
+      ...(result ? { added: (result as ScopeSyncResultDto).added, removed: (result as ScopeSyncResultDto).removed } : {}),
+    }),
+  })
   @WorkspaceAccess('project.write')
   @Put(':id/scope-rules')
   async replaceScopeRules(
@@ -151,6 +160,10 @@ export class ProjectsController {
     response: { serialization: ProjectViewDto },
     request: { getWorkspaceId: true },
   })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: () => ({ change: ProjectChange.SETTINGS }),
+  })
   @WorkspaceAccess('project.write')
   @Patch(':id')
   async update(
@@ -177,7 +190,7 @@ export class ProjectsController {
     response: { serialization: DefaultMessageResponseDto },
     request: { getWorkspaceId: true },
   })
-  @PublishEvent(EVENT_CATALOG.asset_group.deleted)
+  @PublishEvent(EVENT_CATALOG.project.deleted, { resourceIdFromRoute: true })
   @WorkspaceAccess('project.write')
   @Delete(':id')
   delete(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string) {

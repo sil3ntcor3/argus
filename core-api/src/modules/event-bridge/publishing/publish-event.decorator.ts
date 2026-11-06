@@ -16,6 +16,8 @@ export interface PublishEventConfig {
   resourceType?: string;
   /** Extracts the resourceId from the handler's success result. */
   resourceId?: (result: unknown) => string | undefined;
+  /** Use the route's `id` when a successful response contains only counts or a message. */
+  resourceIdFromRoute?: boolean;
   /**
    * Extracts the workspaceId from the handler's success result. Used by actions
    * where the workspace is created BY the call (`workspace.created`) — there is
