@@ -30,6 +30,7 @@ import {
   useToolConfigProfilesControllerList,
   type Tool,
   type ToolCategory,
+  type DataKind,
 } from '@/services/apis/gen/queries';
 import {
   CheckIcon,
@@ -49,9 +50,12 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
-/** A single tool entry in the pipeline. The pipeline is an unordered set — the tools all run at once. */
+/** A selected tool, including saved stage and input preferences. */
 export interface PipelineToolEntry {
   toolId: string;
+  jobId?: string;
+  stage?: number;
+  input?: DataKind[];
   config?: Record<string, unknown>;
   configProfileId?: string;
   /** Category to run the tool in; omitted → the tool's first. */
@@ -61,7 +65,7 @@ export interface PipelineToolEntry {
 interface ToolPipelineBuilderProps {
   /** Full tool objects (with type / hasConfigProfile / isReady / logoUrl). */
   tools: Tool[];
-  /** The selected entries. Order is presentation only; they run in parallel. */
+  /** Entries run by stage; order within a stage is presentation only. */
   value: PipelineToolEntry[];
   onChange: (next: PipelineToolEntry[]) => void;
   disabled?: boolean;
@@ -805,7 +809,9 @@ function ToolPipelineBuilderComponent({
           </div>
           <span className="text-xs text-muted-foreground">
             {value.length} selected
-            {value.length > 0 ? ' · runs in parallel' : ''}
+            {value.length > 0 && (new Set(value.map((entry) => entry.stage ?? 1)).size > 1
+              ? ` · ${new Set(value.map((entry) => entry.stage ?? 1)).size} stages`
+              : ' · runs in parallel')}
           </span>
         </div>
 
