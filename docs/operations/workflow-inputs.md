@@ -63,6 +63,13 @@ This preparatory loader is not yet wired into job creation. Run
 `task api:test:one SPEC=src/modules/jobs-registry/step-scope.loader.spec.ts`
 for its query boundaries and optional loading regression checks.
 
+Scope ID filters use single PostgreSQL array parameters, keeping large asset,
+target and service selections within the wire protocol's bind-count limit.
+The integration suite covers 65,536 IDs without creating that many fixture rows.
+Job creation also saves sequential chunks of 500 within one explicit transaction,
+with worker hints published after the save completes. A 7,000-job integration
+fixture covers the write-side bind limit without running any scanners.
+
 URL candidate reads use bounded pages and a timestamp/UUID cursor, preserving
 PostgreSQL timestamp precision. External, malformed and non-HTTP links cannot
 crowd out older valid inputs. Run

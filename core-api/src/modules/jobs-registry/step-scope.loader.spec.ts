@@ -60,7 +60,7 @@ describe('StepScopeLoader', () => {
       },
     );
     expect(assetsQB.andWhere).toHaveBeenCalledWith(
-      'assets.id IN (:...assetIds)',
+      'assets.id = ANY(:assetIds)',
       {
         assetIds: ['a-app'],
       },
@@ -72,7 +72,7 @@ describe('StepScopeLoader', () => {
       },
     );
     expect(assetsQB.andWhere).not.toHaveBeenCalledWith(
-      'assets.targetId IN (:...targetIds)',
+      'assets.targetId = ANY(:targetIds)',
       expect.anything(),
     );
     expect(scope.assets).toEqual([
@@ -95,7 +95,7 @@ describe('StepScopeLoader', () => {
     });
 
     expect(servicesQB.where).toHaveBeenCalledWith(
-      'service.assetId IN (:...assetIds)',
+      'service.assetId = ANY(:assetIds)',
       {
         assetIds: ['a-app'],
       },
@@ -140,7 +140,7 @@ describe('StepScopeLoader', () => {
     });
 
     expect(servicesQB.andWhere).toHaveBeenCalledWith(
-      'service.id IN (:...assetServiceIds)',
+      'service.id = ANY(:assetServiceIds)',
       {
         assetServiceIds: ['s-8443'],
       },
@@ -182,7 +182,7 @@ describe('StepScopeLoader', () => {
       { url, assetId: asset.id, serviceId: 's-8443' },
     ]);
     expect(loaded.services.get('s-8443')).toBe(services[1]);
-    expect(servicesQB.where).toHaveBeenCalledWith('service.id IN (:...ids)', {
+    expect(servicesQB.where).toHaveBeenCalledWith('service.id = ANY(:ids)', {
       ids: ['s-8443'],
     });
   });

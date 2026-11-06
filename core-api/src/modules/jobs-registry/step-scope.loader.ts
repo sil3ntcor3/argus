@@ -84,7 +84,7 @@ export class StepScopeLoader {
         const rows = await this.dataSource
           .getRepository(AssetService)
           .createQueryBuilder('service')
-          .where('service.id IN (:...ids)', { ids })
+          .where('service.id = ANY(:ids)', { ids })
           .getMany();
         rows.forEach((row) => services.set(row.id, row));
       }
@@ -108,12 +108,12 @@ export class StepScopeLoader {
         targetTypes: filter.targetTypes,
       });
     if (filter.targetIds?.length) {
-      query.andWhere('assets.targetId IN (:...targetIds)', {
+      query.andWhere('assets.targetId = ANY(:targetIds)', {
         targetIds: filter.targetIds,
       });
     }
     if (filter.assetIds?.length) {
-      query.andWhere('assets.id IN (:...assetIds)', {
+      query.andWhere('assets.id = ANY(:assetIds)', {
         assetIds: filter.assetIds,
       });
     }
@@ -132,9 +132,9 @@ export class StepScopeLoader {
     const query = this.dataSource
       .getRepository(AssetService)
       .createQueryBuilder('service')
-      .where('service.assetId IN (:...assetIds)', { assetIds });
+      .where('service.assetId = ANY(:assetIds)', { assetIds });
     if (assetServiceIds?.length) {
-      query.andWhere('service.id IN (:...assetServiceIds)', {
+      query.andWhere('service.id = ANY(:assetServiceIds)', {
         assetServiceIds,
       });
     }
