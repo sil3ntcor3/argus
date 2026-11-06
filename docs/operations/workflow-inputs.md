@@ -53,11 +53,13 @@ offline CLI, canonical-precedence and atomic-failure regression checks.
 
 ## Verification
 
-Asset-based job creation now loads eligible entities through `StepScopeLoader`,
-including large bound ID selections. Existing category selection, primary-only
+Asset- and service-based job creation now load eligible entities through
+`StepScopeLoader`, including large bound ID selections. Existing category selection, primary-only
 subdomain jobs, configuration-failure handling, command binding and job flags
-remain in place. Service-based creation and typed input planning are integrated
-in later batches.
+remain in place. Probes include every scoped service; screenshots require a
+successful HTTP response. URL discovery retains one preferred live service per
+asset (443, then 80, then lowest port). Explicit service selections and tenant
+boundaries apply before those choices. Typed input planning follows separately.
 
 `StepScopeLoader` now provides the planner's data: enabled assets filtered by
 workspace, targets, asset IDs and supported target types; services can also be
@@ -65,7 +67,7 @@ narrowed by ID. Web inputs use each service's latest successful HTTP response
 scheme. URL inputs retain the newest 50 eligible HTTP(S) links on each asset's
 host, applying the same validation as the planner before the cap. It loads only
 the kinds requested and returns no assets when no target type is allowed.
-This preparatory loader is not yet wired into job creation. Run
+Run
 `task api:test:one SPEC=src/modules/jobs-registry/step-scope.loader.spec.ts`
 for its query boundaries and optional loading regression checks.
 

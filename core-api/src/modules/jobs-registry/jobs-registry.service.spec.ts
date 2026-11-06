@@ -1,5 +1,6 @@
 import {
   BullMQName,
+  DataKind,
   JobPriority,
   JobRunType,
   JobStatus,
@@ -28,6 +29,31 @@ import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
 import { JobsRegistryService } from './jobs-registry.service';
+import type { AssetService } from '../assets/entities/asset-services.entity';
+import { StepScopeLoader, type LoadedStepScope } from './step-scope.loader';
+import type { ScopeWebService } from './step-inputs';
+
+const originalScopeLoad = StepScopeLoader.prototype.load;
+// Service fixtures represent the loader's already-filtered entity results.
+function mockServiceScope(getRows: () => Promise<AssetService[]>) {
+  return jest.spyOn(StepScopeLoader.prototype, 'load').mockImplementation(
+    async function (this: StepScopeLoader, inputs, filter): Promise<LoadedStepScope> {
+      if (!inputs.includes(DataKind.SERVICE) && !inputs.includes(DataKind.WEB)) {
+        return originalScopeLoad.call(this, inputs, filter) as Promise<LoadedStepScope>;
+      }
+      const rows = (await getRows()).map((row) => ({ ...row, assetId: row.asset.id }));
+      const web = new Map<string, ScopeWebService[]>();
+      for (const row of rows) {
+        web.set(row.assetId, [...(web.get(row.assetId) ?? []), { ...row, scheme: 'https' }]);
+      }
+      return {
+        assets: new Map(rows.map((row) => [row.assetId, row.asset])),
+        services: new Map(rows.map((row) => [row.id, row])),
+        scope: { assets: [], web },
+      };
+    },
+  );
+}
 
 const HOST = [TargetType.DOMAIN, TargetType.IP, TargetType.CIDR];
 
@@ -1900,6 +1926,7 @@ describe('JobsRegistryService', () => {
     };
 
     let mockAssetServiceQB: Record<string, jest.Mock>;
+    let scopeLoad: ReturnType<typeof mockServiceScope>;
 
     const screenshotTool = {
       id: 'tool-ss',
@@ -1943,6 +1970,7 @@ describe('JobsRegistryService', () => {
       const mockAssetServiceRepo = {
         createQueryBuilder: jest.fn().mockReturnValue(mockAssetServiceQB),
       };
+      scopeLoad = mockServiceScope(async () => mockAssetServiceQB.getMany() as Promise<AssetService[]>);
       mockDataSource.getRepository.mockImplementation((entity: any) => {
         const name = entity?.name ?? entity;
         if (name === 'AssetService') return mockAssetServiceRepo;
@@ -1950,15 +1978,9 @@ describe('JobsRegistryService', () => {
       });
     });
 
-    // Returns the first andWhere() SQL call containing an EXISTS subquery.
-    const findExistsAndWhere = (): string | undefined => {
-      const call = mockAssetServiceQB.andWhere.mock.calls.find(
-        ([sql]) => typeof sql === 'string' && sql.includes('EXISTS'),
-      );
-      return call?.[0] as string | undefined;
-    };
+    afterEach(() => scopeLoad.mockRestore());
 
-    it('SCREENSHOT: filters to live services via EXISTS(http_responses failed=false) and creates one job per live service', async () => {
+    it('SCREENSHOT: requests live web services and creates one job per live service', async () => {
       const liveServices = [makeService('as-1'), makeService('as-2')];
       mockAssetServiceQB.getMany.mockResolvedValue(liveServices);
 
@@ -1969,20 +1991,9 @@ describe('JobsRegistryService', () => {
         workflow: { id: 'wf-1' } as any,
       });
 
-      // Authoritative "httpx confirmed live" predicate must be applied as an
-      // EXISTS subquery (no row multiplication => no DISTINCT required).
-      const existsSql = findExistsAndWhere();
-      expect(existsSql).toBeDefined();
-      expect(existsSql).toContain('http_responses');
-      expect(existsSql).toContain('hr."assetServiceId" = "assetServices"."id"');
-      expect(existsSql).toContain('hr.failed = false');
-
-      // The buggy innerJoin/DISTINCT approach must be gone.
-      expect(mockAssetServiceQB.innerJoin).not.toHaveBeenCalledWith(
-        'assetServices.httpResponses',
-        'httpResponse',
-      );
-      expect(mockAssetServiceQB.distinct).not.toHaveBeenCalled();
+      expect(scopeLoad).toHaveBeenCalledWith([DataKind.WEB], expect.objectContaining({
+        targetIds: ['target-1'], workspaceId: 'ws-1', targetTypes: HOST,
+      }));
 
       expect(result).toHaveLength(2);
       expect(mockWorkerStreamRegistry.publishJobsAvailable).toHaveBeenCalledTimes(1);
@@ -2026,10 +2037,7 @@ describe('JobsRegistryService', () => {
       expect(mockWorkerStreamRegistry.publishJobsAvailable).not.toHaveBeenCalled();
     });
 
-    it('SCREENSHOT edge (dedup): EXISTS yields one job per service even with many http_responses', async () => {
-      // A service with N http_responses still surfaces ONCE from getMany()
-      // because EXISTS is a semi-join (no row multiplication); assert exactly
-      // one job per service and that DISTINCT is not needed.
+    it('SCREENSHOT edge (dedup): web scope yields one job per live service', async () => {
       mockAssetServiceQB.getMany.mockResolvedValue([makeService('as-1')]);
 
       const result = await service.createNewJob({
@@ -2039,7 +2047,7 @@ describe('JobsRegistryService', () => {
         workflow: { id: 'wf-1' } as any,
       });
 
-      expect(findExistsAndWhere()).toBeDefined();
+      expect(scopeLoad).toHaveBeenCalledWith([DataKind.WEB], expect.anything());
       expect(mockAssetServiceQB.distinct).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
     });
@@ -2059,15 +2067,7 @@ describe('JobsRegistryService', () => {
         workflow: { id: 'wf-1' } as any,
       });
 
-      expect(mockAssetServiceQB.innerJoin).not.toHaveBeenCalledWith(
-        'assetServices.httpResponses',
-        'httpResponse',
-      );
-      expect(mockAssetServiceQB.andWhere).not.toHaveBeenCalledWith(
-        'httpResponse.failed = false',
-      );
-      // Non-live (HTTP_PROBE) path must NOT add the EXISTS live predicate.
-      expect(findExistsAndWhere()).toBeUndefined();
+      expect(scopeLoad).toHaveBeenCalledWith([DataKind.SERVICE], expect.anything());
       expect(mockAssetServiceQB.distinct).not.toHaveBeenCalled();
       expect(result).toHaveLength(3);
     });
@@ -2089,6 +2089,7 @@ describe('JobsRegistryService', () => {
     };
 
     let mockAssetServiceQB: Record<string, jest.Mock>;
+    let scopeLoad: ReturnType<typeof mockServiceScope>;
     let mockAssetQB: Record<string, jest.Mock>;
 
     const urlDiscoveryTool = {
@@ -2133,12 +2134,7 @@ describe('JobsRegistryService', () => {
       asset: { id: `asset-${id}`, isPrimary: true, value: `${id}.example.com` },
     });
 
-    const existsPredicate = (): string | undefined => {
-      const call = mockAssetServiceQB.andWhere.mock.calls.find(
-        ([sql]) => typeof sql === 'string' && sql.includes('EXISTS'),
-      );
-      return call?.[0] as string | undefined;
-    };
+    afterEach(() => scopeLoad.mockRestore());
 
     beforeEach(() => {
       jest.clearAllMocks();
@@ -2165,6 +2161,7 @@ describe('JobsRegistryService', () => {
         andWhere: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue([]),
       };
+      scopeLoad = mockServiceScope(async () => mockAssetServiceQB.getMany() as Promise<AssetService[]>);
       mockDataSource.getRepository.mockImplementation((entity: any) => {
         const name = entity?.name ?? entity;
         if (name === 'AssetService') {
@@ -2244,7 +2241,7 @@ describe('JobsRegistryService', () => {
       expect(result).toHaveLength(2);
     });
 
-    it('S2 edge: URL_DISCOVERY applies liveOnly=true (EXISTS http_responses failed=false)', async () => {
+    it('S2 edge: URL_DISCOVERY requests the live web scope', async () => {
       mockAssetServiceQB.getMany.mockResolvedValue([makeService('as-1')]);
 
       await service.createNewJob({
@@ -2254,10 +2251,7 @@ describe('JobsRegistryService', () => {
         workflow: { id: 'wf-1' } as any,
       });
 
-      const existsSql = existsPredicate();
-      expect(existsSql).toBeDefined();
-      expect(existsSql).toContain('http_responses');
-      expect(existsSql).toContain('hr.failed = false');
+      expect(scopeLoad).toHaveBeenCalledWith([DataKind.WEB], expect.anything());
     });
 
     it('S3 regression: SUBDOMAINS uses findAssetsForJob, not asset services', async () => {
@@ -2349,9 +2343,9 @@ describe('JobsRegistryService', () => {
         });
 
         expect(jobs.map((j) => j.category)).toEqual([ToolCategory.HTTP_PROBE]);
-        expect(mockAssetServiceQB.andWhere).toHaveBeenCalledWith('target.type IN (:...targetTypes)', {
+        expect(scopeLoad).toHaveBeenCalledWith([DataKind.SERVICE], expect.objectContaining({
           targetTypes: [TargetType.DOMAIN],
-        });
+        }));
         expect(mockAssetQB.getMany).not.toHaveBeenCalled();
       });
 
@@ -2407,14 +2401,9 @@ describe('JobsRegistryService', () => {
           workflow: { id: 'wf-1' } as any,
         });
 
-        expect(mockAssetServiceQB.innerJoin).toHaveBeenCalledWith(
-          'asset.target',
-          'target',
-        );
-        expect(mockAssetServiceQB.andWhere).toHaveBeenCalledWith(
-          'target.type IN (:...targetTypes)',
-          { targetTypes: [TargetType.IP] },
-        );
+        expect(scopeLoad).toHaveBeenCalledWith([DataKind.SERVICE], expect.objectContaining({
+          targetTypes: [TargetType.IP],
+        }));
       });
 
       it('creates no job when no asset of a supported type is in scope', async () => {
@@ -2441,7 +2430,7 @@ describe('JobsRegistryService', () => {
         workspaceId: 'ws-1',
         workflow: { id: 'wf-1' } as any,
       });
-      expect(existsPredicate()).toBeDefined();
+      expect(scopeLoad).toHaveBeenCalledWith([DataKind.WEB], expect.anything());
 
       jest.clearAllMocks();
       mockJobHistoryRepository.create = jest.fn().mockReturnValue({ id: 'jh-1' });
@@ -2469,7 +2458,7 @@ describe('JobsRegistryService', () => {
         workspaceId: 'ws-1',
         workflow: { id: 'wf-1' } as any,
       });
-      expect(existsPredicate()).toBeUndefined();
+      expect(scopeLoad).toHaveBeenCalledWith([DataKind.SERVICE], expect.anything());
     });
   });
 

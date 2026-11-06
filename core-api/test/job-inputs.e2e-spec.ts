@@ -340,4 +340,90 @@ describe('Job input foundation (e2e)', () => {
       }
     },
   );
+  it.each([
+    { category: ToolCategory.HTTP_PROBE, ports: [22, 443, 8080] },
+    { category: ToolCategory.SCREENSHOT, ports: [443, 8080] },
+    { category: ToolCategory.URL_DISCOVERY, ports: [443] },
+  ])(
+    'preserves service eligibility for $category',
+    async ({ category, ports }) => {
+      const scopedTarget = await insert(
+        `INSERT INTO targets (value,"workspaceId",type) VALUES ($1,$2,'DOMAIN')`,
+        ['service-scope.example.com', owner.workspace.id],
+      );
+      let scopedTool: string | undefined;
+      try {
+        const scopedAsset = await insert(
+          'INSERT INTO assets (value,"targetId") VALUES ($1,$2)',
+          ['service-scope.example.com', scopedTarget],
+        );
+        const services = new Map<number, string>();
+        for (const port of [22, 443, 8080])
+          services.set(
+            port,
+            await insert(
+              'INSERT INTO asset_services (value,port,"assetId") VALUES ($1,$2,$3)',
+              [`service-scope.example.com:${port}`, port, scopedAsset],
+            ),
+          );
+        for (const [port, scheme] of [
+          [443, 'https'],
+          [8080, 'http'],
+        ] as const) {
+          await app.dataSource.query(
+            'INSERT INTO http_responses (scheme,failed,"assetServiceId") VALUES ($1,false,$2)',
+            [scheme, services.get(port)],
+          );
+        }
+        await app.dataSource.query(
+          `INSERT INTO http_responses (scheme,failed,"assetServiceId") VALUES ('https',false,$1),('https',true,$2)`,
+          [services.get(443), services.get(22)],
+        );
+        scopedTool = await insert(
+          'INSERT INTO tools (name,categories) VALUES ($1,$2)',
+          [
+            `argus-service-scope-${randomUUID()}`,
+            JSON.stringify([
+              { name: category, targetTypes: [TargetType.DOMAIN] },
+            ]),
+          ],
+        );
+        const args = {
+          tool: await app.dataSource
+            .getRepository(Tool)
+            .findOneByOrFail({ id: scopedTool }),
+          targetIds: Array<string>(65_536).fill(scopedTarget),
+          workspaceId: owner.workspace.id,
+          jobHistory: await app.dataSource
+            .getRepository(JobHistory)
+            .findOneByOrFail({ id: runId }),
+        };
+        const registry = app.app.get(JobsRegistryService);
+        const jobs = await registry.createNewJob(args);
+        expect(
+          jobs.map((job) => job.assetService?.port).sort((a, b) => a! - b!),
+        ).toEqual(ports);
+        expect(jobs.every((job) => job.asset.id === scopedAsset)).toBe(true);
+        const selected = await registry.createNewJob({
+          ...args,
+          assetServiceIds: Array<string>(65_536).fill(services.get(8080)!),
+        });
+        expect(selected.map((job) => job.assetService?.port)).toEqual([8080]);
+        expect(
+          await registry.createNewJob({
+            ...args,
+            workspaceId: other.workspace.id,
+          }),
+        ).toEqual([]);
+      } finally {
+        await app.dataSource.query('DELETE FROM targets WHERE id=$1', [
+          scopedTarget,
+        ]);
+        if (scopedTool)
+          await app.dataSource.query('DELETE FROM tools WHERE id=$1', [
+            scopedTool,
+          ]);
+      }
+    },
+  );
 });
