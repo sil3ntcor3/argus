@@ -15,8 +15,10 @@ Empty rules remove rule-source members while retaining manual members.
 
 An error rolls back rules, preference, membership and provenance together.
 Concurrent replacements use the shared project lock, also used by legacy manual
-membership mutations. Newly discovered asset attachment and project activity
-events follow in separate batches.
+membership mutations. Canonical writes emit
+[project activity](project-activity.md); the
+[discovery consumer](project-discovery-events.md) attaches new discovery batches.
+Reporting assets added by an explicit scope edit follows separately.
 
 Run `task api:test:e2e:one SPEC=test/project-scope-write.e2e-spec.ts` against the
 disposable local Docker database. Public permission, validation and response tests

@@ -6,10 +6,10 @@ import { ProjectScopeNormalizer } from './project-scope-normalizer.service';
 import { ProjectScopePreviewService } from './project-scope-preview.service';
 import { ProjectScopeReadService } from './project-scope-read.service';
 import { ProjectScopeWriteService } from './project-scope-write.service';
-import { ProjectScopeDiscoveryService } from './project-scope-discovery.service';
+import { ProjectScopeModule } from './project-scope.module';
 
 @Module({
-  imports: [AssetGroupModule],
+  imports: [AssetGroupModule, ProjectScopeModule],
   controllers: [ProjectsController],
   providers: [
     ProjectMetadataReadService,
@@ -17,7 +17,6 @@ import { ProjectScopeDiscoveryService } from './project-scope-discovery.service'
     ProjectScopePreviewService,
     ProjectScopeReadService,
     ProjectScopeWriteService,
-    ProjectScopeDiscoveryService,
   ],
 })
 export class ProjectsModule {}

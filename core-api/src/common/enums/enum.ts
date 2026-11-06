@@ -318,6 +318,8 @@ export enum IntegrationType {
  * matching sink together, never one without the other.
  */
 export enum EventBusGroup {
+  /** Keeps rule-based project membership current after discovery. */
+  Projects = 'projects',
   /** Materializes the stream into `audit_events`; strictly ordered. */
   Audit = 'audit',
   /** Read models. */

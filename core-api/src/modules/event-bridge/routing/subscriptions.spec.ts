@@ -14,7 +14,7 @@ describe('event bus subscriptions', () => {
   const groups = Object.keys(SUBSCRIPTIONS);
   const realDomains = new Set(EVENT_NAMES.map((name) => name.split('.')[0]));
 
-  it('declares exactly the four lanes, keyed by the enum', () => {
+  it('declares every lane, keyed by the enum', () => {
     // Keyed off EventBusGroup so adding a lane to the enum without declaring a
     // subscription here (or vice versa) fails the `satisfies` check at build.
     expect(groups.sort()).toEqual(Object.values(EventBusGroup).sort());

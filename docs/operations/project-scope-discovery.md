@@ -2,8 +2,10 @@
 
 The internal `ProjectScopeDiscoveryService.addDiscoveredAssets` foundation accepts
 a workspace and discovered asset IDs. It selects only active projects with
-`autoAddAssets` enabled and saved scope rules. Discovery-event wiring and project
-asset-added/activity reporting follow in separate upstream batches.
+`autoAddAssets` enabled and saved scope rules. The
+[project event consumer](project-discovery-events.md) now handles discovery
+batches and reports committed memberships. Scan/integration producers follow
+separately.
 
 All affected project rows are locked in UUID order in one transaction, sharing
 the lock used by scope replacement and manual membership changes. Rules are read
