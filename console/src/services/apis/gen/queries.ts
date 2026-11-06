@@ -4604,6 +4604,56 @@ export type CreateProjectDto = {
   autoAddAssets?: boolean;
 };
 
+export type ScopePreviewResultDto = {
+  /**
+   * Selected rule assets union owned manual members
+   * @minimum 0
+   */
+  total: number;
+  /**
+   * Assets selected by include rules after exclusions
+   * @minimum 0
+   */
+  ruleAssets: number;
+  /** Per original input row: include matches, or include matches removed by an exclusion */
+  perRule: number[];
+};
+
+export type ProjectScopeRuleMode =
+  (typeof ProjectScopeRuleMode)[keyof typeof ProjectScopeRuleMode];
+
+export const ProjectScopeRuleMode = {
+  include: 'include',
+  exclude: 'exclude',
+} as const;
+
+export type ProjectScopeRuleType =
+  (typeof ProjectScopeRuleType)[keyof typeof ProjectScopeRuleType];
+
+export const ProjectScopeRuleType = {
+  target: 'target',
+  hostname: 'hostname',
+  cidr: 'cidr',
+  asset: 'asset',
+} as const;
+
+export type ScopeRuleInputDto = {
+  mode: ProjectScopeRuleMode;
+  type: ProjectScopeRuleType;
+  /**
+   * Target/asset UUID, hostname pattern with * wildcards, or IPv4/IPv6 CIDR
+   * @maxLength 255
+   */
+  value: string;
+};
+
+export type ScopePreviewDto = {
+  /** @maxItems 100 */
+  rules: ScopeRuleInputDto[];
+  /** Include the owned manual members of this project */
+  projectId?: string;
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -43212,6 +43262,99 @@ export const useProjectsControllerCreate = <
 > => {
   return useMutation(
     getProjectsControllerCreateMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Preview scope rules
+ */
+export const projectsControllerPreviewScope = (
+  scopePreviewDto: ScopePreviewDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ScopePreviewResultDto>(
+    {
+      url: `/api/projects/scope-preview`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: scopePreviewDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerPreviewScopeMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+    TError,
+    { data: ScopePreviewDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+  TError,
+  { data: ScopePreviewDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerPreviewScope'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+    { data: ScopePreviewDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return projectsControllerPreviewScope(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerPreviewScopeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerPreviewScope>>
+>;
+export type ProjectsControllerPreviewScopeMutationBody = ScopePreviewDto;
+export type ProjectsControllerPreviewScopeMutationError = unknown;
+
+/**
+ * @summary Preview scope rules
+ */
+export const useProjectsControllerPreviewScope = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+      TError,
+      { data: ScopePreviewDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+  TError,
+  { data: ScopePreviewDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerPreviewScopeMutationOptions(options),
     queryClient,
   );
 };
