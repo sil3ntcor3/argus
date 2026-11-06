@@ -33,6 +33,9 @@ export interface StartRunInput {
   targetIds?: string[];
   /** Scope of an asset-group run: every step stays inside the selected assets. */
   assetIds?: string[];
+  /** Private provenance supplied by the project workflow binding that starts a run. */
+  projectId?: string;
+  projectWorkflowId?: string;
 }
 
 export interface StartRunResult {
@@ -96,6 +99,8 @@ export class WorkflowRunnerService {
         isCompleted: false,
         steps: {},
         scope: this.buildScope(input.targetIds, input.assetIds),
+        projectId: input.projectId ?? null,
+        projectWorkflowId: input.projectWorkflowId ?? null,
       });
       await queryRunner.manager.save(jobHistory);
       await queryRunner.commitTransaction();

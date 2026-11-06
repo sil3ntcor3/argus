@@ -9,8 +9,8 @@ removes its links. Deleting a workflow binding nulls the run's binding reference
 
 The existing Argus Groups UI, API responses, permissions, filters and audit names
 remain unchanged. The new run columns are excluded from default ORM selections.
-Runtime attribution and refreshing links/counts for new runs follow separately;
-this batch leaves new runs unattributed.
+[New group run attribution](project-run-provenance.md) is implemented separately.
+Refreshing finding links/counts for new runs remains a follow-up.
 
 ## Conservative historical backfill
 
