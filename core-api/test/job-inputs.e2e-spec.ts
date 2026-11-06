@@ -6,6 +6,7 @@ import { Job } from '@/modules/jobs-registry/entities/job.entity';
 import { JobHistory } from '@/modules/jobs-registry/entities/job-history.entity';
 import { Tool } from '@/modules/tools/entities/tools.entity';
 import { WorkerStreamRegistry } from '@/modules/workers/worker-stream-registry.service';
+import { ConnectorRegistryService } from '@/modules/connectors/connector-registry.service';
 import type { EntitySubscriberInterface } from 'typeorm';
 import { StepScopeLoader } from '@/modules/jobs-registry/step-scope.loader';
 import { planStepInputs } from '@/modules/jobs-registry/step-inputs';
@@ -416,6 +417,139 @@ describe('Job input foundation (e2e)', () => {
           }),
         ).toEqual([]);
       } finally {
+        await app.dataSource.query('DELETE FROM targets WHERE id=$1', [
+          scopedTarget,
+        ]);
+        if (scopedTool)
+          await app.dataSource.query('DELETE FROM tools WHERE id=$1', [
+            scopedTool,
+          ]);
+      }
+    },
+  );
+  it.each([
+    { inputs: [DataKind.WEB, DataKind.HOST], webFirst: true },
+    { inputs: [DataKind.HOST, DataKind.WEB], webFirst: false },
+  ])(
+    'plans vulnerability connector inputs in preference order ($webFirst)',
+    async ({ inputs, webFirst }) => {
+      const scopedTarget = await insert(
+        `INSERT INTO targets (value,"workspaceId",type) VALUES ($1,$2,'DOMAIN')`,
+        ['planned.example.com', owner.workspace.id],
+      );
+      const slug = `argus-planner-${randomUUID()}`;
+      let scopedTool: string | undefined;
+      const connectors = app.app.get(ConnectorRegistryService);
+      const original = connectors.getConnector.bind(
+        connectors,
+      ) as ConnectorRegistryService['getConnector'];
+      const connector = jest
+        .spyOn(connectors, 'getConnector')
+        .mockImplementation((name) =>
+          name === slug
+            ? {
+                name,
+                slug,
+                version: '1',
+                image: 'local-validation.invalid/argus:fixture',
+                capabilities: [],
+              }
+            : original(name),
+        );
+      try {
+        const web = await insert(
+          'INSERT INTO assets (value,"targetId") VALUES ($1,$2)',
+          ['web.planned.example.com', scopedTarget],
+        );
+        const fallback = await insert(
+          'INSERT INTO assets (value,"targetId") VALUES ($1,$2)',
+          ['fallback.planned.example.com', scopedTarget],
+        );
+        const services = new Map<number, string>();
+        for (const port of [22, 443, 8443, 8080]) {
+          const id = await insert(
+            'INSERT INTO asset_services (value,port,"assetId") VALUES ($1,$2,$3)',
+            [`web.planned.example.com:${port}`, port, web],
+          );
+          services.set(port, id);
+          if (port !== 22)
+            await app.dataSource.query(
+              'INSERT INTO http_responses (scheme,failed,"assetServiceId") VALUES ($1,false,$2)',
+              [port === 8080 ? 'http' : 'https', id],
+            );
+        }
+        scopedTool = await insert(
+          'INSERT INTO tools (name,categories) VALUES ($1,$2)',
+          [
+            slug,
+            JSON.stringify([
+              {
+                name: ToolCategory.VULNERABILITIES,
+                targetTypes: [TargetType.DOMAIN],
+                inputs,
+              },
+            ]),
+          ],
+        );
+        const args = {
+          tool: await app.dataSource
+            .getRepository(Tool)
+            .findOneByOrFail({ id: scopedTool }),
+          targetIds: [scopedTarget],
+          workspaceId: owner.workspace.id,
+          jobHistory: await app.dataSource
+            .getRepository(JobHistory)
+            .findOneByOrFail({ id: runId }),
+        };
+        const jobs = await app.app.get(JobsRegistryService).createNewJob(args);
+        const expected = webFirst
+          ? [
+              'https://web.planned.example.com',
+              'https://web.planned.example.com:8443',
+              'http://web.planned.example.com:8080',
+              'fallback.planned.example.com',
+            ]
+          : ['web.planned.example.com', 'fallback.planned.example.com'];
+        expect(jobs.map((job) => job.inputs?.target).sort()).toEqual(
+          expected.sort(),
+        );
+        expect(
+          jobs.find((job) => job.asset.id === fallback)?.assetService,
+        ).toBeUndefined();
+        expect(
+          jobs
+            .filter((job) => job.asset.id === web)
+            .map((job) => job.assetService?.id)
+            .sort(),
+        ).toEqual(
+          webFirst
+            ? [services.get(443), services.get(8443), services.get(8080)].sort()
+            : [undefined],
+        );
+        for (const job of jobs) {
+          expect(job.command).toBeNull();
+          expect(
+            (
+              await app.dataSource
+                .getRepository(Job)
+                .findOneByOrFail({ id: job.id })
+            ).inputs,
+          ).toBeUndefined();
+          const stored = await app.dataSource
+            .getRepository(Job)
+            .createQueryBuilder('job')
+            .addSelect('job.inputs')
+            .where('job.id = :id', { id: job.id })
+            .getOneOrFail();
+          expect(stored.inputs).toEqual(job.inputs);
+        }
+        expect(
+          await app.app
+            .get(JobsRegistryService)
+            .createNewJob({ ...args, workspaceId: other.workspace.id }),
+        ).toEqual([]);
+      } finally {
+        connector.mockRestore();
         await app.dataSource.query('DELETE FROM targets WHERE id=$1', [
           scopedTarget,
         ]);
