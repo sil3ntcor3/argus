@@ -83,6 +83,8 @@ describe('Project scope provenance index (e2e)', () => {
       `INSERT INTO assets (value,"targetId") SELECT 'index-' || n || '.argus.test',$1 FROM generate_series(1,65536) n`,
       [target],
     );
+    // Bulk fixtures outpace auto-analyze; FK lookups need current cardinality.
+    await db.query('ANALYZE assets');
     await db.query(
       `INSERT INTO project_assets ("projectId","assetId",source,"scopeRuleId")
       SELECT $1,id,CASE WHEN value='index-1.argus.test' THEN 'manual' ELSE 'rule' END,$2 FROM assets WHERE "targetId"=$3`,
