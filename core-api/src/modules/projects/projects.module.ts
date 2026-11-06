@@ -4,6 +4,7 @@ import { ProjectsController } from './projects.controller';
 import { ProjectMetadataReadService } from './project-metadata-read.service';
 import { ProjectScopeNormalizer } from './project-scope-normalizer.service';
 import { ProjectScopePreviewService } from './project-scope-preview.service';
+import { ProjectScopeReadService } from './project-scope-read.service';
 
 @Module({
   imports: [AssetGroupModule],
@@ -12,6 +13,7 @@ import { ProjectScopePreviewService } from './project-scope-preview.service';
     ProjectMetadataReadService,
     ProjectScopeNormalizer,
     ProjectScopePreviewService,
+    ProjectScopeReadService,
   ],
 })
 export class ProjectsModule {}
