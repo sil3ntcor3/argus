@@ -6,7 +6,7 @@ import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { QueryFailedError } from 'typeorm';
 import type { Repository } from 'typeorm';
-import type { Asset } from '../assets/entities/assets.entity';
+import { Asset } from '../assets/entities/assets.entity';
 import { AssetGroupAssetService } from './asset-group-asset.service';
 import type { AssetGroupAsset } from './entities/asset-groups-assets.entity';
 import type { AssetGroup } from './entities/asset-groups.entity';
@@ -98,7 +98,15 @@ describe('AssetGroupAssetService concurrent duplicate persistence', () => {
   const groupId = randomUUID(),
     assetId = randomUUID(),
     workspaceId = randomUUID();
-  const groups = { findOne: jest.fn() },
+  const manager = {
+    queryRunner: { isTransactionActive: true },
+    query: jest.fn(),
+    getRepository: jest.fn(),
+  };
+  const transaction = jest.fn(
+    async (work: (scoped: unknown) => Promise<unknown>) => work(manager),
+  );
+  const groups = { findOne: jest.fn(), manager: { transaction } },
     assets = { find: jest.fn() };
   const links = {
     find: jest.fn(),
@@ -109,8 +117,13 @@ describe('AssetGroupAssetService concurrent duplicate persistence', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     groups.findOne.mockResolvedValue({ id: groupId });
+    manager.query.mockResolvedValue([{ id: groupId }]);
+    manager.getRepository.mockImplementation((entity: unknown) =>
+      entity === Asset ? assets : links,
+    );
     assets.find.mockResolvedValue([{ id: assetId }]);
     links.find.mockResolvedValue([]);
+    links.save.mockResolvedValue([]);
     service = new AssetGroupAssetService(
       groups as unknown as Repository<AssetGroup>,
       links as unknown as Repository<AssetGroupAsset>,
@@ -119,6 +132,54 @@ describe('AssetGroupAssetService concurrent duplicate persistence', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
   afterEach(() => jest.restoreAllMocks());
+
+  it('uses transaction-scoped repositories after locking the owned project', async () => {
+    await expect(
+      service.addManyAssets(groupId, [assetId], workspaceId),
+    ).resolves.toEqual({
+      message: `1 assets successfully added to asset group "${groupId}"`,
+    });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(manager.query).toHaveBeenCalledWith(
+      expect.stringContaining('FOR UPDATE'),
+      [groupId, workspaceId],
+    );
+    expect(groups.findOne).not.toHaveBeenCalled();
+    expect(links.save).toHaveBeenCalledWith([
+      { assetGroup: { id: groupId }, asset: { id: assetId } },
+    ]);
+  });
+
+  it('preserves the legacy missing-project response and never queries assets', async () => {
+    manager.query.mockResolvedValue([]);
+    await expect(
+      service.addManyAssets(groupId, [assetId], workspaceId),
+    ).rejects.toThrow(`Asset group with ID "${groupId}" not found`);
+    expect(assets.find).not.toHaveBeenCalled();
+    expect(links.save).not.toHaveBeenCalled();
+  });
+
+  it('propagates lock failures without changing membership', async () => {
+    const failure = new Error('lock failed');
+    manager.query.mockRejectedValue(failure);
+    await expect(
+      service.addManyAssets(groupId, [assetId], workspaceId),
+    ).rejects.toBe(failure);
+    expect(links.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing assets and existing memberships before saving', async () => {
+    assets.find.mockResolvedValue([]);
+    await expect(
+      service.addManyAssets(groupId, [assetId], workspaceId),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    assets.find.mockResolvedValue([{ id: assetId }]);
+    links.find.mockResolvedValue([{ asset: { id: assetId } }]);
+    await expect(
+      service.addManyAssets(groupId, [assetId], workspaceId),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(links.save).not.toHaveBeenCalled();
+  });
 
   it.each([
     ['23505', 'UQ_pa_projectId_assetId', true],

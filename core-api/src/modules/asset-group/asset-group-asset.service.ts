@@ -10,7 +10,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { Asset } from '../assets/entities/assets.entity';
+import { lockProjectScope } from '../projects/project-scope-sync';
 import { AssetGroupAsset } from './entities/asset-groups-assets.entity';
 import { AssetGroup } from './entities/asset-groups.entity';
 
@@ -36,23 +38,31 @@ export class AssetGroupAssetService {
     assetIds: string[],
     workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
+    return this.assetGroupRepo.manager.transaction((manager) =>
+      this.addAssetsInTransaction(groupId, assetIds, workspaceId, manager),
+    );
+  }
+
+  private async addAssetsInTransaction(
+    groupId: string,
+    assetIds: string[],
+    workspaceId: string,
+    manager: EntityManager,
+  ): Promise<DefaultMessageResponseDto> {
+    const assetRepo = manager.getRepository(Asset);
+    const assetGroupAssetRepo = manager.getRepository(AssetGroupAsset);
     try {
-      // Verify that the asset group exists
-      const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id: groupId, workspace: { id: workspaceId } },
-        relations: ['workspace'],
-      });
-      if (!assetGroup) {
+      // Read membership only after competing scope updates have committed.
+      await lockProjectScope(manager, groupId, workspaceId).catch((error: unknown) => {
+        if (!(error instanceof NotFoundException)) throw error;
         this.logger.warn(`Asset group with ID "${groupId}" not found`);
-        throw new NotFoundException(
-          `Asset group with ID "${groupId}" not found`,
-        );
-      }
+        throw new NotFoundException(`Asset group with ID "${groupId}" not found`);
+      });
 
       // Verify that all assets exist AND belong to the same workspace — a bare
       // findByIds would let a caller attach another tenant's assets to their own
       // group, and the group-assets listing only constrains the group's tenant.
-      const assets = await this.assetRepo.find({
+      const assets = await assetRepo.find({
         where: { id: In(assetIds), target: { workspaceId } },
       });
       if (assets.length !== assetIds.length) {
@@ -69,7 +79,7 @@ export class AssetGroupAssetService {
       }
 
       // Find existing associations to avoid duplicates
-      const existingAssociations = await this.assetGroupAssetRepo.find({
+      const existingAssociations = await assetGroupAssetRepo.find({
         where: {
           assetGroup: { id: groupId },
           asset: { id: In(assetIds) },
@@ -91,14 +101,14 @@ export class AssetGroupAssetService {
 
       // Create new associations
       const newAssociations = assetIds.map((assetId) =>
-        this.assetGroupAssetRepo.create({
+        assetGroupAssetRepo.create({
           assetGroup: { id: groupId },
           asset: { id: assetId },
         }),
       );
 
       try {
-        await this.assetGroupAssetRepo.save(newAssociations);
+        await assetGroupAssetRepo.save(newAssociations);
       } catch (error) {
         // A concurrent request can insert the pair after the precheck.
         const driverError: unknown =
