@@ -177,6 +177,12 @@ export const EVENT_CATALOG = {
     created: { name: 'project.created', summary: 'Project created' },
     updated: { name: 'project.updated', summary: 'Project settings or scope changed' },
     deleted: { name: 'project.deleted', summary: 'Project deleted' },
+    assets: {
+      added: {
+        name: 'project.assets.added',
+        summary: 'Assets joined a project (picked, selected by a rule or discovered)',
+      },
+    },
   },
   network: {
     created: { name: 'network.created', summary: 'Internal network created' },

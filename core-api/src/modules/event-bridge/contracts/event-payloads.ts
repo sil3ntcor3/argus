@@ -42,6 +42,20 @@ export interface VulnerabilityDetectedPayload {
   vulnerabilities: DetectedVulnerability[];
 }
 
+/** New asset rows created under one target; existing assets are not repeated. */
+export interface AssetDiscoveredPayload {
+  targetId: string;
+  jobHistoryId?: string;
+  assetIds: string[];
+}
+
+/** Memberships newly added by a manual, scope-edit or discovery change. */
+export interface ProjectAssetsAddedPayload {
+  projectId: string;
+  assetIds: string[];
+  jobHistoryId?: string;
+}
+
 /** `workflow.run.completed` — the run's asset deltas and unfinished steps. */
 export interface WorkflowRunCompletedPayload {
   targetId: string;
@@ -104,6 +118,8 @@ export interface VulnerabilityAnalysisCompletedPayload {
 }
 
 export interface EventPayloadMap {
+  'asset.discovered': AssetDiscoveredPayload;
+  'project.assets.added': ProjectAssetsAddedPayload;
   'vulnerability.detected': VulnerabilityDetectedPayload;
   'workflow.run.completed': WorkflowRunCompletedPayload;
   'vulnerability.analysis.completed': VulnerabilityAnalysisCompletedPayload;

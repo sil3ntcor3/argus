@@ -56,6 +56,7 @@ export const EVENT_POLICY: Record<EventName, EventPolicy> = {
   'project.created': { persist: true, severity: 'normal' },
   'project.updated': { persist: true, severity: 'normal' },
   'project.deleted': { persist: true, severity: 'important' },
+  'project.assets.added': { persist: false, severity: 'normal' },
   'network.created': { persist: true, severity: 'normal' },
   'network.deleted': { persist: true, severity: 'important' },
   'vulnerability.status.updated': { persist: true, severity: 'normal' },
