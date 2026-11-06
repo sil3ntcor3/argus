@@ -2,7 +2,9 @@ import {
   GetManyBaseQueryParams,
   SortOrder,
 } from '@/common/dtos/get-many-base.dto';
-import { Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { QueryFailedError } from 'typeorm';
 import type { Repository } from 'typeorm';
 import type { Asset } from '../assets/entities/assets.entity';
 import { AssetGroupAssetService } from './asset-group-asset.service';
@@ -88,6 +90,53 @@ describe('AssetGroupAssetService listing compatibility', () => {
         service[method]('group-1', new GetManyBaseQueryParams(), 'workspace-1'),
       ).rejects.toThrow(NotFoundException);
       expect(assets.createQueryBuilder).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('AssetGroupAssetService concurrent duplicate persistence', () => {
+  const groupId = randomUUID(),
+    assetId = randomUUID(),
+    workspaceId = randomUUID();
+  const groups = { findOne: jest.fn() },
+    assets = { find: jest.fn() };
+  const links = {
+    find: jest.fn(),
+    create: jest.fn((data: object) => data),
+    save: jest.fn(),
+  };
+  let service: AssetGroupAssetService;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    groups.findOne.mockResolvedValue({ id: groupId });
+    assets.find.mockResolvedValue([{ id: assetId }]);
+    links.find.mockResolvedValue([]);
+    service = new AssetGroupAssetService(
+      groups as unknown as Repository<AssetGroup>,
+      links as unknown as Repository<AssetGroupAsset>,
+      assets as unknown as Repository<Asset>,
+    );
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each([
+    ['23505', 'UQ_pa_projectId_assetId', true],
+    ['23505', 'another_unique_index', false],
+    ['23503', 'a_foreign_key', false],
+  ])(
+    'handles save error %s on %s without masking unrelated failures',
+    async (code, constraint, duplicate) => {
+      const error = new QueryFailedError(
+        'INSERT project_assets',
+        [],
+        Object.assign(new Error('database save failure'), { code, constraint }),
+      );
+      links.save.mockRejectedValue(error);
+      const result = service.addManyAssets(groupId, [assetId], workspaceId);
+      if (duplicate)
+        await expect(result).rejects.toBeInstanceOf(BadRequestException);
+      else await expect(result).rejects.toBe(error);
     },
   );
 });
