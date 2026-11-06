@@ -21,6 +21,7 @@ import { IssuesService } from '../issues/issues.service';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { EventBridgeService } from '../event-bridge/publishing/event-bridge.service';
 import type {
+  AssetDiscoveredPayload,
   DetectedVulnerability,
   VulnerabilityDetectedPayload,
 } from '../event-bridge/contracts/event-payloads';
@@ -522,6 +523,18 @@ export class DataAdapterService {
       const workspaceConfigs =
         await this.workspaceService.getWorkspaceConfigValue(workspaceId!);
 
+      // A DNS refresh RETURNs updated rows too. Identify existing values before
+      // writing, with one bound array even for a large discovery batch.
+      const batchValues = uniqueData.map((asset) => asset.value);
+      const existingValues = new Set(
+        batchValues.length
+          ? (await queryRunner.manager.query<{ value: string }[]>(
+              `SELECT value FROM assets WHERE "targetId" = $1 AND value = ANY($2::varchar[])`,
+              [targetId, batchValues],
+            )).map((row) => row.value)
+          : [],
+      );
+
       // Insert Assets. Default: orIgnore (re-runs are idempotent; subdomain
       // rows are only ever created). replaceDnsRecords: orUpdate on
       // (value, targetId) so existing rows' dnsRecords are refreshed while
@@ -578,6 +591,23 @@ export class DataAdapterService {
       await this.syncDnsFacets(queryRunner.manager, dnsWrites);
 
       await queryRunner.commitTransaction();
+      const discoveredIds = uniqueData
+        .filter((asset) => !existingValues.has(asset.value))
+        .map((asset) => idByValue.get(asset.value))
+        .filter((id): id is string => !!id);
+      if (workspaceId && discoveredIds.length > 0) {
+        // Consumers must see both the asset rows and their DNS facets.
+        await this.eventBridge.publishSafely(EVENT_CATALOG.asset.discovered, {
+          workspaceId,
+          outcome: 'success',
+          resourceType: 'asset',
+          payload: {
+            targetId,
+            ...(opts?.jobHistoryId ? { jobHistoryId: opts.jobHistoryId } : {}),
+            assetIds: discoveredIds,
+          } satisfies AssetDiscoveredPayload,
+        });
+      }
       return insertedIds.size;
     } catch (error) {
       await queryRunner.rollbackTransaction();
