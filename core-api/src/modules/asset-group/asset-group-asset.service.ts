@@ -13,6 +13,7 @@ import { In, QueryFailedError, Repository } from 'typeorm';
 import type { EntityManager } from 'typeorm';
 import { Asset } from '../assets/entities/assets.entity';
 import { lockProjectScope } from '../projects/project-scope-sync';
+import { excludeMatchedScopeAssets } from '../projects/project-scope-exclusions';
 import { AssetGroupAsset } from './entities/asset-groups-assets.entity';
 import { AssetGroup } from './entities/asset-groups.entity';
 
@@ -148,9 +149,22 @@ export class AssetGroupAssetService {
     assetIds: string[],
     workspaceId?: string,
   ): Promise<DefaultMessageResponseDto> {
+    return this.assetGroupRepo.manager.transaction((manager) =>
+      this.removeAssetsInTransaction(groupId, assetIds, workspaceId, manager),
+    );
+  }
+
+  private async removeAssetsInTransaction(
+    groupId: string,
+    assetIds: string[],
+    workspaceId: string | undefined,
+    manager: EntityManager,
+  ): Promise<DefaultMessageResponseDto> {
+    const assetGroupRepo = manager.getRepository(AssetGroup);
+    const assetGroupAssetRepo = manager.getRepository(AssetGroupAsset);
     try {
       // Validate group exists and belongs to the workspace
-      const assetGroup = await this.assetGroupRepo.findOne({
+      const assetGroup = await assetGroupRepo.findOne({
         where: { id: groupId },
         relations: ['workspace'],
       });
@@ -165,8 +179,23 @@ export class AssetGroupAssetService {
         );
       }
 
+      const owningWorkspaceId = assetGroup.workspace?.id;
+      if (owningWorkspaceId) {
+        await lockProjectScope(manager, assetGroup.id, owningWorkspaceId).catch((error: unknown) => {
+          if (!(error instanceof NotFoundException)) throw error;
+          throw new NotFoundException(`Asset group with ID "${groupId}" not found`);
+        });
+      } else {
+        // Trusted internal calls historically allow projects without a workspace.
+        const [locked] = await manager.query<{ id: string }[]>(
+          'SELECT id FROM projects WHERE id=$1 AND "workspaceId" IS NULL FOR UPDATE',
+          [assetGroup.id],
+        );
+        if (!locked) throw new NotFoundException(`Asset group with ID "${groupId}" not found`);
+      }
+
       // Find existing associations
-      const associations = await this.assetGroupAssetRepo.find({
+      const associations = await assetGroupAssetRepo.find({
         where: {
           assetGroup: { id: groupId },
           asset: { id: In(assetIds) },
@@ -191,8 +220,10 @@ export class AssetGroupAssetService {
         );
       }
 
-      // Remove the associations
-      await this.assetGroupAssetRepo.remove(associations);
+      if (owningWorkspaceId) {
+        await excludeMatchedScopeAssets(manager, assetGroup.id, owningWorkspaceId, assetIds);
+      }
+      await assetGroupAssetRepo.remove(associations);
 
       return {
         message: `${associations.length} assets successfully removed from asset group "${groupId}"`,
