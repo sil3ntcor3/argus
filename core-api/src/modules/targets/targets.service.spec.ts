@@ -11,6 +11,8 @@ import { AssetsService } from '../assets/assets.service';
 import type { Asset } from '../assets/entities/assets.entity';
 import type { AuditContext } from '../audit/audit.service';
 import { AuditService } from '../audit/audit.service';
+import { EventBridgeService } from '../event-bridge/publishing/event-bridge.service';
+import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { Integration } from '../integrations/entities/integration.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
@@ -29,6 +31,7 @@ describe('TargetsService', () => {
   let mockQueue: Partial<Queue>;
   let mockAuditService: { auditSafely: jest.Mock };
   let mockIntegrationRepository: { find: jest.Mock };
+  let mockEventBridge: { publishSafely: jest.Mock };
 
   beforeEach(async () => {
     mockTargetRepository = {
@@ -77,9 +80,11 @@ describe('TargetsService', () => {
     };
 
     mockIntegrationRepository = { find: jest.fn().mockResolvedValue([]) };
+    mockEventBridge = { publishSafely: jest.fn().mockResolvedValue('1-0') };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: EventBridgeService, useValue: mockEventBridge },
         TargetsService,
         {
           provide: getRepositoryToken(Target),
@@ -229,6 +234,89 @@ describe('TargetsService', () => {
 
     afterEach(() => {
       jest.restoreAllMocks();
+    });
+
+    describe('initial asset discovery batches', () => {
+      it('reports the inserted asset IDs per target after commit and the existing creation events', async () => {
+        const created = [
+          {
+            id: randomUUID(),
+            value: 'primary.argus.test',
+            type: TargetType.DOMAIN,
+          },
+          { id: randomUUID(), value: '203.0.113.9', type: TargetType.IP },
+          { id: randomUUID(), value: '203.0.113.64/30', type: TargetType.CIDR },
+        ] as Target[];
+        const manager = createMockEntityManager({ createdTargets: created });
+        let committed = false;
+        (mockTargetRepository.manager as EntityManager).transaction = jest.fn(
+          async (callback: (manager: EntityManager) => Promise<unknown>) => {
+            const result = await callback(manager);
+            expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+            committed = true;
+            return result;
+          },
+        );
+        mockEventBridge.publishSafely.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve('1-0');
+        });
+        await service.createMultipleTargets(
+          { targets: created.map(({ value, type }) => ({ value, type })) },
+          workspaceId,
+          userContext,
+        );
+        expect(mockEventBridge.publishSafely).toHaveBeenCalledTimes(3);
+        const inserted = (
+          manager.createQueryBuilder() as unknown as { values: jest.Mock }
+        ).values.mock.calls
+          .slice(1)
+          .flatMap((call) => call[0] as { id: string; target: { id: string } }[]);
+        expect(inserted).toHaveLength(6);
+        for (const [name, data] of mockEventBridge.publishSafely.mock.calls) {
+          expect(name).toBe(EVENT_CATALOG.asset.discovered);
+          expect(data).toMatchObject({
+            workspaceId,
+            outcome: 'success',
+            resourceType: 'asset',
+          });
+          expect(data.payload.assetIds).toEqual(
+            inserted
+              .filter((row) => row.target.id === data.payload.targetId)
+              .map((row) => row.id),
+          );
+          expect(data.payload).not.toHaveProperty('jobHistoryId');
+        }
+        expect(
+          (mockEventEmitter.emit as jest.Mock).mock.invocationCallOrder.at(-1),
+        ).toBeLessThan(mockEventBridge.publishSafely.mock.invocationCallOrder[0]);
+      });
+      it('does not report staged IDs if committing the transaction fails', async () => {
+        const created = [
+          {
+            id: randomUUID(),
+            value: 'rollback.argus.test',
+            type: TargetType.DOMAIN,
+          },
+        ] as Target[];
+        const manager = createMockEntityManager({ createdTargets: created }),
+          failure = new Error('commit failed');
+        (mockTargetRepository.manager as EntityManager).transaction = jest.fn(
+          async (callback: (manager: EntityManager) => Promise<unknown>) => {
+            await callback(manager);
+            throw failure;
+          },
+        );
+        await expect(
+          service.createMultipleTargets(
+            { targets: [{ value: created[0].value }] },
+            workspaceId,
+            userContext,
+          ),
+        ).rejects.toBe(failure);
+        expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+        expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+      });
     });
 
     it('should create multiple targets successfully', async () => {
@@ -1272,6 +1360,7 @@ describe('TargetsService', () => {
         settings: { includeArchived: false, includeForks: true },
       });
       expect(assetInsert).not.toHaveBeenCalled();
+      expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
       expect(mockEventEmitter.emit).toHaveBeenCalledWith(
         'target.git_org.create',
         created[0],
