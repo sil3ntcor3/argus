@@ -33,6 +33,7 @@ import { WorkspaceEncryptionService } from '@/services/workspace-encryption/work
 import { AssetGroupWorkflowService } from './asset-group-workflow.service';
 import { AssetGroupAssetService } from './asset-group-asset.service';
 import { isGroupOwnedWorkflow } from './workflow-ownership';
+import { buildPipelineJobs } from './pipeline';
 
 @Injectable()
 export class AssetGroupService {
@@ -464,11 +465,10 @@ export class AssetGroupService {
     const workflowName = `Group Workflow - ${groupId}`;
     const workflow = this.workflowRepo.create({
       name: workflowName,
-      // Canonicalized on write: `jobs` is a map keyed by tool name with no
-      // `needs`, so every selected tool is a root and they run in parallel.
+      // Omitted stages remain parallel roots; populated stages form barriers.
       content: normalizeWorkflowContent({
         on: { schedule, target: [] },
-        jobs: Object.fromEntries(
+        jobs: buildPipelineJobs(
           tools.map((tool) => {
             const input = inputByToolId.get(tool.id!);
             let config = input?.config;
@@ -478,18 +478,16 @@ export class AssetGroupService {
               const sensitiveFields = getSensitiveFields(schema);
               config = encryptInlineConfig(config, sensitiveFields, dek);
             }
-            return [
-              tool.name,
-              {
-                run: tool.name,
-                ...(input?.category ? { category: input.category } : {}),
-                ...(input?.input?.length ? { input: input.input } : {}),
-                ...(config ? { config } : {}),
-                ...(input?.configProfileId
-                  ? { configProfileId: input.configProfileId }
-                  : {}),
-              },
-            ];
+            return {
+              run: tool.name,
+              stage: input?.stage,
+              ...(input?.category ? { category: input.category } : {}),
+              ...(input?.input?.length ? { input: input.input } : {}),
+              ...(config ? { config } : {}),
+              ...(input?.configProfileId
+                ? { configProfileId: input.configProfileId }
+                : {}),
+            };
           }),
         ),
         name: workflowName,

@@ -403,6 +403,25 @@ describe('filterGraphByAssetsDiscovery', () => {
     expect(filterGraphByAssetsDiscovery(graph, false).steps).toHaveLength(1);
   });
 
+  it('preserves barriers through disabled middle stages and deduplicates ancestors', () => {
+    const graph = resolved({
+      probe: { run: 'httpx' },
+      ports: { run: 'naabu' },
+      enumerate: { run: 'subfinder', needs: ['probe', 'ports'] },
+      enumerateAgain: { run: 'amass', needs: ['enumerate'] },
+      scan: { run: 'nuclei', needs: ['probe', 'enumerateAgain'] },
+    }, { probe: 'http_probe', ports: 'ports_scanner', enumerate: 'subdomains', enumerateAgain: 'subdomains', scan: 'vulnerabilities' });
+    const filtered = filterGraphByAssetsDiscovery(graph, false);
+    expect(filtered.byId.get('scan')?.needs).toEqual(['probe', 'ports']);
+    expect(planAdvance(filtered, {}).dispatch.map((step) => step.id).sort()).toEqual(['ports', 'probe']);
+    expect(planAdvance(filtered, {
+      probe: { status: 'done', jobs: 1 }, ports: { status: 'pending', jobs: 0 },
+    }).dispatch.map((step) => step.id)).not.toContain('scan');
+    expect(planAdvance(filtered, {
+      probe: { status: 'done', jobs: 1 }, ports: { status: 'done', jobs: 1 },
+    }).dispatch.map((step) => step.id)).toEqual(['scan']);
+  });
+
   it('drops only the step that runs subdomains, even when its tool has other steps', () => {
     const graph = resolved(
       {

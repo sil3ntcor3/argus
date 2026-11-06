@@ -518,9 +518,9 @@ export function withResolvedCategories(
 
 /**
  * Drops every step that runs the SUBDOMAINS category when the workspace has
- * assets discovery disabled, and removes the edges pointing at them so their
- * dependents become roots instead of waiting forever. Expects a graph from
- * withResolvedCategories.
+ * assets discovery disabled. Dependents inherit the removed steps' ancestors,
+ * preserving stage barriers; removing a root still makes its dependents roots.
+ * Expects a validated graph from withResolvedCategories.
  *
  * A step with an unknown category is kept — better to run it than to silently
  * drop a job.
@@ -538,11 +538,24 @@ export function filterGraphByAssetsDiscovery(
   );
   if (dropped.size === 0) return graph;
 
+  const ancestors = new Map<string, string[]>();
+  const keptDependencies = (id: string): string[] => {
+    if (!dropped.has(id)) return [id];
+    const cached = ancestors.get(id);
+    if (cached !== undefined) return cached;
+    const kept = [
+      ...new Set(
+        (graph.byId.get(id)?.needs ?? []).flatMap(keptDependencies),
+      ),
+    ];
+    ancestors.set(id, kept);
+    return kept;
+  };
   const steps = graph.steps
     .filter((step) => !dropped.has(step.id))
     .map((step) => ({
       ...step,
-      needs: step.needs.filter((need) => !dropped.has(need)),
+      needs: [...new Set(step.needs.flatMap(keptDependencies))],
     }));
 
   return indexGraph(steps);

@@ -40,6 +40,21 @@ describe('CreateAssetGroupDto', () => {
     },
   );
 
+  it.each([undefined, 1, 20])('retains nested pipeline stage %s', async (stage) => {
+    const dto = plainToInstance(CreateAssetGroupDto, {
+      name: 'Stages', tools: [{ toolId: VALID_UUID, stage }],
+    });
+    expect(await validate(dto, { whitelist: true })).toHaveLength(0);
+    expect(dto.tools?.[0]).toHaveProperty('stage', stage);
+  });
+
+  it.each([0, -1, 1.5, 21, '2', false])('rejects invalid stage %s', async (stage) => {
+    const dto = plainToInstance(CreateAssetGroupDto, {
+      name: 'Stages', tools: [{ toolId: VALID_UUID, stage }],
+    });
+    expect((await validate(dto, { whitelist: true })).length).toBeGreaterThan(0);
+  });
+
   it('accepts a valid payload', async () => {
     const dto = plainToInstance(CreateAssetGroupDto, {
       name: 'Web Servers',
