@@ -1,4 +1,4 @@
-import { ToolCategory } from '@/common/enums/enum';
+import { DataKind, ToolCategory } from '@/common/enums/enum';
 import { BullMQName, CronSchedule } from '@/common/enums/enum';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import { getQueueToken } from '@nestjs/bullmq';
@@ -315,6 +315,87 @@ describe('AssetGroupService', () => {
           }),
         }),
       );
+    });
+
+    it.each([
+      { input: undefined, expected: undefined },
+      { input: [], expected: undefined },
+      { input: [DataKind.WEB], expected: [DataKind.WEB] },
+      {
+        input: [DataKind.WEB, DataKind.HOST, DataKind.WEB],
+        expected: [DataKind.WEB, DataKind.HOST],
+      },
+    ])(
+      'preserves accepted per-tool inputs $input in the canonical workflow',
+      async ({ input, expected }) => {
+        mockManager.find.mockResolvedValue([
+          {
+            id: 'tool-1',
+            name: 'nuclei',
+            categories: [
+              {
+                name: ToolCategory.VULNERABILITIES,
+                targetTypes: [],
+                inputs: [DataKind.HOST, DataKind.WEB],
+              },
+            ],
+          },
+        ]);
+        mockWorkflowRepo.create.mockImplementation((data) => data);
+        mockWorkflowRepo.save.mockResolvedValue({ id: 'workflow-1' });
+        await service.create(
+          {
+            name: 'Input selection',
+            schedule: 'disabled',
+            tools: [{ toolId: 'tool-1', input }],
+          },
+          workspaceId,
+        );
+        expect(mockWorkflowRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            content: expect.objectContaining({
+              jobs: {
+                nuclei: {
+                  run: 'nuclei',
+                  ...(expected ? { input: expected } : {}),
+                },
+              },
+            }),
+          }),
+        );
+      },
+    );
+
+    it('rejects unsupported input and rolls back the new group before saving a workflow', async () => {
+      mockAssetGroupRepo.findOne
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValue({ id: groupId });
+      mockManager.find.mockResolvedValue([
+        {
+          id: 'tool-1',
+          name: 'nuclei',
+          categories: [
+            {
+              name: ToolCategory.VULNERABILITIES,
+              targetTypes: [],
+              inputs: [DataKind.HOST, DataKind.WEB],
+            },
+          ],
+        },
+      ]);
+      await expect(
+        service.create(
+          {
+            name: 'Invalid selection',
+            schedule: 'disabled',
+            tools: [{ toolId: 'tool-1', input: [DataKind.SERVICE] }],
+          },
+          workspaceId,
+        ),
+      ).rejects.toThrow(/cannot take service/);
+      expect(mockWorkflowRepo.save).not.toHaveBeenCalled();
+      expect(mockEncryptionService.getDEK).not.toHaveBeenCalled();
+      expect(mockAssetGroupRepo.remove).toHaveBeenCalledWith({ id: groupId });
     });
 
     it('should reject a per-tool category the tool does not declare', async () => {
