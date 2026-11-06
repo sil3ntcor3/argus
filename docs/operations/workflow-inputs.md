@@ -59,7 +59,15 @@ subdomain jobs, configuration-failure handling, command binding and job flags
 remain in place. Probes include every scoped service; screenshots require a
 successful HTTP response. URL discovery retains one preferred live service per
 asset (443, then 80, then lowest port). Explicit service selections and tenant
-boundaries apply before those choices. Typed input planning follows separately.
+boundaries apply before those choices. Service-category planning follows separately.
+
+Asset-category steps now use their declared ordered input kinds. A vulnerability
+connector declaring `[web, host]` creates jobs for every successful HTTP endpoint,
+including non-default ports, and falls back to one host job on unprobed assets.
+Putting `host` first retains host-only selection. Connector targets are stored in
+private job snapshots; ordinary entity reads and REST listings omit them. Native
+command templates still receive the planner's command values. Repository targets
+keep a null snapshot so credentials are resolved only at claim time.
 
 `StepScopeLoader` now provides the planner's data: enabled assets filtered by
 workspace, targets, asset IDs and supported target types; services can also be
@@ -99,7 +107,7 @@ scheme and non-default port; IPv6 authorities are bracketed. URL inputs must be
 valid HTTP(S) links on the scoped asset's host, so captured external links cannot
 expand a scan's scope. If no eligible URL remains, later input kinds still apply.
 Repository inputs remain deferred until claim time for live credential lookup.
-The planner is not yet wired into job creation; scope loading follows separately.
+The service-category branch is integrated in a later batch.
 Run `task api:test:one SPEC=src/modules/jobs-registry/step-inputs.spec.ts` for
 ordered fallbacks, endpoint fan-out, scope filtering and repository behavior.
 

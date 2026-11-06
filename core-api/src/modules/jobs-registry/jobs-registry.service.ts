@@ -38,7 +38,6 @@ import {
   SelectQueryBuilder,
 } from 'typeorm';
 import type { AssetService } from '../assets/entities/asset-services.entity';
-import type { Asset } from '../assets/entities/assets.entity';
 import type { TargetType } from '@/common/enums/enum';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
 import { StorageService } from '../storage/storage.service';
@@ -48,10 +47,12 @@ import {
   maskProfile,
 } from '../tools/validators/tool-config-profiles.crypto';
 import { resolveToolCategory } from '../tools/tool-categories';
+import { resolveStepInputs } from '../tools/tool-io';
 import { resolveToolTargetTypes } from '../tools/tool-target-types';
 import { builtInTools } from '../tools/tools-provider/built-in-tools';
 import { ToolsService } from '../tools/tools.service';
 import { StepScopeLoader } from './step-scope.loader';
+import { planStepInputs } from './step-inputs';
 import {
   normalizeNeeds,
   orderedJobEntries,
@@ -467,25 +468,23 @@ export class JobsRegistryService {
         jobsToInsert.push(job);
       }
     } else {
-      // For all other categories, use regular assets
-      const assets = await this.findAssetsForJob(
-        targetIds,
-        assetIds,
-        workspaceId,
-        targetTypes,
-      );
-
-      const filteredAssets = this.filterAssetsByCategory(assets, jobCategory);
+      const inputs = resolveStepInputs(tool.name, categorySpec);
+      const loaded = await this.stepScope.load(inputs, {
+        targetIds, assetIds, assetServiceIds, workspaceId, targetTypes,
+      });
+      const planned = planStepInputs(inputs, loaded.scope);
 
       // Step 3: iterate tools and create jobs
       const defaultCommand = builtInTools.find(
         (t) => t.name === tool.name,
       )?.command;
 
-      for (const asset of filteredAssets) {
+      for (const input of planned) {
         const job = jobRepo.create({
           id: randomUUID(),
-          asset,
+          asset: loaded.assets.get(input.assetId)!,
+          assetService: input.serviceId ? loaded.services.get(input.serviceId) : undefined,
+          inputs: isConnector ? input.connectorInputs : null,
           jobName: tool.name,
           status: JobStatus.PENDING,
           category: jobCategory,
@@ -494,9 +493,7 @@ export class JobsRegistryService {
           jobHistory,
           command: isConnector
             ? undefined
-            : bindingCommand(defaultCommand ?? '', {
-                value: asset.value,
-              }),
+            : bindingCommand(defaultCommand ?? '', input.commandValues),
           configProfileId: isConnector ? configProfileId : undefined,
           config: isConnector ? mergedConfig ?? config ?? null : null,
           isSaveRawResult: isSaveRawResult ?? false,
@@ -592,27 +589,6 @@ export class JobsRegistryService {
   }
 
   /**
-   * Finds assets for job creation based on targetIds, assetIds, and workspaceId
-   * @param targetIds list of target IDs to filter assets
-   * @param assetIds list of asset IDs to filter assets
-   * @param workspaceId workspace ID to filter assets
-   * @param targetTypes only assets whose target has one of these types
-   * @returns Promise<Array<Asset>> list of filtered assets
-   */
-  private async findAssetsForJob(
-    targetIds: string[] | undefined,
-    assetIds: string[] | undefined,
-    workspaceId: string | undefined,
-    targetTypes: TargetType[],
-  ): Promise<Asset[]> {
-    // HOST requests asset rows only; category eligibility remains with the caller.
-    const { assets } = await this.stepScope.load([DataKind.HOST], {
-      targetIds, assetIds, workspaceId, targetTypes,
-    });
-    return [...assets.values()];
-  }
-
-  /**
    * Finds asset services for HTTP_PROBE / SCREENSHOT job creation based on
    * targetIds, assetIds, and workspaceId.
    * @param targetIds list of target IDs to filter asset services
@@ -643,22 +619,6 @@ export class JobsRegistryService {
     return [...loaded.services.values()]
       .filter((row) => !liveOnly || webIds.has(row.id))
       .map((row) => Object.assign(row, { asset: loaded.assets.get(row.assetId)! }));
-  }
-
-  /**
-   * Filters assets based on tool category
-   * @param assets list of assets to filter
-   * @param toolCategory the category of the tool
-   * @returns filtered list of assets
-   */
-  private filterAssetsByCategory(
-    assets: Asset[],
-    toolCategory: ToolCategory,
-  ): Asset[] {
-    if (toolCategory === ToolCategory.SUBDOMAINS) {
-      return assets.filter((asset) => asset.isPrimary);
-    }
-    return assets;
   }
 
   /**
