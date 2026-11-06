@@ -27,7 +27,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Target } from '../targets/entities/target.entity';
 import { ToolsService } from '../tools/tools.service';
 import { WorkflowsService } from '../workflows/workflows.service';
-import { orderedJobEntries } from '../workflows/workflow-graph';
+import { normalizeInput, orderedJobEntries } from '../workflows/workflow-graph';
 import {
   GetVulnerabilitiesStatisticsQueryDto,
   VulnerabilityStatisticsDto,
@@ -110,6 +110,7 @@ export class VulnerabilitiesService {
         config: job?.config,
         configProfileId: job?.configProfileId,
         category: job?.category as ToolCategory | undefined,
+        input: normalizeInput(job?.input),
       });
     }
 

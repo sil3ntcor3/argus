@@ -4,7 +4,7 @@ import * as yaml from 'js-yaml';
 import { NotFoundException } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import type { Repository } from 'typeorm';
-import { TargetType } from '@/common/enums/enum';
+import { DataKind, TargetType } from '@/common/enums/enum';
 import type { AgentsCompletionsService } from '../agents/agents.completions';
 import type { JobsRegistryService } from '../jobs-registry/jobs-registry.service';
 import type { WorkflowRunnerService } from '../jobs-registry/workflow-runner.service';
@@ -59,7 +59,7 @@ describe('VulnerabilitiesService', () => {
     mockWorkflowRepository.findOne.mockResolvedValue({
       id: 'workflow-1',
       content: {
-        jobs: { vuls_scan: { name: 'Vuls Scan', run: 'nuclei', config } },
+        jobs: { vuls_scan: { name: 'Vuls Scan', run: 'nuclei', input: [DataKind.WEB, DataKind.HOST], config } },
       },
     });
 
@@ -69,6 +69,7 @@ describe('VulnerabilitiesService', () => {
     expect(mockJobRegistryService.createNewJob).toHaveBeenCalledWith(
       expect.objectContaining({
         config,
+        input: [DataKind.WEB, DataKind.HOST],
         targetIds: ['target-1'],
         workspaceId: 'ws-1',
       }),
@@ -213,11 +214,12 @@ describe('VulnerabilitiesService', () => {
       'vulnerability_scan_basic.yaml',
     );
     const doc = yaml.load(fs.readFileSync(templatePath, 'utf8')) as {
-      jobs: Record<string, { run: string; config?: { severity?: string[] } }>;
+      jobs: Record<string, { run: string; input?: string[]; config?: { severity?: string[] } }>;
     };
 
     const job = Object.values(doc.jobs).find((j) => j.run === 'nuclei');
     expect(job).toBeDefined();
+    expect(job!.input).toEqual([DataKind.WEB, DataKind.HOST]);
     // Full-coverage scan: nuclei must not skip any severity band.
     expect(new Set(job!.config?.severity)).toEqual(
       new Set(['info', 'low', 'medium', 'high', 'critical']),

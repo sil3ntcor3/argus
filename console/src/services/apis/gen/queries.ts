@@ -886,12 +886,25 @@ export const ToolCategory = {
   url_discovery: 'url_discovery',
 } as const;
 
+export type DataKind = (typeof DataKind)[keyof typeof DataKind];
+
+export const DataKind = {
+  target: 'target',
+  host: 'host',
+  service: 'service',
+  web: 'web',
+  url: 'url',
+  repository: 'repository',
+  vulnerability: 'vulnerability',
+} as const;
+
 export type WorkflowJobConfig = { [key: string]: unknown };
 
 export type WorkflowJob = {
   name?: string;
   run: string;
   category?: ToolCategory;
+  input?: DataKind[];
   needs?: string[];
   allowFailure?: boolean;
   config?: WorkflowJobConfig;
@@ -1400,18 +1413,6 @@ export type PortsResultDto = {
   /** Open port numbers */
   payload: number[];
 };
-
-export type DataKind = (typeof DataKind)[keyof typeof DataKind];
-
-export const DataKind = {
-  target: 'target',
-  host: 'host',
-  service: 'service',
-  web: 'web',
-  url: 'url',
-  repository: 'repository',
-  vulnerability: 'vulnerability',
-} as const;
 
 export type ToolCategorySpec = {
   name: ToolCategory;

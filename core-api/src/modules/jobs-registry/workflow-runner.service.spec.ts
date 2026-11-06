@@ -1,5 +1,6 @@
 import {
   EventTriggerType,
+  DataKind,
   JobRunType,
   ToolCategory,
 } from '@/common/enums/enum';
@@ -73,6 +74,7 @@ interface CreateNewJobArgs {
   priority?: number;
   workspaceId: string;
   category?: string;
+  input?: DataKind[];
 }
 
 /**
@@ -224,6 +226,17 @@ describe('WorkflowRunnerService', () => {
   }
 
   describe('startRun', () => {
+    it('forwards normalized input preferences without changing the run scope', async () => {
+      await setup(createFakeDb());
+      getToolByNames.mockResolvedValue([tool('nuclei', ToolCategory.VULNERABILITIES)]);
+      await service.startRun({
+        workflow: workflow([{ run: 'nuclei', input: [' WEB ', 'host', 'web'] }]),
+        workspaceId: 'workspace-1', jobName: 'Input selection', assetIds: ['asset-1'],
+      });
+      expect(createNewJob).toHaveBeenCalledWith(expect.objectContaining({
+        input: [DataKind.WEB, DataKind.HOST], assetIds: ['asset-1'], workspaceId: 'workspace-1',
+      }));
+    });
     it('persists project provenance supplied by a binding', async () => {
       await setup(createFakeDb());
       getToolByNames.mockResolvedValue([tool('naabu', ToolCategory.PORTS_SCANNER)]);

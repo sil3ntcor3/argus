@@ -52,6 +52,7 @@ import { StepScopeLoader } from './step-scope.loader';
 import { planStepInputs } from './step-inputs';
 import {
   normalizeNeeds,
+  normalizeInput,
   orderedJobEntries,
   withStepSkipped,
   type RunStepStatus,
@@ -115,6 +116,7 @@ const orderJob = (job: WorkflowStepDefinition): WorkflowJob => ({
   ...(job.name ? { name: job.name } : {}),
   run: job.run,
   ...(job.category ? { category: job.category as ToolCategory } : {}),
+  ...(job.input ? { input: normalizeInput(job.input) } : {}),
   // Authored `needs` may be a single string (legacy array form); the
   // definition is always stored canonical.
   ...(normalizeNeeds(job.needs).length ? { needs: normalizeNeeds(job.needs) } : {}),
@@ -272,6 +274,7 @@ export class JobsRegistryService {
     configProfileId,
     config,
     category,
+    input,
   }: CreateJobs): Promise<Job[]> {
     if (!tool) {
       throw new Error('Tool is required for creating a job');
@@ -384,7 +387,7 @@ export class JobsRegistryService {
     const targetTypes = resolveToolTargetTypes(categorySpec);
 
     // Plan the first available input kind independently for each asset.
-    const inputs = resolveStepInputs(tool.name, categorySpec);
+    const inputs = resolveStepInputs(tool.name, categorySpec, input);
     const loaded = await this.stepScope.load(inputs, {
       targetIds, assetIds, assetServiceIds, workspaceId, targetTypes,
     });

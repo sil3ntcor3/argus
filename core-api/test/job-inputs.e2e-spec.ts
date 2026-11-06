@@ -481,9 +481,15 @@ describe('Job input foundation (e2e)', () => {
       webFirst: false,
       category: ToolCategory.URL_DISCOVERY,
     },
+    {
+      inputs: [DataKind.HOST, DataKind.WEB],
+      request: [DataKind.WEB, DataKind.HOST],
+      webFirst: true,
+      category: ToolCategory.VULNERABILITIES,
+    },
   ])(
     'plans $category connector inputs in preference order ($webFirst)',
-    async ({ inputs, webFirst, category }) => {
+    async ({ inputs, webFirst, category, request }) => {
       const scopedTarget = await insert(
         `INSERT INTO targets (value,"workspaceId",type) VALUES ($1,$2,'DOMAIN')`,
         ['planned.example.com', owner.workspace.id],
@@ -547,6 +553,7 @@ describe('Job input foundation (e2e)', () => {
             .getRepository(Tool)
             .findOneByOrFail({ id: scopedTool }),
           targetIds: [scopedTarget],
+          input: request,
           workspaceId: owner.workspace.id,
           jobHistory: await app.dataSource
             .getRepository(JobHistory)
