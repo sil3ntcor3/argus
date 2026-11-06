@@ -15,7 +15,8 @@ without a binding retain NULL provenance; nothing backfills older runs again.
 The IDs remain private to persistence and excluded from default ORM selections.
 Existing `/api/asset-group` routes, responses, permissions, schedule keys, events
 and Groups UI remain in place. No migration, dependency or API regeneration is
-needed. Updating project/finding links and counts is a separate batch.
+needed. [Initial project/finding links](project-finding-links.md) are recorded
+during ingestion; refreshing repeat sightings and counts remains separate.
 
 ## Validation and rollback
 

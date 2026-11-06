@@ -39,6 +39,7 @@ describe('DataAdapterService', () => {
       connect: jest.fn(),
       startTransaction: jest.fn(),
       manager: {
+        query: jest.fn().mockResolvedValue([]),
         createQueryBuilder: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
@@ -1471,6 +1472,18 @@ describe('DataAdapterService', () => {
   });
 
   describe('vulnerabilities', () => {
+    it('propagates a provenance write failure before publishing a finding event', async () => {
+      const failure = new Error('provenance write failed');
+      mockDataSource.transaction.mockImplementation(async (callback: (manager: unknown) => Promise<unknown>) => callback(mockQueryRunner.manager));
+      mockQueryRunner.manager.execute.mockResolvedValue({ raw: [{ id: crypto.randomUUID() }] });
+      mockQueryRunner.manager.query.mockRejectedValueOnce(failure);
+      await expect(service.vulnerabilities({
+        data: [{ name: 'Argus provenance failure', severity: Severity.HIGH }] as Vulnerability[],
+        job: { ...mockJob, id: crypto.randomUUID() },
+      })).rejects.toThrow(failure);
+      expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+    });
+
     const mockJob = {
       asset: {
         id: 'asset-id',
