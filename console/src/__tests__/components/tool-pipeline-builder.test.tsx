@@ -109,6 +109,63 @@ describe('ToolPipelineBuilder stages', () => {
   });
 });
 
+describe('ToolPipelineBuilder input preferences', () => {
+  const scanner = { ...tool, name: 'nuclei', categories: [{ name: 'vulnerabilities', targetTypes: [], inputs: ['host', 'web'], produces: ['vulnerability'] }] } as unknown as Tool;
+  const entry: PipelineToolEntry = { toolId: tool.id, jobId: 'scan', stage: 2, input: ['web', 'host'], config: { severity: 'high' } };
+
+  it('describes the complete ordered custom preference and all outputs', async () => {
+    const { user } = renderWithProviders(<ToolPipelineBuilder tools={[scanner]} value={[entry]} onChange={vi.fn()} />);
+    await user.click(await screen.findByRole('button', { name: 'Configure nuclei' }));
+    expect(await screen.findByRole('combobox', { name: 'Input preference' })).toHaveTextContent('Custom: web services, else hosts');
+    expect(screen.getByText('Takes web services, else hosts')).toBeVisible();
+    expect(screen.getByText('Finds vulnerabilities')).toBeVisible();
+  });
+
+  it.each([
+    ['Only web services', ['web']], ['Default: hosts, else web services', undefined],
+  ])('selects %s without losing other fields', async (label, input) => {
+    const onChange = vi.fn();
+    const { user } = renderWithProviders(<ToolPipelineBuilder tools={[scanner]} value={[entry]} onChange={onChange} />);
+    await user.click(await screen.findByRole('button', { name: 'Configure nuclei' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Input preference' }));
+    await user.click(await screen.findByRole('option', { name: label as string, exact: true }));
+    expect(onChange).toHaveBeenCalledWith([{ ...entry, input }]);
+  });
+
+  it.each([1, 2, 3])('uses outputs only from strictly earlier stages (probe stage %s)', async (stage) => {
+    const probe = { id: 'probe', name: 'httpx', categories: [{ name: 'http_probe', inputs: ['service'], produces: ['web'] }] } as unknown as Tool;
+    const { user } = renderWithProviders(<ToolPipelineBuilder tools={[scanner, probe]} value={[entry, { toolId: 'probe', stage }]} onChange={vi.fn()} />);
+    await user.click(await screen.findByRole('button', { name: 'Configure nuclei' }));
+    await screen.findByText('Inline config');
+    const hint = screen.queryByText(/No earlier step finds web services/);
+    if (stage < 2) expect(hint).toBeNull();
+    else expect(hint).toBeVisible();
+  });
+
+  it.each([
+    { input: ['web'], expected: undefined }, { input: ['host'], expected: ['host'] },
+  ])('changes category while retaining only compatible input $input', async ({ input, expected }) => {
+    const multi = { ...scanner, categories: [...(scanner.categories ?? []), { name: 'ports_scanner', targetTypes: [], inputs: ['host'], produces: ['service'] }] } as unknown as Tool;
+    const onChange = vi.fn();
+    const { user } = renderWithProviders(<ToolPipelineBuilder tools={[multi]} value={[{ ...entry, category: 'vulnerabilities', input: input as PipelineToolEntry['input'] }]} onChange={onChange} />);
+    await user.click(await screen.findByRole('button', { name: 'Configure nuclei' }));
+    await user.click(await screen.findByRole('combobox', { name: 'Category' }));
+    await user.click(await screen.findByRole('option', { name: 'Ports Scanner' }));
+    expect(onChange).toHaveBeenCalledWith([{ ...entry, category: 'ports_scanner', input: expected }]);
+  });
+
+  it.each([
+    { categories: undefined, expected: 'Finds not declared' },
+    { categories: [{ name: 'screenshot', targetTypes: [], inputs: ['web'], produces: [] }], expected: 'Finds none' },
+  ])('distinguishes output metadata: $expected', async ({ categories, expected }) => {
+    const screenshot = { ...scanner, categories } as unknown as Tool;
+    const { user } = renderWithProviders(<ToolPipelineBuilder tools={[screenshot]} value={[{ toolId: tool.id }]} onChange={vi.fn()} />);
+    await user.click(await screen.findByRole('button', { name: 'Configure nuclei' }));
+    expect(await screen.findByText(expected)).toBeVisible();
+    expect(screen.queryByRole('combobox', { name: 'Input preference' })).toBeNull();
+  });
+});
+
 describe('ToolPipelineBuilder — category picker', () => {
   const nmap = {
     id: 'tool-nmap',
