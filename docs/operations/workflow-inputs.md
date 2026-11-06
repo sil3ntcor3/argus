@@ -53,6 +53,16 @@ offline CLI, canonical-precedence and atomic-failure regression checks.
 
 ## Verification
 
+`StepScopeLoader` now provides the planner's data: enabled assets filtered by
+workspace, targets, asset IDs and supported target types; services can also be
+narrowed by ID. Web inputs use each service's latest successful HTTP response
+scheme. URL requests are rejected until eligible, bounded URL loading follows
+in a separate batch. It loads only
+the kinds requested and returns no assets when no target type is allowed.
+This preparatory loader is not yet wired into job creation. Run
+`task api:test:one SPEC=src/modules/jobs-registry/step-scope.loader.spec.ts`
+for its query boundaries and optional loading regression checks.
+
 Host-wide URL-discovery jobs now retain results by assigning each URL to the
 asset's service on that URL's port. When no port matches, capture falls back to
 443, then 80, then the lowest known port. Explicit service jobs keep their
