@@ -14,8 +14,9 @@ membership report. Attachment errors propagate to the existing retry/DLQ path.
 Publishing reports uses the existing best-effort bridge; it is not a durable
 outbox. A Redis outage after the membership commit can lose the report. The
 consumer does not subscribe to its project output, preventing a feedback loop.
-Project event-triggered runs and scan/integration discovery producers follow in
-separate upstream batches. Existing user action and legacy group events remain.
+[Scan/integration refresh ingest](asset-discovery-events.md) now produces these
+batches. Initial target assets and project event-triggered runs follow separately.
+Existing user action and legacy group events remain.
 
 The small `ProjectScopeModule` shares the discovery provider without importing
 the project CRUD/workflow graph into the global bridge. No schema changes.

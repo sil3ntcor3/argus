@@ -468,6 +468,104 @@ describe('DataAdapterService', () => {
       });
     }
 
+    describe('committed discovery batches', () => {
+      const run = '11111111-1111-4111-8111-111111111111';
+      const batch = [
+        { value: 'old.argus.test', dnsRecords: {} },
+        { value: 'new.argus.test', dnsRecords: {} },
+      ];
+      const rows = [
+        { id: 'old-id', value: batch[0].value },
+        { id: 'new-id', value: batch[1].value },
+      ];
+      const seed = (existing: string[] = [batch[0].value]) => {
+        mockWorkspaceConfigs();
+        mockQueryRunner.manager.query.mockResolvedValueOnce(
+          existing.map((value) => ({ value })),
+        );
+        mockQueryRunner.manager.getRawMany.mockResolvedValue(rows);
+        mockQueryRunner.manager.execute.mockResolvedValue({
+          identifiers: rows.map((row) => ({ id: row.id })),
+          generatedMaps: [],
+          raw: [],
+        });
+      };
+      it('publishes one batch of new IDs after commit while retaining refresh counts and run provenance', async () => {
+        seed();
+        const count = await service.upsertAssetsByTargetId(
+          targetId,
+          [...batch, batch[1]],
+          undefined,
+          { replaceDnsRecords: true, jobHistoryId: run },
+        );
+        expect(count).toBe(2);
+        expect(mockEventBridge.publishSafely).toHaveBeenCalledTimes(1);
+        expect(mockEventBridge.publishSafely).toHaveBeenCalledWith(
+          EVENT_CATALOG.asset.discovered,
+          {
+            workspaceId: 'workspace-id',
+            outcome: 'success',
+            resourceType: 'asset',
+            payload: { targetId, assetIds: ['new-id'], jobHistoryId: run },
+          },
+        );
+        expect(
+          mockQueryRunner.commitTransaction.mock.invocationCallOrder[0],
+        ).toBeLessThan(mockEventBridge.publishSafely.mock.invocationCallOrder[0]);
+      });
+      it('omits absent run provenance and skips an inserted value whose ID cannot be resolved', async () => {
+        seed([]);
+        mockQueryRunner.manager.getRawMany.mockResolvedValue([rows[1]]);
+        await service.upsertAssetsByTargetId(targetId, batch);
+        expect(mockEventBridge.publishSafely).toHaveBeenCalledTimes(1);
+        expect(mockEventBridge.publishSafely.mock.calls[0][1].payload).toEqual({
+          targetId,
+          assetIds: ['new-id'],
+        });
+      });
+      it('does not rediscover rows returned by a DNS refresh', async () => {
+        seed(batch.map((row) => row.value));
+        expect(
+          await service.upsertAssetsByTargetId(targetId, batch, undefined, {
+            replaceDnsRecords: true,
+          }),
+        ).toBe(2);
+        expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+      });
+      it('skips the existing-value lookup and publication for an empty batch', async () => {
+        mockWorkspaceConfigs();
+        mockQueryRunner.manager.execute.mockResolvedValue({
+          identifiers: [],
+          generatedMaps: [],
+          raw: [],
+        });
+        expect(await service.upsertAssetsByTargetId(targetId, [])).toBe(0);
+        expect(mockQueryRunner.manager.query).not.toHaveBeenCalled();
+        expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+      });
+      it.each(['write', 'commit'])(
+        'does not publish when the transaction fails at %s',
+        async (phase) => {
+          seed();
+          const failure = new Error('injected ingest failure');
+          if (phase === 'write')
+            mockQueryRunner.manager.execute.mockRejectedValue(failure);
+          else mockQueryRunner.commitTransaction.mockRejectedValue(failure);
+          await expect(
+            service.upsertAssetsByTargetId(targetId, batch),
+          ).rejects.toBe(failure);
+          expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+          expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+        },
+      );
+      it('does not emit an unattributable discovery when workspace resolution is absent', async () => {
+        seed();
+        mockWorkspacesService.getWorkspaceIdByTargetId.mockResolvedValue(undefined);
+        await service.upsertAssetsByTargetId(targetId, batch);
+        expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+      });
+    });
+
     it('should dedupe by value and return the inserted count (primary refresh skipped when apex absent)', async () => {
       const mockInsertResult = {
         identifiers: [{ id: 'i1' }, { id: 'i2' }],

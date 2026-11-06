@@ -1,8 +1,13 @@
 import type { App } from 'supertest/types';
 import type { DataSource } from 'typeorm';
+import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { AssetsService } from '../src/modules/assets/assets.service';
 import { DataAdapterService } from '../src/modules/data-adapter/data-adapter.service';
+import { EventBridgeService } from '../src/modules/event-bridge/publishing/event-bridge.service';
+import { EVENT_CATALOG } from '../src/modules/event-bridge/contracts/event-catalog';
+import type { AssetDiscoveredPayload } from '../src/modules/event-bridge/contracts/event-payloads';
+import type { EventEnvelopeData } from '../src/modules/event-bridge/contracts/event-envelope';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
 
@@ -133,6 +138,93 @@ describe('Asset facets (e2e)', () => {
 
     expect(await dnsRows(subB)).toEqual(['A 192.0.2.21']);
     expect(await dnsIps(subB)).toEqual(['192.0.2.21']);
+  });
+
+  it('publishes only new discovery IDs after asset and DNS facets are visible outside the transaction', async () => {
+    const value = randomUUID() + '.' + domain;
+    let observed = false;
+    const publish = jest
+      .spyOn(app.app.get(EventBridgeService), 'publishSafely')
+      .mockImplementation(async (name, raw) => {
+        if (name === EVENT_CATALOG.asset.discovered) {
+          const data = raw as EventEnvelopeData,
+            payload = data.payload as AssetDiscoveredPayload;
+          expect(data.workspaceId).toBe(workspaceId);
+          expect(payload).toEqual({ targetId, assetIds: [await assetId(value)] });
+          expect(await dnsRows(value)).toEqual(['A 192.0.2.40']);
+          observed = true;
+        }
+        return '1-0';
+      });
+    try {
+      expect(
+        await adapter.upsertAssetsByTargetId(targetId, [
+          { value: subA, dnsRecords: {} },
+          { value, dnsRecords: { A: ['192.0.2.40'] } },
+          { value, dnsRecords: { A: ['192.0.2.40'] } },
+        ]),
+      ).toBe(1);
+      expect(observed).toBe(true);
+      expect(publish).toHaveBeenCalledTimes(1);
+      publish.mockClear();
+      expect(
+        await adapter.upsertAssetsByTargetId(targetId, [
+          { value, dnsRecords: {} },
+        ]),
+      ).toBe(0);
+      expect(publish).not.toHaveBeenCalled();
+    } finally {
+      publish.mockRestore();
+    }
+  });
+
+  it('keeps DNS refresh counts and enablement while reporting only newly created refresh rows', async () => {
+    const old = randomUUID() + '.' + domain,
+      fresh = randomUUID() + '.' + domain;
+    await dataSource.query(
+      'INSERT INTO assets (value,"targetId","isEnabled","dnsRecords") VALUES ($1,$2,false,$3)',
+      [old, targetId, JSON.stringify({ A: ['192.0.2.50'] })],
+    );
+    const publish = jest
+      .spyOn(app.app.get(EventBridgeService), 'publishSafely')
+      .mockResolvedValue('1-0');
+    const batch = [
+      { value: old, dnsRecords: { A: ['192.0.2.51'] } },
+      { value: fresh, dnsRecords: { A: ['192.0.2.52'] } },
+    ];
+    try {
+      expect(
+        await adapter.upsertAssetsByTargetId(targetId, batch, undefined, {
+          replaceDnsRecords: true,
+        }),
+      ).toBe(2);
+      expect(publish).toHaveBeenCalledTimes(1);
+      expect(publish).toHaveBeenCalledWith(
+        EVENT_CATALOG.asset.discovered,
+        expect.objectContaining({
+          workspaceId,
+          payload: { targetId, assetIds: [await assetId(fresh)] },
+        }),
+      );
+      expect(await dnsRows(old)).toEqual(['A 192.0.2.51']);
+      expect(
+        (
+          await dataSource.query<{ isEnabled: boolean }[]>(
+            'SELECT "isEnabled" FROM assets WHERE id=$1',
+            [await assetId(old)],
+          )
+        )[0].isEnabled,
+      ).toBe(false);
+      publish.mockClear();
+      expect(
+        await adapter.upsertAssetsByTargetId(targetId, batch, undefined, {
+          replaceDnsRecords: true,
+        }),
+      ).toBe(2);
+      expect(publish).not.toHaveBeenCalled();
+    } finally {
+      publish.mockRestore();
+    }
   });
 
   describe('with an http-probed service', () => {
