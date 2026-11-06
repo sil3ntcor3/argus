@@ -359,3 +359,8 @@ export enum ProjectScopeRuleType {
   CIDR = 'cidr',
   ASSET = 'asset',
 }
+
+export enum ProjectAssetSource {
+  MANUAL = 'manual',
+  RULE = 'rule',
+}
