@@ -4499,6 +4499,12 @@ export type AssetGroupToolInput = {
   /** Category to run the tool in (default: its first) */
   category?: ToolCategory;
   input?: DataKind[];
+  /**
+   * Pipeline stage. Tools in one stage run in parallel; later stages wait. Default 1.
+   * @minimum 1
+   * @maximum 20
+   */
+  stage?: number;
 };
 
 export type CreateAssetGroupDto = {

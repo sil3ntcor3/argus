@@ -381,6 +381,27 @@ describe('AssetGroupService', () => {
       },
     );
 
+    it('builds stage barriers without losing input or profile references', async () => {
+      mockManager.find.mockResolvedValue([
+        { id: 'tool-b', name: 'nuclei', categories: [{ name: ToolCategory.VULNERABILITIES, targetTypes: [], inputs: [DataKind.WEB] }] },
+        { id: 'tool-a', name: 'httpx' },
+      ]);
+      mockWorkflowRepo.create.mockImplementation((data) => data);
+      mockWorkflowRepo.save.mockResolvedValue({ id: 'workflow-1' });
+      await service.create({
+        name: 'Stages', schedule: 'disabled', tools: [
+          { toolId: 'tool-a' },
+          { toolId: 'tool-b', stage: 3, input: [DataKind.WEB], configProfileId: 'profile-1' },
+        ],
+      }, workspaceId);
+      expect(mockWorkflowRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+        content: expect.objectContaining({ jobs: {
+          httpx: { run: 'httpx' },
+          nuclei: { run: 'nuclei', input: [DataKind.WEB], configProfileId: 'profile-1', needs: ['httpx'] },
+        } }),
+      }));
+    });
+
     it('rejects unsupported input and rolls back the new group before saving a workflow', async () => {
       mockAssetGroupRepo.findOne
         .mockResolvedValueOnce(undefined)

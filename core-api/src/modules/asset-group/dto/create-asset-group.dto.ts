@@ -8,11 +8,14 @@ import {
   IsArray,
   IsEnum,
   IsIn,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { IsCronSchedule } from './cron-schedule.validator';
@@ -57,6 +60,16 @@ export class AssetGroupToolInput {
   @IsArray()
   @IsIn(INPUT_KINDS, { each: true })
   input?: DataKind[];
+
+  @ApiProperty({
+    required: false, minimum: 1, maximum: 20,
+    description: 'Pipeline stage. Tools in one stage run in parallel; later stages wait. Default 1.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  stage?: number;
 }
 
 export class CreateAssetGroupDto {
