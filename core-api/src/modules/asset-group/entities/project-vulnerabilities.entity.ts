@@ -16,8 +16,8 @@ import { AssetGroup } from './asset-groups.entity';
  * Which projects reported a vulnerability. A vulnerability row is shared by
  * the whole workspace (its fingerprint is name + asset + tool) while an asset
  * can sit in several projects, so the link lives here: one row per
- * (project, vulnerability). Ingestion records the initial link; repeat
- * sighting updates are ported separately.
+ * (project, vulnerability). Private run observations deduplicate callbacks
+ * before ingestion updates the aggregate sightings.
  */
 @Entity('project_vulnerabilities')
 @Unique('UQ_pv_projectId_vulnerabilityId', ['projectId', 'vulnerabilityId'])
@@ -61,7 +61,7 @@ export class ProjectVulnerability extends BaseEntity {
   @Column({ type: 'timestamptz', default: () => 'now()' })
   lastSeenAt: Date;
 
-  /** Recorded run sightings; repeat-run tracking is ported separately. */
+  /** Distinct recorded runs, including retained historical sightings. */
   @Column({ type: 'int', default: 1 })
   timesSeen: number;
 }
