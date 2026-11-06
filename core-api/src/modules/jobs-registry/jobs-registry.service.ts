@@ -37,7 +37,7 @@ import {
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
-import { AssetService } from '../assets/entities/asset-services.entity';
+import type { AssetService } from '../assets/entities/asset-services.entity';
 import type { Asset } from '../assets/entities/assets.entity';
 import type { TargetType } from '@/common/enums/enum';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
@@ -621,10 +621,7 @@ export class JobsRegistryService {
    * @param liveOnly when true, restrict to services with an http_responses
    *   row where failed = false (i.e. httpx confirmed live). Used by
    *   SCREENSHOT so jobs are not created for every open port naabu found.
-   *   NOTE: isErrorPage = false is NOT sufficient — a service with ZERO
-   *   http_responses rows also has isErrorPage = false (default), so the
-   *   EXISTS predicate on http_responses with failed = false is the
-   *   authoritative "httpx confirmed live" predicate.
+   *   The shared loader's web scope requires a successful HTTP response.
    * @param targetTypes only services whose asset's target has one of these types
    * @returns Promise<Array<AssetService>> list of filtered asset services
    */
@@ -636,53 +633,16 @@ export class JobsRegistryService {
     assetServiceIds: string[] | undefined,
     targetTypes: TargetType[],
   ): Promise<AssetService[]> {
-    const assetServicesQueryBuilder = this.dataSource
-      .getRepository(AssetService)
-      .createQueryBuilder('assetServices')
-      .innerJoinAndSelect('assetServices.asset', 'asset')
-      .innerJoin('asset.target', 'target')
-      .where('asset.isEnabled = true')
-      .andWhere('target.type IN (:...targetTypes)', { targetTypes });
-
-    if (liveOnly) {
-      // EXISTS semi-join: keeps the row set unmultiplied, so no DISTINCT is
-      // needed. DISTINCT over the asset join previously failed on
-      // asset.dnsRecords (PG `json` has no equality operator). The outer alias
-      // must stay double-quoted — unquoted assetServices folds to lowercase.
-      assetServicesQueryBuilder.andWhere(
-        'EXISTS (SELECT 1 FROM http_responses hr WHERE hr."assetServiceId" = "assetServices"."id" AND hr.failed = false)',
-      );
-    }
-
-    if (targetIds && targetIds.length > 0) {
-      assetServicesQueryBuilder.andWhere('asset.targetId IN (:...targetIds)', {
-        targetIds,
-      });
-    }
-
-    if (assetIds && assetIds.length > 0) {
-      assetServicesQueryBuilder.andWhere(
-        'assetServices.assetId IN (:...assetIds)',
-        {
-          assetIds,
-        },
-      );
-    }
-
-    if (assetServiceIds && assetServiceIds.length > 0) {
-      assetServicesQueryBuilder.andWhere(
-        'assetServices.id IN (:...assetServiceIds)',
-        { assetServiceIds },
-      );
-    }
-
-    if (workspaceId) {
-      assetServicesQueryBuilder.andWhere('target.workspaceId = :workspaceId', {
-        workspaceId,
-      });
-    }
-
-    return await assetServicesQueryBuilder.getMany();
+    const loaded = await this.stepScope.load(
+      [liveOnly ? DataKind.WEB : DataKind.SERVICE],
+      { targetIds, assetIds, workspaceId, assetServiceIds, targetTypes },
+    );
+    const webIds = new Set(
+      [...(loaded.scope.web?.values() ?? [])].flat().map((row) => row.id),
+    );
+    return [...loaded.services.values()]
+      .filter((row) => !liveOnly || webIds.has(row.id))
+      .map((row) => Object.assign(row, { asset: loaded.assets.get(row.assetId)! }));
   }
 
   /**
