@@ -45,6 +45,8 @@ import { ProjectRunReadService } from './project-run-read.service';
 import { ProjectFindingReadService } from './project-finding-read.service';
 import { ProjectFindingTimelineService } from './project-finding-timeline.service';
 import { ProjectFindingTimelineDto } from './dto/project-finding-timeline.dto';
+import { ProjectOverviewReadService } from './project-overview-read.service';
+import { ProjectOverviewDto } from './dto/project-overview.dto';
 import {
   GetProjectFindingsQueryDto,
   ProjectFindingsResponseDto,
@@ -89,6 +91,7 @@ export class ProjectsController {
     private readonly runRead: ProjectRunReadService,
     private readonly findingRead: ProjectFindingReadService,
     private readonly findingTimeline: ProjectFindingTimelineService,
+    private readonly overviewRead: ProjectOverviewReadService,
   ) {}
 
   @Doc({
@@ -327,6 +330,23 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ): Promise<ProjectFindingTimelineDto> {
     return this.findingTimeline.read(id, workspaceId, vulnerabilityId);
+  }
+
+  @ApiOperation({
+    summary: 'Project overview',
+    description:
+      'Project counts, weekly finding trends, run summaries and recent activity.',
+  })
+  @ApiHeader({ name: WORKSPACE_HEADER_NAME, description: 'Workspace ID' })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: ProjectOverviewDto })
+  @WorkspaceAccess('project.read')
+  @Get(':id/overview')
+  getOverview(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+  ): Promise<ProjectOverviewDto> {
+    return this.overviewRead.read(id, workspaceId);
   }
 
   @Doc({

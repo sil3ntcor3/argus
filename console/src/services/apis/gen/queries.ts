@@ -4931,6 +4931,163 @@ export type ProjectFindingTimelineDto = {
   runs: ProjectFindingTimelineRunDto[];
 };
 
+export type ProjectOverviewRunRefDtoJobRunType =
+  (typeof ProjectOverviewRunRefDtoJobRunType)[keyof typeof ProjectOverviewRunRefDtoJobRunType];
+
+export const ProjectOverviewRunRefDtoJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type ProjectOverviewRunRefDtoStatus =
+  (typeof ProjectOverviewRunRefDtoStatus)[keyof typeof ProjectOverviewRunRefDtoStatus];
+
+export const ProjectOverviewRunRefDtoStatus = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  skipped: 'skipped',
+} as const;
+
+export type ProjectOverviewRunRefDto = {
+  id: string;
+  createdAt: string;
+  workflowName: string;
+  jobRunType: ProjectOverviewRunRefDtoJobRunType;
+  status: ProjectOverviewRunRefDtoStatus;
+};
+
+export type ProjectOverviewWeekDto = {
+  /** @minimum 0 */
+  critical: number;
+  /** @minimum 0 */
+  high: number;
+  /** @minimum 0 */
+  medium: number;
+  /** @minimum 0 */
+  low: number;
+  /** @minimum 0 */
+  info: number;
+  /** Monday in UTC */
+  week: string;
+};
+
+export type ProjectOverviewActivityDtoKind =
+  (typeof ProjectOverviewActivityDtoKind)[keyof typeof ProjectOverviewActivityDtoKind];
+
+export const ProjectOverviewActivityDtoKind = {
+  run: 'run',
+  audit: 'audit',
+  dismissed: 'dismissed',
+} as const;
+
+export type ProjectOverviewActivityDtoChange =
+  (typeof ProjectOverviewActivityDtoChange)[keyof typeof ProjectOverviewActivityDtoChange];
+
+export const ProjectOverviewActivityDtoChange = {
+  settings: 'settings',
+  assetsadded: 'assets.added',
+  assetsdiscovered: 'assets.discovered',
+  assetsremoved: 'assets.removed',
+  scope: 'scope',
+  workflowadded: 'workflow.added',
+  workflowupdated: 'workflow.updated',
+  workflowremoved: 'workflow.removed',
+  triggers: 'triggers',
+} as const;
+
+export type ProjectOverviewActivityDtoJobRunType =
+  (typeof ProjectOverviewActivityDtoJobRunType)[keyof typeof ProjectOverviewActivityDtoJobRunType];
+
+export const ProjectOverviewActivityDtoJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type ProjectOverviewActivityDtoRunStatus =
+  (typeof ProjectOverviewActivityDtoRunStatus)[keyof typeof ProjectOverviewActivityDtoRunStatus];
+
+export const ProjectOverviewActivityDtoRunStatus = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  skipped: 'skipped',
+} as const;
+
+export type ProjectOverviewActivityDtoReason =
+  (typeof ProjectOverviewActivityDtoReason)[keyof typeof ProjectOverviewActivityDtoReason];
+
+export const ProjectOverviewActivityDtoReason = {
+  false_positive: 'false_positive',
+  used_in_test: 'used_in_test',
+  wont_fix: 'wont_fix',
+} as const;
+
+export type ProjectOverviewActivityDto = {
+  kind: ProjectOverviewActivityDtoKind;
+  /** Run ID, audit action or dismissal */
+  ref: string;
+  at: string;
+  actorName?: string;
+  change?: ProjectOverviewActivityDtoChange;
+  workflowName?: string;
+  jobRunType?: ProjectOverviewActivityDtoJobRunType;
+  runStatus?: ProjectOverviewActivityDtoRunStatus;
+  reason?: ProjectOverviewActivityDtoReason;
+  /** @minimum 0 */
+  added?: number;
+  /** @minimum 0 */
+  removed?: number;
+  /** @minimum 1 */
+  count?: number;
+  /** @minimum 0 */
+  scopeSize?: number;
+  /** @minimum 0 */
+  newVulnerabilities?: number;
+  /** @minimum 0 */
+  recurringVulnerabilities?: number;
+};
+
+export type ProjectOverviewDtoLastRun = {
+  id: string;
+  createdAt: string;
+  workflowName: string;
+  jobRunType: 'manual' | 'scheduled';
+  status:
+    | 'pending'
+    | 'in_progress'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+    | 'skipped';
+} | null;
+
+export type ProjectOverviewDto = {
+  /** @minimum 0 */
+  totalAssets: number;
+  /** @minimum 0 */
+  newAssets: number;
+  /** @minimum 0 */
+  workflows: number;
+  openVulnerabilities: SeverityCountsDto;
+  /** @minimum 0 */
+  newVulnerabilities: number;
+  /** @maxItems 5 */
+  newVulnerabilityRuns: ProjectOverviewRunRefDto[];
+  lastRun: ProjectOverviewDtoLastRun;
+  /**
+   * @minItems 8
+   * @maxItems 8
+   */
+  weekly: ProjectOverviewWeekDto[];
+  /** @maxItems 15 */
+  activity: ProjectOverviewActivityDto[];
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -46105,6 +46262,176 @@ export function useProjectsControllerGetFindingTimeline<
   const queryOptions = getProjectsControllerGetFindingTimelineQueryOptions(
     id,
     vulnerabilityId,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Project counts, weekly finding trends, run summaries and recent activity.
+ * @summary Project overview
+ */
+export const projectsControllerGetOverview = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectOverviewDto>(
+    { url: `/api/projects/${id}/overview`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetOverviewQueryKey = (id: string) => {
+  return [`/api/projects/${id}/overview`] as const;
+};
+
+export const getProjectsControllerGetOverviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetOverviewQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetOverview>>
+  > = ({ signal }) => projectsControllerGetOverview(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetOverviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetOverview>>
+>;
+export type ProjectsControllerGetOverviewQueryError = unknown;
+
+export function useProjectsControllerGetOverview<
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetOverview>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetOverview<
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetOverview>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetOverview<
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project overview
+ */
+
+export function useProjectsControllerGetOverview<
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetOverviewQueryOptions(
+    id,
     options,
   );
 
