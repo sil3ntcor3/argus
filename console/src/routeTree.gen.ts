@@ -66,6 +66,7 @@ import { Route as AuthedAistudioConversationsConversationIdRouteImport } from '.
 import { Route as AuthedAssetsServicesIdRouteImport } from './routes/_authed/assets/services/$id'
 import { Route as AuthedJobsRunsIdRouteImport } from './routes/_authed/jobs/runs/$id'
 import { Route as AuthedProjectsIdIndexRouteImport } from './routes/_authed/projects/$id/index'
+import { Route as AuthedProjectsIdFindingsRouteImport } from './routes/_authed/projects/$id/findings'
 import { Route as AuthedProjectsIdRunsRouteImport } from './routes/_authed/projects/$id/runs'
 import { Route as AuthedProvidersIdIndexRouteImport } from './routes/_authed/providers/$id/index'
 import { Route as AuthedProvidersIdEditRouteImport } from './routes/_authed/providers/$id/edit'
@@ -367,6 +368,12 @@ const AuthedProjectsIdIndexRoute = AuthedProjectsIdIndexRouteImport.update({
   path: '/projects/$id/',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedProjectsIdFindingsRoute =
+  AuthedProjectsIdFindingsRouteImport.update({
+    id: '/projects/$id/findings',
+    path: '/projects/$id/findings',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedProjectsIdRunsRoute = AuthedProjectsIdRunsRouteImport.update({
   id: '/projects/$id/runs',
   path: '/projects/$id/runs',
@@ -459,6 +466,7 @@ export interface FileRoutesByFullPath {
   '/aistudio/conversations/$conversationId': typeof AuthedAistudioConversationsConversationIdRoute
   '/assets/services/$id': typeof AuthedAssetsServicesIdRoute
   '/jobs/runs/$id': typeof AuthedJobsRunsIdRoute
+  '/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
   '/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
@@ -522,6 +530,7 @@ export interface FileRoutesByTo {
   '/aistudio/conversations/$conversationId': typeof AuthedAistudioConversationsConversationIdRoute
   '/assets/services/$id': typeof AuthedAssetsServicesIdRoute
   '/jobs/runs/$id': typeof AuthedJobsRunsIdRoute
+  '/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
   '/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
@@ -589,6 +598,7 @@ export interface FileRoutesById {
   '/_authed/aistudio/conversations/$conversationId': typeof AuthedAistudioConversationsConversationIdRoute
   '/_authed/assets/services/$id': typeof AuthedAssetsServicesIdRoute
   '/_authed/jobs/runs/$id': typeof AuthedJobsRunsIdRoute
+  '/_authed/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/_authed/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
   '/_authed/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/_authed/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
@@ -656,6 +666,7 @@ export interface FileRouteTypes {
     | '/aistudio/conversations/$conversationId'
     | '/assets/services/$id'
     | '/jobs/runs/$id'
+    | '/projects/$id/findings'
     | '/projects/$id/runs'
     | '/providers/$id/edit'
     | '/targets/$id/$tab'
@@ -719,6 +730,7 @@ export interface FileRouteTypes {
     | '/aistudio/conversations/$conversationId'
     | '/assets/services/$id'
     | '/jobs/runs/$id'
+    | '/projects/$id/findings'
     | '/projects/$id/runs'
     | '/providers/$id/edit'
     | '/targets/$id/$tab'
@@ -785,6 +797,7 @@ export interface FileRouteTypes {
     | '/_authed/aistudio/conversations/$conversationId'
     | '/_authed/assets/services/$id'
     | '/_authed/jobs/runs/$id'
+    | '/_authed/projects/$id/findings'
     | '/_authed/projects/$id/runs'
     | '/_authed/providers/$id/edit'
     | '/_authed/targets/$id/$tab'
@@ -1209,6 +1222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedProjectsIdIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/projects/$id/findings': {
+      id: '/_authed/projects/$id/findings'
+      path: '/projects/$id/findings'
+      fullPath: '/projects/$id/findings'
+      preLoaderRoute: typeof AuthedProjectsIdFindingsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/projects/$id/runs': {
       id: '/_authed/projects/$id/runs'
       path: '/projects/$id/runs'
@@ -1297,6 +1317,7 @@ interface AuthedRouteChildren {
   AuthedAistudioConversationsConversationIdRoute: typeof AuthedAistudioConversationsConversationIdRoute
   AuthedAssetsServicesIdRoute: typeof AuthedAssetsServicesIdRoute
   AuthedJobsRunsIdRoute: typeof AuthedJobsRunsIdRoute
+  AuthedProjectsIdFindingsRoute: typeof AuthedProjectsIdFindingsRoute
   AuthedProjectsIdRunsRoute: typeof AuthedProjectsIdRunsRoute
   AuthedProvidersIdEditRoute: typeof AuthedProvidersIdEditRoute
   AuthedTargetsIdTabRoute: typeof AuthedTargetsIdTabRoute
@@ -1344,6 +1365,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
     AuthedAistudioConversationsConversationIdRoute,
   AuthedAssetsServicesIdRoute: AuthedAssetsServicesIdRoute,
   AuthedJobsRunsIdRoute: AuthedJobsRunsIdRoute,
+  AuthedProjectsIdFindingsRoute: AuthedProjectsIdFindingsRoute,
   AuthedProjectsIdRunsRoute: AuthedProjectsIdRunsRoute,
   AuthedProvidersIdEditRoute: AuthedProvidersIdEditRoute,
   AuthedTargetsIdTabRoute: AuthedTargetsIdTabRoute,

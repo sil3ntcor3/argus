@@ -180,6 +180,13 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
     content = (
       <div className="space-y-4">
         <OverviewSummary overview={overview.data} />
+        <Link
+          to="/projects/$id/findings"
+          params={{ id: projectId }}
+          className="inline-block text-sm font-medium text-primary hover:underline"
+        >
+          View open findings
+        </Link>
         <ProjectFindingTrends weeks={overview.data.weekly} />
         <ProjectOverviewRuns
           lastRun={overview.data.lastRun}
