@@ -187,7 +187,8 @@ export function CollapsibleDataTable<TData, TValue>({
                           header.column.columnDef.header,
                           header.getContext(),
                         )}
-                        {sortBy === header.column.id &&
+                        {header.column.getCanSort() &&
+                          sortBy === header.column.id &&
                           (sortOrder === 'ASC' ? (
                             <ArrowUpNarrowWide size={16} />
                           ) : (
