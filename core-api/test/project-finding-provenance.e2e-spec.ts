@@ -4,6 +4,7 @@ import type { EntityManager } from 'typeorm';
 import { Severity, ToolCategory } from '../src/common/enums/enum';
 import { ProjectFindingReadService } from '../src/modules/projects/project-finding-read.service';
 import { ProjectFindingTimelineService } from '../src/modules/projects/project-finding-timeline.service';
+import { ProjectOverviewCountsService } from '../src/modules/projects/project-overview-counts.service';
 import { VulnerabilityStatus } from '../src/modules/vulnerabilities/dto/get-vulnerability.dto';
 import {
   PROJECT_FINDING_PROVENANCE_SQL,
@@ -1075,6 +1076,158 @@ describe('Project finding provenance (e2e)', () => {
           .set(owner.headers)
           .expect(404);
       });
+    });
+  });
+
+  describe('private project overview counts', () => {
+    const asOf = new Date('2026-11-02T00:00:00.001Z');
+    let overview: string;
+    let empty: string;
+    const read = (id = overview, workspaceId = owner.workspace.id) =>
+      app.app.get(ProjectOverviewCountsService).read(id, workspaceId, asOf);
+
+    beforeAll(async () => {
+      const workspaceId = owner.workspace.id;
+      overview = await insert('projects', { name: randomUUID(), workspaceId });
+      empty = await insert('projects', { name: randomUUID(), workspaceId });
+      const name = `${randomUUID()}.argus.test`;
+      const foreignTarget = await insert('targets', {
+        value: name,
+        type: 'DOMAIN',
+        workspaceId: other.workspace.id,
+      });
+      const foreign = await insert('assets', {
+        value: name,
+        targetId: foreignTarget,
+      });
+      for (const [assetId, createdAt] of [
+        [asset, '2026-10-26 00:00:00.001'],
+        [unrelatedAsset, '2026-10-27 12:00:00'],
+        [foreign, '2026-10-28 12:00:00'],
+      ])
+        await insert('project_assets', {
+          projectId: overview,
+          assetId,
+          createdAt,
+        });
+      for (const workflowId of [workflow, foreignWorkflow])
+        await insert('project_workflows', { projectId: overview, workflowId });
+
+      const finding = async (
+        severity: Severity | 'unexpected',
+        firstSeenAt: string,
+        state: 'open' | 'dismissed' | 'archived' | 'foreign' = 'open',
+      ) => {
+        const vulnerabilityId = await insert('vulnerabilities', {
+          name: randomUUID(),
+          severity,
+          assetId: state === 'foreign' ? foreign : asset,
+          toolId: tool,
+          isArchived: state === 'archived',
+        });
+        if (state === 'dismissed')
+          await insert('vulnerability_dismissals', {
+            vulnerabilityId,
+            userId: owner.user.userId,
+            reason: 'used_in_test',
+          });
+        await insert('project_vulnerabilities', {
+          projectId: overview,
+          vulnerabilityId,
+          firstSeenAt,
+          lastSeenAt: firstSeenAt,
+          timesSeen: 1,
+        });
+      };
+      await finding(Severity.INFO, '2026-09-13T23:59:59.999Z');
+      await finding(Severity.MEDIUM, '2026-09-14T00:00:00.000Z');
+      await finding(Severity.LOW, '2026-10-26T00:00:00.001Z');
+      await finding('unexpected', '2026-10-31T12:00:00.000Z');
+      await finding(Severity.CRITICAL, '2026-11-01T23:59:59.999Z', 'dismissed');
+      await finding(Severity.MEDIUM, '2026-11-02T00:00:00.000Z', 'archived');
+      await finding(Severity.HIGH, '2026-11-02T00:00:00.001Z');
+      await finding(Severity.HIGH, '2026-11-02T00:00:00.002Z');
+      await finding(Severity.CRITICAL, '2026-11-02T00:00:00.000Z', 'foreign');
+    });
+
+    it('counts owned membership and open findings and uses an exact rolling cutoff', async () => {
+      expect(await read()).toMatchObject({
+        totalAssets: 2,
+        newAssets: 1,
+        workflows: 1,
+        openVulnerabilities: {
+          info: 2,
+          low: 1,
+          medium: 1,
+          high: 2,
+          critical: 0,
+        },
+        newVulnerabilities: 2,
+      });
+    });
+
+    it('fills eight UTC weeks and retains historical discoveries after archive or dismissal', async () => {
+      const service = app.app.get(ProjectOverviewCountsService);
+      const result = await app.dataSource.transaction(async (manager) => {
+        await manager.query("SET LOCAL TIME ZONE 'America/Chicago'");
+        return service.read(overview, owner.workspace.id, asOf, manager);
+      });
+      const blank = { info: 0, low: 0, medium: 0, high: 0, critical: 0 };
+      expect(result.weekly).toEqual([
+        { ...blank, week: '2026-09-14', medium: 1 },
+        { ...blank, week: '2026-09-21' },
+        { ...blank, week: '2026-09-28' },
+        { ...blank, week: '2026-10-05' },
+        { ...blank, week: '2026-10-12' },
+        { ...blank, week: '2026-10-19' },
+        { ...blank, week: '2026-10-26', low: 1, critical: 1 },
+        { ...blank, week: '2026-11-02', medium: 1, high: 1 },
+      ]);
+    });
+
+    it('counts membership saved by a database with a non-UTC session clock', async () => {
+      const service = app.app.get(ProjectOverviewCountsService);
+      await app.dataSource.transaction(async (manager) => {
+        await manager.query("SET LOCAL TIME ZONE 'Pacific/Kiritimati'");
+        await manager.query(
+          'INSERT INTO project_assets ("projectId", "assetId") VALUES ($1, $2)',
+          [empty, asset],
+        );
+        try {
+          const result = await service.read(
+            empty,
+            owner.workspace.id,
+            undefined,
+            manager,
+          );
+          expect(result).toMatchObject({ totalAssets: 1, newAssets: 1 });
+        } finally {
+          await manager.query(
+            'DELETE FROM project_assets WHERE "projectId" = $1 AND "assetId" = $2',
+            [empty, asset],
+          );
+        }
+      });
+    });
+
+    it('distinguishes empty owned projects from missing or foreign projects', async () => {
+      const result = await read(empty);
+      expect(result).toMatchObject({
+        totalAssets: 0,
+        newAssets: 0,
+        workflows: 0,
+        newVulnerabilities: 0,
+      });
+      expect(result.weekly).toHaveLength(8);
+      expect(
+        result.weekly.every(({ week: _week, ...counts }) =>
+          Object.values(counts).every((count) => count === 0),
+        ),
+      ).toBe(true);
+      await expect(read(overview, other.workspace.id)).rejects.toMatchObject({
+        status: 404,
+      });
+      await expect(read(randomUUID())).rejects.toMatchObject({ status: 404 });
     });
   });
 });
