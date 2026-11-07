@@ -15,7 +15,11 @@ tasks:
     env:
       NODE_ENV: 'production'
   install: pnpm install
-  lint: pnpm run lint
+  lint:
+    env:
+      NODE_OPTIONS: '--max-old-space-size=6144'
+    cmds:
+      - pnpm run lint
   # Regenerate the Go gRPC stubs for core-api/src/proto/*.proto into
   # worker/internal/gen/**. There is no Node-side `proto:generate` script (the old
   # ts-proto one was dropped with the Go worker rewrite), so delegate to the root
