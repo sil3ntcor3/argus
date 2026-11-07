@@ -42,6 +42,8 @@ import { ProjectScopeDto } from './dto/project-scope.dto';
 import { ReplaceScopeRulesDto, ScopeSyncResultDto } from './dto/project-scope-write.dto';
 import { ProjectScopeWriteService } from './project-scope-write.service';
 import { ProjectAssetsCommandService } from './project-assets-command.service';
+import { ProjectAssetReadService } from './project-asset-read.service';
+import { GetProjectAssetsQueryDto, ProjectAssetDto } from './dto/project-assets-read.dto';
 import {
   AddProjectAssetsDto,
   RemoveProjectAssetsDto,
@@ -60,6 +62,7 @@ export class ProjectsController {
     private readonly scopeWrite: ProjectScopeWriteService,
     private readonly assetCommands: ProjectAssetsCommandService,
     private readonly candidateAssets: AssetGroupAssetService,
+    private readonly assetRead: ProjectAssetReadService,
   ) {}
 
   @Doc({
@@ -200,6 +203,21 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.assetCommands.remove(id, workspaceId, dto.assetIds);
+  }
+
+  @Doc({
+    summary: 'Project assets',
+    response: { serialization: GetManyResponseDto(ProjectAssetDto) },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('project.read')
+  @Get(':id/assets')
+  getAssets(
+    @Param() { id }: IdQueryParamDto,
+    @Query() query: GetProjectAssetsQueryDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.assetRead.list(id, workspaceId, query);
   }
 
   @Doc({
