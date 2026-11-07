@@ -264,6 +264,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
           View all runs
         </Link>
         <ProjectOverviewActivity
+          projectId={projectId}
           events={overview.data.activity}
           canOpenRuns={canOpenRuns}
         />
