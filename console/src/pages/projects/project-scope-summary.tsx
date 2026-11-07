@@ -93,7 +93,13 @@ function ScopeRuleList({ rules }: { rules: ScopeRuleDto[] }) {
 }
 
 /** Shows the saved membership policy and rule evidence for the selected project. */
-export function ProjectScopeSummary({ projectId }: { projectId: string }) {
+export function ProjectScopeSummary({
+  projectId,
+  canEdit,
+}: {
+  projectId: string;
+  canEdit?: boolean;
+}) {
   const headingId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
   const { data, error, isError, isFetching, refetch } =
@@ -147,6 +153,8 @@ export function ProjectScopeSummary({ projectId }: { projectId: string }) {
           key={projectId}
           projectId={projectId}
           rules={data.rules}
+          autoAddAssets={data.autoAddAssets}
+          canEdit={canEdit}
         />
         {data.rules.length ? (
           <ScopeRuleList key={projectId} rules={data.rules} />
