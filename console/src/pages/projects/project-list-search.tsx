@@ -93,3 +93,8 @@ export function ProjectListSearch({
     </form>
   );
 }
+
+/** Escapes user text for the bound ILIKE pattern used by the two asset lists. */
+export function escapeProjectAssetSearch(term?: string) {
+  return term?.replace(/[\\%_]/g, '\\$&');
+}
