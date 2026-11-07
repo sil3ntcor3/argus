@@ -4910,6 +4910,27 @@ export type ProjectFindingsResponseDto = {
   severityCounts: SeverityCountsDto;
 };
 
+export type ProjectFindingTimelineRunDtoSighting =
+  (typeof ProjectFindingTimelineRunDtoSighting)[keyof typeof ProjectFindingTimelineRunDtoSighting];
+
+export const ProjectFindingTimelineRunDtoSighting = {
+  seen: 'seen',
+  missed: 'missed',
+  unknown: 'unknown',
+} as const;
+
+export type ProjectFindingTimelineRunDto = {
+  id: string;
+  createdAt: string;
+  workflowName: string;
+  sighting: ProjectFindingTimelineRunDtoSighting;
+};
+
+export type ProjectFindingTimelineDto = {
+  vulnerability: ProjectFindingDto;
+  runs: ProjectFindingTimelineRunDto[];
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -45887,6 +45908,203 @@ export function useProjectsControllerGetFindings<
   const queryOptions = getProjectsControllerGetFindingsQueryOptions(
     id,
     params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Project runs with confirmed, missed or unknown sightings for a finding.
+ * @summary Project finding timeline
+ */
+export const projectsControllerGetFindingTimeline = (
+  id: string,
+  vulnerabilityId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectFindingTimelineDto>(
+    {
+      url: `/api/projects/${id}/vulnerabilities/${vulnerabilityId}/timeline`,
+      method: 'GET',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerGetFindingTimelineQueryKey = (
+  id: string,
+  vulnerabilityId: string,
+) => {
+  return [
+    `/api/projects/${id}/vulnerabilities/${vulnerabilityId}/timeline`,
+  ] as const;
+};
+
+export const getProjectsControllerGetFindingTimelineQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetFindingTimelineQueryKey(id, vulnerabilityId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>
+  > = ({ signal }) =>
+    projectsControllerGetFindingTimeline(
+      id,
+      vulnerabilityId,
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      id !== null &&
+      id !== undefined &&
+      vulnerabilityId !== null &&
+      vulnerabilityId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetFindingTimelineQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>
+>;
+export type ProjectsControllerGetFindingTimelineQueryError = unknown;
+
+export function useProjectsControllerGetFindingTimeline<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingTimeline<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingTimeline<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project finding timeline
+ */
+
+export function useProjectsControllerGetFindingTimeline<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetFindingTimelineQueryOptions(
+    id,
+    vulnerabilityId,
     options,
   );
 

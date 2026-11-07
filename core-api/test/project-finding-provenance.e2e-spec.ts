@@ -934,17 +934,28 @@ describe('Project finding provenance (e2e)', () => {
         'UPDATE project_vulnerabilities SET "lastSeenJobHistoryId"=NULL WHERE id=$1',
         [timelineLink],
       );
-      const result = await read();
-      expect(result.vulnerability).toMatchObject({
-        id: findingId,
-        lastSeen: { runId: null },
-      });
-      expect(result.runs.find((row) => row.id === sameTime)?.sighting).toBe(
-        'unknown',
-      );
-      expect(result.runs.find((row) => row.id === missed)?.sighting).toBe(
-        'missed',
-      );
+      try {
+        const result = await read();
+        expect(result.vulnerability).toMatchObject({
+          id: findingId,
+          lastSeen: { runId: null },
+        });
+        expect(result.runs.find((row) => row.id === sameTime)?.sighting).toBe(
+          'unknown',
+        );
+        expect(result.runs.find((row) => row.id === missed)?.sighting).toBe(
+          'missed',
+        );
+      } finally {
+        await app.dataSource.query(
+          'UPDATE vulnerabilities SET "isArchived"=false WHERE id=$1',
+          [findingId],
+        );
+        await app.dataSource.query(
+          'UPDATE project_vulnerabilities SET "lastSeenJobHistoryId"=$1 WHERE id=$2',
+          [last, timelineLink],
+        );
+      }
     });
 
     it('rejects cross-workspace, unlinked and nonexistent findings', async () => {
@@ -960,6 +971,110 @@ describe('Project finding provenance (e2e)', () => {
       await expect(
         timeline().read(timelineProject, owner.workspace.id, randomUUID()),
       ).rejects.toMatchObject({ status: 404 });
+    });
+
+    describe('project finding timeline HTTP API', () => {
+      const path = (projectId = timelineProject, id = findingId) =>
+        `/api/projects/${projectId}/vulnerabilities/${id}/timeline`;
+
+      it('returns only safe run summaries and distinguishes the three sighting states', async () => {
+        const response = await request(app.server)
+          .get(path())
+          .set(owner.headers)
+          .expect(200);
+        expect(response.body).toMatchObject({
+          vulnerability: {
+            id: findingId,
+            firstSeen: { runId: first },
+            lastSeen: { runId: last },
+          },
+          runs: [
+            { id: first, sighting: 'seen' },
+            { id: unknown, sighting: 'unknown' },
+            { id: observed, sighting: 'seen' },
+            { id: last, sighting: 'seen' },
+            { id: sameTime, sighting: 'unknown' },
+            { id: missed, sighting: 'missed' },
+          ],
+        });
+        const { runs } = response.body as { runs: Record<string, unknown>[] };
+        expect(Object.keys(runs[0]).sort()).toEqual([
+          'createdAt',
+          'id',
+          'sighting',
+          'workflowName',
+        ]);
+        expect(typeof runs[0].createdAt).toBe('string');
+      });
+
+      it('retains history for an archived finding after losing a last-run reference', async () => {
+        await app.dataSource.query(
+          'UPDATE vulnerabilities SET "isArchived"=true WHERE id=$1',
+          [findingId],
+        );
+        await app.dataSource.query(
+          'UPDATE project_vulnerabilities SET "lastSeenJobHistoryId"=NULL WHERE id=$1',
+          [timelineLink],
+        );
+        try {
+          const response = await request(app.server)
+            .get(path())
+            .set(owner.headers)
+            .expect(200);
+          expect(response.body).toMatchObject({
+            vulnerability: {
+              id: findingId,
+              firstSeen: { runId: first },
+              lastSeen: { runId: null },
+            },
+            runs: [
+              { id: first, sighting: 'seen' },
+              { id: unknown, sighting: 'unknown' },
+              { id: observed, sighting: 'seen' },
+              { id: last, sighting: 'unknown' },
+              { id: sameTime, sighting: 'unknown' },
+              { id: missed, sighting: 'missed' },
+            ],
+          });
+        } finally {
+          await app.dataSource.query(
+            'UPDATE vulnerabilities SET "isArchived"=false WHERE id=$1',
+            [findingId],
+          );
+          await app.dataSource.query(
+            'UPDATE project_vulnerabilities SET "lastSeenJobHistoryId"=$1 WHERE id=$2',
+            [last, timelineLink],
+          );
+        }
+      });
+
+      it('requires valid IDs, authentication, and a finding in the caller’s project', async () => {
+        await request(app.server)
+          .get(path('invalid'))
+          .set(owner.headers)
+          .expect(400);
+        await request(app.server)
+          .get(path(timelineProject, 'invalid'))
+          .set(owner.headers)
+          .expect(400);
+        await request(app.server)
+          .get(path())
+          .set('X-Workspace-Id', owner.workspace.id)
+          .expect(401);
+        await request(app.server)
+          .get(path())
+          .set({ ...owner.headers, 'X-Workspace-Id': other.workspace.id })
+          .expect(403);
+        await request(app.server).get(path()).set(other.headers).expect(404);
+        await request(app.server)
+          .get(path(sibling))
+          .set(owner.headers)
+          .expect(404);
+        await request(app.server)
+          .get(path(timelineProject, randomUUID()))
+          .set(owner.headers)
+          .expect(404);
+      });
     });
   });
 });
