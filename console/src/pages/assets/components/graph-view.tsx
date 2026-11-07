@@ -33,6 +33,7 @@ import {
 } from '@/services/apis/gen/queries';
 import {
   applyForceLayout,
+  placeInFreeSpots,
   CLUSTER_COLORS,
   NODE_TYPE_COLORS,
   type LayoutInputNode,
@@ -47,6 +48,8 @@ import AssetDetailSheet from './asset-detail-sheet';
 import GraphDetailSheet from './graph-detail-sheet';
 
 dayjs.extend(relativeTime);
+
+const NODE_ORIGIN: [number, number] = [0.5, 0.5];
 
 const nodeTypes = {
   target: GraphNodeComponent,
@@ -463,20 +466,22 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
       }
     }
 
-    const rfNodes: Node[] = mergedNodes.map((node, index) => {
-      const previous = prevPositions.get(node.id);
-      const fresh = layoutPositionById.get(node.id);
+    const positionedNodes = placeInFreeSpots(
+      mergedNodes.map((node, index) => ({
+        ...node,
+        position:
+          serviceRingById.get(node.id) ??
+          layoutPositionById.get(node.id) ??
+          { x: 0, y: index * 24 },
+      })),
+      prevPositions,
+    );
+
+    const rfNodes: Node[] = positionedNodes.map((node, index) => {
       return {
         id: node.id,
         type: node.type,
-        position:
-          // The ring positions freshly-expanded services around their
-          // domain; once a node has been on canvas (or dragged) its own
-          // preserved position wins over the ring.
-          previous ??
-          serviceRingById.get(node.id) ??
-          fresh ??
-          { x: 0, y: index * 24 },
+        position: node.position,
         data: {
           ...node.data,
           clusterColor: colorById.get(node.id),
@@ -811,6 +816,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           nodes={displayNodes}
           edges={displayEdges}
           nodeTypes={nodeTypes}
+          nodeOrigin={NODE_ORIGIN}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => {
