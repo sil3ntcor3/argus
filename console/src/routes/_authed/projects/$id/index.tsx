@@ -7,6 +7,6 @@ function ProjectOverviewRoute() {
   return <ProjectOverviewPage projectId={id} />;
 }
 
-export const Route = createFileRoute('/_authed/projects/$id')({
+export const Route = createFileRoute('/_authed/projects/$id/')({
   component: ProjectOverviewRoute,
 });

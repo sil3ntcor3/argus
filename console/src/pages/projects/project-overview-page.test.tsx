@@ -14,6 +14,9 @@ vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.usePermission }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
   useWorkspaceState: mock.useWorkspaceState,
 }));
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children }: { children: string }) => <a href="/runs">{children}</a>,
+}));
 vi.mock(import('@/services/apis/gen/queries'), async (importOriginal) => ({
   ...(await importOriginal()),
   useProjectsControllerGetById: mock.useProject,

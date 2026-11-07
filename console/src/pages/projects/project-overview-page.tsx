@@ -8,6 +8,7 @@ import {
   useProjectsControllerGetById,
   useProjectsControllerGetOverview,
 } from '@/services/apis/gen/queries';
+import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { z } from 'zod';
@@ -185,6 +186,13 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
           discoveryRuns={overview.data.newVulnerabilityRuns}
           canOpenRuns={canOpenRuns}
         />
+        <Link
+          to="/projects/$id/runs"
+          params={{ id: projectId }}
+          className="inline-block text-sm font-medium text-primary hover:underline"
+        >
+          View all runs
+        </Link>
         <ProjectOverviewActivity
           events={overview.data.activity}
           canOpenRuns={canOpenRuns}
