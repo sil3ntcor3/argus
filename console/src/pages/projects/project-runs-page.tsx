@@ -14,7 +14,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
-import { z } from 'zod';
+import { projectRouteId } from './project-route-id';
 
 const pageSizes = [20, 50, 100] as const;
 
@@ -29,7 +29,6 @@ type RunsProps = RunsSearch & {
   onChange: (search: RunsSearch) => void;
 };
 
-const projectIdSchema = z.string().uuid();
 const startedAt = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -316,7 +315,7 @@ export function ProjectRunsPage(props: RunsProps) {
   const canRead =
     permission.hasPermission('project.read') ||
     permission.hasPermission('group.read');
-  const validProject = projectIdSchema.safeParse(props.projectId).success;
+  const validProject = projectRouteId.safeParse(props.projectId).success;
 
   let content: ReactNode;
   if (!state.selectedWorkspaceId)
