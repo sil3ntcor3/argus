@@ -5,6 +5,7 @@ import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
+import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
 import {
   Body,
   Controller,
@@ -20,6 +21,8 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AssetGroupService } from '../asset-group/asset-group.service';
+import { AssetGroupAssetService } from '../asset-group/asset-group-asset.service';
+import { Asset } from '../assets/entities/assets.entity';
 import { GetAllAssetGroupsQueryDto } from '../asset-group/dto/get-all-asset-groups-dto.dto';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
@@ -56,6 +59,7 @@ export class ProjectsController {
     private readonly scopeRead: ProjectScopeReadService,
     private readonly scopeWrite: ProjectScopeWriteService,
     private readonly assetCommands: ProjectAssetsCommandService,
+    private readonly candidateAssets: AssetGroupAssetService,
   ) {}
 
   @Doc({
@@ -196,6 +200,21 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.assetCommands.remove(id, workspaceId, dto.assetIds);
+  }
+
+  @Doc({
+    summary: 'Asset candidates',
+    response: { serialization: GetManyResponseDto(Asset) },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('project.read')
+  @Get(':id/assets/candidates')
+  getAssetCandidates(
+    @Param() { id }: IdQueryParamDto,
+    @Query() query: GetManyBaseQueryParams,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.candidateAssets.getAssetsNotInAssetGroup(id, query, workspaceId);
   }
 
   @Doc({
