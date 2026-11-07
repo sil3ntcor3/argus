@@ -31,7 +31,9 @@ import {
   useAssetsControllerGetAssetGraph,
   type AssetGraphResponseDto,
 } from '@/services/apis/gen/queries';
+import { applyClusterLayout } from './graph-cluster-layout';
 import {
+  applyDagreLayout,
   applyForceLayout,
   placeInFreeSpots,
   CLUSTER_COLORS,
@@ -50,6 +52,13 @@ import GraphDetailSheet from './graph-detail-sheet';
 dayjs.extend(relativeTime);
 
 const NODE_ORIGIN: [number, number] = [0.5, 0.5];
+const GRAPH_LAYOUTS = {
+  Cluster: applyClusterLayout,
+  Hierarchy: (input: Parameters<typeof applyDagreLayout>[0]) =>
+    applyDagreLayout(input, { rankdir: 'LR' }),
+  Organic: applyForceLayout,
+};
+type GraphLayout = keyof typeof GRAPH_LAYOUTS;
 
 const nodeTypes = {
   target: GraphNodeComponent,
@@ -157,6 +166,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [layoutLocked, setLayoutLocked] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<GraphLayout>('Cluster');
 
   // Domain nodes expand their child services on click: the per-asset
   // endpoint result is merged into the layout until toggled off again.
@@ -366,7 +376,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
       }
     }
 
-    // ── Layout: force-directed always. Positions are merged per node id:
+    // ── Layout: positions are merged per node id.
     // nodes already on canvas keep their position across polls (user
     // pan/zoom/drags survive refetches); only genuinely new nodes take the
     // freshly computed position. When the layout is locked, the engine is
@@ -384,7 +394,12 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
       !layoutLocked || hasNewNodes || forceRecomputeRef.current;
     let layoutResult: LayoutResult | null = null;
     if (shouldRunLayout) {
-      layoutResult = applyForceLayout({ nodes: mergedNodes, edges: inputEdges });
+      // Cluster the inventory. Expanded services use the position of
+      // their owning domain and stay clear of already placed nodes.
+      layoutResult =
+        layoutMode === 'Cluster'
+          ? GRAPH_LAYOUTS.Cluster({ nodes: inputNodes, edges: baseEdges }, prevPositions)
+          : GRAPH_LAYOUTS[layoutMode]({ nodes: mergedNodes, edges: inputEdges });
       forceRecomputeRef.current = false;
     }
     const layoutPositionById = new Map(
@@ -504,7 +519,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
     setNodes(rfNodes);
     setEdges(rfEdges);
-  }, [graphData, layoutLocked, openDetailForNode, expandedServices, setNodes, setEdges]);
+  }, [graphData, layoutLocked, layoutMode, openDetailForNode, expandedServices, setNodes, setEdges]);
 
   useEffect(() => {
     applyLayout();
@@ -512,10 +527,16 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
   // ── Viewport fitting ──────────────────────────────────────────────────
   // fitView runs on first data arrival and whenever the target filter
-  // changes — NOT on periodic refetches, so the user's pan/zoom survives the
-  // 30s polls. Explicit user actions (f key, r key, double-click zoom,
-  // Reset View) call fitView directly below.
+  // or layout mode changes. Pan and zoom survive the 30s polls.
+  // The f and r keys, double-click zoom and Reset View fit directly.
   const fitRequestedRef = useRef(true);
+  const changeLayout = (mode: GraphLayout) => {
+    if (mode === layoutMode) return;
+    preservePositionsRef.current = false;
+    forceRecomputeRef.current = true;
+    fitRequestedRef.current = true;
+    setLayoutMode(mode);
+  };
 
   useEffect(() => {
     fitRequestedRef.current = true;
@@ -531,9 +552,11 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
     if (!fitRequestedRef.current) return;
     fitRequestedRef.current = false;
     requestAnimationFrame(() => {
-      fitView({ padding: 0.25 });
+      requestAnimationFrame(() => {
+        void fitView({ padding: 0.25 });
+      });
     });
-  }, [graphData, fitView]);
+  }, [graphData, fitView, layoutMode]);
 
   // ── LOD: labels hidden / glows disabled below zoom 0.5. Only touches node
   // data flags — never re-runs layout. Guarded so the node array only
@@ -727,7 +750,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-start gap-2">
+      <div className="flex flex-wrap items-center justify-start gap-2">
         {!targetId && (
           <TargetFilter
             value={filterTargetId}
@@ -735,6 +758,23 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           />
         )}
         <GraphNodeSearch nodes={nodes} onSelect={handleNodeSearchSelect} />
+        <div
+          role="group"
+          aria-label="Graph layout"
+          className="inline-flex rounded-md border p-0.5"
+        >
+          {(Object.keys(GRAPH_LAYOUTS) as GraphLayout[]).map((mode) => (
+            <Button
+              key={mode}
+              size="sm"
+              variant={mode === layoutMode ? 'secondary' : 'ghost'}
+              aria-pressed={mode === layoutMode}
+              onClick={() => changeLayout(mode)}
+            >
+              {mode}
+            </Button>
+          ))}
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -846,7 +886,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           }}
           fitView
           fitViewOptions={{ padding: 0.25 }}
-          minZoom={0.1}
+          minZoom={layoutMode === 'Cluster' ? 0.02 : 0.1}
           maxZoom={4}
           proOptions={{ hideAttribution: true }}
           colorMode={resolvedTheme}

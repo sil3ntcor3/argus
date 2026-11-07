@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { applyClusterLayout } from '@/pages/assets/components/graph-cluster-layout';
 import {
   applyDagreLayout,
   applyForceLayout,
@@ -152,6 +153,89 @@ describe('applyForceLayout', () => {
     expect(result.nodes.map((n) => n.position)).toEqual(
       again.nodes.map((n) => n.position),
     );
+  });
+});
+
+describe('applyClusterLayout', () => {
+  it('groups domains around their target and positions a shared IP between families', () => {
+    const t1 = node('target|a', 'target');
+    const t2 = node('target|b', 'target');
+    const a1 = node('asset|a', 'asset');
+    const a2 = node('asset|b', 'asset');
+    const local = node('ip|192.0.2.1', 'ip');
+    const shared = node('ip|192.0.2.2', 'ip');
+    const input = {
+      nodes: [t1, t2, a1, a2, local, shared],
+      edges: [
+        edge(t1.id, a1.id, 'belongs_to'),
+        edge(t2.id, a2.id, 'belongs_to'),
+        edge(a1.id, local.id, 'resolves_to'),
+        edge(a1.id, shared.id, 'resolves_to'),
+        edge(a2.id, shared.id, 'resolves_to'),
+      ],
+    };
+    const layout = applyClusterLayout(input);
+    const byId = new Map(
+      layout.nodes.map(({ id, position }) => [id, position]),
+    );
+    const distance = (a: string, b: string) =>
+      Math.hypot(
+        byId.get(a)!.x - byId.get(b)!.x,
+        byId.get(a)!.y - byId.get(b)!.y,
+      );
+    expect(distance(t1.id, a1.id)).toBeLessThan(distance(t2.id, a1.id));
+    expect(distance(t2.id, a2.id)).toBeLessThan(distance(t1.id, a2.id));
+    expect(distance(t1.id, local.id)).toBeLessThan(distance(t2.id, local.id));
+    expect(distance(a1.id, shared.id)).toBeCloseTo(distance(a2.id, shared.id));
+    expect(layout.edges).toHaveLength(input.edges.length);
+    expect(applyClusterLayout(input)).toEqual(layout);
+    const anchor = { x: -2000, y: 0 };
+    const refreshed = applyClusterLayout(input, new Map([[t2.id, anchor]]));
+    const newDomain = refreshed.nodes.find(({ id }) => id === a2.id)!.position;
+    expect(
+      Math.hypot(newDomain.x - anchor.x, newDomain.y - anchor.y),
+    ).toBeLessThan(300);
+  });
+
+  it('keeps connected families near one another across a packing row', () => {
+    const targets = Array.from({ length: 100 }, (_, i) =>
+      node(`target|${String(i).padStart(2, '0')}`, 'target'),
+    );
+    const assets = targets.map((t) =>
+      node(t.id.replace('target|', 'asset|'), 'asset'),
+    );
+    const ip = node('ip|192.0.2.4', 'ip');
+    const { nodes, edges } = applyClusterLayout({
+      nodes: [...targets, ...assets, ip, ip],
+      edges: [
+        ...targets.map((t, i) => edge(t.id, assets[i].id, 'belongs_to')),
+        ...assets.slice(11, 13).map((a) => edge(a.id, ip.id, 'resolves_to')),
+        edge(assets[0].id, 'ip|missing', 'resolves_to'),
+      ],
+    });
+    const [a, b] = nodes.filter(
+      ({ id }) => id === targets[11].id || id === targets[12].id,
+    );
+    expect(
+      Math.hypot(a.position.x - b.position.x, a.position.y - b.position.y),
+    ).toBeLessThan(1250);
+    expect(nodes).toHaveLength(201);
+    expect(edges).toHaveLength(102);
+  });
+
+  it('keeps a maximum-size target family within a compact area', () => {
+    const target = node('target|t1', 'target');
+    const assets = Array.from({ length: 1999 }, (_, i) =>
+      node(`asset|${i}`, 'asset'),
+    );
+    const { nodes } = applyClusterLayout({
+      nodes: [target, ...assets],
+      edges: assets.map((a) => edge(target.id, a.id, 'belongs_to')),
+    });
+    const xs = nodes.map(({ position }) => position.x);
+    const ys = nodes.map(({ position }) => position.y);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(8000);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(5500);
   });
 });
 
