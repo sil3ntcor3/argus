@@ -11,13 +11,12 @@ import {
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
-import { z } from 'zod';
 import { ProjectFindingTrends } from './project-finding-trends';
 import { ProjectOverviewActivity } from './project-overview-activity';
 import { ProjectOverviewRuns } from './project-overview-runs';
+import { projectRouteId } from './project-route-id';
 
 const countFormat = new Intl.NumberFormat();
-const projectIdSchema = z.string().uuid();
 
 /** Shows a responsive placeholder while the project or permissions load. */
 function OverviewLoading() {
@@ -115,7 +114,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
     permission.hasPermission('project.read') ||
     permission.hasPermission('group.read');
   // The router decodes path parameters. Only pass project UUIDs to the API.
-  const validId = projectIdSchema.safeParse(projectId).success;
+  const validId = projectRouteId.safeParse(projectId).success;
   const enabled = Boolean(
     state.selectedWorkspaceId &&
     !permission.isLoading &&

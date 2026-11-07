@@ -12,6 +12,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
+import { projectRouteId } from './project-route-id';
 import { ProjectFindingTimeline } from './project-finding-timeline';
 import {
   type FindingFacets,
@@ -19,8 +20,6 @@ import {
   provenanceLabels,
 } from './project-finding-facets';
 
-const projectIdPattern =
-  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
 const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 type FindingsSearch = FindingFacets & { page: number };
 
@@ -222,7 +221,7 @@ export function ProjectFindingsPage(props: FindingsProps) {
   else if (permission.error)
     content = <p role="status">Unable to load project access</p>;
   else if (!canRead) content = <AccessDenied />;
-  else if (!projectIdPattern.test(props.projectId))
+  else if (!projectRouteId.safeParse(props.projectId).success)
     content = <p role="status">Project not found</p>;
   else
     content = (
