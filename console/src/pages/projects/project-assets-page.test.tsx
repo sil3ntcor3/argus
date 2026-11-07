@@ -106,9 +106,9 @@ describe('ProjectAssetsPage', () => {
       expect.anything(),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    expect(onChange).toHaveBeenLastCalledWith(3);
+    expect(onChange).toHaveBeenLastCalledWith({ page: 3 });
     fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
-    expect(onChange).toHaveBeenLastCalledWith(1);
+    expect(onChange).toHaveBeenLastCalledWith({ page: 1 });
   });
 
   it('gates the query before accessing project data', () => {
@@ -117,5 +117,41 @@ describe('ProjectAssetsPage', () => {
       <ProjectAssetsPage projectId={projectId} page={1} onChange={vi.fn()} />,
     );
     expect(mock.assets).not.toHaveBeenCalled();
+  });
+  it('composes source, page size, and literal search and resets the page on a change', () => {
+    const onChange = vi.fn();
+    render(
+      <ProjectAssetsPage
+        projectId={projectId}
+        page={2}
+        pageSize={50}
+        source="rule"
+        query="100%_"
+        onChange={onChange}
+      />,
+    );
+    expect(mock.assets).toHaveBeenCalledWith(
+      projectId,
+      {
+        page: 2,
+        limit: 50,
+        sortOrder: 'DESC',
+        source: 'rule',
+        search: '100\\%\\_',
+      },
+      expect.anything(),
+    );
+    fireEvent.change(
+      screen.getByRole('combobox', { name: 'Membership source' }),
+      {
+        target: { value: 'manual' },
+      },
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      pageSize: 50,
+      source: 'manual',
+      query: '100%_',
+    });
   });
 });
