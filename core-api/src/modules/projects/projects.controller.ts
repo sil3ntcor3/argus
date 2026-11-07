@@ -38,6 +38,11 @@ import { ProjectScopeReadService } from './project-scope-read.service';
 import { ProjectScopeDto } from './dto/project-scope.dto';
 import { ReplaceScopeRulesDto, ScopeSyncResultDto } from './dto/project-scope-write.dto';
 import { ProjectScopeWriteService } from './project-scope-write.service';
+import { ProjectAssetsCommandService } from './project-assets-command.service';
+import {
+  AddProjectAssetsDto,
+  ProjectAssetsChangedDto,
+} from './dto/project-assets-command.dto';
 
 /** Canonical CRUD shares the existing tenant-scoped services and persistence. */
 @ApiTags('Projects')
@@ -49,6 +54,7 @@ export class ProjectsController {
     private readonly scopePreview: ProjectScopePreviewService,
     private readonly scopeRead: ProjectScopeReadService,
     private readonly scopeWrite: ProjectScopeWriteService,
+    private readonly assetCommands: ProjectAssetsCommandService,
   ) {}
 
   @Doc({
@@ -139,6 +145,31 @@ export class ProjectsController {
   ): Promise<ScopeSyncResultDto> {
     const result = await this.scopeWrite.replaceRules(id, workspaceId, dto.rules, dto.autoAddAssets);
     return { added: result.added.length, removed: result.removed };
+  }
+
+  @Doc({
+    summary: 'Add assets to project',
+    response: {
+      serialization: ProjectAssetsChangedDto,
+      httpStatus: HttpStatus.CREATED,
+    },
+    request: { getWorkspaceId: true },
+  })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: (_body, result) => ({
+      change: ProjectChange.ASSETS_ADDED,
+      ...(result ? { added: (result as ProjectAssetsChangedDto).count } : {}),
+    }),
+  })
+  @WorkspaceAccess('project.write')
+  @Post(':id/assets')
+  addAssets(
+    @Param() { id }: IdQueryParamDto,
+    @Body() dto: AddProjectAssetsDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.assetCommands.add(id, workspaceId, dto.assetIds);
   }
 
   @Doc({

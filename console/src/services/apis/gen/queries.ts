@@ -4697,6 +4697,17 @@ export type ReplaceScopeRulesDto = {
   autoAddAssets?: boolean;
 };
 
+export type ProjectAssetsChangedDto = {
+  message: string;
+  /** @minimum 0 */
+  count: number;
+};
+
+export type AddProjectAssetsDto = {
+  /** Array of asset IDs to add */
+  assetIds: string[];
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -43663,6 +43674,100 @@ export const useProjectsControllerReplaceScopeRules = <
 > => {
   return useMutation(
     getProjectsControllerReplaceScopeRulesMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Add assets to project
+ */
+export const projectsControllerAddAssets = (
+  id: string,
+  addProjectAssetsDto: AddProjectAssetsDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectAssetsChangedDto>(
+    {
+      url: `/api/projects/${id}/assets`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: addProjectAssetsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerAddAssetsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+    TError,
+    { id: string; data: AddProjectAssetsDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+  TError,
+  { id: string; data: AddProjectAssetsDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerAddAssets'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+    { id: string; data: AddProjectAssetsDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerAddAssets(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerAddAssetsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerAddAssets>>
+>;
+export type ProjectsControllerAddAssetsMutationBody = AddProjectAssetsDto;
+export type ProjectsControllerAddAssetsMutationError = unknown;
+
+/**
+ * @summary Add assets to project
+ */
+export const useProjectsControllerAddAssets = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+      TError,
+      { id: string; data: AddProjectAssetsDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+  TError,
+  { id: string; data: AddProjectAssetsDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerAddAssetsMutationOptions(options),
     queryClient,
   );
 };
