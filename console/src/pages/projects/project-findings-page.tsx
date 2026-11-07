@@ -12,7 +12,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useRef } from 'react';
-import { ProjectFindingSearch } from './project-finding-search';
+import { ProjectListSearch } from './project-list-search';
 import { projectRouteId } from './project-route-id';
 import { ProjectWorkflowFilter } from './project-workflow-filter';
 import { ProjectFindingTimeline } from './project-finding-timeline';
@@ -201,7 +201,11 @@ function FindingList({
           </p>
         </div>
       )}
-      <ProjectFindingSearch
+      <ProjectListSearch
+        label="Search findings"
+        regionLabel="Project findings search"
+        placeholder="Finding, asset, or CVE"
+        maxLength={200}
         inputRef={searchInput}
         term={query}
         onChange={(next) => onChange({ ...filters, query: next, page: 1 })}

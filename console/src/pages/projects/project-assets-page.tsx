@@ -7,19 +7,28 @@ import { usePermission } from '@/hooks/usePermission';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
   type ProjectAssetDto,
+  ProjectAssetSource,
   useProjectsControllerGetAssets,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
+import { ProjectListSearch } from './project-list-search';
 import { projectRouteId } from './project-route-id';
 
 const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
-type AssetProps = {
+const pageSizes = [20, 50, 100] as const;
+const sources = Object.values(ProjectAssetSource);
+type AssetSearch = {
   page: number;
+  source?: ProjectAssetSource;
+  pageSize?: (typeof pageSizes)[number];
+  query?: string;
+};
+type AssetProps = AssetSearch & {
   projectId: string;
-  onChange: (page: number) => void;
+  onChange: (search: AssetSearch) => void;
 };
 type AssetLinks = { canOpenAssets: boolean; canOpenRuns: boolean };
 
@@ -109,14 +118,24 @@ function AssetCard({
 function AssetList({
   projectId,
   page,
+  pageSize,
+  source,
+  query,
   onChange,
   canOpenAssets,
   canOpenRuns,
 }: AssetProps & AssetLinks) {
+  const filters = { pageSize, source, query };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetAssets(
       projectId,
-      { page, limit: 20, sortOrder: 'DESC' },
+      {
+        page,
+        limit: pageSize ?? 20,
+        sortOrder: 'DESC',
+        source,
+        search: query?.replace(/[\\%_]/g, '\\$&'),
+      },
       { query: { retry: false } },
     );
   const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -168,6 +187,56 @@ function AssetList({
 
   return (
     <div className="space-y-4">
+      <ProjectListSearch
+        label="Search assets"
+        regionLabel="Project asset search"
+        placeholder="Asset value"
+        maxLength={512}
+        term={query}
+        onChange={(next) => onChange({ ...filters, page: 1, query: next })}
+      />
+      <div className="flex flex-wrap gap-3">
+        <label className="flex w-fit items-center gap-2 text-sm">
+          Membership source
+          <select
+            className="rounded-md border bg-background px-2 py-1"
+            value={source ?? ''}
+            onChange={({ target }) =>
+              onChange({
+                ...filters,
+                page: 1,
+                source: sources.find((value) => value === target.value),
+              })
+            }
+          >
+            <option value="">All sources</option>
+            <option value="manual">Manual</option>
+            <option value="rule">Scope rule</option>
+          </select>
+        </label>
+        <label className="flex w-fit items-center gap-2 text-sm">
+          Assets per page
+          <select
+            className="rounded-md border bg-background px-2 py-1"
+            value={pageSize ?? 20}
+            onChange={({ target }) =>
+              onChange({
+                ...filters,
+                page: 1,
+                pageSize: pageSizes.find(
+                  (value) => String(value) === target.value,
+                ),
+              })
+            }
+          >
+            {pageSizes.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {results}
       <nav
         aria-label="Project asset pages"
@@ -179,7 +248,10 @@ function AssetList({
           className="aria-disabled:opacity-50"
           onClick={() => {
             if (page > 1)
-              onChange(page > (data?.pageCount ?? page) ? 1 : page - 1);
+              onChange({
+                ...filters,
+                page: page > (data?.pageCount ?? page) ? 1 : page - 1,
+              });
           }}
         >
           Previous
@@ -190,7 +262,7 @@ function AssetList({
           aria-disabled={!data?.hasNextPage}
           className="aria-disabled:opacity-50"
           onClick={() => {
-            if (data?.hasNextPage) onChange(page + 1);
+            if (data?.hasNextPage) onChange({ ...filters, page: page + 1 });
           }}
         >
           Next

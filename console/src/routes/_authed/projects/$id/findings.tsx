@@ -1,5 +1,5 @@
 import { projectRouteId } from '@/pages/projects/project-route-id';
-import { projectFindingSearchTerm } from '@/pages/projects/project-finding-search';
+import { projectListQueryParam } from '@/pages/projects/project-list-search';
 import { ProjectFindingsPage } from '@/pages/projects/project-findings-page';
 import {
   ProjectsControllerGetFindingsProvenance,
@@ -13,16 +13,7 @@ const findingsSearch = z.object({
   page: z.number().int().min(1).max(10000000).optional().catch(undefined),
   run: projectRouteId.optional().catch(undefined),
   workflow: projectRouteId.optional().catch(undefined),
-  // Direct URL search values can be parsed as primitives by the router.
-  query: z
-    .preprocess(
-      (value) =>
-        typeof value === 'number' || typeof value === 'boolean'
-          ? String(value)
-          : value,
-      projectFindingSearchTerm.optional(),
-    )
-    .catch(undefined),
+  query: projectListQueryParam(200),
   status: z
     .nativeEnum(ProjectsControllerGetFindingsStatus)
     .optional()
