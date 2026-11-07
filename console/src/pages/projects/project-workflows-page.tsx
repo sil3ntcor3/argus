@@ -16,8 +16,9 @@ import {
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { projectRouteId } from './project-route-id';
+import { ProjectWorkflowDetachDialog } from './project-workflow-detach-dialog';
 import { projectWorkflowLabel } from './project-workflow-label';
 import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
@@ -34,6 +35,7 @@ function WorkflowCard({
   editWorkspaceId,
   runWorkspaceId,
   hasAssets,
+  focusAssignments,
 }: {
   binding: AssetGroupWorkflow;
   canOpenRuns: boolean;
@@ -41,6 +43,7 @@ function WorkflowCard({
   editWorkspaceId?: string;
   runWorkspaceId?: string;
   hasAssets: boolean;
+  focusAssignments: () => void;
 }) {
   const [sourceRequested, setSourceRequested] = useState(false);
   const name = projectWorkflowLabel(binding.workflow);
@@ -89,6 +92,16 @@ function WorkflowCard({
               workflowName={name}
               schedule={cron}
               workspaceId={editWorkspaceId}
+            />
+          )}
+          {editWorkspaceId && binding.workflow?.id && (
+            <ProjectWorkflowDetachDialog
+              projectId={projectId}
+              bindingId={binding.id}
+              workflowId={binding.workflow.id}
+              workflowName={name}
+              workspaceId={editWorkspaceId}
+              focusAssignments={focusAssignments}
             />
           )}
           {definition && (
@@ -140,6 +153,7 @@ function WorkflowList({
   editWorkspaceId?: string;
   runWorkspaceId?: string;
 }) {
+  const assignments = useRef<HTMLElement>(null);
   const project = useProjectsControllerGetById(projectId, {
     query: { retry: false },
   });
@@ -171,23 +185,29 @@ function WorkflowList({
       />
     );
   const bindings = project.data.assetGroupWorkflows ?? [];
-  if (!bindings.length)
-    return <p role="status">No workflows assigned to this project</p>;
+  const hasAssets = project.data.totalAssets > 0;
 
   return (
-    <ul aria-label="Project workflows" className="space-y-2">
-      {bindings.map((binding) => (
-        <WorkflowCard
-          key={binding.id}
-          binding={binding}
-          canOpenRuns={canOpenRuns}
-          projectId={projectId}
-          editWorkspaceId={editWorkspaceId}
-          runWorkspaceId={runWorkspaceId}
-          hasAssets={project.data.totalAssets > 0}
-        />
-      ))}
-    </ul>
+    <section ref={assignments} tabIndex={-1} aria-label="Workflow assignments">
+      {bindings.length ? (
+        <ul aria-label="Project workflows" className="space-y-2">
+          {bindings.map((binding) => (
+            <WorkflowCard
+              key={binding.id}
+              binding={binding}
+              canOpenRuns={canOpenRuns}
+              projectId={projectId}
+              editWorkspaceId={editWorkspaceId}
+              runWorkspaceId={runWorkspaceId}
+              hasAssets={hasAssets}
+              focusAssignments={() => assignments.current?.focus()}
+            />
+          ))}
+        </ul>
+      ) : (
+        <p role="status">No workflows assigned to this project</p>
+      )}
+    </section>
   );
 }
 
