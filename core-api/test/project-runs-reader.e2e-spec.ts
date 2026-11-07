@@ -1,0 +1,210 @@
+import { randomUUID } from 'node:crypto';
+import { JobRunType } from '../src/common/enums/enum';
+import { ProjectRunReadService } from '../src/modules/projects/project-run-read.service';
+import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
+import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
+
+describe('Private project run reader (e2e)', () => {
+  let app: TestApp, service: ProjectRunReadService;
+  let owner: Awaited<ReturnType<typeof createUserWithWorkspace>>,
+    other: typeof owner;
+  let project: string, sibling: string, binding: string, foreignBinding: string;
+  const runs: string[] = [];
+  // Fixture table/column names below are literals; bind every stored value.
+  const insert = async (table: string, values: Record<string, unknown>) => {
+    const columns = Object.keys(values).map((key) => `"${key}"`);
+    const placeholders = columns.map((_, i) => `$${i + 1}`);
+    const [{ id }] = await app.dataSource.query<{ id: string }[]>(
+      `INSERT INTO ${table} (${columns.join(',')}) VALUES (${placeholders.join(',')}) RETURNING id`,
+      Object.values(values),
+    );
+    return id;
+  };
+  const list = (
+    query: Partial<Parameters<ProjectRunReadService['list']>[2]> = {},
+  ) =>
+    service.list(project, owner.workspace.id, { page: 1, limit: 10, ...query });
+  beforeAll(async () => {
+    app = await createTestApp();
+    await app.app.listen(0);
+    service = app.app.get(ProjectRunReadService);
+    owner = await createUserWithWorkspace(app.server, 'run-reader-owner');
+    other = await createUserWithWorkspace(app.server, 'run-reader-other');
+    const workspaceId = owner.workspace.id;
+    const makeProject = () =>
+      insert('projects', { name: randomUUID(), workspaceId });
+    project = await makeProject();
+    sibling = await makeProject();
+    const makeWorkflow = (workspaceId: string) =>
+      insert('workflows', {
+        workspaceId,
+        name: 'Argus run reader',
+        filePath: randomUUID() + '.yaml',
+        content: {
+          name: 'Argus run reader',
+          jobs: {
+            probe: { run: 'httpx' },
+            scan: { run: 'nuclei', config: { token: 'secret' } },
+          },
+        },
+      });
+    const workflowId = await makeWorkflow(workspaceId);
+    const foreignWorkflow = await makeWorkflow(other.workspace.id);
+    binding = await insert('project_workflows', {
+      projectId: project,
+      workflowId,
+    });
+    foreignBinding = await insert('project_workflows', {
+      projectId: sibling,
+      workflowId,
+    });
+    const value = randomUUID() + '.argus.test';
+    const targetId = await insert('targets', {
+      value,
+      type: 'DOMAIN',
+      workspaceId,
+    });
+    const assetId = await insert('assets', { value, targetId });
+    const [{ id: toolId }] = await app.dataSource.query<{ id: string }[]>(
+      'SELECT id FROM tools WHERE name=$1 LIMIT 1',
+      ['nuclei'],
+    );
+    const run = (day: number, override: Record<string, unknown> = {}) =>
+      insert('job_histories', {
+        workflowId,
+        projectId: project,
+        projectWorkflowId: binding,
+        jobRunType: JobRunType.MANUAL,
+        createdAt: `2026-03-${String(day).padStart(2, '0')} 00:00:00`,
+        ...override,
+      });
+    runs.push(
+      await run(1, {
+        scope: { assetIds: [assetId], targetIds: [targetId] },
+        steps: {
+          probe: { status: 'done' },
+          scan: { status: 'skipped', reason: 'no-inputs' },
+          again: { status: 'failed' },
+        },
+      }),
+    );
+    runs.push(
+      await run(2, {
+        jobRunType: JobRunType.SCHEDULED,
+        scope: { targetIds: [targetId] },
+      }),
+    );
+    runs.push(
+      await run(2, { projectWorkflowId: null, scope: { assetIds: 'invalid' } }),
+    );
+    await run(8, { projectId: sibling, projectWorkflowId: foreignBinding });
+    await run(9, { projectId: null, projectWorkflowId: null });
+    await run(10, { workflowId: foreignWorkflow });
+    for (const [i, statuses] of [
+      ['completed'],
+      ['failed', 'cancelled'],
+      ['skipped'],
+    ].entries())
+      for (const status of statuses)
+        await insert('jobs', {
+          jobHistoryId: runs[i],
+          assetId,
+          toolId,
+          category: 'vulnerabilities',
+          status,
+        });
+  });
+  afterAll(async () => {
+    await cleanupE2eData(app.dataSource, {
+      workspaceIds: [owner?.workspace.id, other?.workspace.id].filter(Boolean),
+      userIds: [owner?.user.userId, other?.user.userId].filter(Boolean),
+    });
+    await closeTestApp(app.app);
+  });
+  it('isolates run history and keeps deterministic page order, including detached history', async () => {
+    const order = [...runs.slice(1).sort().reverse(), runs[0]];
+    for (const [i, id] of order.entries()) {
+      const page = await list({ limit: 1, page: i + 1 });
+      expect(page).toMatchObject({
+        total: 3,
+        page: i + 1,
+        limit: 1,
+        pageCount: 3,
+        hasNextPage: i < 2,
+      });
+      expect(page.data.map((row) => row.id)).toEqual([id]);
+    }
+    expect(await list({ limit: 1, page: 4 })).toMatchObject({
+      total: 3,
+      data: [],
+      hasNextPage: false,
+    });
+    expect(
+      (await list({ projectWorkflowId: binding })).data.map((row) => row.id),
+    ).toEqual([runs[1], runs[0]]);
+    await app.dataSource.query(
+      'UPDATE job_histories SET "projectWorkflowId"=$1 WHERE id=$2',
+      [foreignBinding, runs[2]],
+    );
+    try {
+      expect((await list({ projectWorkflowId: foreignBinding })).total).toBe(0);
+      expect(
+        (await list()).data.find((row) => row.id === runs[2])
+          ?.projectWorkflowId,
+      ).toBeNull();
+    } finally {
+      await app.dataSource.query(
+        'UPDATE job_histories SET "projectWorkflowId"=NULL WHERE id=$1',
+        [runs[2]],
+      );
+    }
+    expect(
+      (await list({ jobRunType: JobRunType.SCHEDULED })).data.map(
+        (row) => row.id,
+      ),
+    ).toEqual([runs[1]]);
+  });
+  it('derives status, scope and step summaries without exposing stored configs or IDs', async () => {
+    const result = await list();
+    const rows = runs.map((id) => result.data.find((row) => row.id === id));
+    expect(rows[0]).toMatchObject({
+      status: 'completed',
+      scopeSize: 1,
+      stepsTotal: 3,
+      stepsDone: 2,
+      stepsFailed: 1,
+    });
+    expect(rows[1]).toMatchObject({
+      status: 'cancelled',
+      scopeSize: 1,
+      stepsTotal: 2,
+      stepsDone: 0,
+      stepsFailed: 0,
+    });
+    expect(rows[2]).toMatchObject({
+      status: 'skipped',
+      scopeSize: 0,
+      projectWorkflowId: null,
+    });
+    for (const row of rows)
+      for (const key of ['scope', 'steps', 'workflowContent', 'projectId'])
+        expect(row).not.toHaveProperty(key);
+    expect(JSON.stringify(rows)).not.toContain('secret');
+  });
+  it('rejects missing projects, foreign workspaces and unsafe paging', async () => {
+    for (const [id, workspace] of [
+      [project, other.workspace.id],
+      [randomUUID(), owner.workspace.id],
+    ])
+      await expect(
+        service.list(id, workspace, { page: 1, limit: 10 }),
+      ).rejects.toMatchObject({ status: 404 });
+    for (const query of [
+      { page: 0 },
+      { page: 1.5 },
+      { limit: 101 },
+      { page: Number.MAX_SAFE_INTEGER, limit: 10 },
+    ])
+      await expect(list(query)).rejects.toMatchObject({ status: 400 });
+  });
+});
