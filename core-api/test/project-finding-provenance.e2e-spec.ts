@@ -5,6 +5,7 @@ import { Severity, ToolCategory } from '../src/common/enums/enum';
 import { ProjectFindingReadService } from '../src/modules/projects/project-finding-read.service';
 import { ProjectFindingTimelineService } from '../src/modules/projects/project-finding-timeline.service';
 import { ProjectOverviewCountsService } from '../src/modules/projects/project-overview-counts.service';
+import { ProjectOverviewRunsService } from '../src/modules/projects/project-overview-runs.service';
 import { VulnerabilityStatus } from '../src/modules/vulnerabilities/dto/get-vulnerability.dto';
 import {
   PROJECT_FINDING_PROVENANCE_SQL,
@@ -1224,6 +1225,135 @@ describe('Project finding provenance (e2e)', () => {
           Object.values(counts).every((count) => count === 0),
         ),
       ).toBe(true);
+      await expect(read(overview, other.workspace.id)).rejects.toMatchObject({
+        status: 404,
+      });
+      await expect(read(randomUUID())).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe('private project overview run references', () => {
+    const asOf = new Date('2026-11-02T12:00:00.000Z');
+    let overview: string;
+    let empty: string;
+    let latest: string;
+    let topRefs: string[];
+    const read = (id = overview, workspaceId = owner.workspace.id) =>
+      app.app.get(ProjectOverviewRunsService).read(id, workspaceId, asOf);
+
+    beforeAll(async () => {
+      const workspaceId = owner.workspace.id;
+      overview = await insert('projects', { name: randomUUID(), workspaceId });
+      empty = await insert('projects', { name: randomUUID(), workspaceId });
+      const savedRun = (
+        createdAt: string,
+        opts: Record<string, unknown> = {},
+      ) =>
+        insert('job_histories', {
+          projectId: overview,
+          workflowId: workflow,
+          createdAt,
+          isCompleted: true,
+          ...opts,
+        });
+      const linkFinding = async (
+        firstRunId: string,
+        firstSeenAt = '2026-11-01T16:00:00.000Z',
+        dismissed = false,
+        assetId = asset,
+      ) => {
+        const vulnerabilityId = await insert('vulnerabilities', {
+          name: randomUUID(),
+          severity: Severity.HIGH,
+          assetId,
+          toolId: tool,
+        });
+        if (dismissed)
+          await insert('vulnerability_dismissals', {
+            vulnerabilityId,
+            userId: owner.user.userId,
+            reason: 'used_in_test',
+          });
+        await insert('project_vulnerabilities', {
+          projectId: overview,
+          vulnerabilityId,
+          firstSeenJobHistoryId: firstRunId,
+          firstSeenAt,
+          lastSeenAt: firstSeenAt,
+          timesSeen: 1,
+        });
+      };
+      const refs = [];
+      for (let day = 26; day <= 30; day++) {
+        const id = await savedRun(`2026-10-${day} 12:00:00`);
+        refs.push(id);
+        await linkFinding(id);
+      }
+      const tie = randomUUID().slice(0, -1);
+      const low = await savedRun('2026-11-01 12:00:00', { id: tie + '0' });
+      const high = await savedRun('2026-11-01 12:00:00', { id: tie + 'f' });
+      await linkFinding(low);
+      await linkFinding(low);
+      await linkFinding(high, undefined, true); // A dismissed-only discovery.
+      topRefs = [high, low, ...refs.slice(-3).reverse()];
+
+      latest = await savedRun('2026-11-02 10:00:00', {
+        jobRunType: 'scheduled',
+      });
+      await insert('jobs', {
+        jobHistoryId: latest,
+        assetId: asset,
+        toolId: tool,
+        category: ToolCategory.VULNERABILITIES,
+        status: 'cancelled',
+      });
+      const foreign = await savedRun('2026-11-02 11:00:00', {
+        workflowId: foreignWorkflow,
+      });
+      const wrongProject = await savedRun('2026-11-02 11:00:00', {
+        projectId: sibling,
+      });
+      await linkFinding(foreign);
+      await linkFinding(wrongProject);
+      await linkFinding(latest, '2026-10-26T12:00:00.000Z'); // exactly seven days
+      await linkFinding(latest, '2026-11-02T12:00:00.001Z'); // future
+      const futureRun = await savedRun('2026-11-02 12:00:00.001');
+      await linkFinding(futureRun);
+      const foreignValue = randomUUID() + '.argus.test';
+      const foreignTarget = await insert('targets', {
+        value: foreignValue,
+        type: 'DOMAIN',
+        workspaceId: other.workspace.id,
+      });
+      const foreignAsset = await insert('assets', {
+        value: foreignValue,
+        targetId: foreignTarget,
+      });
+      await linkFinding(latest, undefined, false, foreignAsset);
+    });
+
+    it('returns an exact latest run and five distinct new-finding refs with stable ties', async () => {
+      const result = await read();
+      expect(result.lastRun).toMatchObject({
+        id: latest,
+        status: 'cancelled',
+        jobRunType: 'scheduled',
+      });
+      expect(result.newVulnerabilityRuns.map((run) => run.id)).toEqual(topRefs);
+      expect(Object.keys(result.lastRun ?? {}).sort()).toEqual([
+        'createdAt',
+        'id',
+        'jobRunType',
+        'status',
+        'workflowName',
+      ]);
+    });
+
+    it('returns empty refs for an owned empty project and denies foreign or missing projects', async () => {
+      expect(await read(empty)).toEqual({
+        lastRun: null,
+        newVulnerabilityRuns: [],
+      });
       await expect(read(overview, other.workspace.id)).rejects.toMatchObject({
         status: 404,
       });
