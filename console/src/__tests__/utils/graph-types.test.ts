@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyDagreLayout,
   applyForceLayout,
+  placeInFreeSpots,
   type LayoutInputEdge,
   type LayoutInputNode,
 } from '@/pages/assets/components/graph-types';
@@ -151,6 +152,60 @@ describe('applyForceLayout', () => {
     expect(result.nodes.map((n) => n.position)).toEqual(
       again.nodes.map((n) => n.position),
     );
+  });
+});
+
+describe('placeInFreeSpots', () => {
+  it('preserves dragged positions and moves a new node clear of badges and labels', () => {
+    const target = { ...node('target|t1', 'target'), position: { x: 0, y: 0 } };
+    const service = {
+      ...node('service|s1', 'service'),
+      position: { x: 130, y: 0 },
+    };
+    const fixed = new Map([[target.id, { x: 129, y: 0 }]]);
+    const input = [service, target];
+
+    const [placed, anchored] = placeInFreeSpots(input, fixed);
+
+    expect(anchored.position).toEqual(fixed.get(target.id));
+    const dx = Math.abs(placed.position.x - anchored.position.x);
+    const dy = placed.position.y - anchored.position.y;
+    expect(dx >= 124 || dy >= 56 || dy <= -73).toBe(true);
+    expect(Math.hypot(placed.position.x - 130, placed.position.y)).toBeLessThan(
+      124,
+    );
+    expect(placeInFreeSpots(input, fixed)).toEqual([placed, anchored]);
+    expect(service.position).toEqual({ x: 130, y: 0 });
+  });
+
+  it('keeps an unobstructed preferred position', () => {
+    const service = {
+      ...node('service|s1', 'service'),
+      position: { x: -123, y: -42 },
+    };
+    expect(placeInFreeSpots([service], new Map())).toEqual([service]);
+  });
+
+  it('reserves space for each new node even after the local search fills up', () => {
+    const input = Array.from({ length: 200 }, (_, i) => ({
+      ...node(`service|${i}`, 'service'),
+      position: { x: 0, y: 0 },
+    }));
+
+    const spaced = placeInFreeSpots(input, new Map());
+
+    const xs = spaced.map(({ position }) => position.x);
+    const ys = spaced.map(({ position }) => position.y);
+    expect(Math.max(...xs)).toBeGreaterThan(480);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(3000);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(2000);
+    for (const [index, a] of spaced.entries()) {
+      for (const b of spaced.slice(index + 1)) {
+        const dx = Math.abs(a.position.x - b.position.x);
+        const dy = Math.abs(a.position.y - b.position.y);
+        expect(dx >= 124 || dy >= 87).toBe(true);
+      }
+    }
   });
 });
 

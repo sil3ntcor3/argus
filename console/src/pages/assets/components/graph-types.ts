@@ -112,6 +112,121 @@ export type LayoutResult = {
   edges: LayoutOutputEdge[];
 };
 
+type GraphPoint = LayoutOutputNode['position'];
+
+const BADGE_HALF_HEIGHT: Record<NodeType, number> = {
+  target: 14,
+  asset: 14,
+  ip: 28,
+  service: 28,
+  technology: 14,
+  tls: 28,
+  statusCode: 12,
+};
+
+function nodeFootprint(type: NodeType) {
+  const up = BADGE_HALF_HEIGHT[type];
+  // A single 12.5px label line and 4px gap below the badge.
+  const down = type === 'target' || type === 'technology' ? up : up + 17;
+  return { up, down };
+}
+
+/**
+ * Reserve room around each badge and its label. Existing nodes are
+ * obstacles, including when a user dragged two existing nodes together.
+ * New nodes try their preferred centers first and then nearby free spots.
+ */
+export function placeInFreeSpots(
+  nodes: LayoutOutputNode[],
+  fixedPositions: ReadonlyMap<string, GraphPoint>,
+): LayoutOutputNode[] {
+  const gap = 14;
+  // GraphNode caps both pill and label widths at 110px. A cell is wider
+  // and taller than the maximum collision distance on either axis.
+  const minXGap = 110 + gap;
+  const cellSize = 128;
+  type Occupied = GraphPoint & ReturnType<typeof nodeFootprint>;
+  const grid = new Map<string, Occupied[]>();
+  let rightmostX = -Infinity;
+
+  const occupy = (point: GraphPoint, type: NodeType) => {
+    const key = `${Math.floor(point.x / cellSize)},${Math.floor(point.y / cellSize)}`;
+    const occupant = { ...point, ...nodeFootprint(type) };
+    const bucket = grid.get(key);
+    if (bucket) bucket.push(occupant);
+    else grid.set(key, [occupant]);
+    rightmostX = Math.max(rightmostX, point.x);
+  };
+
+  const collides = ({ x, y, up, down }: Occupied) => {
+    const cx = Math.floor(x / cellSize);
+    const cy = Math.floor(y / cellSize);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const bucket = grid.get(`${cx + dx},${cy + dy}`);
+        if (
+          bucket?.some(
+            (other) =>
+              Math.abs(x - other.x) < minXGap &&
+              y - up < other.y + other.down + gap &&
+              other.y - other.up < y + down + gap,
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  for (const node of nodes) {
+    const fixed = fixedPositions.get(node.id);
+    if (fixed) occupy(fixed, node.type);
+  }
+
+  const overflow: number[] = [];
+  const positioned = nodes.map((node, index) => {
+    const fixed = fixedPositions.get(node.id);
+    if (fixed) return { ...node, position: fixed };
+
+    const want = node.position;
+    const footprint = nodeFootprint(node.type);
+    const step = 24;
+    // Bound the work per node in dense neighborhoods.
+    for (let radius = 0; radius <= 480; radius += step) {
+      const samples = Math.max(1, Math.ceil((2 * Math.PI * radius) / step));
+      for (let i = 0; i < samples; i++) {
+        const angle = (2 * Math.PI * i) / samples;
+        const x = want.x + Math.cos(angle) * radius;
+        const y = want.y + Math.sin(angle) * radius;
+        if (!collides({ x, y, ...footprint })) {
+          const position = { x, y };
+          occupy(position, node.type);
+          return { ...node, position };
+        }
+      }
+    }
+    overflow.push(index);
+    return node;
+  });
+
+  // Put dense overflow into a compact grid beyond all reserved positions.
+  // Every cell fits the largest footprint and shares the same clearance.
+  if (overflow.length === 0) return positioned;
+
+  const columns = Math.ceil(Math.sqrt(overflow.length));
+  const rows = Math.ceil(overflow.length / columns);
+  const spillY = positioned[overflow[0]].position.y;
+  overflow.forEach((index, i) => {
+    const position = {
+      x: rightmostX + (1 + (i % columns)) * minXGap,
+      y: spillY + (Math.floor(i / columns) - (rows - 1) / 2) * minXGap,
+    };
+    positioned[index] = { ...positioned[index], position };
+  });
+  return positioned;
+}
+
 /** Approximate node bounding box used for layout spacing. */
 const NODE_BOX = 96;
 
