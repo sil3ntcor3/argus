@@ -15,6 +15,7 @@ import { isAxiosError } from 'axios';
 import { type ReactNode, useId } from 'react';
 import { ProjectFindingTrends } from './project-finding-trends';
 import { ProjectOverviewActivity } from './project-overview-activity';
+import { ProjectOverviewFindings } from './project-overview-findings';
 import { ProjectOverviewRuns } from './project-overview-runs';
 import { projectRouteId } from './project-route-id';
 
@@ -263,11 +264,19 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
         >
           View all runs
         </Link>
-        <ProjectOverviewActivity
-          projectId={projectId}
-          events={overview.data.activity}
-          canOpenRuns={canOpenRuns}
-        />
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <ProjectOverviewFindings
+            key={`${state.selectedWorkspaceId}:${projectId}`}
+            projectId={projectId}
+            openCount={openFindings}
+            canOpenRuns={canOpenRuns}
+          />
+          <ProjectOverviewActivity
+            projectId={projectId}
+            events={overview.data.activity}
+            canOpenRuns={canOpenRuns}
+          />
+        </div>
       </div>
     );
   }

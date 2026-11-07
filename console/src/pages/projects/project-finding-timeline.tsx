@@ -16,6 +16,7 @@ import {
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
+import type { ReactElement } from 'react';
 
 const sightings = {
   seen: 'Reported',
@@ -117,18 +118,23 @@ function TimelineRunList({
 }
 
 /** Keeps historical project sightings readable without requiring job detail access. */
-export function ProjectFindingTimeline(props: TimelineProps) {
+export function ProjectFindingTimeline({
+  trigger,
+  ...props
+}: TimelineProps & { trigger?: ReactElement }) {
   const { finding } = props;
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          aria-label={`View timeline for ${finding.name} on ${finding.assetValue}`}
-        >
-          View timeline
-        </Button>
+        {trigger ?? (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={`View timeline for ${finding.name} on ${finding.assetValue}`}
+          >
+            View timeline
+          </Button>
+        )}
       </SheetTrigger>
       <SheetContent className="w-full [overflow-wrap:anywhere] sm:max-w-lg">
         <SheetHeader className="pr-12">
