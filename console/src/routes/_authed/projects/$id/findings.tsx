@@ -1,3 +1,4 @@
+import { projectFindingSearchTerm } from '@/pages/projects/project-finding-search';
 import { ProjectFindingsPage } from '@/pages/projects/project-findings-page';
 import {
   ProjectsControllerGetFindingsProvenance,
@@ -9,6 +10,16 @@ import { z } from 'zod';
 
 const findingsSearch = z.object({
   page: z.number().int().min(1).max(10000000).optional().catch(undefined),
+  // Direct URL search values can be parsed as primitives by the router.
+  query: z
+    .preprocess(
+      (value) =>
+        typeof value === 'number' || typeof value === 'boolean'
+          ? String(value)
+          : value,
+      projectFindingSearchTerm.optional(),
+    )
+    .catch(undefined),
   status: z
     .nativeEnum(ProjectsControllerGetFindingsStatus)
     .optional()
@@ -30,12 +41,13 @@ const findingsSearch = z.object({
 
 function ProjectFindingsRoute() {
   const { id } = Route.useParams();
-  const { page = 1, provenance, severity, status } = Route.useSearch();
+  const { page = 1, query, provenance, severity, status } = Route.useSearch();
   const navigate = Route.useNavigate();
   return (
     <ProjectFindingsPage
       projectId={id}
       page={page}
+      query={query}
       provenance={provenance}
       severity={severity}
       status={status}
