@@ -24,7 +24,7 @@ LEFT JOIN LATERAL (
   LIMIT 1
 ) ref ON true
 LEFT JOIN LATERAL (
-  SELECT h."createdAt"
+  SELECT h.id, h."createdAt"
   FROM job_histories h
   JOIN workflows w ON w.id = h."workflowId"
   JOIN projects p ON p.id = h."projectId" AND p."workspaceId" = w."workspaceId"

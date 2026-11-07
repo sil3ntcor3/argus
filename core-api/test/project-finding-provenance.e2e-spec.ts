@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { EntityManager } from 'typeorm';
-import { ToolCategory } from '../src/common/enums/enum';
+import { Severity, ToolCategory } from '../src/common/enums/enum';
+import { ProjectFindingReadService } from '../src/modules/projects/project-finding-read.service';
+import { VulnerabilityStatus } from '../src/modules/vulnerabilities/dto/get-vulnerability.dto';
 import {
   PROJECT_FINDING_PROVENANCE_SQL,
   PROJECT_FINDING_REFERENCE_JOINS,
@@ -250,5 +252,169 @@ describe('Project finding provenance (e2e)', () => {
     } finally {
       await deleteRun(candidate);
     }
+  });
+  describe('private finding list', () => {
+    let service: ProjectFindingReadService,
+      openId: string,
+      archivedId: string,
+      dismissedId: string;
+    const list = (
+      query: Partial<Parameters<ProjectFindingReadService['list']>[2]> = {},
+    ) =>
+      service.list(project.toUpperCase(), owner.workspace.id, {
+        page: 1,
+        limit: 10,
+        ...query,
+      });
+    beforeAll(async () => {
+      service = app.app.get(ProjectFindingReadService);
+      openId = (
+        await app.dataSource.query<{ id: string }[]>(
+          'SELECT "vulnerabilityId" AS id FROM project_vulnerabilities WHERE id=$1',
+          [link],
+        )
+      )[0].id;
+      archivedId = await insert('vulnerabilities', {
+        name: 'Archived 100%_ literal',
+        assetId: asset,
+        severity: Severity.LOW,
+        isArchived: true,
+      });
+      dismissedId = await insert('vulnerabilities', {
+        name: 'Dismissed 100xy literal',
+        assetId: asset,
+        severity: Severity.CRITICAL,
+        cveId: ['CVE-2026-99991'],
+      });
+      await insert('vulnerability_dismissals', {
+        vulnerabilityId: dismissedId,
+        userId: owner.user.userId,
+        reason: 'used_in_test',
+      });
+      await insert('project_vulnerabilities', {
+        projectId: project,
+        vulnerabilityId: archivedId,
+        firstSeenJobHistoryId: foreignRun,
+        lastSeenJobHistoryId: foreignRun,
+      });
+      await insert('project_vulnerabilities', {
+        projectId: project,
+        vulnerabilityId: dismissedId,
+      });
+      const unrelated = await insert('vulnerabilities', {
+        name: 'Unrelated',
+        assetId: asset,
+        severity: Severity.CRITICAL,
+      });
+      await insert('project_vulnerabilities', {
+        projectId: sibling,
+        vulnerabilityId: unrelated,
+      });
+      const value = randomUUID() + '.argus.test',
+        targetId = await insert('targets', {
+          value,
+          type: 'DOMAIN',
+          workspaceId: other.workspace.id,
+        });
+      const foreignAsset = await insert('assets', { value, targetId });
+      const foreign = await insert('vulnerabilities', {
+        name: 'Forged cross-tenant link',
+        assetId: foreignAsset,
+        severity: Severity.CRITICAL,
+      });
+      await insert('project_vulnerabilities', {
+        projectId: project,
+        vulnerabilityId: foreign,
+      });
+    });
+    it('returns linked open findings without requiring current membership and exposes only safe summary fields', async () => {
+      const result = await list();
+      expect(result).toMatchObject({
+        total: 1,
+        hasNextPage: false,
+        data: [
+          {
+            id: openId,
+            assetId: asset,
+            provenance: 'new',
+            status: 'open',
+            timesSeen: 1,
+            firstSeen: { runId: firstRun },
+            lastSeen: { runId: firstRun },
+          },
+        ],
+      });
+      expect(Object.keys(result.data[0]).sort()).toEqual(
+        [
+          'id',
+          'name',
+          'severity',
+          'cveId',
+          'affectedUrl',
+          'assetId',
+          'assetValue',
+          'toolName',
+          'status',
+          'provenance',
+          'timesSeen',
+          'firstSeen',
+          'lastSeen',
+        ].sort(),
+      );
+    });
+    it('applies existing dismissal semantics, bound filters and stable page metadata', async () => {
+      const status = VulnerabilityStatus.ALL;
+      expect((await list({ status })).data.map((row) => row.id)).toEqual([
+        dismissedId,
+        openId,
+        archivedId,
+      ]);
+      const dismissed = await list({ status: VulnerabilityStatus.DISMISSED });
+      expect(dismissed.data).toEqual([
+        expect.objectContaining({ id: dismissedId, status: 'dismissed' }),
+      ]);
+      const literal = await list({ status, search: '100%_' });
+      expect(literal.data).toEqual([
+        expect.objectContaining({
+          id: archivedId,
+          firstSeen: expect.objectContaining({ runId: null }),
+          lastSeen: expect.objectContaining({ runId: null }),
+        }),
+      ]);
+      expect(
+        (await list({ status, search: 'cve-2026-99991' })).data.map(
+          (row) => row.id,
+        ),
+      ).toEqual([dismissedId]);
+      expect(
+        (
+          await list({ status, severity: [Severity.LOW], assetId: asset })
+        ).data.map((row) => row.id),
+      ).toEqual([archivedId]);
+      expect(await list({ status, limit: 1, page: 4 })).toMatchObject({
+        total: 3,
+        pageCount: 3,
+        data: [],
+        hasNextPage: false,
+      });
+      expect(await list({ assetId: randomUUID() })).toMatchObject({
+        total: 0,
+        data: [],
+      });
+    });
+    it('rejects foreign projects and malformed paging without writing findings', async () => {
+      const snapshot = () =>
+        app.dataSource.query(
+          'SELECT * FROM project_vulnerabilities WHERE "projectId"=$1 ORDER BY id',
+          [project],
+        );
+      const before = await snapshot();
+      await expect(
+        service.list(project, other.workspace.id, { page: 1, limit: 10 }),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(list({ limit: 101 })).rejects.toMatchObject({ status: 400 });
+      await list({ status: VulnerabilityStatus.ALL });
+      expect(await snapshot()).toEqual(before);
+    });
   });
 });
