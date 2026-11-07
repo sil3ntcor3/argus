@@ -63,7 +63,9 @@ export class ProjectOverviewRunsService {
         ) candidates
         GROUP BY id, "createdAt", "workflowName", "jobRunType"
       )
-      SELECT r.*, (SELECT ${JOB_HISTORY_STATUS_SQL} FROM jobs job
+      SELECT r.id, r."createdAt"::timestamptz AS "createdAt", r."workflowName",
+             r."jobRunType", r.latest, r.fresh,
+             (SELECT ${JOB_HISTORY_STATUS_SQL} FROM jobs job
                    WHERE job."jobHistoryId" = r.id) AS status
       FROM owned LEFT JOIN selected r ON true
       ORDER BY r."createdAt" DESC, r.id DESC`,
