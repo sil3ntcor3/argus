@@ -10,6 +10,7 @@ interface ProjectMetadata {
   autoAddAssets: boolean;
 }
 
+/** Canonical reads opt into project provenance without changing legacy callers. */
 @Injectable()
 export class ProjectMetadataReadService {
   constructor(
@@ -42,7 +43,7 @@ export class ProjectMetadataReadService {
   }
 
   async getMany(query: GetAllAssetGroupsQueryDto, workspaceId: string) {
-    const result = await this.groups.getManyAssetGroups(query, workspaceId);
+    const result = await this.groups.getManyAssetGroups(query, workspaceId, true);
     const metadata = await this.metadata(
       result.data.map((project) => project.id),
       workspaceId,
@@ -58,7 +59,7 @@ export class ProjectMetadataReadService {
   }
 
   async getById(id: string, workspaceId: string): Promise<ProjectViewDto> {
-    const project = await this.groups.getAssetGroupById(id, workspaceId);
+    const project = await this.groups.getAssetGroupById(id, workspaceId, true);
     const saved = (await this.metadata([project.id], workspaceId)).get(project.id);
     if (!saved) throw new NotFoundException('Project not found');
     return this.view(project, saved);

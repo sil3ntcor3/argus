@@ -45,9 +45,11 @@ export class AssetGroupWorkflowService {
   /**
    * Resolves the most recent job history per workflow,
    * deriving each status from the individual job statuses.
+   * A project context additionally requires its exact persisted workflow binding.
    */
   async getLastRunForWorkflows(
     workflowIds: string[],
+    project?: { id: string; workspaceId: string },
   ): Promise<Map<string, AssetGroupLastRunDto>> {
     if (workflowIds.length === 0) {
       return new Map();
@@ -65,7 +67,7 @@ export class AssetGroupWorkflowService {
       jobRunType: JobRunType;
     }
 
-    const raw = await this.jobHistoryRepo
+    const query = this.jobHistoryRepo
       .createQueryBuilder('jobHistory')
       .leftJoin('jobHistory.workflow', 'workflow')
       .where('jobHistory.workflowId IN (:...workflowIds)', { workflowIds })
@@ -96,8 +98,20 @@ export class AssetGroupWorkflowService {
       ])
       .distinctOn(['"jobHistory"."workflowId"'])
       .orderBy('"jobHistory"."workflowId"')
-      .addOrderBy('jobHistory.createdAt', 'DESC')
-      .getRawMany<RawJobHistoryRow>();
+      .addOrderBy('jobHistory.createdAt', 'DESC');
+
+    if (project) {
+      query
+        .andWhere('"jobHistory"."projectId" = :projectId', { projectId: project.id })
+        .andWhere('"workflow"."workspaceId" = :workspaceId', {
+          workspaceId: project.workspaceId,
+        })
+        .andWhere(`EXISTS (SELECT 1 FROM project_workflows pw
+          WHERE pw.id = "jobHistory"."projectWorkflowId"
+            AND pw."projectId" = :projectId AND pw."workflowId" = "jobHistory"."workflowId")`)
+        .addOrderBy('jobHistory.id', 'DESC');
+    }
+    const raw = await query.getRawMany<RawJobHistoryRow>();
 
     const lastRunByWorkflow = new Map<string, AssetGroupLastRunDto>();
 

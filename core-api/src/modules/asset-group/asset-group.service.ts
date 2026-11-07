@@ -62,9 +62,11 @@ export class AssetGroupService {
   /**
    * Retrieves all asset groups with optional filtering and pagination
    */
+  /** Canonical reads use project provenance; legacy callers keep workflow-wide runs. */
   async getManyAssetGroups(
     query: GetAllAssetGroupsQueryDto,
     workspaceId: string,
+    projectScoped = false,
   ) {
     try {
       const { page, limit, sortBy, sortOrder } = query;
@@ -109,16 +111,25 @@ export class AssetGroupService {
       // Add latest job history run time subquery so the list can both
       // return lastRunAt and sort by it (via the select alias).
       queryBuilder.addSelect(
-        (subQuery) =>
-          subQuery
+        (subQuery) => {
+          const runs = subQuery
             .select('MAX(jh."createdAt")', 'lastRunAt')
-            .from('job_histories', 'jh')
+            .from('job_histories', 'jh');
+          if (projectScoped) {
+            return runs
+              .innerJoin('workflows', 'run_workflow', 'run_workflow.id = jh."workflowId"')
+              .where(
+                'jh."projectId" = assetGroup.id AND run_workflow."workspaceId" = :workspaceId',
+              );
+          }
+          return runs
             .innerJoin(
               'project_workflows',
               'agw_sub',
               'agw_sub."workflowId" = jh."workflowId"',
             )
-            .where('agw_sub."projectId" = assetGroup.id'),
+            .where('agw_sub."projectId" = assetGroup.id');
+        },
         'lastRunAt',
       );
 
@@ -130,10 +141,14 @@ export class AssetGroupService {
           : sortBy === 'totalAssets'
             ? '"totalAssets"'
             : `assetGroup.${sortBy}`;
-      queryBuilder
-        .orderBy(orderColumn, sortOrder)
-        .offset(offset)
-        .limit(limit);
+      if (projectScoped && sortBy === 'lastRunAt') {
+        queryBuilder
+          .orderBy(orderColumn, sortOrder, 'NULLS LAST')
+          .addOrderBy('assetGroup.id', 'ASC');
+      } else {
+        queryBuilder.orderBy(orderColumn, sortOrder);
+      }
+      queryBuilder.offset(offset).limit(limit);
 
       const results: {
         entities: AssetGroup[];
@@ -172,10 +187,12 @@ export class AssetGroupService {
    * Fetches a specific asset group by its unique identifier,
    * including the workflows assigned to it and the latest run
    * so the detail view does not need additional requests.
+   * Canonical callers opt into persisted project and binding provenance.
    */
   async getAssetGroupById(
     id: string,
     workspaceId: string,
+    projectScoped = false,
   ): Promise<AssetGroup> {
     try {
       const assetGroup = await this.assetGroupRepo.findOne({
@@ -196,8 +213,12 @@ export class AssetGroupService {
           ?.map((agw) => agw.workflow?.id)
           .filter((workflowId): workflowId is string => Boolean(workflowId)) ??
         [];
-      const lastRunByWorkflow =
-        await this.workflowService.getLastRunForWorkflows(workflowIds);
+      const lastRunByWorkflow = projectScoped
+        ? await this.workflowService.getLastRunForWorkflows(workflowIds, {
+            id: assetGroup.id,
+            workspaceId,
+          })
+        : await this.workflowService.getLastRunForWorkflows(workflowIds);
 
       for (const agw of assetGroup.assetGroupWorkflows ?? []) {
         agw.lastRun = agw.workflow
@@ -218,6 +239,18 @@ export class AssetGroupService {
         .getRawOne();
 
       assetGroup.totalAssets = parseInt(counted?.totalAssets ?? '') || 0;
+
+      if (projectScoped) {
+        const [{ lastRunAt }] = await this.assetGroupRepo.manager.query<
+          { lastRunAt: Date | null }[]
+        >(
+          `SELECT MAX(jh."createdAt") AS "lastRunAt" FROM job_histories jh
+           JOIN workflows w ON w.id = jh."workflowId"
+           WHERE jh."projectId" = $1 AND w."workspaceId" = $2`,
+          [assetGroup.id, workspaceId],
+        );
+        assetGroup.lastRunAt = lastRunAt;
+      }
 
       return assetGroup;
     } catch (error) {
