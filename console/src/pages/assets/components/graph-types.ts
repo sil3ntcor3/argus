@@ -235,7 +235,7 @@ const NODE_BOX = 96;
  * missing endpoints. Shared by both layout engines so switching modes never
  * changes the node/edge sets.
  */
-function dedupeGraph(graphData: {
+export function dedupeGraph(graphData: {
   nodes: LayoutInputNode[];
   edges: LayoutInputEdge[];
 }): { nodes: LayoutInputNode[]; edges: LayoutInputEdge[] } {
