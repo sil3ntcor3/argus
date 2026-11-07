@@ -22,6 +22,7 @@ import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import { type FormEvent, type ReactNode, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { ProjectDeleteDialog } from './project-delete-dialog';
 import { projectRouteId } from './project-route-id';
 
 type Draft = {
@@ -126,9 +127,9 @@ function SettingsForm({
     }
   }
 
-  return (
+  const form = (
     <form
-      className="max-w-xl space-y-4"
+      className="space-y-4"
       aria-busy={saving}
       onSubmit={(event) => void submit(event)}
     >
@@ -186,6 +187,24 @@ function SettingsForm({
         )}
       </div>
     </form>
+  );
+
+  return (
+    <div className="max-w-xl space-y-6">
+      {form}
+      <section
+        className="space-y-2 border-t pt-4"
+        aria-label="Project deletion"
+      >
+        <h2 className="font-semibold">Delete this project</h2>
+        <ProjectDeleteDialog
+          projectId={project.id}
+          projectName={project.name}
+          workspaceId={workspaceId}
+          disabled={saving}
+        />
+      </section>
+    </div>
   );
 }
 
