@@ -188,6 +188,10 @@ describe('applyClusterLayout', () => {
     expect(distance(t1.id, local.id)).toBeLessThan(distance(t2.id, local.id));
     expect(distance(a1.id, shared.id)).toBeCloseTo(distance(a2.id, shared.id));
     expect(layout.edges).toHaveLength(input.edges.length);
+    expect(layout.familyByNode?.get(t1.id)).toBe(t1.id);
+    expect(layout.familyByNode?.get(a1.id)).toBe(t1.id);
+    expect(layout.familyByNode?.get(local.id)).toBe(t1.id);
+    expect(layout.familyByNode?.get(shared.id)).toBeUndefined();
     expect(applyClusterLayout(input)).toEqual(layout);
     const anchor = { x: -2000, y: 0 };
     const refreshed = applyClusterLayout(input, new Map([[t2.id, anchor]]));
