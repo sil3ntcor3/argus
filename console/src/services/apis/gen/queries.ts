@@ -4828,6 +4828,88 @@ export type GetManyProjectRunDtoDto = {
   pageCount: number;
 };
 
+export type ProjectFindingSightingDto = {
+  /** @nullable */
+  runId: string | null;
+  at: string;
+};
+
+export type ProjectFindingDtoSeverity =
+  (typeof ProjectFindingDtoSeverity)[keyof typeof ProjectFindingDtoSeverity];
+
+export const ProjectFindingDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+/**
+ * Dismissal state. Archived findings without a dismissal can be returned with status=all.
+ */
+export type ProjectFindingDtoStatus =
+  (typeof ProjectFindingDtoStatus)[keyof typeof ProjectFindingDtoStatus];
+
+export const ProjectFindingDtoStatus = {
+  open: 'open',
+  dismissed: 'dismissed',
+} as const;
+
+export type ProjectFindingDtoProvenance =
+  (typeof ProjectFindingDtoProvenance)[keyof typeof ProjectFindingDtoProvenance];
+
+export const ProjectFindingDtoProvenance = {
+  new: 'new',
+  recurring: 'recurring',
+  not_seen: 'not_seen',
+} as const;
+
+export type ProjectFindingDto = {
+  id: string;
+  name: string;
+  severity: ProjectFindingDtoSeverity;
+  /** @nullable */
+  cveId: string[] | null;
+  /** @nullable */
+  affectedUrl: string | null;
+  assetId: string;
+  assetValue: string;
+  /** @nullable */
+  toolName: string | null;
+  /** Dismissal state. Archived findings without a dismissal can be returned with status=all. */
+  status: ProjectFindingDtoStatus;
+  provenance: ProjectFindingDtoProvenance;
+  /** @minimum 0 */
+  timesSeen: number;
+  firstSeen: ProjectFindingSightingDto;
+  lastSeen: ProjectFindingSightingDto;
+};
+
+export type ProjectFindingProvenanceCountsDto = {
+  /** @minimum 0 */
+  all: number;
+  /** @minimum 0 */
+  new: number;
+  /** @minimum 0 */
+  recurring: number;
+  /** @minimum 0 */
+  notSeen: number;
+};
+
+export type ProjectFindingsResponseDto = {
+  data: ProjectFindingDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+  /** Counts under every filter except provenance */
+  provenanceCounts: ProjectFindingProvenanceCountsDto;
+  /** Counts under every filter except severity */
+  severityCounts: SeverityCountsDto;
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -5964,6 +6046,67 @@ export type ProjectsControllerGetRunsJobRunType =
 export const ProjectsControllerGetRunsJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+} as const;
+
+export type ProjectsControllerGetFindingsParams = {
+  /**
+   * Literal search without NUL characters
+   * @maxLength 200
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  severity?: ProjectsControllerGetFindingsSeverityItem[];
+  provenance?: ProjectsControllerGetFindingsProvenance;
+  /**
+   * Open excludes archived and dismissed findings
+   */
+  status?: ProjectsControllerGetFindingsStatus;
+  assetId?: string;
+  /**
+   * Seen in this run
+   */
+  jobHistoryId?: string;
+  /**
+   * Seen in a run of this project workflow
+   */
+  projectWorkflowId?: string;
+};
+
+export type ProjectsControllerGetFindingsSeverityItem =
+  (typeof ProjectsControllerGetFindingsSeverityItem)[keyof typeof ProjectsControllerGetFindingsSeverityItem];
+
+export const ProjectsControllerGetFindingsSeverityItem = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type ProjectsControllerGetFindingsProvenance =
+  (typeof ProjectsControllerGetFindingsProvenance)[keyof typeof ProjectsControllerGetFindingsProvenance];
+
+export const ProjectsControllerGetFindingsProvenance = {
+  new: 'new',
+  recurring: 'recurring',
+  not_seen: 'not_seen',
+} as const;
+
+export type ProjectsControllerGetFindingsStatus =
+  (typeof ProjectsControllerGetFindingsStatus)[keyof typeof ProjectsControllerGetFindingsStatus];
+
+export const ProjectsControllerGetFindingsStatus = {
+  open: 'open',
+  dismissed: 'dismissed',
+  all: 'all',
 } as const;
 
 export type AdminUsersControllerGetUsersParams = {
@@ -45344,6 +45487,404 @@ export function useProjectsControllerGetRuns<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getProjectsControllerGetRunsQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Attributed findings with sightings, provenance and filter counts.
+ * @summary Project findings
+ */
+export const projectsControllerGetFindings = (
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectFindingsResponseDto>(
+    {
+      url: `/api/projects/${id}/vulnerabilities`,
+      method: 'GET',
+      params,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerGetFindingsInfiniteQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+) => {
+  return [
+    'infinite',
+    `/api/projects/${id}/vulnerabilities`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetFindingsQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+) => {
+  return [
+    `/api/projects/${id}/vulnerabilities`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetFindingsInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetFindingsInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    QueryKey,
+    ProjectsControllerGetFindingsParams['page']
+  > = ({ signal, pageParam }) =>
+    projectsControllerGetFindings(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    TError,
+    TData,
+    QueryKey,
+    ProjectsControllerGetFindingsParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetFindingsInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetFindings>>
+>;
+export type ProjectsControllerGetFindingsInfiniteQueryError = unknown;
+
+export function useProjectsControllerGetFindingsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetFindingsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project findings
+ */
+
+export function useProjectsControllerGetFindingsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetFindingsInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getProjectsControllerGetFindingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetFindingsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>
+  > = ({ signal }) =>
+    projectsControllerGetFindings(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetFindingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetFindings>>
+>;
+export type ProjectsControllerGetFindingsQueryError = unknown;
+
+export function useProjectsControllerGetFindings<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetFindingsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindings<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindings<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project findings
+ */
+
+export function useProjectsControllerGetFindings<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetFindingsQueryOptions(
     id,
     params,
     options,

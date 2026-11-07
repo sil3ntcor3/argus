@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import * as request from 'supertest';
 import type { EntityManager } from 'typeorm';
 import { Severity, ToolCategory } from '../src/common/enums/enum';
 import { ProjectFindingReadService } from '../src/modules/projects/project-finding-read.service';
@@ -677,6 +678,117 @@ describe('Project finding provenance (e2e)', () => {
         total: 2,
         provenanceCounts: { ...provenance, all: 2, new: 1, recurring: 1 },
         severityCounts: { ...severities, high: 2 },
+      });
+    });
+
+    describe('project findings HTTP API', () => {
+      const path = (id = facetProject) => `/api/projects/${id}/vulnerabilities`;
+
+      it('serves the page and independently scoped facets with default and repeated filters', async () => {
+        const defaults = await request(app.server)
+          .get(path())
+          .set(owner.headers)
+          .expect(200);
+        expect(defaults.body).toMatchObject({
+          total: 5,
+          page: 1,
+          limit: 10,
+          pageCount: 1,
+          hasNextPage: false,
+          provenanceCounts: { all: 5, new: 2, recurring: 1, notSeen: 2 },
+          severityCounts: { critical: 1, high: 2, medium: 1, low: 1, info: 0 },
+        });
+        const filtered = await request(app.server)
+          .get(path() + '?severity=high&severity=low&provenance=new')
+          .set(owner.headers)
+          .expect(200);
+        expect(filtered.body).toMatchObject({
+          total: 1,
+          data: [
+            {
+              name: 'High new',
+              status: 'open',
+              provenance: 'new',
+              lastSeen: { runId: newest },
+            },
+          ],
+          provenanceCounts: { all: 3, new: 1, recurring: 1, notSeen: 1 },
+          severityCounts: { ...severities, high: 1, medium: 1 },
+        });
+        const run = await request(app.server)
+          .get(path())
+          .query({ jobHistoryId: newest, search: 'high', page: 2, limit: 1 })
+          .set(owner.headers)
+          .expect(200);
+        expect(run.body).toMatchObject({
+          total: 2,
+          page: 2,
+          limit: 1,
+          hasNextPage: false,
+        });
+      });
+
+      it('rejects malformed filters and pagination before querying', async () => {
+        for (const query of [
+          { assetId: 'invalid' },
+          { jobHistoryId: 'invalid' },
+          { projectWorkflowId: 'invalid' },
+          { status: 'closed' },
+          { severity: 'urgent' },
+          { provenance: 'old' },
+          { limit: 101 },
+          { page: 1.5 },
+          { search: 'x'.repeat(201) },
+        ])
+          await request(app.server)
+            .get(path())
+            .query(query)
+            .set(owner.headers)
+            .expect(400);
+        await request(app.server)
+          .get(path('invalid'))
+          .set(owner.headers)
+          .expect(400);
+        await request(app.server)
+          .get(path() + '?search=a%00b')
+          .set(owner.headers)
+          .expect(400);
+      });
+
+      it('enforces authentication and workspace boundaries', async () => {
+        await request(app.server)
+          .get(path())
+          .set('X-Workspace-Id', owner.workspace.id)
+          .expect(401);
+        await request(app.server)
+          .get(path())
+          .set({ ...other.headers, 'X-Workspace-Id': owner.workspace.id })
+          .expect(403);
+        await request(app.server).get(path()).set(other.headers).expect(404);
+        await request(app.server)
+          .get(path(randomUUID()))
+          .set(owner.headers)
+          .expect(404);
+      });
+
+      it('requires project read permission from a workspace member', async () => {
+        const workspaceId = owner.workspace.id;
+        const headers = { ...other.headers, 'X-Workspace-Id': workspaceId };
+        const memberId = await insert('workspace_members', {
+          workspaceId,
+          userId: other.user.userId,
+        });
+        const permissionId = await insert('workspace_permissions', {
+          workspaceId,
+          name: randomUUID(),
+          permissions: ['group.read'],
+        });
+        await request(app.server).get(path()).set(headers).expect(403);
+        await insert('workspace_member_permissions', {
+          memberId,
+          permissionId,
+        });
+        await request(app.server).get(path()).set(headers).expect(200);
       });
     });
   });
