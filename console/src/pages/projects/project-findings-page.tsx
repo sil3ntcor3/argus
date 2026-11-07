@@ -7,27 +7,22 @@ import { usePermission } from '@/hooks/usePermission';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
   type ProjectFindingDto,
-  ProjectsControllerGetFindingsProvenance,
   useProjectsControllerGetFindings,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { ProjectFindingTimeline } from './project-finding-timeline';
+import {
+  type FindingFacets,
+  ProjectFindingFacets,
+  provenanceLabels,
+} from './project-finding-facets';
 
-const provenances = Object.values(ProjectsControllerGetFindingsProvenance);
-const provenanceLabels = {
-  new: 'New',
-  recurring: 'Recurring',
-  not_seen: 'Not seen again',
-} satisfies Record<ProjectsControllerGetFindingsProvenance, string>;
 const projectIdPattern =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
 const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-type FindingsSearch = {
-  page: number;
-  provenance?: ProjectsControllerGetFindingsProvenance;
-};
+type FindingsSearch = FindingFacets & { page: number };
 
 type FindingsProps = FindingsSearch & {
   projectId: string;
@@ -71,6 +66,9 @@ function FindingCard({
             {finding.severity}
           </Badge>
           <Badge variant="outline">{provenance}</Badge>
+          {finding.status === 'dismissed' && (
+            <Badge variant="outline">Dismissed</Badge>
+          )}
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
@@ -103,15 +101,18 @@ function FindingCard({
 function FindingList({
   projectId,
   page,
-  provenance,
   onChange,
   canOpen,
   canOpenRuns,
+  provenance,
+  severity,
+  status: findingStatus,
 }: FindingsProps & { canOpen: boolean; canOpenRuns: boolean }) {
+  const facets = { provenance, severity, status: findingStatus };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetFindings(
       projectId,
-      { page, limit: 20, provenance },
+      { page, limit: 20, ...facets },
       { query: { retry: false } },
     );
   const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -164,26 +165,12 @@ function FindingList({
 
   return (
     <div className="space-y-4">
-      <label className="flex w-fit items-center gap-2 text-sm">
-        Provenance
-        <select
-          className="rounded-md border bg-background px-2 py-1"
-          value={provenance ?? ''}
-          onChange={({ target }) =>
-            onChange({
-              page: 1,
-              provenance: provenances.find((value) => value === target.value),
-            })
-          }
-        >
-          <option value="">All open findings</option>
-          {provenances.map((value) => (
-            <option key={value} value={value}>
-              {provenanceLabels[value]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ProjectFindingFacets
+        {...facets}
+        severityCounts={data?.severityCounts}
+        provenanceCounts={data?.provenanceCounts}
+        onChange={(next) => onChange({ ...next, page: 1 })}
+      />
       {results}
       <nav
         aria-label="Project finding pages"
@@ -196,7 +183,7 @@ function FindingList({
           onClick={() => {
             if (page > 1)
               onChange({
-                provenance,
+                ...facets,
                 page: page > (data?.pageCount ?? page) ? 1 : page - 1,
               });
           }}
@@ -209,7 +196,7 @@ function FindingList({
           aria-disabled={!data?.hasNextPage}
           className="aria-disabled:opacity-50"
           onClick={() => {
-            if (data?.hasNextPage) onChange({ provenance, page: page + 1 });
+            if (data?.hasNextPage) onChange({ ...facets, page: page + 1 });
           }}
         >
           Next

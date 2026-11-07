@@ -123,4 +123,48 @@ describe('ProjectFindingsPage', () => {
     });
     expect(onChange).toHaveBeenLastCalledWith({ page: 1, provenance: 'new' });
   });
+
+  it('keeps status and multiple severities in the query and exposes independent facet counts', () => {
+    mock.findings.mockReturnValue({
+      data: {
+        data: [{ ...finding, status: 'dismissed' }],
+        provenanceCounts: { all: 7, new: 4, recurring: 2, notSeen: 1 },
+        severityCounts: { critical: 2, high: 1, medium: 1, low: 0, info: 3 },
+      },
+    });
+    const onChange = vi.fn();
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={1}
+        provenance="recurring"
+        status="dismissed"
+        severity={['high', 'medium']}
+        onChange={onChange}
+      />,
+    );
+    expect(mock.findings).toHaveBeenCalledWith(
+      projectId,
+      {
+        page: 1,
+        limit: 20,
+        provenance: 'recurring',
+        severity: ['high', 'medium'],
+        status: 'dismissed',
+      },
+      expect.anything(),
+    );
+    expect(
+      screen.getByRole('combobox', { name: 'Provenance' }),
+    ).toHaveDisplayValue('Recurring (2)');
+    expect(screen.getByText('Dismissed', { selector: 'span' })).toBeVisible();
+    expect(screen.getByRole('checkbox', { name: 'high (1)' })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'critical (2)' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      provenance: 'recurring',
+      severity: ['critical', 'high', 'medium'],
+      status: 'dismissed',
+    });
+  });
 });
