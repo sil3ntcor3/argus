@@ -304,6 +304,37 @@ describe('applyDagreLayout', () => {
     expect(result.edges).toEqual([]);
   });
 
+  it('wraps a long hierarchy rank without overlapping its labels', () => {
+    const target = node('target|t1', 'target');
+    const domains = Array.from({ length: 52 }, (_, i) =>
+      node(`asset|${i}`, 'asset'),
+    );
+    const { nodes } = applyDagreLayout(
+      {
+        nodes: [target, ...domains],
+        edges: domains.map((domain) => edge(target.id, domain.id, 'belongs_to')),
+      },
+      { rankdir: 'LR' },
+    );
+    const hub = nodes.find((item) => item.id === target.id)!;
+    const columns = new Map<number, number[]>();
+    for (const { type, position: { x, y } } of nodes) {
+      if (type !== 'asset') continue;
+      expect(x - hub.position.x).toBeGreaterThan(110);
+      const rows = columns.get(x) ?? [];
+      rows.push(y);
+      columns.set(x, rows);
+    }
+    expect(columns.size).toBe(4);
+    for (const rows of columns.values()) {
+      rows.sort((a, b) => a - b);
+      expect(rows.at(-1)! - rows[0]).toBeLessThan(840);
+      rows.slice(1).forEach((y, i) => {
+        expect(y - rows[i]).toBeGreaterThanOrEqual(59);
+      });
+    }
+  });
+
   it('positions all nodes and preserves edge endpoints', () => {
     const nodes = [
       node('target|t1', 'target'),

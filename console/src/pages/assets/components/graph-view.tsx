@@ -11,6 +11,7 @@ import {
   useOnViewportChange,
   ReactFlowProvider,
   type Node,
+  type OnNodesChange,
   type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -40,6 +41,7 @@ import {
   applyForceLayout,
   placeInFreeSpots,
   CLUSTER_COLORS,
+  GRAPH_NODE_MAX_WIDTH,
   NODE_TYPE_COLORS,
   type LayoutInputNode,
   type LayoutInputEdge,
@@ -58,8 +60,7 @@ dayjs.extend(relativeTime);
 const NODE_ORIGIN: [number, number] = [0.5, 0.5];
 const GRAPH_LAYOUTS = {
   Cluster: applyClusterLayout,
-  Hierarchy: (input: Parameters<typeof applyDagreLayout>[0]) =>
-    applyDagreLayout(input, { rankdir: 'LR' }),
+  Hierarchy: applyDagreLayout,
   Organic: applyForceLayout,
 };
 type GraphLayout = keyof typeof GRAPH_LAYOUTS;
@@ -234,6 +235,18 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const draggedNodesRef = useRef(new Set<string>());
+  const handleNodesChange = useCallback<OnNodesChange<Node>>(
+    (changes) => {
+      for (const change of changes) {
+        if (change.type === 'position' && change.dragging) {
+          draggedNodesRef.current.add(change.id);
+        }
+      }
+      onNodesChange(changes);
+    },
+    [onNodesChange],
+  );
   const [selectedNode, setSelectedNode] = useState<SelectedGraphNode | null>(
     null,
   );
@@ -391,6 +404,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
         ? nodesRef.current.map((n) => [n.id, n.position])
         : [],
     );
+    if (!preservePositionsRef.current) draggedNodesRef.current.clear();
     preservePositionsRef.current = true;
 
     const hasNewNodes = mergedNodes.some((n) => !prevPositions.has(n.id));
@@ -409,6 +423,28 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
     const layoutPositionById = new Map(
       (layoutResult?.nodes ?? []).map((n) => [n.id, n.position]),
     );
+
+    // A newly wrapped column can move later hierarchy ranks. Reflow untouched
+    // inventory in that case, preserving explicit drags and locked positions.
+    const hierarchyRanksShifted =
+      layoutMode === 'Hierarchy' &&
+      !layoutLocked &&
+      inputNodes.some(({ id }) => !prevPositions.has(id)) &&
+      inputNodes.some(({ id }) => {
+        const prior = prevPositions.get(id);
+        const next = layoutPositionById.get(id);
+        return (
+          prior &&
+          next &&
+          !draggedNodesRef.current.has(id) &&
+          Math.abs(prior.x - next.x) >= GRAPH_NODE_MAX_WIDTH
+        );
+      });
+    const fixedPositions = hierarchyRanksShifted
+      ? new Map(
+          [...prevPositions].filter(([id]) => draggedNodesRef.current.has(id)),
+        )
+      : prevPositions;
 
     // ── Node colors: each target gets its own pastel palette color, each IP
     // a distinct golden-angle hue, and the rest of every domain family
@@ -472,7 +508,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
       for (const edge of expandedEdges) {
         if (edge.data?.type !== 'runs_on') continue;
         const assetPos =
-          prevPositions.get(edge.source) ??
+          fixedPositions.get(edge.source) ??
           layoutPositionById.get(edge.source);
         if (!assetPos) continue;
         const idx = ringIndexByAsset.get(edge.source) ?? 0;
@@ -493,7 +529,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           layoutPositionById.get(node.id) ??
           { x: 0, y: index * 24 },
       })),
-      prevPositions,
+      fixedPositions,
     );
 
     const familyByNode =
@@ -874,7 +910,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           edges={displayEdges}
           nodeTypes={nodeTypes}
           nodeOrigin={NODE_ORIGIN}
-          onNodesChange={onNodesChange}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => {
             // Domain (asset) nodes toggle their child services instead of
@@ -903,7 +939,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           }}
           fitView
           fitViewOptions={{ padding: 0.25 }}
-          minZoom={layoutMode === 'Cluster' ? 0.02 : 0.1}
+          minZoom={layoutMode === 'Organic' ? 0.1 : 0.02}
           maxZoom={4}
           proOptions={{ hideAttribution: true }}
           colorMode={resolvedTheme}
