@@ -18,6 +18,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -42,6 +43,8 @@ import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
 import { GetProjectRunsQueryDto, ProjectRunDto } from './dto/project-runs.dto';
 import { ProjectRunReadService } from './project-run-read.service';
 import { ProjectFindingReadService } from './project-finding-read.service';
+import { ProjectFindingTimelineService } from './project-finding-timeline.service';
+import { ProjectFindingTimelineDto } from './dto/project-finding-timeline.dto';
 import {
   GetProjectFindingsQueryDto,
   ProjectFindingsResponseDto,
@@ -85,6 +88,7 @@ export class ProjectsController {
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly runRead: ProjectRunReadService,
     private readonly findingRead: ProjectFindingReadService,
+    private readonly findingTimeline: ProjectFindingTimelineService,
   ) {}
 
   @Doc({
@@ -301,6 +305,28 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ): Promise<ProjectFindingsResponseDto> {
     return this.findingRead.list(id, workspaceId, query);
+  }
+
+  @ApiOperation({
+    summary: 'Project finding timeline',
+    description:
+      'Project runs with confirmed, missed or unknown sightings for a finding.',
+  })
+  @ApiHeader({ name: WORKSPACE_HEADER_NAME, description: 'Workspace ID' })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' } })
+  @ApiParam({
+    name: 'vulnerabilityId',
+    schema: { type: 'string', format: 'uuid' },
+  })
+  @ApiOkResponse({ type: ProjectFindingTimelineDto })
+  @WorkspaceAccess('project.read')
+  @Get(':id/vulnerabilities/:vulnerabilityId/timeline')
+  getFindingTimeline(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('vulnerabilityId', ParseUUIDPipe) vulnerabilityId: string,
+    @WorkspaceId() workspaceId: string,
+  ): Promise<ProjectFindingTimelineDto> {
+    return this.findingTimeline.read(id, workspaceId, vulnerabilityId);
   }
 
   @Doc({
