@@ -71,6 +71,7 @@ import { Route as AuthedProjectsIdAssetsRouteImport } from './routes/_authed/pro
 import { Route as AuthedProjectsIdFindingsRouteImport } from './routes/_authed/projects/$id/findings'
 import { Route as AuthedProjectsIdRunsRouteImport } from './routes/_authed/projects/$id/runs'
 import { Route as AuthedProjectsIdSettingsRouteImport } from './routes/_authed/projects/$id/settings'
+import { Route as AuthedProjectsIdWorkflowsRouteImport } from './routes/_authed/projects/$id/workflows'
 import { Route as AuthedProvidersIdIndexRouteImport } from './routes/_authed/providers/$id/index'
 import { Route as AuthedProvidersIdEditRouteImport } from './routes/_authed/providers/$id/edit'
 import { Route as AuthedTargetsIdIndexRouteImport } from './routes/_authed/targets/$id/index'
@@ -398,6 +399,12 @@ const AuthedProjectsIdSettingsRoute =
     path: '/projects/$id/settings',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedProjectsIdWorkflowsRoute =
+  AuthedProjectsIdWorkflowsRouteImport.update({
+    id: '/projects/$id/workflows',
+    path: '/projects/$id/workflows',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedProvidersIdIndexRoute = AuthedProvidersIdIndexRouteImport.update({
   id: '/providers/$id/',
   path: '/providers/$id/',
@@ -490,6 +497,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
   '/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
+  '/projects/$id/workflows': typeof AuthedProjectsIdWorkflowsRoute
   '/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
@@ -557,6 +565,7 @@ export interface FileRoutesByTo {
   '/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
   '/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
+  '/projects/$id/workflows': typeof AuthedProjectsIdWorkflowsRoute
   '/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
@@ -628,6 +637,7 @@ export interface FileRoutesById {
   '/_authed/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/_authed/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
   '/_authed/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
+  '/_authed/projects/$id/workflows': typeof AuthedProjectsIdWorkflowsRoute
   '/_authed/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/_authed/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
@@ -699,6 +709,7 @@ export interface FileRouteTypes {
     | '/projects/$id/findings'
     | '/projects/$id/runs'
     | '/projects/$id/settings'
+    | '/projects/$id/workflows'
     | '/providers/$id/edit'
     | '/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
@@ -766,6 +777,7 @@ export interface FileRouteTypes {
     | '/projects/$id/findings'
     | '/projects/$id/runs'
     | '/projects/$id/settings'
+    | '/projects/$id/workflows'
     | '/providers/$id/edit'
     | '/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
@@ -836,6 +848,7 @@ export interface FileRouteTypes {
     | '/_authed/projects/$id/findings'
     | '/_authed/projects/$id/runs'
     | '/_authed/projects/$id/settings'
+    | '/_authed/projects/$id/workflows'
     | '/_authed/providers/$id/edit'
     | '/_authed/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
@@ -1294,6 +1307,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedProjectsIdSettingsRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/projects/$id/workflows': {
+      id: '/_authed/projects/$id/workflows'
+      path: '/projects/$id/workflows'
+      fullPath: '/projects/$id/workflows'
+      preLoaderRoute: typeof AuthedProjectsIdWorkflowsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/providers/$id/': {
       id: '/_authed/providers/$id/'
       path: '/providers/$id'
@@ -1380,6 +1400,7 @@ interface AuthedRouteChildren {
   AuthedProjectsIdFindingsRoute: typeof AuthedProjectsIdFindingsRoute
   AuthedProjectsIdRunsRoute: typeof AuthedProjectsIdRunsRoute
   AuthedProjectsIdSettingsRoute: typeof AuthedProjectsIdSettingsRoute
+  AuthedProjectsIdWorkflowsRoute: typeof AuthedProjectsIdWorkflowsRoute
   AuthedProvidersIdEditRoute: typeof AuthedProvidersIdEditRoute
   AuthedTargetsIdTabRoute: typeof AuthedTargetsIdTabRoute
   AuthedAgentsIdIndexRoute: typeof AuthedAgentsIdIndexRoute
@@ -1431,6 +1452,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedProjectsIdFindingsRoute: AuthedProjectsIdFindingsRoute,
   AuthedProjectsIdRunsRoute: AuthedProjectsIdRunsRoute,
   AuthedProjectsIdSettingsRoute: AuthedProjectsIdSettingsRoute,
+  AuthedProjectsIdWorkflowsRoute: AuthedProjectsIdWorkflowsRoute,
   AuthedProvidersIdEditRoute: AuthedProvidersIdEditRoute,
   AuthedTargetsIdTabRoute: AuthedTargetsIdTabRoute,
   AuthedAgentsIdIndexRoute: AuthedAgentsIdIndexRoute,

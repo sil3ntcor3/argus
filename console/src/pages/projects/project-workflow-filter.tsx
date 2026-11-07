@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useProjectsControllerGetById } from '@/services/apis/gen/queries';
 import { useRef } from 'react';
+import { projectWorkflowLabel } from './project-workflow-label';
 
 /** Filters project readers by workflow binding, including a saved historical selection. */
 export function ProjectWorkflowFilter({
@@ -34,22 +35,11 @@ export function ProjectWorkflowFilter({
           {workflow && !bindings.some((binding) => binding.id === workflow) && (
             <option value={workflow}>{selectedWorkflowLabel}</option>
           )}
-          {bindings.map(({ id, workflow: boundWorkflow }) => {
-            // The API returns the saved name, which is absent from its schema.
-            const savedName =
-              boundWorkflow &&
-              'name' in boundWorkflow &&
-              typeof boundWorkflow.name === 'string'
-                ? boundWorkflow.name.trim()
-                : '';
-            return (
-              <option key={id} value={id}>
-                {savedName ||
-                  boundWorkflow?.content?.name?.trim() ||
-                  'Unnamed workflow'}
-              </option>
-            );
-          })}
+          {bindings.map(({ id, workflow: boundWorkflow }) => (
+            <option key={id} value={id}>
+              {projectWorkflowLabel(boundWorkflow)}
+            </option>
+          ))}
         </select>
       </label>
       {projectQuery.isError && (
