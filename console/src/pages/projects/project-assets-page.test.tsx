@@ -1,5 +1,6 @@
 import type { ProjectAssetDto } from '@/services/apis/gen/queries';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectAssetsPage } from './project-assets-page';
@@ -8,15 +9,20 @@ const mock = vi.hoisted(() => ({
   permission: vi.fn(),
   assets: vi.fn(),
   scope: vi.fn(),
+  remove: vi.fn(),
 }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
   useWorkspaceState: () => ({ state: { selectedWorkspaceId: 'fixture' } }),
 }));
 vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
+vi.mock('@/utils/workspaceState', () => ({
+  getGlobalWorkspaceId: () => 'fixture',
+}));
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetAssets: mock.assets,
   useProjectsControllerGetScopeRules: mock.scope,
+  useProjectsControllerRemoveAssets: mock.remove,
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -60,6 +66,7 @@ const asset: ProjectAssetDto = {
 describe('ProjectAssetsPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mock.remove.mockReturnValue({ reset: vi.fn(), mutateAsync: vi.fn() });
     mock.scope.mockReturnValue({
       data: { rules: [], manualAssets: 0, ruleAssets: 0, autoAddAssets: false },
     });
@@ -98,6 +105,7 @@ describe('ProjectAssetsPage', () => {
       <ProjectAssetsPage projectId={projectId} page={1} onChange={vi.fn()} />,
     );
     expect(screen.getByText('demo.argus.test')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Remove demo/ })).toBeNull();
     expect(
       screen.queryByRole('link', { name: /demo.argus.test/ }),
     ).not.toBeInTheDocument();
@@ -117,6 +125,41 @@ describe('ProjectAssetsPage', () => {
     expect(onChange).toHaveBeenLastCalledWith({ page: 3 });
     fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
     expect(onChange).toHaveBeenLastCalledWith({ page: 1 });
+  });
+
+  it('confirms scoped removal and submits only the selected project asset', async () => {
+    mock.permission.mockReturnValue({
+      hasPermission: (key: string) =>
+        ['group.read', 'group.write'].includes(key),
+    });
+    const mutateAsync = vi.fn().mockResolvedValue({ count: 1 });
+    mock.remove.mockReturnValue({ reset: vi.fn(), mutateAsync });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProjectAssetsPage projectId={projectId} page={1} onChange={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    const trigger = screen.getByRole('button', {
+      name: 'Remove demo.argus.test in target argus.test',
+    });
+    fireEvent.click(trigger);
+    const dialog = within(
+      screen.getByRole('dialog', { name: 'Remove project asset' }),
+    );
+    expect(
+      dialog.getByText(/demo.argus.test in target argus.test/),
+    ).toBeVisible();
+    expect(dialog.getByText(/exclude rule/)).toBeVisible();
+    expect(mutateAsync).not.toHaveBeenCalled();
+    fireEvent.click(dialog.getByRole('button', { name: 'Remove asset' }));
+    expect(mutateAsync).toHaveBeenCalledExactlyOnceWith({
+      id: projectId,
+      data: { assetIds: [asset.id] },
+    });
+    await screen.findByRole('button', {
+      name: 'Remove demo.argus.test in target argus.test',
+    });
   });
 
   it('gates the query before accessing project data', () => {

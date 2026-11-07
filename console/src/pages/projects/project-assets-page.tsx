@@ -12,8 +12,9 @@ import {
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
-import type { ReactNode } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import { ProjectAssetAddDialog } from './project-asset-add-dialog';
+import { ProjectAssetRemoveDialog } from './project-asset-remove-dialog';
 import {
   escapeProjectAssetSearch,
   ProjectListSearch,
@@ -41,7 +42,11 @@ function AssetCard({
   asset,
   canOpenAssets,
   canOpenRuns,
-}: AssetLinks & { asset: ProjectAssetDto }) {
+  onRemove,
+}: AssetLinks & {
+  asset: ProjectAssetDto;
+  onRemove?: (trigger: HTMLButtonElement) => void;
+}) {
   const scan = asset.lastScan;
   const scannedAt = scan && date.format(new Date(scan.createdAt));
   const findings = Object.entries(asset.vulnerabilities).filter(
@@ -65,9 +70,21 @@ function AssetCard({
             asset.value
           )}
         </h2>
-        <Badge variant="outline">
-          {asset.source === 'rule' ? 'Scope rule' : 'Manual'}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">
+            {asset.source === 'rule' ? 'Scope rule' : 'Manual'}
+          </Badge>
+          {onRemove && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={`Remove ${asset.value} in target ${asset.targetValue}`}
+              onClick={(event) => onRemove(event.currentTarget)}
+            >
+              Remove
+            </Button>
+          )}
+        </div>
       </div>
       <p className="text-sm text-muted-foreground">
         Target {asset.targetValue}
@@ -130,7 +147,13 @@ function AssetList({
   canOpenAssets,
   canOpenRuns,
   canEditProject,
-}: AssetProps & AssetLinks & { canEditProject: boolean }) {
+  workspaceId,
+}: AssetProps & AssetLinks & { canEditProject: boolean; workspaceId: string }) {
+  const [assetToRemove, setAssetToRemove] = useState<ProjectAssetDto | null>(
+    null,
+  );
+  const removeTrigger = useRef<HTMLButtonElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const filters = { pageSize, source, query };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetAssets(
@@ -185,6 +208,14 @@ function AssetList({
             asset={asset}
             canOpenAssets={canOpenAssets}
             canOpenRuns={canOpenRuns}
+            onRemove={
+              canEditProject
+                ? (trigger) => {
+                    removeTrigger.current = trigger;
+                    setAssetToRemove(asset);
+                  }
+                : undefined
+            }
           />
         ))}
       </ol>
@@ -195,9 +226,22 @@ function AssetList({
     <div className="space-y-4">
       <ProjectScopeSummary projectId={projectId} canEdit={canEditProject} />
       {canEditProject && (
-        <ProjectAssetAddDialog key={projectId} projectId={projectId} />
+        <>
+          <ProjectAssetAddDialog projectId={projectId} />
+          <ProjectAssetRemoveDialog
+            asset={assetToRemove}
+            projectId={projectId}
+            workspaceId={workspaceId}
+            onClose={() => setAssetToRemove(null)}
+            restoreFocus={() => {
+              const trigger = removeTrigger.current;
+              (trigger?.isConnected ? trigger : searchInput.current)?.focus();
+            }}
+          />
+        </>
       )}
       <ProjectListSearch
+        inputRef={searchInput}
         label="Search assets"
         regionLabel="Project asset search"
         placeholder="Asset value"
@@ -311,7 +355,9 @@ export function ProjectAssetsPage(props: AssetProps) {
           Back to project overview
         </Link>
         <AssetList
+          key={`${state.selectedWorkspaceId}:${props.projectId}`}
           {...props}
+          workspaceId={state.selectedWorkspaceId}
           canOpenAssets={permission.hasPermission('asset.read')}
           canOpenRuns={permission.hasPermission('job.read')}
           canEditProject={
