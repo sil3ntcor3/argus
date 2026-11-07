@@ -417,4 +417,132 @@ describe('Project finding provenance (e2e)', () => {
       expect(await snapshot()).toEqual(before);
     });
   });
+
+  describe('private finding run filters', () => {
+    let openId: string;
+    let firstBinding: string;
+    let laterBinding: string;
+    let otherBinding: string;
+    let middle: string;
+    let last: string;
+    let siblingRun: string;
+    let corruptRun: string;
+    const list = async (
+      query: Partial<Parameters<ProjectFindingReadService['list']>[2]>,
+    ) => {
+      const service = app.app.get(ProjectFindingReadService);
+      return service.list(project, owner.workspace.id, {
+        page: 1,
+        limit: 10,
+        ...query,
+      });
+    };
+    const setBinding = (historyId: string, bindingId: string) =>
+      app.dataSource.query(
+        'UPDATE job_histories SET "projectWorkflowId"=$1 WHERE id=$2',
+        [bindingId, historyId],
+      );
+
+    beforeAll(async () => {
+      openId = (
+        await app.dataSource.query<{ id: string }[]>(
+          'SELECT "vulnerabilityId" AS id FROM project_vulnerabilities WHERE id=$1',
+          [link],
+        )
+      )[0].id;
+      const laterWorkflow = await insert('workflows', {
+        name: randomUUID(),
+        filePath: randomUUID() + '.yaml',
+        content: { name: 'Argus intermediate finding', jobs: {} },
+        workspaceId: owner.workspace.id,
+      });
+      firstBinding = await insert('project_workflows', {
+        projectId: project,
+        workflowId: workflow,
+      });
+      laterBinding = await insert('project_workflows', {
+        projectId: project,
+        workflowId: laterWorkflow,
+      });
+      otherBinding = await insert('project_workflows', {
+        projectId: sibling,
+        workflowId: workflow,
+      });
+      middle = await run(4, { workflowId: laterWorkflow });
+      last = await run(6);
+      siblingRun = await run(7, { projectId: sibling });
+      corruptRun = await run(8);
+      await setBinding(firstRun, firstBinding);
+      await setBinding(middle, laterBinding);
+      await setBinding(last, firstBinding);
+      await setBinding(siblingRun, otherBinding);
+      await setBinding(foreignRun, laterBinding);
+      await setBinding(corruptRun, laterBinding);
+      for (const jobHistoryId of [middle, siblingRun, foreignRun, corruptRun])
+        await insert('project_vulnerability_observations', {
+          projectVulnerabilityId: link,
+          jobHistoryId,
+        });
+      await app.dataSource.query(
+        'UPDATE project_vulnerabilities SET "lastSeenJobHistoryId"=$1,"lastSeenAt"=$2,"timesSeen"=3 WHERE id=$3',
+        [last, at(6), link],
+      );
+    });
+
+    it('finds an exact intermediate sighting and both legacy pointers', async () => {
+      for (const jobHistoryId of [firstRun, middle, last]) {
+        const result = await list({ jobHistoryId, limit: 1 });
+        expect(result).toMatchObject({ total: 1, data: [{ id: openId }] });
+      }
+      expect(
+        await list({ jobHistoryId: middle, page: 2, limit: 1 }),
+      ).toMatchObject({
+        total: 1,
+        data: [],
+      });
+      expect(await list({ jobHistoryId: randomUUID() })).toMatchObject({
+        total: 0,
+        data: [],
+      });
+    });
+
+    it('intersects workflow and run filters on the same owned sighting', async () => {
+      expect(await list({ projectWorkflowId: laterBinding })).toMatchObject({
+        total: 1,
+        data: [{ id: openId }],
+      });
+      expect(await list({ projectWorkflowId: firstBinding })).toMatchObject({
+        total: 1,
+      });
+      expect(
+        await list({
+          projectWorkflowId: laterBinding,
+          jobHistoryId: middle.toUpperCase(),
+        }),
+      ).toMatchObject({ total: 1 });
+      expect(
+        await list({ projectWorkflowId: laterBinding, jobHistoryId: firstRun }),
+      ).toMatchObject({ total: 0 });
+    });
+
+    it('ignores forged project, workspace, and workflow binding associations', async () => {
+      for (const jobHistoryId of [siblingRun, foreignRun])
+        expect(await list({ jobHistoryId })).toMatchObject({
+          total: 0,
+          data: [],
+        });
+      expect(await list({ projectWorkflowId: otherBinding })).toMatchObject({
+        total: 0,
+      });
+      expect(
+        await list({
+          projectWorkflowId: laterBinding,
+          jobHistoryId: corruptRun,
+        }),
+      ).toMatchObject({ total: 0 });
+      expect(await list({ jobHistoryId: corruptRun })).toMatchObject({
+        total: 1,
+      });
+    });
+  });
 });
