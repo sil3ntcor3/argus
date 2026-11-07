@@ -9,11 +9,13 @@ import { ProjectScopeWriteService } from './project-scope-write.service';
 import { ProjectScopeModule } from './project-scope.module';
 import { ProjectAssetsService } from './project-assets.service';
 import { ProjectAssetsCommandService } from './project-assets-command.service';
+import { ProjectAssetReadService } from './project-asset-read.service';
 
 @Module({
   imports: [AssetGroupModule, ProjectScopeModule],
   controllers: [ProjectsController],
   providers: [
+    ProjectAssetReadService,
     ProjectAssetsService,
     ProjectAssetsCommandService,
     ProjectMetadataReadService,
