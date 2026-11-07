@@ -22,6 +22,18 @@ const changeTitles: Record<ProjectOverviewActivityDtoChange, string> = {
   'workflow.removed': 'Workflow removed',
   triggers: 'Workflow triggers changed',
 };
+const changeDestinations = new Map<
+  ProjectOverviewActivityDtoChange,
+  '/projects/$id/assets' | '/projects/$id/workflows'
+>([
+  ['assets.added', '/projects/$id/assets'],
+  ['assets.discovered', '/projects/$id/assets'],
+  ['assets.removed', '/projects/$id/assets'],
+  ['scope', '/projects/$id/assets'],
+  ['workflow.added', '/projects/$id/workflows'],
+  ['workflow.updated', '/projects/$id/workflows'],
+  ['workflow.removed', '/projects/$id/workflows'],
+]);
 const dismissalLabels: Record<ProjectOverviewActivityDtoReason, string> = {
   false_positive: 'False positive',
   used_in_test: 'Used in test',
@@ -90,6 +102,49 @@ function changeSummary(event: ProjectOverviewActivityDto) {
   };
 }
 
+function ActivityChange({
+  event,
+  projectId,
+}: {
+  event: ProjectOverviewActivityDto;
+  projectId: string;
+}) {
+  const { title, detail } = changeSummary(event);
+  const destination =
+    event.ref === 'project.updated' && event.change
+      ? changeDestinations.get(event.change)
+      : undefined;
+  const linkClass =
+    'rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring';
+  return (
+    <div className="min-w-0">
+      <p className="text-sm font-medium">
+        {event.kind === 'dismissed' ? (
+          <Link
+            to="/projects/$id/findings"
+            params={{ id: projectId }}
+            search={{ status: 'dismissed' }}
+            className={linkClass}
+          >
+            {title}
+          </Link>
+        ) : destination ? (
+          <Link
+            to={destination}
+            params={{ id: projectId }}
+            className={linkClass}
+          >
+            {title}
+          </Link>
+        ) : (
+          title
+        )}
+      </p>
+      {detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}
+    </div>
+  );
+}
+
 /** Shows the run's saved metadata and only offers links with job read access. */
 function ActivityRun({
   event,
@@ -134,9 +189,11 @@ function ActivityRun({
 
 /** Renders the bounded timeline in the same order returned by the server. */
 export function ProjectOverviewActivity({
+  projectId,
   events,
   canOpenRuns,
 }: {
+  projectId: string;
   events: ProjectOverviewActivityDto[];
   canOpenRuns: boolean;
 }) {
@@ -156,11 +213,13 @@ export function ProjectOverviewActivity({
           No project activity yet.
         </p>
       ) : (
-        <ol className="divide-y">
+        <ol
+          aria-label="Project activity entries"
+          tabIndex={0}
+          className="max-h-[30rem] divide-y overflow-y-auto rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+        >
           {events.map((event, index) => {
             const date = eventDate.format(new Date(event.at));
-            const change =
-              event.kind === 'run' ? undefined : changeSummary(event);
             return (
               <li
                 key={`${event.kind}-${event.ref}-${event.at}-${index}`}
@@ -172,21 +231,14 @@ export function ProjectOverviewActivity({
                 >
                   {date}
                 </time>
-                {change ? (
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{change.title}</p>
-                    {change.detail && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {change.detail}
-                      </p>
-                    )}
-                  </div>
-                ) : (
+                {event.kind === 'run' ? (
                   <ActivityRun
                     event={event}
                     canOpen={canOpenRuns}
                     date={date}
                   />
+                ) : (
+                  <ActivityChange event={event} projectId={projectId} />
                 )}
               </li>
             );
