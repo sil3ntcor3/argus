@@ -7,6 +7,17 @@ import {
 import { isUUID } from 'class-validator';
 import { DataSource } from 'typeorm';
 import { lockProjectScope } from './project-scope-sync';
+import { excludeMatchedScopeAssets } from './project-scope-exclusions';
+
+function normalizeAssetIds(assetIds: string[]): string[] {
+  if (
+    !Array.isArray(assetIds) ||
+    assetIds.some((id) => typeof id !== 'string' || !isUUID(id.trim()))
+  ) {
+    throw new BadRequestException('assetIds must be an array of UUIDs');
+  }
+  return [...new Set(assetIds.map((id) => id.trim().toLowerCase()))];
+}
 
 /** Canonical membership writes; legacy group duplicate semantics stay separate. */
 @Injectable()
@@ -19,13 +30,7 @@ export class ProjectAssetsService {
     workspaceId: string,
     assetIds: string[],
   ): Promise<string[]> {
-    if (
-      !Array.isArray(assetIds) ||
-      assetIds.some((id) => typeof id !== 'string' || !isUUID(id.trim()))
-    ) {
-      throw new BadRequestException('assetIds must be an array of UUIDs');
-    }
-    const ids = [...new Set(assetIds.map((id) => id.trim().toLowerCase()))];
+    const ids = normalizeAssetIds(assetIds);
     return this.dataSource.transaction(async (manager) => {
       const id = await lockProjectScope(manager, projectId, workspaceId);
       if (ids.length === 0) return [];
@@ -52,6 +57,29 @@ export class ProjectAssetsService {
         [id, ids],
       );
       return rows.filter((row) => row.inserted).map((row) => row.assetId);
+    });
+  }
+
+  /** Remove owned memberships and exclude still-matched assets atomically. */
+  async remove(
+    projectId: string,
+    workspaceId: string,
+    assetIds: string[],
+  ): Promise<number> {
+    const ids = normalizeAssetIds(assetIds);
+    return this.dataSource.transaction(async (manager) => {
+      const id = await lockProjectScope(manager, projectId, workspaceId);
+      if (!ids.length) return 0;
+      await excludeMatchedScopeAssets(manager, id, workspaceId, ids);
+      const removed = await manager.query<unknown[]>(
+        `DELETE FROM project_assets pa USING assets a, targets t
+         WHERE pa."projectId"=$1 AND pa."assetId"=ANY($3::uuid[])
+           AND a.id=pa."assetId" AND t.id=a."targetId" AND t."workspaceId"=$2
+         RETURNING pa.id`,
+        [id, workspaceId, ids],
+      );
+      // PostgreSQL DELETE RETURNING uses [rows, count] through TypeORM.
+      return Array.isArray(removed[0]) ? removed[0].length : removed.length;
     });
   }
 }
