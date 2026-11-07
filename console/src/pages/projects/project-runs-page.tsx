@@ -54,9 +54,11 @@ function formatRunDuration(run: ProjectRunDto) {
 
 /** Renders a saved run summary with a job link for readers who can open it. */
 function ProjectRunCard({
+  projectId,
   run,
   canOpen,
 }: {
+  projectId: string;
   run: ProjectRunDto;
   canOpen: boolean;
 }) {
@@ -95,6 +97,17 @@ function ProjectRunCard({
           {run.newVulnerabilities} new · {run.recurringVulnerabilities}{' '}
           recurring
         </span>
+        {run.newVulnerabilities + run.recurringVulnerabilities > 0 && (
+          <Link
+            to="/projects/$id/findings"
+            params={{ id: projectId }}
+            search={{ run: run.id, status: 'all' }}
+            aria-label={`View findings from this run, ${name}, ${started}, run ${run.id.slice(0, 6)}`}
+            className="text-primary underline-offset-4 hover:underline focus-visible:underline"
+          >
+            View findings from this run
+          </Link>
+        )}
       </div>
     </li>
   );
@@ -171,7 +184,12 @@ function ProjectRunList({
     results = (
       <ol aria-label="Project runs" className="space-y-2">
         {data.data.map((run) => (
-          <ProjectRunCard key={run.id} run={run} canOpen={canOpen} />
+          <ProjectRunCard
+            key={run.id}
+            projectId={projectId}
+            run={run}
+            canOpen={canOpen}
+          />
         ))}
       </ol>
     );

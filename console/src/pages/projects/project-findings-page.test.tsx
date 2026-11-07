@@ -200,4 +200,47 @@ describe('ProjectFindingsPage', () => {
       provenance: 'recurring',
     });
   });
+  it('filters by the selected run and preserves search and facets when clearing it', () => {
+    const onChange = vi.fn();
+    const run = 'e13a3774-14bc-42bb-8d64-46c3680a57aa';
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={2}
+        run={run}
+        query="redirect"
+        status="all"
+        severity={['medium']}
+        onChange={onChange}
+      />,
+    );
+    expect(mock.findings).toHaveBeenCalledWith(
+      projectId,
+      {
+        page: 2,
+        limit: 20,
+        jobHistoryId: run,
+        search: 'redirect',
+        status: 'all',
+        severity: ['medium'],
+      },
+      expect.anything(),
+    );
+    expect(screen.getByText('Run e13a3774')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 3,
+      run,
+      query: 'redirect',
+      status: 'all',
+      severity: ['medium'],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear run filter' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      query: 'redirect',
+      status: 'all',
+      severity: ['medium'],
+    });
+  });
 });
