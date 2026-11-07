@@ -42,4 +42,13 @@ export class ProjectAssetsCommandService {
       count: added.length,
     };
   }
+
+  async remove(
+    projectId: string,
+    workspaceId: string,
+    assetIds: string[],
+  ): Promise<ProjectAssetsChangedDto> {
+    const count = await this.assets.remove(projectId, workspaceId, assetIds);
+    return { message: `${count} assets removed from the project`, count };
+  }
 }

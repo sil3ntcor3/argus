@@ -4708,6 +4708,14 @@ export type AddProjectAssetsDto = {
   assetIds: string[];
 };
 
+export type RemoveProjectAssetsDto = {
+  /**
+   * Asset IDs to remove
+   * @maxItems 1000
+   */
+  assetIds: string[];
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -43768,6 +43776,100 @@ export const useProjectsControllerAddAssets = <
 > => {
   return useMutation(
     getProjectsControllerAddAssetsMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Remove assets from project
+ */
+export const projectsControllerRemoveAssets = (
+  id: string,
+  removeProjectAssetsDto: RemoveProjectAssetsDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectAssetsChangedDto>(
+    {
+      url: `/api/projects/${id}/assets`,
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      data: removeProjectAssetsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerRemoveAssetsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+    TError,
+    { id: string; data: RemoveProjectAssetsDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+  TError,
+  { id: string; data: RemoveProjectAssetsDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerRemoveAssets'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+    { id: string; data: RemoveProjectAssetsDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerRemoveAssets(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerRemoveAssetsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerRemoveAssets>>
+>;
+export type ProjectsControllerRemoveAssetsMutationBody = RemoveProjectAssetsDto;
+export type ProjectsControllerRemoveAssetsMutationError = unknown;
+
+/**
+ * @summary Remove assets from project
+ */
+export const useProjectsControllerRemoveAssets = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+      TError,
+      { id: string; data: RemoveProjectAssetsDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+  TError,
+  { id: string; data: RemoveProjectAssetsDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerRemoveAssetsMutationOptions(options),
     queryClient,
   );
 };
