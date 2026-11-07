@@ -1,5 +1,6 @@
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePermission } from '@/hooks/usePermission';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
@@ -133,6 +134,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
   let title = 'Project overview';
   let description: string | undefined;
   let content: ReactNode;
+  let action: ReactNode;
   if (!state.selectedWorkspaceId) {
     content = (
       <OverviewNotice
@@ -175,6 +177,18 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
   } else {
     title = project.data.name;
     description = project.data.description ?? undefined;
+    if (
+      permission.hasPermission('project.write') ||
+      permission.hasPermission('group.write')
+    ) {
+      action = (
+        <Button asChild variant="outline">
+          <Link to="/projects/$id/settings" params={{ id: projectId }}>
+            Project settings
+          </Link>
+        </Button>
+      );
+    }
     const canOpenRuns = permission.hasPermission('job.read');
     content = (
       <div className="space-y-4">
@@ -218,6 +232,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
     <Page
       title={title}
       description={description}
+      action={action}
       className="[overflow-wrap:anywhere]"
     >
       {content}

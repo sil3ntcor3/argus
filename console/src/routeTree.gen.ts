@@ -70,6 +70,7 @@ import { Route as AuthedProjectsIdIndexRouteImport } from './routes/_authed/proj
 import { Route as AuthedProjectsIdAssetsRouteImport } from './routes/_authed/projects/$id/assets'
 import { Route as AuthedProjectsIdFindingsRouteImport } from './routes/_authed/projects/$id/findings'
 import { Route as AuthedProjectsIdRunsRouteImport } from './routes/_authed/projects/$id/runs'
+import { Route as AuthedProjectsIdSettingsRouteImport } from './routes/_authed/projects/$id/settings'
 import { Route as AuthedProvidersIdIndexRouteImport } from './routes/_authed/providers/$id/index'
 import { Route as AuthedProvidersIdEditRouteImport } from './routes/_authed/providers/$id/edit'
 import { Route as AuthedTargetsIdIndexRouteImport } from './routes/_authed/targets/$id/index'
@@ -391,6 +392,12 @@ const AuthedProjectsIdRunsRoute = AuthedProjectsIdRunsRouteImport.update({
   path: '/projects/$id/runs',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedProjectsIdSettingsRoute =
+  AuthedProjectsIdSettingsRouteImport.update({
+    id: '/projects/$id/settings',
+    path: '/projects/$id/settings',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedProvidersIdIndexRoute = AuthedProvidersIdIndexRouteImport.update({
   id: '/providers/$id/',
   path: '/providers/$id/',
@@ -482,6 +489,7 @@ export interface FileRoutesByFullPath {
   '/projects/$id/assets': typeof AuthedProjectsIdAssetsRoute
   '/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
+  '/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
   '/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
@@ -548,6 +556,7 @@ export interface FileRoutesByTo {
   '/projects/$id/assets': typeof AuthedProjectsIdAssetsRoute
   '/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
+  '/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
   '/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
@@ -618,6 +627,7 @@ export interface FileRoutesById {
   '/_authed/projects/$id/assets': typeof AuthedProjectsIdAssetsRoute
   '/_authed/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
   '/_authed/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
+  '/_authed/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
   '/_authed/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/_authed/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
@@ -688,6 +698,7 @@ export interface FileRouteTypes {
     | '/projects/$id/assets'
     | '/projects/$id/findings'
     | '/projects/$id/runs'
+    | '/projects/$id/settings'
     | '/providers/$id/edit'
     | '/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
@@ -754,6 +765,7 @@ export interface FileRouteTypes {
     | '/projects/$id/assets'
     | '/projects/$id/findings'
     | '/projects/$id/runs'
+    | '/projects/$id/settings'
     | '/providers/$id/edit'
     | '/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
@@ -823,6 +835,7 @@ export interface FileRouteTypes {
     | '/_authed/projects/$id/assets'
     | '/_authed/projects/$id/findings'
     | '/_authed/projects/$id/runs'
+    | '/_authed/projects/$id/settings'
     | '/_authed/providers/$id/edit'
     | '/_authed/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
@@ -1274,6 +1287,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedProjectsIdRunsRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/projects/$id/settings': {
+      id: '/_authed/projects/$id/settings'
+      path: '/projects/$id/settings'
+      fullPath: '/projects/$id/settings'
+      preLoaderRoute: typeof AuthedProjectsIdSettingsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/providers/$id/': {
       id: '/_authed/providers/$id/'
       path: '/providers/$id'
@@ -1359,6 +1379,7 @@ interface AuthedRouteChildren {
   AuthedProjectsIdAssetsRoute: typeof AuthedProjectsIdAssetsRoute
   AuthedProjectsIdFindingsRoute: typeof AuthedProjectsIdFindingsRoute
   AuthedProjectsIdRunsRoute: typeof AuthedProjectsIdRunsRoute
+  AuthedProjectsIdSettingsRoute: typeof AuthedProjectsIdSettingsRoute
   AuthedProvidersIdEditRoute: typeof AuthedProvidersIdEditRoute
   AuthedTargetsIdTabRoute: typeof AuthedTargetsIdTabRoute
   AuthedAgentsIdIndexRoute: typeof AuthedAgentsIdIndexRoute
@@ -1409,6 +1430,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedProjectsIdAssetsRoute: AuthedProjectsIdAssetsRoute,
   AuthedProjectsIdFindingsRoute: AuthedProjectsIdFindingsRoute,
   AuthedProjectsIdRunsRoute: AuthedProjectsIdRunsRoute,
+  AuthedProjectsIdSettingsRoute: AuthedProjectsIdSettingsRoute,
   AuthedProvidersIdEditRoute: AuthedProvidersIdEditRoute,
   AuthedTargetsIdTabRoute: AuthedTargetsIdTabRoute,
   AuthedAgentsIdIndexRoute: AuthedAgentsIdIndexRoute,
