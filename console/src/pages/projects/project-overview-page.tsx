@@ -12,6 +12,7 @@ import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { z } from 'zod';
 import { ProjectFindingTrends } from './project-finding-trends';
+import { ProjectOverviewActivity } from './project-overview-activity';
 import { ProjectOverviewRuns } from './project-overview-runs';
 
 const countFormat = new Intl.NumberFormat();
@@ -174,6 +175,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
   } else {
     title = project.data.name;
     description = project.data.description ?? undefined;
+    const canOpenRuns = permission.hasPermission('job.read');
     content = (
       <div className="space-y-4">
         <OverviewSummary overview={overview.data} />
@@ -181,7 +183,11 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
         <ProjectOverviewRuns
           lastRun={overview.data.lastRun}
           discoveryRuns={overview.data.newVulnerabilityRuns}
-          canOpenRuns={permission.hasPermission('job.read')}
+          canOpenRuns={canOpenRuns}
+        />
+        <ProjectOverviewActivity
+          events={overview.data.activity}
+          canOpenRuns={canOpenRuns}
         />
       </div>
     );
