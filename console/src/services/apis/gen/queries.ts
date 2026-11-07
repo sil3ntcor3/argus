@@ -5815,6 +5815,14 @@ export type ProjectsControllerGetManyParams = {
   targetIds?: string[];
 };
 
+export type ProjectsControllerGetAssetCandidatesParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: string;
+};
+
 export type AdminUsersControllerGetUsersParams = {
   search?: string;
   page?: number;
@@ -43873,6 +43881,403 @@ export const useProjectsControllerRemoveAssets = <
     queryClient,
   );
 };
+
+/**
+ * @summary Asset candidates
+ */
+export const projectsControllerGetAssetCandidates = (
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyAssetDto>(
+    {
+      url: `/api/projects/${id}/assets/candidates`,
+      method: 'GET',
+      params,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerGetAssetCandidatesInfiniteQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+) => {
+  return [
+    'infinite',
+    `/api/projects/${id}/assets/candidates`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetAssetCandidatesQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+) => {
+  return [
+    `/api/projects/${id}/assets/candidates`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetAssetCandidatesInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetAssetCandidatesInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    QueryKey,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  > = ({ signal, pageParam }) =>
+    projectsControllerGetAssetCandidates(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    TError,
+    TData,
+    QueryKey,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetAssetCandidatesInfiniteQueryResult =
+  NonNullable<Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>>;
+export type ProjectsControllerGetAssetCandidatesInfiniteQueryError = unknown;
+
+export function useProjectsControllerGetAssetCandidatesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetAssetCandidatesParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetCandidatesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetCandidatesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Asset candidates
+ */
+
+export function useProjectsControllerGetAssetCandidatesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getProjectsControllerGetAssetCandidatesInfiniteQueryOptions(
+      id,
+      params,
+      options,
+    );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getProjectsControllerGetAssetCandidatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetAssetCandidatesQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>
+  > = ({ signal }) =>
+    projectsControllerGetAssetCandidates(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetAssetCandidatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>
+>;
+export type ProjectsControllerGetAssetCandidatesQueryError = unknown;
+
+export function useProjectsControllerGetAssetCandidates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetAssetCandidatesParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetCandidates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetCandidates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Asset candidates
+ */
+
+export function useProjectsControllerGetAssetCandidates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetAssetCandidatesQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 /**
  * @summary Get project by ID
