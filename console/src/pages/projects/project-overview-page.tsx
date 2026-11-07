@@ -12,6 +12,7 @@ import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { z } from 'zod';
 import { ProjectFindingTrends } from './project-finding-trends';
+import { ProjectOverviewRuns } from './project-overview-runs';
 
 const countFormat = new Intl.NumberFormat();
 const projectIdSchema = z.string().uuid();
@@ -177,6 +178,11 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
       <div className="space-y-4">
         <OverviewSummary overview={overview.data} />
         <ProjectFindingTrends weeks={overview.data.weekly} />
+        <ProjectOverviewRuns
+          lastRun={overview.data.lastRun}
+          discoveryRuns={overview.data.newVulnerabilityRuns}
+          canOpenRuns={permission.hasPermission('job.read')}
+        />
       </div>
     );
   }

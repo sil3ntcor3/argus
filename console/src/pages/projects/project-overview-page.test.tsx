@@ -14,7 +14,8 @@ vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.usePermission }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
   useWorkspaceState: mock.useWorkspaceState,
 }));
-vi.mock('@/services/apis/gen/queries', () => ({
+vi.mock(import('@/services/apis/gen/queries'), async (importOriginal) => ({
+  ...(await importOriginal()),
   useProjectsControllerGetById: mock.useProject,
   useProjectsControllerGetOverview: mock.useOverview,
 }));
@@ -28,6 +29,8 @@ const overview = {
   newVulnerabilities: 2,
   openVulnerabilities: { critical: 3, high: 2, medium: 1, low: 1, info: 1 },
   weekly: [],
+  lastRun: null,
+  newVulnerabilityRuns: [],
 };
 
 describe('ProjectOverviewPage', () => {
