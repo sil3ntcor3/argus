@@ -93,6 +93,9 @@ describe('ProjectWorkflowsPage', () => {
     render(<ProjectWorkflowsPage projectId={projectId} />);
     expect(screen.getByText('Completed')).toBeVisible();
     expect(screen.queryByRole('link', { name: /latest run/i })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /run workflow for/i }),
+    ).toBeNull();
   });
 
   it('opens the selected workflow as YAML in dependency order and restores focus', async () => {
