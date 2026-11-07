@@ -3,6 +3,7 @@ import * as request from 'supertest';
 import type { EntityManager } from 'typeorm';
 import { Severity, ToolCategory } from '../src/common/enums/enum';
 import { ProjectFindingReadService } from '../src/modules/projects/project-finding-read.service';
+import { ProjectFindingTimelineService } from '../src/modules/projects/project-finding-timeline.service';
 import { VulnerabilityStatus } from '../src/modules/vulnerabilities/dto/get-vulnerability.dto';
 import {
   PROJECT_FINDING_PROVENANCE_SQL,
@@ -44,6 +45,7 @@ describe('Project finding provenance (e2e)', () => {
       status?: string;
       category?: ToolCategory;
       historyId?: string;
+      isSaveData?: boolean;
     } = {},
   ) => {
     const {
@@ -54,6 +56,7 @@ describe('Project finding provenance (e2e)', () => {
       status = 'completed',
       category = ToolCategory.VULNERABILITIES,
       historyId = randomUUID(),
+      isSaveData = true,
     } = settings;
     const id = await insert('job_histories', {
       id: historyId,
@@ -67,6 +70,7 @@ describe('Project finding provenance (e2e)', () => {
       toolId,
       status,
       category,
+      isSaveData,
     });
     return id;
   };
@@ -174,6 +178,17 @@ describe('Project finding provenance (e2e)', () => {
       });
     } finally {
       await deleteRun(portScan);
+    }
+  });
+  it('ignores completed scans that did not save results as evidence of a miss', async () => {
+    const unsaved = await run(14, { isSaveData: false });
+    try {
+      expect(await read()).toEqual({
+        referenceRunId: firstRun,
+        provenance: 'new',
+      });
+    } finally {
+      await deleteRun(unsaved);
     }
   });
   it('distinguishes a later eligible miss from an exact observed run without moving its legacy pointer', async () => {
@@ -790,6 +805,161 @@ describe('Project finding provenance (e2e)', () => {
         });
         await request(app.server).get(path()).set(headers).expect(200);
       });
+    });
+  });
+
+  describe('private finding timeline', () => {
+    let timelineProject: string;
+    let findingId: string;
+    let timelineLink: string;
+    let first: string;
+    let unknown: string;
+    let observed: string;
+    let last: string;
+    let sameTime: string;
+    let missed: string;
+    const timeline = () => app.app.get(ProjectFindingTimelineService);
+    const read = () =>
+      timeline().read(timelineProject, owner.workspace.id, findingId);
+
+    beforeAll(async () => {
+      timelineProject = await insert('projects', {
+        name: randomUUID(),
+        workspaceId: owner.workspace.id,
+      });
+      const start = (day: number, settings: Parameters<typeof run>[1] = {}) =>
+        run(day, { projectId: timelineProject, ...settings });
+      const tied = randomUUID().slice(0, -1);
+      await start(1); // before the first sighting
+      first = await start(2);
+      unknown = await start(3);
+      observed = await start(4, { status: 'failed' });
+      last = await start(5, { historyId: tied + '0' });
+      sameTime = await start(5, { historyId: tied + 'f' });
+      missed = await start(6);
+      await insert('jobs', {
+        jobHistoryId: missed,
+        assetId: asset,
+        toolId: tool,
+        status: 'completed',
+        category: ToolCategory.VULNERABILITIES,
+      });
+      await start(7, { category: ToolCategory.PORTS_SCANNER });
+      await start(7, { assetId: unrelatedAsset });
+      await start(7, { toolId: otherTool });
+      const wrongWorkflow = await start(8, { workflowId: foreignWorkflow });
+      const wrongProject = await start(9, { projectId: sibling });
+      findingId = await insert('vulnerabilities', {
+        name: 'Finding timeline fixture',
+        severity: Severity.HIGH,
+        assetId: asset,
+        toolId: tool,
+      });
+      timelineLink = await insert('project_vulnerabilities', {
+        projectId: timelineProject,
+        vulnerabilityId: findingId,
+        firstSeenJobHistoryId: first,
+        lastSeenJobHistoryId: last,
+        firstSeenAt: at(2),
+        lastSeenAt: at(5),
+        timesSeen: 3,
+      });
+      for (const jobHistoryId of [observed, wrongWorkflow, wrongProject]) {
+        await insert('project_vulnerability_observations', {
+          projectVulnerabilityId: timelineLink,
+          jobHistoryId,
+        });
+      }
+    });
+
+    it('uses exact and legacy sightings, preserves uncertainty, and excludes ineligible runs', async () => {
+      const result = await read();
+      expect(result.vulnerability).toMatchObject({
+        id: findingId,
+        firstSeen: { runId: first },
+        lastSeen: { runId: last },
+        provenance: 'not_seen',
+      });
+      expect(result.runs.map((row) => [row.id, row.sighting])).toEqual([
+        [first, 'seen'],
+        [unknown, 'unknown'],
+        [observed, 'seen'],
+        [last, 'seen'],
+        [sameTime, 'unknown'],
+        [missed, 'missed'],
+      ]);
+      expect(Object.keys(result.runs[0]).sort()).toEqual([
+        'createdAt',
+        'id',
+        'sighting',
+        'workflowName',
+      ]);
+    });
+
+    it('orders the evidence window by run start even when reports arrive out of order', async () => {
+      const pointers = (a: string, b: string) =>
+        app.dataSource.query(
+          'UPDATE project_vulnerabilities SET "firstSeenJobHistoryId"=$1,"lastSeenJobHistoryId"=$2 WHERE id=$3',
+          [a, b, timelineLink],
+        );
+      const saveResults = (enabled: boolean) =>
+        app.dataSource.query(
+          'UPDATE jobs SET "isSaveData"=$1 WHERE "jobHistoryId"=ANY($2::uuid[])',
+          [enabled, [last, missed]],
+        );
+      await pointers(last, first);
+      await saveResults(false);
+      try {
+        const result = await read();
+        expect(result.vulnerability.provenance).toBe('recurring');
+        expect(result.runs.map((row) => [row.id, row.sighting])).toEqual([
+          [first, 'seen'],
+          [unknown, 'unknown'],
+          [observed, 'seen'],
+          [last, 'seen'],
+          [sameTime, 'unknown'],
+        ]);
+      } finally {
+        await saveResults(true);
+        await pointers(first, last);
+      }
+    });
+
+    it('finds archived linked records and uses retained timestamps after a last-run reference disappears', async () => {
+      await app.dataSource.query(
+        'UPDATE vulnerabilities SET "isArchived"=true WHERE id=$1',
+        [findingId],
+      );
+      await app.dataSource.query(
+        'UPDATE project_vulnerabilities SET "lastSeenJobHistoryId"=NULL WHERE id=$1',
+        [timelineLink],
+      );
+      const result = await read();
+      expect(result.vulnerability).toMatchObject({
+        id: findingId,
+        lastSeen: { runId: null },
+      });
+      expect(result.runs.find((row) => row.id === sameTime)?.sighting).toBe(
+        'unknown',
+      );
+      expect(result.runs.find((row) => row.id === missed)?.sighting).toBe(
+        'missed',
+      );
+    });
+
+    it('rejects cross-workspace, unlinked and nonexistent findings', async () => {
+      await expect(
+        timeline().read(timelineProject, owner.workspace.id, ''),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(
+        timeline().read(timelineProject, other.workspace.id, findingId),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(
+        timeline().read(sibling, owner.workspace.id, findingId),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(
+        timeline().read(timelineProject, owner.workspace.id, randomUUID()),
+      ).rejects.toMatchObject({ status: 404 });
     });
   });
 });
