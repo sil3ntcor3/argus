@@ -11,7 +11,7 @@ import {
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
-import type { ReactNode } from 'react';
+import { type ReactNode, useRef } from 'react';
 import { ProjectFindingSearch } from './project-finding-search';
 import { projectRouteId } from './project-route-id';
 import { ProjectFindingTimeline } from './project-finding-timeline';
@@ -22,7 +22,11 @@ import {
 } from './project-finding-facets';
 
 const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-type FindingsSearch = FindingFacets & { page: number; query?: string };
+type FindingsSearch = FindingFacets & {
+  page: number;
+  query?: string;
+  run?: string;
+};
 
 type FindingsProps = FindingsSearch & {
   projectId: string;
@@ -105,15 +109,18 @@ function FindingList({
   canOpen,
   canOpenRuns,
   query,
+  run,
   provenance,
   severity,
   status: findingStatus,
 }: FindingsProps & { canOpen: boolean; canOpenRuns: boolean }) {
+  const searchInput = useRef<HTMLInputElement>(null);
   const facets = { provenance, severity, status: findingStatus };
+  const filters = { ...facets, query, run };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetFindings(
       projectId,
-      { page, limit: 20, search: query, ...facets },
+      { page, limit: 20, search: query, jobHistoryId: run, ...facets },
       { query: { retry: false } },
     );
   const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -166,15 +173,34 @@ function FindingList({
 
   return (
     <div className="space-y-4">
+      {run && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">Run {run.slice(0, 8)}</Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              searchInput.current?.focus();
+              onChange({ ...filters, run: undefined, page: 1 });
+            }}
+          >
+            Clear run filter
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Provenance reflects current project scan history.
+          </p>
+        </div>
+      )}
       <ProjectFindingSearch
+        inputRef={searchInput}
         term={query}
-        onChange={(next) => onChange({ ...facets, query: next, page: 1 })}
+        onChange={(next) => onChange({ ...filters, query: next, page: 1 })}
       />
       <ProjectFindingFacets
         {...facets}
         severityCounts={data?.severityCounts}
         provenanceCounts={data?.provenanceCounts}
-        onChange={(next) => onChange({ ...next, query, page: 1 })}
+        onChange={(next) => onChange({ ...filters, ...next, page: 1 })}
       />
       {results}
       <nav
@@ -188,8 +214,7 @@ function FindingList({
           onClick={() => {
             if (page > 1)
               onChange({
-                ...facets,
-                query,
+                ...filters,
                 page: page > (data?.pageCount ?? page) ? 1 : page - 1,
               });
           }}
@@ -202,8 +227,7 @@ function FindingList({
           aria-disabled={!data?.hasNextPage}
           className="aria-disabled:opacity-50"
           onClick={() => {
-            if (data?.hasNextPage)
-              onChange({ ...facets, query, page: page + 1 });
+            if (data?.hasNextPage) onChange({ ...filters, page: page + 1 });
           }}
         >
           Next

@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useEffect, useRef } from 'react';
+import { type RefObject, useEffect, useRef } from 'react';
 import { z } from 'zod';
 
 const maxSearchLength = 200;
@@ -11,14 +11,15 @@ export const projectFindingSearchTerm = z
   .transform((term) => term || undefined);
 
 export function ProjectFindingSearch({
+  inputRef,
   term,
   onChange,
 }: {
+  inputRef: RefObject<HTMLInputElement | null>;
   term?: string;
   onChange: (term?: string) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Sync copied links and browser history without replacing the focused input.
   useEffect(() => {

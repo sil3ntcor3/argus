@@ -24,15 +24,23 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({
     to,
     params,
+    search,
     children,
     'aria-label': label,
   }: {
     to: string;
     params: { id: string };
+    search?: Record<string, string>;
     children: ReactNode;
     'aria-label'?: string;
   }) => (
-    <a href={to.replace('$id', params.id)} aria-label={label}>
+    <a
+      href={
+        to.replace('$id', params.id) +
+        (search ? '?' + new URLSearchParams(search) : '')
+      }
+      aria-label={label}
+    >
       {children}
     </a>
   ),
@@ -102,8 +110,16 @@ describe('ProjectRunsPage', () => {
     );
     expect(screen.getByText('Perimeter scan')).toBeVisible();
     expect(
-      screen.queryByRole('link', { name: /Perimeter scan/ }),
+      screen.queryByRole('link', { name: /^Perimeter scan,/ }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', {
+        name: /^View findings from this run, Perimeter scan,/,
+      }),
+    ).toHaveAttribute(
+      'href',
+      `/projects/${projectId}/findings?run=${run.id}&status=all`,
+    );
   });
 
   it('defers the runs request without project access or a valid project ID', () => {

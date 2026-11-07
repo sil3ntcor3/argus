@@ -1,3 +1,4 @@
+import { projectRouteId } from '@/pages/projects/project-route-id';
 import { projectFindingSearchTerm } from '@/pages/projects/project-finding-search';
 import { ProjectFindingsPage } from '@/pages/projects/project-findings-page';
 import {
@@ -10,6 +11,7 @@ import { z } from 'zod';
 
 const findingsSearch = z.object({
   page: z.number().int().min(1).max(10000000).optional().catch(undefined),
+  run: projectRouteId.optional().catch(undefined),
   // Direct URL search values can be parsed as primitives by the router.
   query: z
     .preprocess(
@@ -41,13 +43,21 @@ const findingsSearch = z.object({
 
 function ProjectFindingsRoute() {
   const { id } = Route.useParams();
-  const { page = 1, query, provenance, severity, status } = Route.useSearch();
+  const {
+    page = 1,
+    query,
+    run,
+    provenance,
+    severity,
+    status,
+  } = Route.useSearch();
   const navigate = Route.useNavigate();
   return (
     <ProjectFindingsPage
       projectId={id}
       page={page}
       query={query}
+      run={run}
       provenance={provenance}
       severity={severity}
       status={status}
