@@ -18,6 +18,7 @@ import {
 import JobStatusBadge from '@/components/ui/job-status';
 import { OpenLink } from '@/components/ui/open-link';
 import ToolLogo from '@/components/ui/tool-logo';
+import { RunProgress } from './components/run-progress';
 import RunWorkflowGraph from './components/run-workflow-graph';
 import { useBugReportUrl } from '@/hooks/use-bug-report-url';
 import { usePermission } from '@/hooks/usePermission';
@@ -526,6 +527,13 @@ export default function Runs() {
         )
       }
     >
+      {jobHistoryDetail && (
+        <RunProgress
+          steps={steps}
+          tools={jobHistoryDetail.tools}
+          activeJobsCount={activeJobsCount}
+        />
+      )}
       {/* Workflow steps (DAG) — falls back to the tool list for runs created
           before the workflow engine existed. */}
       {steps.length ? (
