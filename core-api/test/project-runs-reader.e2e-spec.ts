@@ -275,8 +275,62 @@ describe('Private project run reader (e2e)', () => {
         { id: runs[1], newVulnerabilities: 0, recurringVulnerabilities: 2 },
       ],
     });
+    const activity = await service.listActivity(project, owner.workspace.id);
+    expect(activity.map((item) => item.ref)).toEqual([
+      ...runs.slice(1).sort().reverse(),
+      runs[0],
+    ]);
+    expect(activity.find((item) => item.ref === runs[1])).toMatchObject({
+      kind: 'run',
+      jobRunType: 'scheduled',
+      runStatus: 'cancelled',
+      scopeSize: 1,
+      newVulnerabilities: 0,
+      recurringVulnerabilities: 2,
+    });
+    expect(Object.keys(activity[0]).sort()).toEqual([
+      'at',
+      'jobRunType',
+      'kind',
+      'newVulnerabilities',
+      'recurringVulnerabilities',
+      'ref',
+      'runStatus',
+      'scopeSize',
+      'workflowName',
+    ]);
     expect(await snapshot()).toEqual(before);
   });
+  it('bounds recent run activity and interprets stored timestamps in the database timezone', async () => {
+    const runner = app.dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      const m = runner.manager;
+      await m.query("SET LOCAL TIME ZONE 'America/Chicago'");
+      const [{ id }] = await m.query<{ id: string }[]>(
+        'INSERT INTO projects (name, "workspaceId") VALUES ($1,$2) RETURNING id',
+        [randomUUID(), owner.workspace.id],
+      );
+      await m.query(
+        `INSERT INTO job_histories ("workflowId","projectId","createdAt","isCompleted")
+        SELECT h."workflowId",$1,TIMESTAMP '2026-03-02 00:00:00'+i*interval '1 minute',true
+        FROM job_histories h CROSS JOIN generate_series(1,16) i WHERE h.id=$2`,
+        [id, runs[0]],
+      );
+      const activity = await service.listActivity(id, owner.workspace.id, m);
+      expect(activity).toHaveLength(15);
+      expect(activity[0].at.toISOString()).toBe('2026-03-02T06:16:00.000Z');
+      expect(activity[14].at.toISOString()).toBe('2026-03-02T06:02:00.000Z');
+      await expect(
+        service.listActivity(id, other.workspace.id, m),
+      ).rejects.toMatchObject({ status: 404 });
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+  });
+
   it('rejects missing projects, foreign workspaces and unsafe paging', async () => {
     for (const [id, workspace] of [
       [project, other.workspace.id],
