@@ -125,7 +125,8 @@ function AssetList({
   onChange,
   canOpenAssets,
   canOpenRuns,
-}: AssetProps & AssetLinks) {
+  canEditScope,
+}: AssetProps & AssetLinks & { canEditScope: boolean }) {
   const filters = { pageSize, source, query };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetAssets(
@@ -188,7 +189,7 @@ function AssetList({
 
   return (
     <div className="space-y-4">
-      <ProjectScopeSummary projectId={projectId} />
+      <ProjectScopeSummary projectId={projectId} canEdit={canEditScope} />
       <ProjectListSearch
         label="Search assets"
         regionLabel="Project asset search"
@@ -306,6 +307,10 @@ export function ProjectAssetsPage(props: AssetProps) {
           {...props}
           canOpenAssets={permission.hasPermission('asset.read')}
           canOpenRuns={permission.hasPermission('job.read')}
+          canEditScope={
+            permission.hasPermission('project.write') ||
+            permission.hasPermission('group.write')
+          }
         />
       </div>
     );
