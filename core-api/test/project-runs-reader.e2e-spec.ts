@@ -9,6 +9,7 @@ describe('Private project run reader (e2e)', () => {
   let owner: Awaited<ReturnType<typeof createUserWithWorkspace>>,
     other: typeof owner;
   let project: string, sibling: string, binding: string, foreignBinding: string;
+  let assetId: string;
   const runs: string[] = [];
   // Fixture table/column names below are literals; bind every stored value.
   const insert = async (table: string, values: Record<string, unknown>) => {
@@ -64,7 +65,7 @@ describe('Private project run reader (e2e)', () => {
       type: 'DOMAIN',
       workspaceId,
     });
-    const assetId = await insert('assets', { value, targetId });
+    assetId = await insert('assets', { value, targetId });
     const [{ id: toolId }] = await app.dataSource.query<{ id: string }[]>(
       'SELECT id FROM tools WHERE name=$1 LIMIT 1',
       ['nuclei'],
@@ -169,6 +170,8 @@ describe('Private project run reader (e2e)', () => {
     const rows = runs.map((id) => result.data.find((row) => row.id === id));
     expect(rows[0]).toMatchObject({
       status: 'completed',
+      newVulnerabilities: 0,
+      recurringVulnerabilities: 0,
       scopeSize: 1,
       stepsTotal: 3,
       stepsDone: 2,
@@ -190,6 +193,88 @@ describe('Private project run reader (e2e)', () => {
       for (const key of ['scope', 'steps', 'workflowContent', 'projectId'])
         expect(row).not.toHaveProperty(key);
     expect(JSON.stringify(rows)).not.toContain('secret');
+  });
+  it('counts exact intermediate sightings and legacy run pointers once per owned finding', async () => {
+    const value = randomUUID() + '.argus.test';
+    const targetId = await insert('targets', {
+      value,
+      type: 'DOMAIN',
+      workspaceId: other.workspace.id,
+    });
+    const foreignAssetId = await insert('assets', { value, targetId });
+    const links: string[] = [];
+    const fixtures: [string, string, string | null, string, string[]][] = [
+      [project, assetId, runs[0], runs[2], runs],
+      [project, assetId, runs[0], runs[1], []],
+      [sibling, assetId, runs[0], runs[1], [runs[1]]],
+      [project, foreignAssetId, runs[0], runs[1], [runs[1]]],
+      [project, assetId, runs[0], runs[0], [runs[0]]],
+      [project, assetId, null, runs[2], [runs[2]]],
+    ];
+    for (const [
+      projectId,
+      findingAsset,
+      firstSeenJobHistoryId,
+      lastSeenJobHistoryId,
+      seen,
+    ] of fixtures) {
+      const vulnerabilityId = await insert('vulnerabilities', {
+        name: randomUUID(),
+        severity: 'high',
+        assetId: findingAsset,
+      });
+      const link = await insert('project_vulnerabilities', {
+        projectId,
+        vulnerabilityId,
+        firstSeenJobHistoryId,
+        lastSeenJobHistoryId,
+        timesSeen: Math.max(
+          firstSeenJobHistoryId === lastSeenJobHistoryId ? 1 : 2,
+          seen.length,
+        ),
+      });
+      links.push(link);
+      for (const jobHistoryId of seen)
+        await insert('project_vulnerability_observations', {
+          projectVulnerabilityId: link,
+          jobHistoryId,
+        });
+    }
+    const snapshot = () =>
+      Promise.all([
+        app.dataSource.query(
+          'SELECT * FROM project_vulnerabilities WHERE id=ANY($1::uuid[]) ORDER BY id',
+          [links],
+        ),
+        app.dataSource.query(
+          'SELECT * FROM project_vulnerability_observations WHERE "projectVulnerabilityId"=ANY($1::uuid[]) ORDER BY id',
+          [links],
+        ),
+      ]);
+    const before = await snapshot(),
+      result = await list();
+    expect(
+      runs.map((id) => {
+        const row = result.data.find((r) => r.id === id);
+        return [row?.newVulnerabilities, row?.recurringVulnerabilities];
+      }),
+    ).toEqual([
+      [3, 0],
+      [0, 2],
+      [0, 2],
+    ]);
+    const scheduled = await list({
+      limit: 1,
+      jobRunType: JobRunType.SCHEDULED,
+    });
+    expect(scheduled).toMatchObject({
+      total: 1,
+      hasNextPage: false,
+      data: [
+        { id: runs[1], newVulnerabilities: 0, recurringVulnerabilities: 2 },
+      ],
+    });
+    expect(await snapshot()).toEqual(before);
   });
   it('rejects missing projects, foreign workspaces and unsafe paging', async () => {
     for (const [id, workspace] of [
