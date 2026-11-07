@@ -167,4 +167,37 @@ describe('ProjectFindingsPage', () => {
       status: 'dismissed',
     });
   });
+  it('passes literal search terms with the active facets and resets paging', () => {
+    const onChange = vi.fn();
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={2}
+        provenance="recurring"
+        query="CVE-2026-1234"
+        onChange={onChange}
+      />,
+    );
+    expect(mock.findings).toHaveBeenCalledWith(
+      projectId,
+      { page: 2, limit: 20, provenance: 'recurring', search: 'CVE-2026-1234' },
+      expect.anything(),
+    );
+    const input = screen.getByRole('searchbox', { name: 'Search findings' });
+    expect(input).toHaveValue('CVE-2026-1234');
+    fireEvent.change(input, { target: { value: '  100%_  ' } });
+    fireEvent.submit(
+      screen.getByRole('search', { name: 'Project findings search' }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      query: '  100%_  ',
+      provenance: 'recurring',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      provenance: 'recurring',
+    });
+  });
 });

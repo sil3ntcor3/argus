@@ -12,6 +12,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
+import { ProjectFindingSearch } from './project-finding-search';
 import { projectRouteId } from './project-route-id';
 import { ProjectFindingTimeline } from './project-finding-timeline';
 import {
@@ -21,7 +22,7 @@ import {
 } from './project-finding-facets';
 
 const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-type FindingsSearch = FindingFacets & { page: number };
+type FindingsSearch = FindingFacets & { page: number; query?: string };
 
 type FindingsProps = FindingsSearch & {
   projectId: string;
@@ -103,6 +104,7 @@ function FindingList({
   onChange,
   canOpen,
   canOpenRuns,
+  query,
   provenance,
   severity,
   status: findingStatus,
@@ -111,7 +113,7 @@ function FindingList({
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetFindings(
       projectId,
-      { page, limit: 20, ...facets },
+      { page, limit: 20, search: query, ...facets },
       { query: { retry: false } },
     );
   const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -164,11 +166,15 @@ function FindingList({
 
   return (
     <div className="space-y-4">
+      <ProjectFindingSearch
+        term={query}
+        onChange={(next) => onChange({ ...facets, query: next, page: 1 })}
+      />
       <ProjectFindingFacets
         {...facets}
         severityCounts={data?.severityCounts}
         provenanceCounts={data?.provenanceCounts}
-        onChange={(next) => onChange({ ...next, page: 1 })}
+        onChange={(next) => onChange({ ...next, query, page: 1 })}
       />
       {results}
       <nav
@@ -183,6 +189,7 @@ function FindingList({
             if (page > 1)
               onChange({
                 ...facets,
+                query,
                 page: page > (data?.pageCount ?? page) ? 1 : page - 1,
               });
           }}
@@ -195,7 +202,8 @@ function FindingList({
           aria-disabled={!data?.hasNextPage}
           className="aria-disabled:opacity-50"
           onClick={() => {
-            if (data?.hasNextPage) onChange({ ...facets, page: page + 1 });
+            if (data?.hasNextPage)
+              onChange({ ...facets, query, page: page + 1 });
           }}
         >
           Next
