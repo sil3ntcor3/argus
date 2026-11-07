@@ -1,5 +1,9 @@
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
+import {
+  WorkflowFileSheet,
+  workflowYaml,
+} from '@/components/common/workflow-file-sheet';
 import { Button } from '@/components/ui/button';
 import JobStatusBadge from '@/components/ui/job-status';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,7 +16,7 @@ import {
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
-import type { ReactNode } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { projectRouteId } from './project-route-id';
 import { projectWorkflowLabel } from './project-workflow-label';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
@@ -33,7 +37,13 @@ function WorkflowCard({
   projectId: string;
   editWorkspaceId?: string;
 }) {
+  const [sourceRequested, setSourceRequested] = useState(false);
   const name = projectWorkflowLabel(binding.workflow);
+  const definition = binding.workflow?.content;
+  const yaml = useMemo(
+    () => (sourceRequested ? workflowYaml(definition) : ''),
+    [definition, sourceRequested],
+  );
   const cron = binding.schedule;
   const scheduled = cron && cron !== 'disabled';
   const scheduleLabel =
@@ -53,14 +63,28 @@ function WorkflowCard({
             : `${cron} UTC`
           : 'Schedule disabled'}
       </p>
-      {editWorkspaceId && (
-        <ProjectWorkflowScheduleDialog
-          projectId={projectId}
-          bindingId={binding.id}
-          workflowName={name}
-          schedule={cron}
-          workspaceId={editWorkspaceId}
-        />
+      {(editWorkspaceId || definition) && (
+        <div className="flex flex-wrap gap-2">
+          {editWorkspaceId && (
+            <ProjectWorkflowScheduleDialog
+              projectId={projectId}
+              bindingId={binding.id}
+              workflowName={name}
+              schedule={cron}
+              workspaceId={editWorkspaceId}
+            />
+          )}
+          {definition && (
+            <WorkflowFileSheet
+              triggerLabel={`View workflow for ${name}`}
+              description={`Saved definition for ${name}`}
+              onOpenChange={(open) => {
+                if (open) setSourceRequested(true);
+              }}
+              yaml={yaml}
+            />
+          )}
+        </div>
       )}
       {lastRun ? (
         <div className="flex flex-wrap items-center gap-2 text-sm">

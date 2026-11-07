@@ -86,6 +86,7 @@ export function workflowYaml(content: object | null | undefined): string {
 export function WorkflowFileSheet({
   yaml,
   description,
+  triggerLabel,
   open,
   onOpenChange,
   isLoading = false,
@@ -93,6 +94,7 @@ export function WorkflowFileSheet({
 }: {
   yaml: string;
   description: string;
+  triggerLabel?: string;
   /** Controlled open state, e.g. to fetch the definition only when opened. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -102,7 +104,7 @@ export function WorkflowFileSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="sm">
+        <Button variant="ghost" size="sm" aria-label={triggerLabel}>
           <Code2 className="size-4" />
           View workflow
         </Button>
