@@ -13,7 +13,11 @@ import {
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
-import { ProjectListSearch } from './project-list-search';
+import { ProjectAssetAddDialog } from './project-asset-add-dialog';
+import {
+  escapeProjectAssetSearch,
+  ProjectListSearch,
+} from './project-list-search';
 import { projectRouteId } from './project-route-id';
 import { ProjectScopeSummary } from './project-scope-summary';
 
@@ -125,8 +129,8 @@ function AssetList({
   onChange,
   canOpenAssets,
   canOpenRuns,
-  canEditScope,
-}: AssetProps & AssetLinks & { canEditScope: boolean }) {
+  canEditProject,
+}: AssetProps & AssetLinks & { canEditProject: boolean }) {
   const filters = { pageSize, source, query };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetAssets(
@@ -136,7 +140,7 @@ function AssetList({
         limit: pageSize ?? 20,
         sortOrder: 'DESC',
         source,
-        search: query?.replace(/[\\%_]/g, '\\$&'),
+        search: escapeProjectAssetSearch(query),
       },
       { query: { retry: false } },
     );
@@ -189,7 +193,10 @@ function AssetList({
 
   return (
     <div className="space-y-4">
-      <ProjectScopeSummary projectId={projectId} canEdit={canEditScope} />
+      <ProjectScopeSummary projectId={projectId} canEdit={canEditProject} />
+      {canEditProject && (
+        <ProjectAssetAddDialog key={projectId} projectId={projectId} />
+      )}
       <ProjectListSearch
         label="Search assets"
         regionLabel="Project asset search"
@@ -307,7 +314,7 @@ export function ProjectAssetsPage(props: AssetProps) {
           {...props}
           canOpenAssets={permission.hasPermission('asset.read')}
           canOpenRuns={permission.hasPermission('job.read')}
-          canEditScope={
+          canEditProject={
             permission.hasPermission('project.write') ||
             permission.hasPermission('group.write')
           }

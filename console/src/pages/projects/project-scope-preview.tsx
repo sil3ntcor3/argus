@@ -10,11 +10,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
-  getProjectsControllerGetAssetCandidatesQueryKey,
-  getProjectsControllerGetAssetsQueryKey,
-  getProjectsControllerGetByIdQueryKey,
-  getProjectsControllerGetManyQueryKey,
-  getProjectsControllerGetOverviewQueryKey,
   getProjectsControllerGetScopeRulesQueryKey,
   projectsControllerGetScopeRules,
   ProjectScopeRuleMode,
@@ -28,6 +23,7 @@ import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { invalidateProjectMembership } from './project-membership-cache';
 
 const maxRules = 100;
 const modes = Object.values(ProjectScopeRuleMode);
@@ -117,17 +113,7 @@ function ScopePreviewForm({
         .catch(() => undefined);
       if (!result || getGlobalWorkspaceId() !== workspaceId) return;
 
-      const keys = [
-        getProjectsControllerGetScopeRulesQueryKey(projectId),
-        getProjectsControllerGetAssetsQueryKey(projectId),
-        getProjectsControllerGetAssetCandidatesQueryKey(projectId),
-        getProjectsControllerGetOverviewQueryKey(projectId),
-        getProjectsControllerGetByIdQueryKey(projectId),
-        getProjectsControllerGetManyQueryKey(),
-      ];
-      await Promise.all(
-        keys.map((queryKey) => queryClient.invalidateQueries({ queryKey })),
-      );
+      await invalidateProjectMembership(queryClient, projectId);
       if (getGlobalWorkspaceId() !== workspaceId) return;
       toast.success(
         `Scope saved. ${result.added} added, ${result.removed} removed.`,
