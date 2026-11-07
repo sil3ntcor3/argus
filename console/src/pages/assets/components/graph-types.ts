@@ -128,12 +128,46 @@ const BADGE_HALF_HEIGHT: Record<NodeType, number> = {
 };
 
 export const GRAPH_NODE_MAX_WIDTH = 110;
+const GRAPH_NODE_GAP = 14;
 
 export function nodeFootprint(type: NodeType) {
   const up = BADGE_HALF_HEIGHT[type];
   // A single 12.5px label line and 4px gap below the badge.
   const down = type === 'target' || type === 'technology' ? up : up + 17;
   return { up, down };
+}
+
+/** Preferred service positions in outward arcs with footprint clearance. */
+export function serviceFanPositions(
+  count: number,
+  center: GraphPoint,
+  direction: number,
+): GraphPoint[] {
+  const { up, down } = nodeFootprint('service');
+  const spacing = Math.ceil(
+    Math.hypot(
+      GRAPH_NODE_MAX_WIDTH + GRAPH_NODE_GAP,
+      up + down + GRAPH_NODE_GAP,
+    ),
+  );
+  const width = (2 * Math.PI) / 3;
+  const positions: GraphPoint[] = [];
+
+  for (let radius = 170; positions.length < count; radius += spacing) {
+    // Chord length bounds the distance between neighbors on an arc.
+    const angleGap = 2 * Math.asin(spacing / (2 * radius));
+    const capacity = Math.floor(width / angleGap) + 1;
+    const slots = Math.min(capacity, count - positions.length);
+    const step = Math.max(angleGap, Math.min(0.8, width / Math.max(1, slots - 1)));
+    for (let i = 0; i < slots; i++) {
+      const angle = direction + (i - (slots - 1) / 2) * step;
+      positions.push({
+        x: center.x + Math.cos(angle) * radius,
+        y: center.y + Math.sin(angle) * radius,
+      });
+    }
+  }
+  return positions;
 }
 
 /**
@@ -145,7 +179,7 @@ export function placeInFreeSpots(
   nodes: LayoutOutputNode[],
   fixedPositions: ReadonlyMap<string, GraphPoint>,
 ): LayoutOutputNode[] {
-  const gap = 14;
+  const gap = GRAPH_NODE_GAP;
   // GraphNode caps both pill and label widths at 110px. A cell is wider
   // and taller than the maximum collision distance on either axis.
   const minXGap = GRAPH_NODE_MAX_WIDTH + gap;
