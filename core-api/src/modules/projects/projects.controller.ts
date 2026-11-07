@@ -6,7 +6,10 @@ import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
+import {
+  GetManyBaseQueryParams,
+  type GetManyBaseResponseDto,
+} from '@/common/dtos/get-many-base.dto';
 import {
   Body,
   Controller,
@@ -20,7 +23,13 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiHeader,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AssetGroupService } from '../asset-group/asset-group.service';
 import { AssetGroupAssetService } from '../asset-group/asset-group-asset.service';
 import { Asset } from '../assets/entities/assets.entity';
@@ -30,6 +39,8 @@ import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator
 import { ProjectMetadataReadService } from './project-metadata-read.service';
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
 import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
+import { GetProjectRunsQueryDto, ProjectRunDto } from './dto/project-runs.dto';
+import { ProjectRunReadService } from './project-run-read.service';
 import { ProjectViewDto } from './dto/project-view.dto';
 import {
   CreateProjectDto,
@@ -67,6 +78,7 @@ export class ProjectsController {
     private readonly candidateAssets: AssetGroupAssetService,
     private readonly assetRead: ProjectAssetReadService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
+    private readonly runRead: ProjectRunReadService,
   ) {}
 
   @Doc({
@@ -249,6 +261,23 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.candidateAssets.getAssetsNotInAssetGroup(id, query, workspaceId);
+  }
+
+  @ApiOperation({
+    summary: 'Project runs',
+    description: 'Attributed runs, newest first, with step and finding counts.',
+  })
+  @ApiHeader({ name: WORKSPACE_HEADER_NAME, description: 'Workspace ID' })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: GetManyResponseDto(ProjectRunDto) })
+  @WorkspaceAccess('project.read')
+  @Get(':id/runs')
+  getRuns(
+    @Param() { id }: IdQueryParamDto,
+    @Query() query: GetProjectRunsQueryDto,
+    @WorkspaceId() workspaceId: string,
+  ): Promise<GetManyBaseResponseDto<ProjectRunDto>> {
+    return this.runRead.list(id, workspaceId, query);
   }
 
   @Doc({

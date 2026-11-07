@@ -4787,6 +4787,47 @@ export type GetManyProjectAssetDtoDto = {
   pageCount: number;
 };
 
+export type ProjectRunDtoJobRunType =
+  (typeof ProjectRunDtoJobRunType)[keyof typeof ProjectRunDtoJobRunType];
+
+export const ProjectRunDtoJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type ProjectRunDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  isCompleted: boolean;
+  jobRunType: ProjectRunDtoJobRunType;
+  /** @nullable */
+  projectWorkflowId: string | null;
+  workflowName: string;
+  status: JobStatus;
+  /** @minimum 0 */
+  scopeSize: number;
+  /** @minimum 0 */
+  stepsTotal: number;
+  /** @minimum 0 */
+  stepsDone: number;
+  /** @minimum 0 */
+  stepsFailed: number;
+  /** @minimum 0 */
+  newVulnerabilities: number;
+  /** @minimum 0 */
+  recurringVulnerabilities: number;
+};
+
+export type GetManyProjectRunDtoDto = {
+  data: ProjectRunDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
 export type UpdateProjectDto = {
   /**
    * Name of the project
@@ -5902,6 +5943,28 @@ export type ProjectsControllerGetAssetCandidatesParams = {
   sortBy?: string;
   sortOrder?: string;
 };
+
+export type ProjectsControllerGetRunsParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  projectWorkflowId?: string;
+  jobRunType?: ProjectsControllerGetRunsJobRunType;
+};
+
+export type ProjectsControllerGetRunsJobRunType =
+  (typeof ProjectsControllerGetRunsJobRunType)[keyof typeof ProjectsControllerGetRunsJobRunType];
+
+export const ProjectsControllerGetRunsJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
 
 export type AdminUsersControllerGetUsersParams = {
   search?: string;
@@ -44892,6 +44955,395 @@ export function useProjectsControllerGetAssetCandidates<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getProjectsControllerGetAssetCandidatesQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Attributed runs, newest first, with step and finding counts.
+ * @summary Project runs
+ */
+export const projectsControllerGetRuns = (
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyProjectRunDtoDto>(
+    { url: `/api/projects/${id}/runs`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetRunsInfiniteQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+) => {
+  return [
+    'infinite',
+    `/api/projects/${id}/runs`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetRunsQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+) => {
+  return [`/api/projects/${id}/runs`, ...(params ? [params] : [])] as const;
+};
+
+export const getProjectsControllerGetRunsInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetRunsInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    QueryKey,
+    ProjectsControllerGetRunsParams['page']
+  > = ({ signal, pageParam }) =>
+    projectsControllerGetRuns(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    TError,
+    TData,
+    QueryKey,
+    ProjectsControllerGetRunsParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetRunsInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetRuns>>
+>;
+export type ProjectsControllerGetRunsInfiniteQueryError = unknown;
+
+export function useProjectsControllerGetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetRunsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project runs
+ */
+
+export function useProjectsControllerGetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetRunsInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getProjectsControllerGetRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetRunsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>
+  > = ({ signal }) =>
+    projectsControllerGetRuns(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetRuns>>
+>;
+export type ProjectsControllerGetRunsQueryError = unknown;
+
+export function useProjectsControllerGetRuns<
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetRunsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetRuns<
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetRuns<
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project runs
+ */
+
+export function useProjectsControllerGetRuns<
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetRunsQueryOptions(
     id,
     params,
     options,

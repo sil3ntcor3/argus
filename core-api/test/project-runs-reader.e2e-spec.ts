@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import * as request from 'supertest';
 import { JobRunType } from '../src/common/enums/enum';
 import { ProjectRunReadService } from '../src/modules/projects/project-run-read.service';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
@@ -291,5 +292,129 @@ describe('Private project run reader (e2e)', () => {
       { page: Number.MAX_SAFE_INTEGER, limit: 10 },
     ])
       await expect(list(query)).rejects.toMatchObject({ status: 400 });
+  });
+  const api = (id = project) => `/api/projects/${id}/runs`;
+
+  it('returns paged run summaries through the canonical endpoint with a safe exact shape', async () => {
+    const get = (query: Record<string, string | number>) =>
+      request(app.server)
+        .get(api(project.toUpperCase()))
+        .set(owner.headers)
+        .query(query)
+        .expect(200);
+    const scheduled = await get({ jobRunType: 'scheduled', limit: 1 });
+    expect(scheduled.body).toMatchObject({
+      total: 1,
+      page: 1,
+      limit: 1,
+      pageCount: 1,
+      hasNextPage: false,
+      data: [
+        {
+          id: runs[1],
+          status: 'cancelled',
+          jobRunType: 'scheduled',
+          projectWorkflowId: binding,
+          scopeSize: 1,
+          stepsTotal: 2,
+          stepsDone: 0,
+          stepsFailed: 0,
+          newVulnerabilities: expect.any(Number),
+          recurringVulnerabilities: expect.any(Number),
+        },
+      ],
+    });
+    expect(Object.keys(scheduled.body.data[0]).sort()).toEqual(
+      [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'isCompleted',
+        'jobRunType',
+        'projectWorkflowId',
+        'workflowName',
+        'status',
+        'scopeSize',
+        'stepsTotal',
+        'stepsDone',
+        'stepsFailed',
+        'newVulnerabilities',
+        'recurringVulnerabilities',
+      ].sort(),
+    );
+    expect((await get({ limit: 1, page: 4 })).body).toMatchObject({
+      total: 3,
+      data: [],
+      hasNextPage: false,
+    });
+    expect(
+      (await get({ projectWorkflowId: foreignBinding })).body,
+    ).toMatchObject({ total: 0, data: [], pageCount: 0 });
+    const bound = await get({ projectWorkflowId: binding });
+    expect(bound.body.data.map((row: { id: string }) => row.id)).toEqual([
+      runs[1],
+      runs[0],
+    ]);
+    await request(app.server)
+      .get('/api/jobs-registry/histories/' + runs[0])
+      .set(owner.headers)
+      .expect(200);
+  });
+
+  it('validates path and query inputs and denies anonymous and foreign project reads', async () => {
+    for (const query of [
+      { page: 0 },
+      { page: 1.5 },
+      { limit: 0 },
+      { limit: 101 },
+      { jobRunType: 'invalid' },
+      { projectWorkflowId: 'invalid' },
+    ])
+      await request(app.server)
+        .get(api())
+        .set(owner.headers)
+        .query(query)
+        .expect(400);
+    await request(app.server)
+      .get(api('invalid'))
+      .set(owner.headers)
+      .expect(400);
+    await request(app.server)
+      .get(api())
+      .set('X-Workspace-Id', owner.workspace.id)
+      .expect(401);
+    for (const id of [project, randomUUID()])
+      await request(app.server).get(api(id)).set(other.headers).expect(404);
+  });
+
+  it('accepts both project read aliases and rejects callers without membership or permission', async () => {
+    const workspaceId = owner.workspace.id;
+    await request(app.server)
+      .get(api())
+      .set({ ...other.headers, 'X-Workspace-Id': workspaceId })
+      .expect(403);
+    const memberId = await insert('workspace_members', {
+      workspaceId,
+      userId: other.user.userId,
+    });
+    const permissionId = await insert('workspace_permissions', {
+      workspaceId,
+      name: randomUUID(),
+      permissions: ['project.read'],
+    });
+    await insert('workspace_member_permissions', { memberId, permissionId });
+    const headers = { ...other.headers, 'X-Workspace-Id': workspaceId };
+    for (const permission of ['project.read', 'group.read']) {
+      await app.dataSource.query(
+        'UPDATE workspace_permissions SET permissions=$1 WHERE id=$2',
+        [[permission], permissionId],
+      );
+      await request(app.server).get(api()).set(headers).expect(200);
+    }
+    await app.dataSource.query(
+      'UPDATE workspace_permissions SET permissions=$1 WHERE id=$2',
+      [[], permissionId],
+    );
+    await request(app.server).get(api()).set(headers).expect(403);
   });
 });
