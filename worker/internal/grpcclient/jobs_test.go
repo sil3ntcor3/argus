@@ -3,10 +3,14 @@ package grpcclient
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	jobsRegistry "oasm-worker/internal/gen/jobs_registry"
+
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestNextJob_ReturnsJob(t *testing.T) {
@@ -74,6 +78,40 @@ func TestNextJob_ServerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to fetch next job") {
 		t.Errorf("expected wrapped error, got %v", err)
+	}
+}
+
+func TestNextJobs_LargeResponse(t *testing.T) {
+	srv := newTestServer(t)
+	const batchSize = 10
+	payload := strings.Repeat("x", 512*1024)
+	config := &structpb.Struct{Fields: map[string]*structpb.Value{
+		"fixture": structpb.NewStringValue(payload),
+	}}
+	values := make([]*jobsRegistry.Job, batchSize)
+	for i := range values {
+		values[i] = &jobsRegistry.Job{Id: fmt.Sprintf("job-%d", i), Config: config}
+	}
+	srv.jobsSrv.nextBatchFn = func(_ context.Context, req *jobsRegistry.NextBatchRequest) (*jobsRegistry.JobList, error) {
+		if req.GetLimit() != batchSize {
+			t.Errorf("expected batch limit %d, got %d", batchSize, req.GetLimit())
+		}
+		return &jobsRegistry.JobList{Values: values}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	jobs, err := srv.client.NextJobs(ctx, batchSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != batchSize {
+		t.Fatalf("expected %d jobs, got %d", batchSize, len(jobs))
+	}
+	for i, job := range jobs {
+		if job.GetId() != values[i].GetId() || job.GetConfig().GetFields()["fixture"].GetStringValue() != payload {
+			t.Fatalf("job %d did not arrive with its full configuration", i)
+		}
 	}
 }
 
