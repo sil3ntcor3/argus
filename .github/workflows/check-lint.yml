@@ -70,4 +70,6 @@ jobs:
 
       - name: Run lint
         if: steps.filter.outputs.relevant == 'true'
+        env:
+          NODE_OPTIONS: ${{ matrix.service == 'core-api' && '--max-old-space-size=6144' || '' }}
         run: pnpm --filter ${{ matrix.service }} run lint
