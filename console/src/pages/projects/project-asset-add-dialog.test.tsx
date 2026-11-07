@@ -37,8 +37,12 @@ function show() {
     </QueryClientProvider>,
   );
   expect(mock.candidates).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Add assets' }));
-  return within(screen.getByRole('dialog', { name: 'Add project assets' }));
+  const trigger = screen.getByRole('button', { name: 'Add assets' });
+  fireEvent.click(trigger);
+  return {
+    trigger,
+    dialog: within(screen.getByRole('dialog', { name: 'Add project assets' })),
+  };
 }
 
 describe('ProjectAssetAddDialog', () => {
@@ -57,7 +61,7 @@ describe('ProjectAssetAddDialog', () => {
   it('keeps manual selections across candidate pages and submits both IDs', async () => {
     const mutateAsync = vi.fn().mockResolvedValue({ count: 2 });
     mock.add.mockReturnValue({ reset: vi.fn(), mutateAsync });
-    const dialog = show();
+    const { dialog, trigger } = show();
     const add = dialog.getByRole('button', { name: 'Add selected assets' });
     expect(add).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(dialog.getByRole('checkbox', { name: /first.argus.test/ }));
@@ -67,16 +71,15 @@ describe('ProjectAssetAddDialog', () => {
     );
     expect(dialog.getByText('2 selected')).toBeVisible();
     fireEvent.click(add);
-    await waitFor(() =>
-      expect(mutateAsync).toHaveBeenCalledWith({
-        id: projectId,
-        data: { assetIds: [first.id, second.id] },
-      }),
-    );
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(mutateAsync).toHaveBeenCalledExactlyOnceWith({
+      id: projectId,
+      data: { assetIds: [first.id, second.id] },
+    });
   });
 
-  it('uses a literal asset query and returns to the first candidate page', () => {
-    const dialog = show();
+  it('uses a literal asset query and returns to the first candidate page', async () => {
+    const { dialog, trigger } = show();
     fireEvent.click(dialog.getByRole('button', { name: 'Next choices' }));
     fireEvent.change(
       dialog.getByRole('searchbox', { name: 'Search candidate assets' }),
@@ -98,5 +101,7 @@ describe('ProjectAssetAddDialog', () => {
       },
       expect.anything(),
     );
+    fireEvent.click(dialog.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });
