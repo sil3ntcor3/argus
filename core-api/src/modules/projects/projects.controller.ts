@@ -41,6 +41,7 @@ import { ProjectScopeWriteService } from './project-scope-write.service';
 import { ProjectAssetsCommandService } from './project-assets-command.service';
 import {
   AddProjectAssetsDto,
+  RemoveProjectAssetsDto,
   ProjectAssetsChangedDto,
 } from './dto/project-assets-command.dto';
 
@@ -170,6 +171,31 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.assetCommands.add(id, workspaceId, dto.assetIds);
+  }
+
+  @Doc({
+    summary: 'Remove assets from project',
+    response: {
+      serialization: ProjectAssetsChangedDto,
+      httpStatus: HttpStatus.OK,
+    },
+    request: { getWorkspaceId: true },
+  })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: (_body, result) => ({
+      change: ProjectChange.ASSETS_REMOVED,
+      ...(result ? { removed: (result as ProjectAssetsChangedDto).count } : {}),
+    }),
+  })
+  @WorkspaceAccess('project.write')
+  @Delete(':id/assets')
+  removeAssets(
+    @Param() { id }: IdQueryParamDto,
+    @Body() dto: RemoveProjectAssetsDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.assetCommands.remove(id, workspaceId, dto.assetIds);
   }
 
   @Doc({
