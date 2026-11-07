@@ -21,6 +21,8 @@ interface ProjectFindingQuery {
   search?: string;
   severity?: Severity[];
   assetId?: string;
+  jobHistoryId?: string;
+  projectWorkflowId?: string;
 }
 
 interface FindingRow {
@@ -88,14 +90,46 @@ export class ProjectFindingReadService {
     if (query.assetId) conditions.push(`a.id = ${add(query.assetId)}`);
     if (query.severity?.length)
       conditions.push(`v.severity::text = ANY(${add(query.severity)}::text[])`);
+    let sightingCtes = '';
+    let sightingJoin = '';
+    if (query.jobHistoryId || query.projectWorkflowId) {
+      const run = query.jobHistoryId ? add(query.jobHistoryId) : null;
+      const binding = query.projectWorkflowId
+        ? add(query.projectWorkflowId)
+        : null;
+      // Resolve eligible runs once. Applying both predicates here requires
+      // the same sighting to match both filters.
+      sightingCtes = `sighting_runs AS MATERIALIZED (
+        SELECT h.id FROM owned JOIN job_histories h ON h."projectId" = owned.id
+        JOIN workflows w ON w.id = h."workflowId" AND w."workspaceId" = $2
+        ${
+          binding
+            ? `JOIN project_workflows pw ON pw.id = h."projectWorkflowId"
+          AND pw.id = ${binding} AND pw."projectId" = owned.id AND pw."workflowId" = h."workflowId"`
+            : ''
+        }
+        ${run ? `WHERE h.id = ${run}` : ''}
+      ), sighted_links AS MATERIALIZED (
+        SELECT o."projectVulnerabilityId" AS id FROM sighting_runs r
+          JOIN project_vulnerability_observations o ON o."jobHistoryId" = r.id
+        UNION
+        SELECT link.id FROM owned
+        JOIN project_vulnerabilities link ON link."projectId" = owned.id
+        CROSS JOIN LATERAL (VALUES (link."firstSeenJobHistoryId"), (link."lastSeenJobHistoryId")) legacy(run_id)
+        JOIN sighting_runs r ON r.id = legacy.run_id
+      ),`;
+      sightingJoin = 'JOIN sighted_links s ON s.id = pv.id';
+    }
     const paging = `LIMIT ${add(limit)} OFFSET ${add(offset)}`;
 
     // Keep ownership, count and page on one snapshot, and only classify page rows.
     const rows = await this.dataSource.query<CountedFindingRow[]>(
       `WITH owned AS (SELECT id FROM projects WHERE id = $1 AND "workspaceId" = $2),
+        ${sightingCtes}
         matching AS NOT MATERIALIZED (
           SELECT pv.id AS link_id, v.id, pv."lastSeenAt", ${RANK_SQL} AS rank
           FROM owned JOIN project_vulnerabilities pv ON pv."projectId" = owned.id
+          ${sightingJoin}
           JOIN vulnerabilities v ON v.id = pv."vulnerabilityId"
           JOIN assets a ON a.id = v."assetId" JOIN targets t ON t.id = a."targetId"
           WHERE ${conditions.join(' AND ')}
