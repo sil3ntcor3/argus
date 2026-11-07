@@ -8,6 +8,7 @@ import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
   type ProjectRunDto,
   type ProjectsControllerGetRunsJobRunType,
+  useProjectsControllerGetById,
   useProjectsControllerGetRuns,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
@@ -15,9 +16,13 @@ import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { z } from 'zod';
 
+const pageSizes = [20, 50, 100] as const;
+
 type RunsSearch = {
   page: number;
   trigger?: ProjectsControllerGetRunsJobRunType;
+  workflow?: string;
+  pageSize?: (typeof pageSizes)[number];
 };
 type RunsProps = RunsSearch & {
   projectId: string;
@@ -29,6 +34,24 @@ const startedAt = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
+
+/** Uses the saved run interval when a run has completed. */
+function formatRunDuration(run: ProjectRunDto) {
+  if (!run.isCompleted) {
+    if (run.status === 'pending') return 'Queued';
+    return run.status === 'in_progress' ? 'Running' : '—';
+  }
+  const elapsed = Date.parse(run.updatedAt) - Date.parse(run.createdAt);
+  if (!Number.isFinite(elapsed) || elapsed < 0) return '—';
+  const seconds = Math.floor(elapsed / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const parts: string[] = [];
+  if (hours) parts.push(`${hours}h`);
+  if (minutes) parts.push(`${minutes}m`);
+  parts.push(`${seconds % 60}s`);
+  return parts.join(' ');
+}
 
 /** Renders a saved run summary with a job link for readers who can open it. */
 function ProjectRunCard({
@@ -64,6 +87,7 @@ function ProjectRunCard({
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
         <span>{trigger}</span>
         <time dateTime={run.createdAt}>{started}</time>
+        <span>Duration {formatRunDuration(run)}</span>
         <span>{run.scopeSize} in scope</span>
         <span>
           {run.stepsDone}/{run.stepsTotal} steps done · {run.stepsFailed} failed
@@ -77,20 +101,35 @@ function ProjectRunCard({
   );
 }
 
-/** Loads the selected page and trigger for an authorized project. */
+/** Loads the requested run page and workflow choices for an authorized project. */
 function ProjectRunList({
   projectId,
   page,
   trigger,
+  workflow,
+  pageSize,
   onChange,
   canOpen,
 }: RunsProps & {
   canOpen: boolean;
 }) {
+  const projectQuery = useProjectsControllerGetById(projectId, {
+    query: { retry: false },
+  });
+  const bindings = projectQuery.data?.assetGroupWorkflows ?? [];
+  let selectedWorkflowLabel = 'Unavailable workflow';
+  if (projectQuery.isPending) selectedWorkflowLabel = 'Loading workflow';
+  if (projectQuery.isError) selectedWorkflowLabel = 'Workflow name unknown';
+  const search = { trigger, workflow, pageSize };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetRuns(
       projectId,
-      { page, limit: 20, jobRunType: trigger },
+      {
+        page,
+        limit: pageSize ?? 20,
+        jobRunType: trigger,
+        projectWorkflowId: workflow,
+      },
       {
         query: {
           retry: false,
@@ -141,25 +180,100 @@ function ProjectRunList({
 
   return (
     <div className="space-y-4">
-      <label className="flex w-fit items-center gap-2 text-sm">
-        Trigger
-        <select
-          className="rounded-md border bg-background px-2 py-1"
-          value={trigger ?? ''}
-          onChange={(event) => {
-            const value = event.target.value;
-            onChange({
-              page: 1,
-              trigger:
-                value === 'manual' || value === 'scheduled' ? value : undefined,
-            });
-          }}
-        >
-          <option value="">All triggers</option>
-          <option value="manual">Manual</option>
-          <option value="scheduled">Scheduled</option>
-        </select>
-      </label>
+      <div className="flex flex-wrap gap-3">
+        {(bindings.length > 0 || workflow) && (
+          <label className="flex min-w-0 items-center gap-2 text-sm">
+            Workflow
+            <select
+              className="min-w-0 rounded-md border bg-background px-2 py-1"
+              value={workflow ?? ''}
+              onChange={(event) =>
+                onChange({
+                  ...search,
+                  page: 1,
+                  workflow: event.target.value || undefined,
+                })
+              }
+            >
+              <option value="">All workflows</option>
+              {workflow &&
+                !bindings.some((binding) => binding.id === workflow) && (
+                  <option value={workflow}>{selectedWorkflowLabel}</option>
+                )}
+              {bindings.map(({ id, workflow: boundWorkflow }) => {
+                // The API returns the saved name, which is absent from its schema.
+                const savedName =
+                  boundWorkflow &&
+                  'name' in boundWorkflow &&
+                  typeof boundWorkflow.name === 'string'
+                    ? boundWorkflow.name.trim()
+                    : '';
+                return (
+                  <option key={id} value={id}>
+                    {savedName ||
+                      boundWorkflow?.content?.name?.trim() ||
+                      'Unnamed workflow'}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        )}
+        <label className="flex w-fit items-center gap-2 text-sm">
+          Trigger
+          <select
+            className="rounded-md border bg-background px-2 py-1"
+            value={trigger ?? ''}
+            onChange={(event) => {
+              const value = event.target.value;
+              onChange({
+                ...search,
+                page: 1,
+                trigger:
+                  value === 'manual' || value === 'scheduled'
+                    ? value
+                    : undefined,
+              });
+            }}
+          >
+            <option value="">All triggers</option>
+            <option value="manual">Manual</option>
+            <option value="scheduled">Scheduled</option>
+          </select>
+        </label>
+        <label className="flex w-fit items-center gap-2 text-sm">
+          Runs per page
+          <select
+            className="rounded-md border bg-background px-2 py-1"
+            value={pageSize ?? 20}
+            onChange={(event) => {
+              const pageSize = pageSizes.find(
+                (size) => String(size) === event.target.value,
+              );
+              onChange({ ...search, page: 1, pageSize });
+            }}
+          >
+            {pageSizes.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {projectQuery.isError && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <p role="status">Unable to load workflow choices</p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={projectQuery.isFetching}
+            onClick={() => void projectQuery.refetch()}
+          >
+            Retry workflows
+          </Button>
+        </div>
+      )}
       {results}
       <nav
         aria-label="Project run pages"
@@ -172,8 +286,8 @@ function ProjectRunList({
           onClick={() => {
             if (page > 1)
               onChange({
+                ...search,
                 page: page > (data?.pageCount ?? page) ? 1 : page - 1,
-                trigger,
               });
           }}
         >
@@ -185,7 +299,7 @@ function ProjectRunList({
           aria-disabled={!data?.hasNextPage}
           className="aria-disabled:opacity-50"
           onClick={() => {
-            if (data?.hasNextPage) onChange({ page: page + 1, trigger });
+            if (data?.hasNextPage) onChange({ ...search, page: page + 1 });
           }}
         >
           Next

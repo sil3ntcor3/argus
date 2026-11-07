@@ -8,6 +8,7 @@ const mock = vi.hoisted(() => ({
   workspace: vi.fn(),
   permission: vi.fn(),
   runs: vi.fn(),
+  project: vi.fn(),
 }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
   useWorkspaceState: mock.workspace,
@@ -16,6 +17,7 @@ vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetRuns: mock.runs,
+  useProjectsControllerGetById: mock.project,
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -37,6 +39,7 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const projectId = '6b1639b1-62ea-487f-892b-1288e4cf6767';
+const workflowId = 'ed5cfdd9-189e-49cf-a3d1-4f8a3e0a565d';
 const run: ProjectRunDto = {
   id: 'd59e5709-7834-4595-bcc6-3cc104795e5c',
   createdAt: '2026-11-07T10:00:00Z',
@@ -66,6 +69,14 @@ describe('ProjectRunsPage', () => {
     mock.runs.mockReturnValue({
       data: { data: [run], pageCount: 3, hasNextPage: true },
     });
+    mock.project.mockReturnValue({
+      data: {
+        assetGroupWorkflows: [
+          { id: workflowId, workflow: { content: { name: 'Nightly scan' } } },
+          { id: projectId, workflow: { content: { name: 'Manual scan' } } },
+        ],
+      },
+    });
   });
 
   it('shows the saved run, its findings, and its job detail link', () => {
@@ -79,6 +90,7 @@ describe('ProjectRunsPage', () => {
     ).toHaveAttribute('href', `/jobs/runs/${run.id}`);
     expect(screen.getByText('Completed')).toBeVisible();
     expect(screen.getByText('2 new · 1 recurring')).toBeVisible();
+    expect(screen.getByText('Duration 1m 0s')).toBeVisible();
   });
 
   it('keeps project run summaries readable without exposing job detail links', () => {
@@ -133,5 +145,94 @@ describe('ProjectRunsPage', () => {
       target: { value: 'manual' },
     });
     expect(onChange).toHaveBeenLastCalledWith({ page: 1, trigger: 'manual' });
+  });
+
+  it('uses the workflow binding ID with the trigger filter and resets pagination', () => {
+    const onChange = vi.fn();
+    render(
+      <ProjectRunsPage
+        projectId={projectId}
+        page={2}
+        trigger="scheduled"
+        workflow={workflowId}
+        onChange={onChange}
+      />,
+    );
+    expect(mock.runs).toHaveBeenCalledWith(
+      projectId,
+      {
+        page: 2,
+        limit: 20,
+        jobRunType: 'scheduled',
+        projectWorkflowId: workflowId,
+      },
+      expect.anything(),
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Workflow' }), {
+      target: { value: projectId },
+    });
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      trigger: 'scheduled',
+      workflow: projectId,
+    });
+  });
+
+  it('uses the saved name for a single binding without a content name', () => {
+    mock.project.mockReturnValue({
+      data: {
+        assetGroupWorkflows: [
+          { id: workflowId, workflow: { name: 'Nightly scan', content: {} } },
+        ],
+      },
+    });
+    render(
+      <ProjectRunsPage projectId={projectId} page={1} onChange={vi.fn()} />,
+    );
+    expect(screen.getByRole('option', { name: 'Nightly scan' })).toHaveValue(
+      workflowId,
+    );
+  });
+
+  it('keeps runs visible and allows retrying failed workflow choices', () => {
+    const refetch = vi.fn();
+    mock.project.mockReturnValue({ isError: true, refetch });
+    render(
+      <ProjectRunsPage
+        projectId={projectId}
+        page={1}
+        workflow={workflowId}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('list', { name: 'Project runs' })).toBeVisible();
+    expect(screen.getByText('Unable to load workflow choices')).toBeVisible();
+    expect(
+      screen.getByRole('option', { name: 'Workflow name unknown' }),
+    ).toHaveValue(workflowId);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry workflows' }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it('resets paging while preserving filters when the page size changes', () => {
+    const onChange = vi.fn();
+    render(
+      <ProjectRunsPage
+        projectId={projectId}
+        page={2}
+        trigger="scheduled"
+        workflow={workflowId}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Runs per page' }), {
+      target: { value: '50' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      trigger: 'scheduled',
+      workflow: workflowId,
+      pageSize: 50,
+    });
   });
 });
