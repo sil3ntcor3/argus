@@ -85,7 +85,7 @@ export class ProjectFindingReadService {
 
     const params: unknown[] = [projectId, workspaceId];
     const add = (value: unknown) => `$${params.push(value)}`;
-    const conditions = ['t."workspaceId" = $2'];
+    const conditions = ['true'];
     const status = query.status ?? VulnerabilityStatus.OPEN;
     if (status === VulnerabilityStatus.OPEN)
       conditions.push(openVulnerabilityCondition('v'));
@@ -149,8 +149,18 @@ export class ProjectFindingReadService {
       pv."projectId", pv."timesSeen", pv."firstSeenAt", pv."lastSeenAt",
       pv."firstSeenJobHistoryId", pv."lastSeenJobHistoryId",
       ${RANK_SQL} AS rank, ${severitySelected} AS "severitySelected"`;
-    const findingJoins = `JOIN vulnerabilities v ON v.id = pv."vulnerabilityId"
-      JOIN assets a ON a.id = v."assetId" JOIN targets t ON t.id = a."targetId"`;
+    // Keep each lookup on its unique key even when table statistics
+    // underestimate newly ingested findings on one asset.
+    const findingJoins = `CROSS JOIN LATERAL (
+        SELECT id, severity, "assetId", "toolId", name, "cveId", "isArchived"
+        FROM vulnerabilities WHERE id = pv."vulnerabilityId" LIMIT 1
+      ) v
+      CROSS JOIN LATERAL (
+        SELECT id, value, "targetId" FROM assets WHERE id = v."assetId" LIMIT 1
+      ) a
+      CROSS JOIN LATERAL (
+        SELECT 1 FROM targets WHERE id = a."targetId" AND "workspaceId" = $2 LIMIT 1
+      ) t`;
     const where = conditions.join(' AND ');
     // Keep the whole ownership and finding lookup on the inside of the
     // bounded primary-key probe. The planner cannot drive it from every

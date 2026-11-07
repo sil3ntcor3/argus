@@ -41,6 +41,11 @@ import { ProjectWorkflowTemplatesService } from './project-workflow-templates.se
 import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
 import { GetProjectRunsQueryDto, ProjectRunDto } from './dto/project-runs.dto';
 import { ProjectRunReadService } from './project-run-read.service';
+import { ProjectFindingReadService } from './project-finding-read.service';
+import {
+  GetProjectFindingsQueryDto,
+  ProjectFindingsResponseDto,
+} from './dto/project-findings.dto';
 import { ProjectViewDto } from './dto/project-view.dto';
 import {
   CreateProjectDto,
@@ -79,6 +84,7 @@ export class ProjectsController {
     private readonly assetRead: ProjectAssetReadService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly runRead: ProjectRunReadService,
+    private readonly findingRead: ProjectFindingReadService,
   ) {}
 
   @Doc({
@@ -278,6 +284,23 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ): Promise<GetManyBaseResponseDto<ProjectRunDto>> {
     return this.runRead.list(id, workspaceId, query);
+  }
+
+  @ApiOperation({
+    summary: 'Project findings',
+    description: 'Attributed findings with sightings, provenance and filter counts.',
+  })
+  @ApiHeader({ name: WORKSPACE_HEADER_NAME, description: 'Workspace ID' })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: ProjectFindingsResponseDto })
+  @WorkspaceAccess('project.read')
+  @Get(':id/vulnerabilities')
+  getFindings(
+    @Param() { id }: IdQueryParamDto,
+    @Query() query: GetProjectFindingsQueryDto,
+    @WorkspaceId() workspaceId: string,
+  ): Promise<ProjectFindingsResponseDto> {
+    return this.findingRead.list(id, workspaceId, query);
   }
 
   @Doc({
