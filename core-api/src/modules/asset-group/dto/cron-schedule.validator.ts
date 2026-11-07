@@ -3,6 +3,7 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from 'class-validator';
+import { getNextMillis } from 'bullmq';
 
 /**
  * Range bounds for each of the 5 standard cron fields
@@ -52,10 +53,18 @@ export function isValidCronSchedule(value: string): boolean {
   if (value === 'disabled') return true;
   const fields = value.trim().split(/\s+/);
   if (fields.length !== 5) return false;
-  return fields.every((field, index) => {
+  const fieldsValid = fields.every((field, index) => {
     const [min, max] = FIELD_RANGES[index];
     return isCronField(field, min, max);
   });
+  if (!fieldsValid) return false;
+
+  // Check calendar combinations with the same parser the queue uses.
+  try {
+    return getNextMillis(Date.now(), { pattern: value }) !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 @ValidatorConstraint({ name: 'isCronSchedule', async: false })
