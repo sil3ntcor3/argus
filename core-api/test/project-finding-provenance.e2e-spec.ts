@@ -7,6 +7,8 @@ import { ProjectFindingTimelineService } from '../src/modules/projects/project-f
 import { ProjectOverviewCountsService } from '../src/modules/projects/project-overview-counts.service';
 import { ProjectOverviewRunsService } from '../src/modules/projects/project-overview-runs.service';
 import { ProjectOverviewActivityService } from '../src/modules/projects/project-overview-activity.service';
+import { ProjectOverviewReadService } from '../src/modules/projects/project-overview-read.service';
+import { ProjectRunReadService } from '../src/modules/projects/project-run-read.service';
 import { VulnerabilityStatus } from '../src/modules/vulnerabilities/dto/get-vulnerability.dto';
 import {
   PROJECT_FINDING_PROVENANCE_SQL,
@@ -1350,6 +1352,36 @@ describe('Project finding provenance (e2e)', () => {
       ]);
     });
 
+    it('uses the same stored run instant for the summary and activity in a non-UTC session', async () => {
+      const refs = app.app.get<ProjectOverviewRunsService>(
+        ProjectOverviewRunsService,
+      );
+      const activity = app.app.get<ProjectRunReadService>(
+        ProjectRunReadService,
+      );
+      await app.dataSource.transaction(async (manager) => {
+        await manager.query("SET LOCAL TIME ZONE 'Pacific/Kiritimati'");
+        const summary = await refs.read(
+          overview,
+          owner.workspace.id,
+          new Date('2026-11-01T22:00:00Z'),
+          manager,
+        );
+        const items = await activity.listActivity(
+          overview,
+          owner.workspace.id,
+          manager,
+        );
+        expect(summary.lastRun).toMatchObject({
+          id: latest,
+          createdAt: new Date('2026-11-01T20:00:00Z'),
+        });
+        expect(items.find((item) => item.ref === latest)?.at).toEqual(
+          summary.lastRun?.createdAt,
+        );
+      });
+    });
+
     it('returns empty refs for an owned empty project and denies foreign or missing projects', async () => {
       expect(await read(empty)).toEqual({
         lastRun: null,
@@ -1564,6 +1596,143 @@ describe('Project finding provenance (e2e)', () => {
       await expect(
         service().read(randomUUID(), owner.workspace.id),
       ).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe('private project overview snapshot', () => {
+    let overview: string;
+    let first: string;
+    let middle: string;
+    let last: string;
+    const read = (workspaceId = owner.workspace.id) =>
+      app.app.get(ProjectOverviewReadService).read(overview, workspaceId);
+    const saveRun = (day: number) =>
+      insert('job_histories', {
+        workflowId: workflow,
+        projectId: overview,
+        createdAt: `2000-01-0${day} 00:00:00`,
+        isCompleted: true,
+        scope: {
+          assetIds: [asset, unrelatedAsset],
+          privateConfig: 'fixture-only',
+        },
+      });
+
+    beforeAll(async () => {
+      overview = await insert('projects', {
+        name: randomUUID(),
+        workspaceId: owner.workspace.id,
+      });
+      first = await saveRun(1);
+      middle = await saveRun(2);
+      last = await saveRun(3);
+      await app.dataSource.query(
+        `INSERT INTO job_histories ("workflowId","projectId","createdAt","isCompleted")
+        SELECT $1,$2,TIMESTAMP '1999-01-01 00:00:00'+i*interval '1 minute',true
+        FROM generate_series(1,16) i`,
+        [workflow, overview],
+      );
+      for (const dismissed of [false, true]) {
+        const vulnerabilityId = await insert('vulnerabilities', {
+          name: randomUUID(),
+          severity: Severity.HIGH,
+          assetId: asset,
+          toolId: tool,
+        });
+        const link = await insert('project_vulnerabilities', {
+          projectId: overview,
+          vulnerabilityId,
+          firstSeenJobHistoryId: first,
+          lastSeenJobHistoryId: dismissed ? last : first,
+          timesSeen: dismissed ? 3 : 1,
+        });
+        if (dismissed) {
+          await insert('project_vulnerability_observations', {
+            projectVulnerabilityId: link,
+            jobHistoryId: middle,
+          });
+          await insert('vulnerability_dismissals', {
+            vulnerabilityId,
+            userId: owner.user.userId,
+            reason: 'used_in_test',
+          });
+        }
+      }
+    });
+
+    it('combines counts, run references, trends and exact run/dismissal activity', async () => {
+      const overview = await read();
+      expect(overview).toMatchObject({
+        totalAssets: 0,
+        workflows: 0,
+        openVulnerabilities: { high: 1 },
+        newVulnerabilities: 1,
+        newVulnerabilityRuns: [{ id: first }],
+        lastRun: { id: last },
+      });
+      expect(overview.activity).toHaveLength(15);
+      expect(overview.activity.slice(0, 4)).toMatchObject([
+        { kind: 'dismissed', count: 1, reason: 'used_in_test' },
+        {
+          kind: 'run',
+          ref: last,
+          newVulnerabilities: 0,
+          recurringVulnerabilities: 1,
+        },
+        {
+          kind: 'run',
+          ref: middle,
+          newVulnerabilities: 0,
+          recurringVulnerabilities: 1,
+          scopeSize: 2,
+        },
+        {
+          kind: 'run',
+          ref: first,
+          newVulnerabilities: 2,
+          recurringVulnerabilities: 0,
+        },
+      ]);
+      expect(overview.weekly).toHaveLength(8);
+      expect(
+        overview.weekly.reduce((total, week) => total + week.high, 0),
+      ).toBe(2);
+      await expect(read(other.workspace.id)).rejects.toMatchObject({
+        status: 404,
+      });
+    });
+
+    it('reads one snapshot even when a newer run commits between queries', async () => {
+      const counts = app.app.get<ProjectOverviewCountsService>(
+        ProjectOverviewCountsService,
+      );
+      const realCounts = new ProjectOverviewCountsService(app.dataSource);
+      let inserted: string | undefined;
+      const hook = jest
+        .spyOn(counts, 'read')
+        .mockImplementationOnce(async (...args) => {
+          const counts = await realCounts.read(...args);
+          inserted = await saveRun(4); // Separate connection, backdated before the snapshot time.
+          return counts;
+        });
+      try {
+        const earlier = await read();
+        expect(earlier.lastRun?.id).toBe(last);
+        expect(earlier.activity.some((item) => item.ref === inserted)).toBe(
+          false,
+        );
+        expect(inserted).toBeDefined();
+        const later = await read();
+        expect(later.lastRun?.id).toBe(inserted);
+        expect(later.activity.some((item) => item.ref === inserted)).toBe(true);
+      } finally {
+        hook.mockRestore();
+        if (inserted)
+          await app.dataSource.query(
+            'DELETE FROM job_histories WHERE id=$1 AND "projectId"=$2',
+            [inserted, overview],
+          );
+      }
     });
   });
 });
