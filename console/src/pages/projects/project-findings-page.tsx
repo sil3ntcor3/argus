@@ -13,6 +13,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
+import { ProjectFindingTimeline } from './project-finding-timeline';
 
 const provenances = Object.values(ProjectsControllerGetFindingsProvenance);
 const provenanceLabels = {
@@ -34,11 +35,15 @@ type FindingsProps = FindingsSearch & {
 };
 
 function FindingCard({
+  projectId,
   finding,
   canOpen,
+  canOpenRuns,
 }: {
+  projectId: string;
   finding: ProjectFindingDto;
   canOpen: boolean;
+  canOpenRuns: boolean;
 }) {
   const provenance =
     finding.provenance === 'recurring'
@@ -86,6 +91,11 @@ function FindingCard({
           </time>
         </span>
       </div>
+      <ProjectFindingTimeline
+        projectId={projectId}
+        finding={finding}
+        canOpenRuns={canOpenRuns}
+      />
     </li>
   );
 }
@@ -96,7 +106,8 @@ function FindingList({
   provenance,
   onChange,
   canOpen,
-}: FindingsProps & { canOpen: boolean }) {
+  canOpenRuns,
+}: FindingsProps & { canOpen: boolean; canOpenRuns: boolean }) {
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetFindings(
       projectId,
@@ -139,7 +150,13 @@ function FindingList({
     results = (
       <ol aria-label="Project findings" className="space-y-2">
         {data.data.map((finding) => (
-          <FindingCard key={finding.id} finding={finding} canOpen={canOpen} />
+          <FindingCard
+            key={finding.id}
+            projectId={projectId}
+            finding={finding}
+            canOpen={canOpen}
+            canOpenRuns={canOpenRuns}
+          />
         ))}
       </ol>
     );
@@ -233,6 +250,7 @@ export function ProjectFindingsPage(props: FindingsProps) {
         <FindingList
           {...props}
           canOpen={permission.hasPermission('vulnerability.read')}
+          canOpenRuns={permission.hasPermission('job.read')}
         />
       </div>
     );
