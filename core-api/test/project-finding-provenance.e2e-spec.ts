@@ -6,6 +6,7 @@ import { ProjectFindingReadService } from '../src/modules/projects/project-findi
 import { ProjectFindingTimelineService } from '../src/modules/projects/project-finding-timeline.service';
 import { ProjectOverviewCountsService } from '../src/modules/projects/project-overview-counts.service';
 import { ProjectOverviewRunsService } from '../src/modules/projects/project-overview-runs.service';
+import { ProjectOverviewActivityService } from '../src/modules/projects/project-overview-activity.service';
 import { VulnerabilityStatus } from '../src/modules/vulnerabilities/dto/get-vulnerability.dto';
 import {
   PROJECT_FINDING_PROVENANCE_SQL,
@@ -1358,6 +1359,211 @@ describe('Project finding provenance (e2e)', () => {
         status: 404,
       });
       await expect(read(randomUUID())).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe('private project overview non-run activity', () => {
+    let activityProject: string;
+    let empty: string;
+    const service = () => app.app.get(ProjectOverviewActivityService);
+
+    beforeAll(async () => {
+      const workspaceId = owner.workspace.id;
+      activityProject = await insert('projects', {
+        name: randomUUID(),
+        workspaceId,
+      });
+      empty = await insert('projects', { name: randomUUID(), workspaceId });
+    });
+
+    it('returns only visible audit changes without casting or returning arbitrary metadata', async () => {
+      const workspace = owner.workspace.id;
+      // The audit table is append-only; never persist temporary audit rows.
+      const runner = app.dataSource.createQueryRunner();
+      await runner.connect();
+      await runner.startTransaction();
+      try {
+        const m = runner.manager;
+        const audit = (
+          action: string,
+          minute: string,
+          metadata: Record<string, unknown>,
+          opts: {
+            workspaceId?: string;
+            outcome?: string;
+            projectId?: string;
+            actorType?: string;
+            actorName?: string;
+          } = {},
+        ) =>
+          m.query(
+            `INSERT INTO audit_events ("eventId", "workspaceId", "resourceType", "resourceId", "occurredAt", action, outcome, "actorType", "actorName", "actorEmail", metadata)
+           VALUES ($1, $2, 'project', $3, $4, $5, $6, $7, $8, 'private@argus.test', $9)`,
+            [
+              randomUUID(),
+              opts.workspaceId ?? workspace,
+              opts.projectId ?? activityProject,
+              '2026-11-01T16:' + minute + ':00Z',
+              action,
+              opts.outcome ?? 'success',
+              opts.actorType ?? 'user',
+              opts.actorName ?? 'Audit display name',
+              metadata,
+            ],
+          );
+        await audit('project.created', '00', {});
+        await audit('project.updated', '01', {
+          change: 'assets.added',
+          added: 4,
+          secret: 'fixture-only',
+        });
+        await audit('project.updated', '02', {
+          change: 'workflow.added',
+          workflow: 'Web discovery',
+          token: 'fixture-only',
+        });
+        await audit('project.updated', '03', {
+          change: 'scope',
+          added: 0,
+          removed: 0,
+        });
+        await audit('project.updated', '04', {
+          change: 'scope',
+          added: 'malformed',
+          removed: -2,
+        });
+        await audit('project.updated', '05', {
+          change: 'assets.removed',
+          added: 0.5,
+          removed: 2,
+        });
+        await audit('project.updated', '06', { change: 'settings', added: 4 });
+        await audit(
+          'project.archived',
+          '07',
+          {},
+          { workspaceId: other.workspace.id },
+        );
+        await audit('project.archived', '08', {}, { projectId: sibling });
+        await audit('project.archived', '09', {}, { outcome: 'denied' });
+        await audit(
+          'project.archived',
+          '10',
+          {},
+          {
+            actorType: 'api_key',
+            actorName: 'fixture-not-a-real-key',
+          },
+        );
+        const rows = await service().read(activityProject, workspace, m);
+        expect(rows).toEqual([
+          {
+            kind: 'audit',
+            ref: 'project.archived',
+            at: new Date('2026-11-01T16:10:00Z'),
+            actorName: 'API key',
+          },
+          {
+            kind: 'audit',
+            ref: 'project.updated',
+            at: new Date('2026-11-01T16:05:00Z'),
+            actorName: 'Audit display name',
+            change: 'assets.removed',
+            removed: 2,
+          },
+          {
+            kind: 'audit',
+            ref: 'project.updated',
+            at: new Date('2026-11-01T16:02:00Z'),
+            actorName: 'Audit display name',
+            change: 'workflow.added',
+            workflowName: 'Web discovery',
+          },
+          {
+            kind: 'audit',
+            ref: 'project.updated',
+            at: new Date('2026-11-01T16:01:00Z'),
+            actorName: 'Audit display name',
+            change: 'assets.added',
+            added: 4,
+          },
+          {
+            kind: 'audit',
+            ref: 'project.created',
+            at: new Date('2026-11-01T16:00:00Z'),
+            actorName: 'Audit display name',
+          },
+        ]);
+      } finally {
+        await runner.rollbackTransaction();
+        await runner.release();
+      }
+    });
+
+    it('groups owned dismissals by actor, reason and minute and never returns comments', async () => {
+      const name = randomUUID() + '.argus.test';
+      const foreignTarget = await insert('targets', {
+        value: name,
+        type: 'DOMAIN',
+        workspaceId: other.workspace.id,
+      });
+      const foreign = await insert('assets', {
+        value: name,
+        targetId: foreignTarget,
+      });
+      const dismissal = async (
+        at: string,
+        reason: string,
+        assetId = asset,
+        projectId = activityProject,
+      ) => {
+        const vulnerabilityId = await insert('vulnerabilities', {
+          name: randomUUID(),
+          severity: Severity.HIGH,
+          assetId,
+          toolId: tool,
+        });
+        await insert('project_vulnerabilities', { projectId, vulnerabilityId });
+        await insert('vulnerability_dismissals', {
+          vulnerabilityId,
+          userId: owner.user.userId,
+          reason,
+          createdAt: at,
+          comment: 'fixture-private-comment',
+        });
+      };
+      await dismissal('2026-11-02 01:12:03', 'used_in_test');
+      await dismissal('2026-11-02 01:12:09', 'used_in_test');
+      await dismissal('2026-11-02 01:12:20', 'wont_fix');
+      await dismissal('2026-11-02 01:13:00', 'wont_fix', foreign);
+      await dismissal('2026-11-02 01:13:00', 'wont_fix', asset, sibling);
+      const rows = await service().read(activityProject, owner.workspace.id);
+      expect(rows).toMatchObject([
+        { kind: 'dismissed', ref: 'dismissed', count: 1, reason: 'wont_fix' },
+        {
+          kind: 'dismissed',
+          ref: 'dismissed',
+          count: 2,
+          reason: 'used_in_test',
+        },
+      ]);
+      expect(
+        rows.every(
+          (row) =>
+            Object.keys(row).sort().join(',') ===
+            'actorName,at,count,kind,reason,ref',
+        ),
+      ).toBe(true);
+    });
+
+    it('returns an empty feed for empty owned projects and denies foreign and missing projects', async () => {
+      expect(await service().read(empty, owner.workspace.id)).toEqual([]);
+      await expect(
+        service().read(activityProject, other.workspace.id),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(
+        service().read(randomUUID(), owner.workspace.id),
+      ).rejects.toMatchObject({ status: 404 });
     });
   });
 });
