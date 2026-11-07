@@ -31,6 +31,7 @@ const overview = {
   weekly: [],
   lastRun: null,
   newVulnerabilityRuns: [],
+  activity: [],
 };
 
 describe('ProjectOverviewPage', () => {
