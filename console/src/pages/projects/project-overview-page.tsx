@@ -1,5 +1,6 @@
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePermission } from '@/hooks/usePermission';
@@ -11,7 +12,7 @@ import {
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
-import type { ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 import { ProjectFindingTrends } from './project-finding-trends';
 import { ProjectOverviewActivity } from './project-overview-activity';
 import { ProjectOverviewRuns } from './project-overview-runs';
@@ -54,11 +55,13 @@ function OverviewNotice({
 }
 
 /** Displays the four counts in a project overview. */
-function OverviewSummary({ overview }: { overview: ProjectOverviewDto }) {
-  const openFindings = Object.values(overview.openVulnerabilities).reduce(
-    (total, count) => total + count,
-    0,
-  );
+function OverviewSummary({
+  overview,
+  openFindings,
+}: {
+  overview: ProjectOverviewDto;
+  openFindings: number;
+}) {
   const metrics = [
     {
       label: 'Assets',
@@ -104,6 +107,37 @@ function OverviewSummary({ overview }: { overview: ProjectOverviewDto }) {
         ))}
       </dl>
     </section>
+  );
+}
+
+function ProjectOverviewShortcut({
+  to,
+  projectId,
+  label,
+  count,
+}: {
+  to:
+    | '/projects/$id/findings'
+    | '/projects/$id/assets'
+    | '/projects/$id/workflows';
+  projectId: string;
+  label: string;
+  count: number;
+}) {
+  const badgeId = useId();
+  return (
+    <Link
+      to={to}
+      params={{ id: projectId }}
+      aria-label={label}
+      aria-describedby={badgeId}
+      className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+    >
+      {label}
+      <Badge id={badgeId} variant="secondary" className="tabular-nums">
+        {countFormat.format(count)}
+      </Badge>
+    </Link>
   );
 }
 
@@ -190,30 +224,32 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
       );
     }
     const canOpenRuns = permission.hasPermission('job.read');
+    const openFindings = Object.values(
+      overview.data.openVulnerabilities,
+    ).reduce((total, count) => total + count, 0);
     content = (
       <div className="space-y-4">
-        <OverviewSummary overview={overview.data} />
-        <Link
-          to="/projects/$id/findings"
-          params={{ id: projectId }}
-          className="inline-block text-sm font-medium text-primary hover:underline"
-        >
-          View open findings
-        </Link>
-        <Link
-          to="/projects/$id/assets"
-          params={{ id: projectId }}
-          className="ms-4 inline-block text-sm font-medium text-primary hover:underline"
-        >
-          View project assets
-        </Link>
-        <Link
-          to="/projects/$id/workflows"
-          params={{ id: projectId }}
-          className="ms-4 inline-block text-sm font-medium text-primary hover:underline"
-        >
-          View project workflows
-        </Link>
+        <OverviewSummary overview={overview.data} openFindings={openFindings} />
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          <ProjectOverviewShortcut
+            to="/projects/$id/findings"
+            projectId={projectId}
+            label="View open findings"
+            count={openFindings}
+          />
+          <ProjectOverviewShortcut
+            to="/projects/$id/assets"
+            projectId={projectId}
+            label="View project assets"
+            count={overview.data.totalAssets}
+          />
+          <ProjectOverviewShortcut
+            to="/projects/$id/workflows"
+            projectId={projectId}
+            label="View project workflows"
+            count={overview.data.workflows}
+          />
+        </div>
         <ProjectFindingTrends weeks={overview.data.weekly} />
         <ProjectOverviewRuns
           lastRun={overview.data.lastRun}
