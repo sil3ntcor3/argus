@@ -4580,6 +4580,18 @@ export type GetManyProjectViewDtoDto = {
   pageCount: number;
 };
 
+export type WorkflowTemplateJobDto = {
+  id: string;
+  run: string;
+  needs: string[];
+};
+
+export type WorkflowTemplateDto = {
+  filePath: string;
+  name: string;
+  jobs: WorkflowTemplateJobDto[];
+};
+
 export type CreateProjectDto = {
   /**
    * Name of the project
@@ -43403,6 +43415,163 @@ export const useProjectsControllerCreate = <
     queryClient,
   );
 };
+
+/**
+ * Default workspace workflows with tool names and dependency outlines.
+ * @summary Workflow templates
+ */
+export const projectsControllerGetWorkflowTemplates = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkflowTemplateDto[]>(
+    { url: `/api/projects/workflow-templates`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetWorkflowTemplatesQueryKey = () => {
+  return [`/api/projects/workflow-templates`] as const;
+};
+
+export const getProjectsControllerGetWorkflowTemplatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetWorkflowTemplatesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>
+  > = ({ signal }) =>
+    projectsControllerGetWorkflowTemplates(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetWorkflowTemplatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>
+>;
+export type ProjectsControllerGetWorkflowTemplatesQueryError = unknown;
+
+export function useProjectsControllerGetWorkflowTemplates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetWorkflowTemplates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetWorkflowTemplates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Workflow templates
+ */
+
+export function useProjectsControllerGetWorkflowTemplates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getProjectsControllerGetWorkflowTemplatesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 /**
  * @summary Preview scope rules
