@@ -590,7 +590,7 @@ describe('AssetsService', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       const repo = mockAssetServiceRepository as any;
-      for (const fn of ['groupBy', 'addGroupBy', 'addSelect', 'orderBy', 'limit', 'offset']) {
+      for (const fn of ['groupBy', 'addGroupBy', 'addSelect', 'orderBy', 'addOrderBy', 'limit', 'offset']) {
         repo[fn] = jest.fn().mockReturnThis();
       }
       repo.getQuery = jest.fn().mockReturnValue('SELECT 1');
