@@ -1,4 +1,8 @@
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
+  Pagination as PaginationNav,
   PaginationContent,
   PaginationEllipsis,
   PaginationItem,
@@ -6,154 +10,243 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/components/ui/pagination';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { usePermission } from '@/hooks/usePermission';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { useSearchControllerSearchAssetsTargets } from '@/services/apis/gen/queries';
 import {
-  CloudCheckIcon,
-  ExternalLink,
-  FileText,
+  ArrowRight,
+  CloudCheck,
   Loader2,
   Search as SearchIcon,
-  TargetIcon,
+  Target,
 } from 'lucide-react';
-import * as React from 'react';
-import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { useCallback, useId, useRef, useState, type FormEvent } from 'react';
+import { Link, getRouteApi, useNavigate } from '@tanstack/react-router';
 
 interface SearchItem {
   id: string;
   value: string;
 }
 
+const categories = [
+  { key: 'targets', label: 'Targets', icon: Target },
+  { key: 'assets', label: 'Assets', icon: CloudCheck },
+] as const;
+
 function SearchResultSection({
-  icon,
-  label,
-  count,
+  category,
   items,
-  onItemClick,
 }: {
-  icon: React.ReactNode;
-  label: string;
-  count: number;
+  category: (typeof categories)[number];
   items: SearchItem[];
-  onItemClick: (id: string) => void;
 }) {
+  const { icon: Icon, key, label } = category;
   return (
-    <div className="rounded-lg shadow-sm border overflow-hidden">
-      <div className="px-6 py-4 border-b">
-        <div className="flex items-center gap-3">
-          {icon}
-          <h2 className="text-lg font-medium">
-            {label} ({count})
-          </h2>
-        </div>
-      </div>
-      <div className="divide-y">
-        {items.map((item) => (
-          <div
-            key={item.id}
-            onClick={() => onItemClick(item.id)}
-            className="px-6 py-4 cursor-pointer transition-colors group"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <p className="font-medium group-hover:text-blue-600">
+    <section className="overflow-hidden rounded-lg border">
+      <h2 className="flex items-center gap-2 border-b px-4 py-3 font-medium sm:px-6">
+        <Icon className="size-4 text-muted-foreground" aria-hidden />
+        {label}
+      </h2>
+      <ul className="divide-y">
+        {items.map((item) => {
+          const destination =
+            key === 'targets'
+              ? ({
+                  to: '/targets/$id/$tab',
+                  params: { id: item.id, tab: 'inventory' },
+                } as const)
+              : ({
+                  to: '/assets/services/$id',
+                  params: { id: item.id },
+                } as const);
+          return (
+            <li key={item.id}>
+              <Link
+                {...destination}
+                className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted focus-visible:bg-muted sm:px-6"
+              >
+                <span className="min-w-0 break-all font-medium">
                   {item.value}
-                </p>
-              </div>
-              <ExternalLink className="size-4 group-hover:text-blue-600" />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+                </span>
+                <ArrowRight
+                  className="size-4 shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
 const routeApi = getRouteApi('/_authed/search');
 
 export default function Search() {
-  const { query: searchQuery } = routeApi.useSearch();
-  const [page, setPage] = React.useState(1);
+  const { query } = routeApi.useSearch();
+  const navigate = useNavigate();
+  const refocus = useRef(false);
+  const focusSearchInput = useCallback((input: HTMLInputElement | null) => {
+    if (!input || !refocus.current) return;
+    refocus.current = false;
+    input.focus();
+  }, []);
+  const changeQuery = (value: string) => {
+    refocus.current = true;
+    void navigate({ to: '/search', search: { query: value } });
+  };
   const {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
-  const navigate = useNavigate();
-
-  const { data, isFetching } = useSearchControllerSearchAssetsTargets(
-    {
-      value: searchQuery,
-      page: page,
-      isSaveHistory: true,
-    },
-    {
-      query: {
-        enabled: !!selectedWorkspaceId && !!searchQuery,
-      },
-    },
-  );
-
-  if (isFetching) {
-    return (
-      <div className="flex items-center justify-center min-h-96">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <p>Searching...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="rounded-lg border p-6">
-        <div className="flex items-center gap-3 mb-2">
-          <SearchIcon className="h-6 w-6 text-blue-600" />
-          <h1 className="text-2xl font-semibold">Search Results</h1>
-        </div>
-        <div className="flex gap-2 ">
-          <span>Query:</span>
-          <span className="font-bold">{searchQuery}</span>
-          <span>•</span>
-          <span>{data?.total || 0} results found</span>
-        </div>
+    <SearchResults
+      key={JSON.stringify([selectedWorkspaceId, query])}
+      searchQuery={query}
+      hasWorkspace={Boolean(selectedWorkspaceId)}
+      inputRef={focusSearchInput}
+      onQueryChange={changeQuery}
+    />
+  );
+}
+
+function SearchResults({
+  searchQuery,
+  hasWorkspace,
+  inputRef,
+  onQueryChange,
+}: {
+  searchQuery: string;
+  hasWorkspace: boolean;
+  inputRef: (input: HTMLInputElement | null) => void;
+  onQueryChange: (query: string) => void;
+}) {
+  const inputId = useId();
+  const [draft, setDraft] = useState(searchQuery);
+  const [page, setPage] = useState(1);
+  const [tab, setTab] = useState('all');
+  const { hasPermission, isLoading, error } = usePermission();
+  const canSearch =
+    hasWorkspace &&
+    !error &&
+    hasPermission('asset.read') &&
+    hasPermission('target.read');
+  const enabled = canSearch && Boolean(searchQuery);
+  const { data, isFetching, isError, refetch } =
+    useSearchControllerSearchAssetsTargets(
+      { value: searchQuery, page, isSaveHistory: true },
+      { query: { enabled } },
+    );
+  const results = enabled && !isError ? data : undefined;
+  const counts = {
+    targets: results?.data.targets.length ?? 0,
+    assets: results?.data.assets.length ?? 0,
+  };
+  const visibleCategories = categories.filter(
+    ({ key }) => (tab === 'all' || tab === key) && counts[key] > 0,
+  );
+
+  let message = '';
+  if (!hasWorkspace) message = 'Choose a workspace to search.';
+  else if (error) message = 'Workspace access could not be verified.';
+  else if (isLoading) message = 'Checking workspace access…';
+  else if (!canSearch)
+    message = 'Search requires target and asset read access.';
+  else if (!searchQuery)
+    message = 'Enter a query to search targets and assets.';
+  else if (isError) message = 'Search is unavailable. Try again.';
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = draft.trim();
+    if (!query || !canSearch) return;
+    if (query === searchQuery) {
+      if (page === 1) void refetch();
+      setPage(1);
+      setTab('all');
+    } else {
+      onQueryChange(query);
+    }
+  };
+
+  return (
+    <div className="space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="space-y-3 rounded-lg border p-4 sm:p-6">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold">
+          <SearchIcon className="size-5 text-muted-foreground" aria-hidden />
+          Search Results
+        </h1>
+        <form className="flex items-end gap-2" onSubmit={submit}>
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label htmlFor={inputId}>Search query</Label>
+            <Input
+              id={inputId}
+              ref={inputRef}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Search targets and assets"
+            />
+          </div>
+          <Button type="submit" disabled={!canSearch || !draft.trim()}>
+            Search
+          </Button>
+        </form>
+        {results && (
+          <p className="break-all text-sm text-muted-foreground" role="status">
+            {results.total} results for “{searchQuery}”
+          </p>
+        )}
       </div>
 
-      {data && data.total === 0 && (
-        <div className="rounded-lg shadow-sm border p-8 text-center">
-          <FileText className="h-12 w-12 mx-auto mb-4" />
-          <h3 className="text-lg font-medium mb-2">No results found</h3>
-          <p>Try adjusting your search query or browse other sections</p>
-        </div>
+      {message && (
+        <p className="rounded-lg border p-4 text-sm" role="status">
+          {message}
+        </p>
       )}
-
-      {data && data.data.targets.length > 0 && (
-        <SearchResultSection
-          icon={<TargetIcon className="h-5 w-5 text-orange-600" />}
-          label="Targets"
-          count={data.data.targets.length}
-          items={data.data.targets}
-          onItemClick={(id) => navigate({ to: '/targets/' + id })}
+      {!message && isFetching && !results && (
+        <p className="flex items-center gap-2 p-4 text-sm" role="status">
+          <Loader2 className="size-4 animate-spin" aria-hidden /> Searching…
+        </p>
+      )}
+      {results && (
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList
+            aria-label="Search results on this page"
+            className="w-fit max-w-full"
+          >
+            <TabsTrigger value="all">
+              All {counts.targets + counts.assets}
+            </TabsTrigger>
+            {categories.map(({ key, label }) => (
+              <TabsTrigger key={key} value={key}>
+                {label} {counts[key]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value={tab} className="space-y-4">
+            {visibleCategories.map((category) => (
+              <SearchResultSection
+                key={category.key}
+                category={category}
+                items={results.data[category.key]}
+              />
+            ))}
+            {visibleCategories.length === 0 && (
+              <p className="rounded-lg border p-4 text-sm text-muted-foreground">
+                No results on this page for the selected type.
+              </p>
+            )}
+          </TabsContent>
+        </Tabs>
+      )}
+      {results && results.pageCount > 1 && (
+        <Pagination
+          page={page}
+          pageCount={results.pageCount}
+          setPage={setPage}
         />
-      )}
-
-      {data && data.data.assets.length > 0 && (
-        <SearchResultSection
-          icon={<CloudCheckIcon className="h-5 w-5 text-green-600" />}
-          label="Assets"
-          count={data.data.assets.length}
-          items={data.data.assets}
-          onItemClick={(id) => navigate({ to: '/assets/services/' + id })}
-        />
-      )}
-
-      {data && data.pageCount > 1 && (
-        <div className="flex justify-center">
-          <Pagination
-            page={page}
-            pageCount={data.pageCount}
-            setPage={setPage}
-          />
-        </div>
       )}
     </div>
   );
@@ -189,7 +282,7 @@ function Pagination({
   return (
     pageCount > 0 && (
       <div className="flex flex-row-reverse justify-end items-center">
-        <PaginationContent>
+        <PaginationNav aria-label="Search result pages">
           <PaginationContent>
             <PaginationItem>
               <PaginationPrevious
@@ -197,8 +290,10 @@ function Pagination({
                 onClick={(e) => {
                   e.preventDefault();
 
-                  setPage(page - 1);
+                  if (page > 1) setPage(page - 1);
                 }}
+                aria-disabled={page <= 1}
+                tabIndex={page <= 1 ? -1 : undefined}
                 className={page <= 1 ? 'pointer-events-none opacity-50' : ''}
               />
             </PaginationItem>
@@ -231,15 +326,17 @@ function Pagination({
                 onClick={(e) => {
                   e.preventDefault();
 
-                  setPage(page + 1);
+                  if (page < pageCount) setPage(page + 1);
                 }}
+                aria-disabled={page >= pageCount}
+                tabIndex={page >= pageCount ? -1 : undefined}
                 className={
                   page >= pageCount ? 'pointer-events-none opacity-50' : ''
                 }
               />
             </PaginationItem>
           </PaginationContent>
-        </PaginationContent>
+        </PaginationNav>
       </div>
     )
   );
