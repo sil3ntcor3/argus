@@ -15,6 +15,7 @@ import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { projectRouteId } from './project-route-id';
 import { projectWorkflowLabel } from './project-workflow-label';
+import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
 
 const runDate = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -24,9 +25,13 @@ const runDate = new Intl.DateTimeFormat(undefined, {
 function WorkflowCard({
   binding,
   canOpenRuns,
+  projectId,
+  editWorkspaceId,
 }: {
   binding: AssetGroupWorkflow;
   canOpenRuns: boolean;
+  projectId: string;
+  editWorkspaceId?: string;
 }) {
   const name = projectWorkflowLabel(binding.workflow);
   const cron = binding.schedule;
@@ -48,6 +53,15 @@ function WorkflowCard({
             : `${cron} UTC`
           : 'Schedule disabled'}
       </p>
+      {editWorkspaceId && (
+        <ProjectWorkflowScheduleDialog
+          projectId={projectId}
+          bindingId={binding.id}
+          workflowName={name}
+          schedule={cron}
+          workspaceId={editWorkspaceId}
+        />
+      )}
       {lastRun ? (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <JobStatusBadge status={lastRun.status} />
@@ -77,9 +91,11 @@ function WorkflowCard({
 function WorkflowList({
   projectId,
   canOpenRuns,
+  editWorkspaceId,
 }: {
   projectId: string;
   canOpenRuns: boolean;
+  editWorkspaceId?: string;
 }) {
   const project = useProjectsControllerGetById(projectId, {
     query: { retry: false },
@@ -90,7 +106,7 @@ function WorkflowList({
 
   if (status === 401 || status === 403) return <AccessDenied />;
   if (status === 404) return <p role="status">Project not found</p>;
-  if (project.isError)
+  if (project.isError && !project.data)
     return (
       <div className="flex flex-wrap items-center gap-3">
         <p role="status">Unable to load project workflows</p>
@@ -122,6 +138,8 @@ function WorkflowList({
           key={binding.id}
           binding={binding}
           canOpenRuns={canOpenRuns}
+          projectId={projectId}
+          editWorkspaceId={editWorkspaceId}
         />
       ))}
     </ul>
@@ -156,8 +174,15 @@ export function ProjectWorkflowsPage({ projectId }: { projectId: string }) {
           Back to project overview
         </Link>
         <WorkflowList
+          key={`${state.selectedWorkspaceId}:${parsedId.data}`}
           projectId={parsedId.data}
           canOpenRuns={permission.hasPermission('job.read')}
+          editWorkspaceId={
+            permission.hasPermission('project.write') ||
+            permission.hasPermission('group.write')
+              ? state.selectedWorkspaceId
+              : undefined
+          }
         />
       </div>
     );
