@@ -16,11 +16,13 @@ import { ProjectFindingReadService } from './project-finding-read.service';
 import { ProjectFindingTimelineService } from './project-finding-timeline.service';
 import { ProjectOverviewCountsService } from './project-overview-counts.service';
 import { ProjectOverviewRunsService } from './project-overview-runs.service';
+import { ProjectOverviewActivityService } from './project-overview-activity.service';
 
 @Module({
   imports: [AssetGroupModule, ProjectScopeModule],
   controllers: [ProjectsController],
   providers: [
+    ProjectOverviewActivityService,
     ProjectOverviewRunsService,
     ProjectOverviewCountsService,
     ProjectFindingTimelineService,
