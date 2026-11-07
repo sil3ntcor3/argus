@@ -24,6 +24,7 @@ import { usePermission } from '@/hooks/usePermission';
 import { useRunWorkflow } from '@/hooks/use-run-workflow';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
 import type {
+  JobHistoryDetailResponseDto,
   JobListItemDto,
   WorkflowStepStatusDto,
 } from '@/services/apis/gen/queries';
@@ -38,6 +39,7 @@ import {
 } from '@/services/apis/gen/queries';
 import type { BugReport } from '@/utils/bug-report-url';
 import { useQueryClient } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
 import dayjs from 'dayjs';
 import {
   ArrowRight,
@@ -49,16 +51,31 @@ import {
   MoreHorizontal,
   TriangleAlert,
 } from 'lucide-react';
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 
 const NO_STEPS: WorkflowStepStatusDto[] = [];
+const RUN_REFRESH_MS = 1000;
+
+function isActiveJobStatus(status?: string): boolean {
+  return status === JobStatus.pending || status === JobStatus.in_progress;
+}
+
+function isRunPollingBlocked(error: unknown): boolean {
+  const status = isAxiosError(error) ? error.response?.status : undefined;
+  return status === 401 || status === 403 || status === 404;
+}
+
+function runHasActiveJobs(run?: JobHistoryDetailResponseDto): boolean {
+  // Some runs have active job rows without a corresponding step or tool.
+  if ((run?.activeJobsCount ?? 0) > 0) return true;
+  const steps = run?.steps ?? NO_STEPS;
+  if (steps.length > 0) {
+    return steps.some(
+      (step) => step.status === 'pending' || step.status === 'dispatched',
+    );
+  }
+  return run?.tools?.some((tool) => isActiveJobStatus(tool.status)) ?? false;
+}
 
 const formatDate = (value?: string) =>
   value && dayjs(value).isValid()
@@ -269,7 +286,6 @@ export default function Runs() {
     isUpdateSearchQueryParam: false,
   });
 
-  const hasActiveJobsRef = useRef(false);
   const [isCodeOpen, setCodeOpen] = useState(false);
   // Fetched only while the sheet is open: the YAML view is a one-off peek at
   // the definition, not something the run page needs while it is closed.
@@ -278,36 +294,18 @@ export default function Runs() {
     { enabled: isCodeOpen },
   );
 
-  const { data: jobHistoryDetail } =
+  const { data: jobHistoryDetail, error: runError } =
     useJobsRegistryControllerGetJobHistoryDetail(jobHistoryId || '', {
       query: {
-        // Poll only while any tool in this run is still active.
-        // The function form is evaluated lazily by React Query, so it always
-        // reads the latest value without re-creating the query config.
-        refetchInterval: () => (hasActiveJobsRef.current ? 1000 : false),
+        refetchInterval: (query) =>
+          !isRunPollingBlocked(query.state.error) &&
+          runHasActiveJobs(query.state.data)
+            ? RUN_REFRESH_MS
+            : false,
       },
     });
 
-  // Check if any tools are still active via API status. Workflow runs carry
-  // their own per-step state; runs created before the engine only have tools.
-  const hasActiveJobs = useMemo(() => {
-    const steps = jobHistoryDetail?.steps ?? [];
-    if (steps.length > 0) {
-      return steps.some(
-        (step) => step.status === 'pending' || step.status === 'dispatched',
-      );
-    }
-    const tools = jobHistoryDetail?.tools || [];
-    return tools.some(
-      (tool) =>
-        tool.status === JobStatus.pending ||
-        tool.status === JobStatus.in_progress,
-    );
-  }, [jobHistoryDetail?.steps, jobHistoryDetail?.tools]);
-
-  useEffect(() => {
-    hasActiveJobsRef.current = hasActiveJobs;
-  }, [hasActiveJobs]);
+  const hasActiveJobs = runHasActiveJobs(jobHistoryDetail);
 
   const {
     data: paginatedJobsData,
@@ -324,7 +322,19 @@ export default function Runs() {
     },
     {
       query: {
-        refetchInterval: hasActiveJobs ? 1000 : false,
+        refetchInterval: (query) => {
+          if (
+            isRunPollingBlocked(runError) ||
+            isRunPollingBlocked(query.state.error)
+          ) {
+            return false;
+          }
+          // The summary can settle before the table receives the final status.
+          const tableHasActiveJobs = query.state.data?.data.some((job) =>
+            isActiveJobStatus(job.status),
+          );
+          return hasActiveJobs || tableHasActiveJobs ? RUN_REFRESH_MS : false;
+        },
       },
     },
   );
