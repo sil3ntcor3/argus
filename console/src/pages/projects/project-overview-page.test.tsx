@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectOverviewPage } from './project-overview-page';
 
@@ -15,7 +16,15 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
   useWorkspaceState: mock.useWorkspaceState,
 }));
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: string }) => <a href="/runs">{children}</a>,
+  Link: ({
+    children,
+    'aria-label': label,
+    'aria-describedby': describedBy,
+  }: ComponentProps<'a'>) => (
+    <a href="/runs" aria-label={label} aria-describedby={describedBy}>
+      {children}
+    </a>
+  ),
 }));
 vi.mock(import('@/services/apis/gen/queries'), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -91,13 +100,22 @@ describe('ProjectOverviewPage', () => {
       render(<ProjectOverviewPage projectId={projectId} />);
       expect(screen.getByText(metadata.name)).toBeVisible();
       expect(screen.getByText(metadata.description)).toBeVisible();
-      expect(
-        screen.getByRole('heading', { name: 'Project summary' }),
-      ).toBeVisible();
-      expect(screen.getByText('Assets', { exact: true })).toBeVisible();
-      expect(screen.getByText('Open findings', { exact: true })).toBeVisible();
+      const summary = within(
+        screen.getByRole('region', { name: 'Project summary' }),
+      );
+      expect(summary.getByText('Assets', { exact: true })).toBeVisible();
+      expect(summary.getByText('Open findings', { exact: true })).toBeVisible();
       for (const count of [12, 3, 8, 2])
-        expect(screen.getByText(String(count), { exact: true })).toBeVisible();
+        expect(summary.getByText(String(count), { exact: true })).toBeVisible();
+      expect(
+        screen.getByRole('link', { name: 'View project assets' }),
+      ).toHaveAccessibleDescription('12');
+      expect(
+        screen.getByRole('link', { name: 'View open findings' }),
+      ).toHaveAccessibleDescription('8');
+      expect(
+        screen.getByRole('link', { name: 'View project workflows' }),
+      ).toHaveAccessibleDescription('3');
       const enabled = expect.objectContaining({
         query: expect.objectContaining({ enabled: true }),
       });

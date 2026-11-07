@@ -216,12 +216,12 @@ function SearchResults({
             aria-label="Search results on this page"
             className="w-fit max-w-full"
           >
-            <TabsTrigger value="all">
-              All {counts.targets + counts.assets}
+            <TabsTrigger value="all" badge={counts.targets + counts.assets}>
+              All
             </TabsTrigger>
             {categories.map(({ key, label }) => (
-              <TabsTrigger key={key} value={key}>
-                {label} {counts[key]}
+              <TabsTrigger key={key} value={key} badge={counts[key]}>
+                {label}
               </TabsTrigger>
             ))}
           </TabsList>
