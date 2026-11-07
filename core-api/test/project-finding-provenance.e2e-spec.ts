@@ -1734,5 +1734,107 @@ describe('Project finding provenance (e2e)', () => {
           );
       }
     });
+
+    describe('project overview HTTP API', () => {
+      const path = (id = overview) => `/api/projects/${id}/overview`;
+
+      it('returns only the overview fields, ordered activity and eight weekly buckets', async () => {
+        const response = await request(app.server)
+          .get(path())
+          .set(owner.headers)
+          .expect(200);
+        expect(Object.keys(response.body).sort()).toEqual([
+          'activity',
+          'lastRun',
+          'newAssets',
+          'newVulnerabilities',
+          'newVulnerabilityRuns',
+          'openVulnerabilities',
+          'totalAssets',
+          'weekly',
+          'workflows',
+        ]);
+        expect(response.body).toMatchObject({
+          totalAssets: 0,
+          newVulnerabilities: 1,
+          openVulnerabilities: { high: 1 },
+          newVulnerabilityRuns: [{ id: first }],
+          lastRun: { id: last },
+        });
+        const { weekly, activity } = response.body as {
+          weekly: unknown[];
+          activity: Record<string, unknown>[];
+        };
+        expect(weekly).toHaveLength(8);
+        expect(activity).toHaveLength(15);
+        expect(activity[0]).toMatchObject({
+          kind: 'dismissed',
+          reason: 'used_in_test',
+          count: 1,
+          at: expect.any(String),
+        });
+        expect(activity[2]).toMatchObject({
+          kind: 'run',
+          ref: middle,
+          recurringVulnerabilities: 1,
+          scopeSize: 2,
+        });
+        expect(Object.keys(activity[2]).sort()).toEqual([
+          'at',
+          'jobRunType',
+          'kind',
+          'newVulnerabilities',
+          'recurringVulnerabilities',
+          'ref',
+          'runStatus',
+          'scopeSize',
+          'workflowName',
+        ]);
+      });
+
+      it('returns an empty overview and requires valid IDs, authentication and project access', async () => {
+        const empty = await insert('projects', {
+          name: randomUUID(),
+          workspaceId: owner.workspace.id,
+        });
+        const response = await request(app.server)
+          .get(path(empty))
+          .set(owner.headers)
+          .expect(200);
+        expect(response.body).toMatchObject({
+          totalAssets: 0,
+          newAssets: 0,
+          newVulnerabilities: 0,
+          workflows: 0,
+          lastRun: null,
+          openVulnerabilities: {
+            critical: 0,
+            high: 0,
+            medium: 0,
+            low: 0,
+            info: 0,
+          },
+          newVulnerabilityRuns: [],
+          activity: [],
+        });
+        await request(app.server)
+          .get(path('invalid'))
+          .set(owner.headers)
+          .expect(400);
+        await request(app.server)
+          .get(path())
+          .set('X-Workspace-Id', owner.workspace.id)
+          .expect(401);
+        await request(app.server)
+          .get(path())
+          .set({ ...owner.headers, 'X-Workspace-Id': other.workspace.id })
+          .expect(403);
+        await request(app.server).get(path()).set(other.headers).expect(404);
+        await request(app.server)
+          .get(path(randomUUID()))
+          .set(owner.headers)
+          .expect(404);
+      });
+    });
   });
 });
