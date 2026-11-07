@@ -41,6 +41,7 @@ import { Route as AuthedInternalNetworksIndexRouteImport } from './routes/_authe
 import { Route as AuthedInternalNetworksIdRouteImport } from './routes/_authed/internal-networks/$id'
 import { Route as AuthedInternalNetworksCreateRouteImport } from './routes/_authed/internal-networks/create'
 import { Route as AuthedJobsIndexRouteImport } from './routes/_authed/jobs/index'
+import { Route as AuthedProjectsIndexRouteImport } from './routes/_authed/projects/index'
 import { Route as AuthedProjectsIdRouteImport } from './routes/_authed/projects/$id'
 import { Route as AuthedProvidersIndexRouteImport } from './routes/_authed/providers/index'
 import { Route as AuthedProvidersCreateRouteImport } from './routes/_authed/providers/create'
@@ -233,6 +234,11 @@ const AuthedInternalNetworksCreateRoute =
 const AuthedJobsIndexRoute = AuthedJobsIndexRouteImport.update({
   id: '/jobs/',
   path: '/jobs/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedProjectsIndexRoute = AuthedProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedProjectsIdRoute = AuthedProjectsIdRouteImport.update({
@@ -434,6 +440,7 @@ export interface FileRoutesByFullPath {
   '/integrations/': typeof AuthedIntegrationsIndexRoute
   '/internal-networks/': typeof AuthedInternalNetworksIndexRoute
   '/jobs/': typeof AuthedJobsIndexRoute
+  '/projects/': typeof AuthedProjectsIndexRoute
   '/providers/': typeof AuthedProvidersIndexRoute
   '/targets/': typeof AuthedTargetsIndexRoute
   '/tools/': typeof AuthedToolsIndexRoute
@@ -495,6 +502,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof AuthedIntegrationsIndexRoute
   '/internal-networks': typeof AuthedInternalNetworksIndexRoute
   '/jobs': typeof AuthedJobsIndexRoute
+  '/projects': typeof AuthedProjectsIndexRoute
   '/providers': typeof AuthedProvidersIndexRoute
   '/targets': typeof AuthedTargetsIndexRoute
   '/tools': typeof AuthedToolsIndexRoute
@@ -560,6 +568,7 @@ export interface FileRoutesById {
   '/_authed/integrations/': typeof AuthedIntegrationsIndexRoute
   '/_authed/internal-networks/': typeof AuthedInternalNetworksIndexRoute
   '/_authed/jobs/': typeof AuthedJobsIndexRoute
+  '/_authed/projects/': typeof AuthedProjectsIndexRoute
   '/_authed/providers/': typeof AuthedProvidersIndexRoute
   '/_authed/targets/': typeof AuthedTargetsIndexRoute
   '/_authed/tools/': typeof AuthedToolsIndexRoute
@@ -625,6 +634,7 @@ export interface FileRouteTypes {
     | '/integrations/'
     | '/internal-networks/'
     | '/jobs/'
+    | '/projects/'
     | '/providers/'
     | '/targets/'
     | '/tools/'
@@ -686,6 +696,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/internal-networks'
     | '/jobs'
+    | '/projects'
     | '/providers'
     | '/targets'
     | '/tools'
@@ -750,6 +761,7 @@ export interface FileRouteTypes {
     | '/_authed/integrations/'
     | '/_authed/internal-networks/'
     | '/_authed/jobs/'
+    | '/_authed/projects/'
     | '/_authed/providers/'
     | '/_authed/targets/'
     | '/_authed/tools/'
@@ -1010,6 +1022,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedJobsIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/projects/': {
+      id: '/_authed/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AuthedProjectsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/projects/$id': {
       id: '/_authed/projects/$id'
       path: '/projects/$id'
@@ -1248,6 +1267,7 @@ interface AuthedRouteChildren {
   AuthedIntegrationsIndexRoute: typeof AuthedIntegrationsIndexRoute
   AuthedInternalNetworksIndexRoute: typeof AuthedInternalNetworksIndexRoute
   AuthedJobsIndexRoute: typeof AuthedJobsIndexRoute
+  AuthedProjectsIndexRoute: typeof AuthedProjectsIndexRoute
   AuthedProvidersIndexRoute: typeof AuthedProvidersIndexRoute
   AuthedTargetsIndexRoute: typeof AuthedTargetsIndexRoute
   AuthedToolsIndexRoute: typeof AuthedToolsIndexRoute
@@ -1292,6 +1312,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedIntegrationsIndexRoute: AuthedIntegrationsIndexRoute,
   AuthedInternalNetworksIndexRoute: AuthedInternalNetworksIndexRoute,
   AuthedJobsIndexRoute: AuthedJobsIndexRoute,
+  AuthedProjectsIndexRoute: AuthedProjectsIndexRoute,
   AuthedProvidersIndexRoute: AuthedProvidersIndexRoute,
   AuthedTargetsIndexRoute: AuthedTargetsIndexRoute,
   AuthedToolsIndexRoute: AuthedToolsIndexRoute,
