@@ -6,6 +6,7 @@ import { VulnerabilityStatus } from '../src/modules/vulnerabilities/dto/get-vuln
 import {
   PROJECT_FINDING_PROVENANCE_SQL,
   PROJECT_FINDING_REFERENCE_JOINS,
+  ProjectFindingProvenance,
 } from '../src/modules/projects/project-finding-provenance';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
@@ -542,6 +543,140 @@ describe('Project finding provenance (e2e)', () => {
       ).toMatchObject({ total: 0 });
       expect(await list({ jobHistoryId: corruptRun })).toMatchObject({
         total: 1,
+      });
+    });
+  });
+
+  describe('private finding facets', () => {
+    let facetProject: string;
+    let newest: string;
+    const list = (
+      query: Partial<Parameters<ProjectFindingReadService['list']>[2]> = {},
+    ) =>
+      app.app
+        .get(ProjectFindingReadService)
+        .list(facetProject, owner.workspace.id, {
+          page: 1,
+          limit: 10,
+          ...query,
+        });
+    const severities = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+    const provenance = { all: 0, new: 0, recurring: 0, notSeen: 0 };
+
+    beforeAll(async () => {
+      facetProject = await insert('projects', {
+        name: randomUUID(),
+        workspaceId: owner.workspace.id,
+      });
+      const oldest = await run(1, { projectId: facetProject });
+      newest = await run(2, { projectId: facetProject });
+      const rows = [
+        ['High new', Severity.HIGH, newest, 1],
+        ['Medium new', Severity.MEDIUM, newest, 1],
+        ['High recurring', Severity.HIGH, newest, 2],
+        ['Low missed', Severity.LOW, oldest, 2],
+        ['Critical missed', Severity.CRITICAL, oldest, 2],
+        ['High archived', Severity.HIGH, oldest, 2],
+        ['Medium dismissed', Severity.MEDIUM, newest, 1],
+      ] as const;
+      for (const [name, severity, lastRun, timesSeen] of rows) {
+        const vulnerabilityId = await insert('vulnerabilities', {
+          name,
+          severity,
+          assetId: asset,
+          toolId: tool,
+          isArchived: name.endsWith('archived'),
+        });
+        if (name.endsWith('dismissed'))
+          await insert('vulnerability_dismissals', {
+            vulnerabilityId,
+            userId: owner.user.userId,
+            reason: 'used_in_test',
+          });
+        await insert('project_vulnerabilities', {
+          projectId: facetProject,
+          vulnerabilityId,
+          firstSeenJobHistoryId: timesSeen > 1 ? oldest : lastRun,
+          lastSeenJobHistoryId: lastRun,
+          firstSeenAt: at(timesSeen > 1 || lastRun === oldest ? 1 : 2),
+          lastSeenAt: at(lastRun === oldest ? 1 : 2),
+          timesSeen,
+        });
+      }
+    });
+
+    it('keeps independent facet dimensions while the page applies both filters', async () => {
+      const result = await list({
+        severity: [Severity.HIGH],
+        provenance: ProjectFindingProvenance.NEW,
+      });
+      expect(result).toMatchObject({
+        total: 1,
+        data: [{ name: 'High new', provenance: 'new' }],
+        provenanceCounts: { ...provenance, all: 2, new: 1, recurring: 1 },
+        severityCounts: { ...severities, high: 1, medium: 1 },
+      });
+      expect(
+        await list({
+          severity: [Severity.LOW],
+          provenance: ProjectFindingProvenance.NEW,
+        }),
+      ).toMatchObject({
+        total: 0,
+        data: [],
+        provenanceCounts: { ...provenance, all: 1, notSeen: 1 },
+        severityCounts: { ...severities, high: 1, medium: 1 },
+      });
+      expect(
+        await list({ provenance: ProjectFindingProvenance.NOT_SEEN }),
+      ).toMatchObject({
+        total: 2,
+        data: [{ name: 'Critical missed' }, { name: 'Low missed' }],
+        provenanceCounts: { all: 5, new: 2, recurring: 1, notSeen: 2 },
+        severityCounts: { ...severities, low: 1, critical: 1 },
+      });
+    });
+
+    it('preserves facets on an out-of-range page and returns zero for no matches', async () => {
+      expect(await list({ page: 99, limit: 1 })).toMatchObject({
+        total: 5,
+        data: [],
+        provenanceCounts: { all: 5, new: 2, recurring: 1, notSeen: 2 },
+        severityCounts: {
+          ...severities,
+          high: 2,
+          medium: 1,
+          low: 1,
+          critical: 1,
+        },
+      });
+      expect(await list({ search: 'does not exist' })).toMatchObject({
+        total: 0,
+        data: [],
+        provenanceCounts: provenance,
+        severityCounts: severities,
+      });
+    });
+
+    it('applies status, literal search and exact run filters to every facet', async () => {
+      expect(
+        await list({ status: VulnerabilityStatus.DISMISSED }),
+      ).toMatchObject({
+        total: 1,
+        data: [{ name: 'Medium dismissed' }],
+        provenanceCounts: { ...provenance, all: 1, new: 1 },
+        severityCounts: { ...severities, medium: 1 },
+      });
+      expect(
+        await list({
+          status: VulnerabilityStatus.ALL,
+          search: 'HIGH',
+          jobHistoryId: newest,
+        }),
+      ).toMatchObject({
+        total: 2,
+        provenanceCounts: { ...provenance, all: 2, new: 1, recurring: 1 },
+        severityCounts: { ...severities, high: 2 },
       });
     });
   });

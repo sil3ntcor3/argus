@@ -6,8 +6,12 @@ export enum ProjectFindingProvenance {
   NOT_SEEN = 'not_seen',
 }
 
-/** Reference scan and last reporting run for an owned `pv`/`v` finding row. */
-export const PROJECT_FINDING_REFERENCE_JOINS = `
+/** Reference scan for an owned asset and tool. Inputs are internal SQL expressions. */
+export const projectFindingReferenceRunJoin = (
+  projectId: string,
+  assetId: string,
+  toolId: string,
+) => `
 LEFT JOIN LATERAL (
   SELECT h.id, h."createdAt"
   FROM jobs job
@@ -16,13 +20,15 @@ LEFT JOIN LATERAL (
   JOIN projects p ON p.id = h."projectId" AND p."workspaceId" = w."workspaceId"
   JOIN assets a ON a.id = job."assetId"
   JOIN targets t ON t.id = a."targetId" AND t."workspaceId" = p."workspaceId"
-  WHERE h."projectId" = pv."projectId"
-    AND job."assetId" = v."assetId" AND job."toolId" = v."toolId"
+  WHERE h."projectId" = ${projectId}
+    AND job."assetId" = ${assetId} AND job."toolId" = ${toolId}
     AND job.status = '${JobStatus.COMPLETED}'
     AND job.category = '${ToolCategory.VULNERABILITIES}'
   ORDER BY h."createdAt" DESC, h.id DESC
   LIMIT 1
-) ref ON true
+) ref ON true`;
+
+const PROJECT_FINDING_LAST_SEEN_JOIN = `
 LEFT JOIN LATERAL (
   SELECT h.id, h."createdAt"
   FROM job_histories h
@@ -30,6 +36,11 @@ LEFT JOIN LATERAL (
   JOIN projects p ON p.id = h."projectId" AND p."workspaceId" = w."workspaceId"
   WHERE h.id = pv."lastSeenJobHistoryId" AND h."projectId" = pv."projectId"
 ) seen_run ON true`;
+
+/** Reference scan and last reporting run for an owned `pv`/`v` finding row. */
+export const PROJECT_FINDING_REFERENCE_JOINS = `
+${projectFindingReferenceRunJoin('pv."projectId"', 'v."assetId"', 'v."toolId"')}
+${PROJECT_FINDING_LAST_SEEN_JOIN}`;
 
 /** Classify only a later eligible scan with no recorded sighting as missed. */
 export const PROJECT_FINDING_PROVENANCE_SQL = `CASE
