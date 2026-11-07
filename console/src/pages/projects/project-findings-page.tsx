@@ -14,6 +14,7 @@ import { isAxiosError } from 'axios';
 import { type ReactNode, useRef } from 'react';
 import { ProjectFindingSearch } from './project-finding-search';
 import { projectRouteId } from './project-route-id';
+import { ProjectWorkflowFilter } from './project-workflow-filter';
 import { ProjectFindingTimeline } from './project-finding-timeline';
 import {
   type FindingFacets,
@@ -26,6 +27,7 @@ type FindingsSearch = FindingFacets & {
   page: number;
   query?: string;
   run?: string;
+  workflow?: string;
 };
 
 type FindingsProps = FindingsSearch & {
@@ -110,17 +112,25 @@ function FindingList({
   canOpenRuns,
   query,
   run,
+  workflow,
   provenance,
   severity,
   status: findingStatus,
 }: FindingsProps & { canOpen: boolean; canOpenRuns: boolean }) {
   const searchInput = useRef<HTMLInputElement>(null);
   const facets = { provenance, severity, status: findingStatus };
-  const filters = { ...facets, query, run };
+  const filters = { ...facets, query, run, workflow };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetFindings(
       projectId,
-      { page, limit: 20, search: query, jobHistoryId: run, ...facets },
+      {
+        page,
+        limit: 20,
+        search: query,
+        jobHistoryId: run,
+        projectWorkflowId: workflow,
+        ...facets,
+      },
       { query: { retry: false } },
     );
   const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -195,6 +205,11 @@ function FindingList({
         inputRef={searchInput}
         term={query}
         onChange={(next) => onChange({ ...filters, query: next, page: 1 })}
+      />
+      <ProjectWorkflowFilter
+        projectId={projectId}
+        workflow={workflow}
+        onChange={(next) => onChange({ ...filters, page: 1, workflow: next })}
       />
       <ProjectFindingFacets
         {...facets}

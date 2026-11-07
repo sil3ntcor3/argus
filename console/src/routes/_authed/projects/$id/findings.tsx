@@ -12,6 +12,7 @@ import { z } from 'zod';
 const findingsSearch = z.object({
   page: z.number().int().min(1).max(10000000).optional().catch(undefined),
   run: projectRouteId.optional().catch(undefined),
+  workflow: projectRouteId.optional().catch(undefined),
   // Direct URL search values can be parsed as primitives by the router.
   query: z
     .preprocess(
@@ -47,6 +48,7 @@ function ProjectFindingsRoute() {
     page = 1,
     query,
     run,
+    workflow,
     provenance,
     severity,
     status,
@@ -58,6 +60,7 @@ function ProjectFindingsRoute() {
       page={page}
       query={query}
       run={run}
+      workflow={workflow}
       provenance={provenance}
       severity={severity}
       status={status}

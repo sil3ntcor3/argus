@@ -7,6 +7,7 @@ import { ProjectFindingsPage } from './project-findings-page';
 const mock = vi.hoisted(() => ({
   permission: vi.fn(),
   findings: vi.fn(),
+  project: vi.fn(),
 }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
   useWorkspaceState: () => ({ state: { selectedWorkspaceId: 'fixture' } }),
@@ -15,6 +16,7 @@ vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetFindings: mock.findings,
+  useProjectsControllerGetById: mock.project,
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -55,6 +57,7 @@ const finding: ProjectFindingDto = {
 describe('ProjectFindingsPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mock.project.mockReturnValue({ data: { assetGroupWorkflows: [] } });
     mock.permission.mockReturnValue({
       hasPermission: (key: string) =>
         ['group.read', 'vulnerability.read'].includes(key),
@@ -241,6 +244,50 @@ describe('ProjectFindingsPage', () => {
       query: 'redirect',
       status: 'all',
       severity: ['medium'],
+    });
+  });
+  it('sends a binding ID alongside the run filter and resets only the page when changed', () => {
+    const workflow = '29c7b635-4793-4e90-bf56-9a2a2b2562d3';
+    const run = 'e13a3774-14bc-42bb-8d64-46c3680a57aa';
+    const onChange = vi.fn();
+    mock.project.mockReturnValue({
+      data: {
+        assetGroupWorkflows: [
+          { id: workflow, workflow: { name: 'Scheduled test' } },
+        ],
+      },
+    });
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={2}
+        run={run}
+        workflow={workflow}
+        query="redirect"
+        status="all"
+        onChange={onChange}
+      />,
+    );
+    expect(mock.findings).toHaveBeenCalledWith(
+      projectId,
+      {
+        page: 2,
+        limit: 20,
+        jobHistoryId: run,
+        projectWorkflowId: workflow,
+        search: 'redirect',
+        status: 'all',
+      },
+      expect.anything(),
+    );
+    const selector = screen.getByRole('combobox', { name: 'Workflow' });
+    expect(selector).toHaveDisplayValue('Scheduled test');
+    fireEvent.change(selector, { target: { value: '' } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      run,
+      query: 'redirect',
+      status: 'all',
     });
   });
 });
