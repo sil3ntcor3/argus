@@ -40,6 +40,7 @@ import {
   applyDagreLayout,
   applyForceLayout,
   placeInFreeSpots,
+  serviceFanPositions,
   CLUSTER_COLORS,
   GRAPH_NODE_MAX_WIDTH,
   NODE_TYPE_COLORS,
@@ -497,39 +498,55 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
     const labelVisible = zoomRef.current >= LABEL_LOD_ZOOM;
     const glowEnabled = !reducedMotionRef.current && labelVisible;
 
-    // Expanded services hug their domain: pin each one on a small ring around
-    // the owning asset's current position instead of letting FR scatter them
-    // far from the node that was clicked.
-    const serviceRingById = new Map<string, { x: number; y: number }>();
-    {
-      const ringRadius = 130;
-      const angleStep = 2.399963229728653; // golden angle
-      const ringIndexByAsset = new Map<string, number>();
-      for (const edge of expandedEdges) {
-        if (edge.data?.type !== 'runs_on') continue;
-        const assetPos =
-          fixedPositions.get(edge.source) ??
-          layoutPositionById.get(edge.source);
-        if (!assetPos) continue;
-        const idx = ringIndexByAsset.get(edge.source) ?? 0;
-        ringIndexByAsset.set(edge.source, idx + 1);
-        const angle = idx * angleStep;
-        serviceRingById.set(edge.target, {
-          x: assetPos.x + Math.cos(angle) * ringRadius,
-          y: assetPos.y + Math.sin(angle) * ringRadius,
-        });
+    const preferredNodes = mergedNodes.map((node, index) => ({
+      ...node,
+      position: layoutPositionById.get(node.id) ?? { x: 0, y: index * 24 },
+    }));
+    const servicesByAsset = new Map<string, string[]>();
+    for (const edge of expandedEdges) {
+      if (edge.data?.type !== 'runs_on' || fixedPositions.has(edge.target)) {
+        continue;
       }
+      const services = servicesByAsset.get(edge.source);
+      if (services) services.push(edge.target);
+      else servicesByAsset.set(edge.source, [edge.target]);
     }
 
+    // Resolve inventory collisions first so a fresh service fans out from
+    // the visible domain and target centers. Existing services stay reserved.
+    const reserved = servicesByAsset.size
+      ? new Map(
+          placeInFreeSpots(
+            preferredNodes.filter(
+              (node) => node.type !== 'service' || fixedPositions.has(node.id),
+            ),
+            fixedPositions,
+          ).map(({ id, position }) => [id, position]),
+        )
+      : fixedPositions;
+    const targetByAsset = new Map(
+      baseEdges
+        .filter((edge) => edge.data?.type === 'belongs_to')
+        .map((edge) => [edge.target, edge.source]),
+    );
+    const serviceFanById = new Map<string, { x: number; y: number }>();
+    for (const [assetId, services] of servicesByAsset) {
+      const asset = reserved.get(assetId);
+      if (!asset) continue;
+      const target = reserved.get(targetByAsset.get(assetId) ?? '');
+      const direction = target
+        ? Math.atan2(asset.y - target.y, asset.x - target.x)
+        : 0;
+      serviceFanPositions(services.length, asset, direction).forEach(
+        (position, index) => serviceFanById.set(services[index], position),
+      );
+    }
     const positionedNodes = placeInFreeSpots(
-      mergedNodes.map((node, index) => ({
+      preferredNodes.map((node) => ({
         ...node,
-        position:
-          serviceRingById.get(node.id) ??
-          layoutPositionById.get(node.id) ??
-          { x: 0, y: index * 24 },
+        position: serviceFanById.get(node.id) ?? node.position,
       })),
-      fixedPositions,
+      reserved,
     );
 
     const familyByNode =

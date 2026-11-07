@@ -4,6 +4,7 @@ import {
   applyDagreLayout,
   applyForceLayout,
   placeInFreeSpots,
+  serviceFanPositions,
   type LayoutInputEdge,
   type LayoutInputNode,
 } from '@/pages/assets/components/graph-types';
@@ -294,6 +295,27 @@ describe('placeInFreeSpots', () => {
         expect(dx >= 124 || dy >= 87).toBe(true);
       }
     }
+  });
+});
+
+describe('serviceFanPositions', () => {
+  it('keeps a dense left-facing expansion clear without spilling toward the target', () => {
+    const asset = { ...node('asset|a1', 'asset'), position: { x: 0, y: 0 } };
+    const target = { ...node('target|t1', 'target'), position: { x: 140, y: 0 } };
+    const services = serviceFanPositions(700, asset.position, Math.PI).map(
+      (position, index) => ({ ...node(`service|${index}`, 'service'), position }),
+    );
+    const fixed = new Map([
+      [asset.id, asset.position],
+      [target.id, target.position],
+    ]);
+
+    expect(services.every(({ position }) => position.x < 0)).toBe(true);
+    expect(placeInFreeSpots([asset, target, ...services], fixed)).toEqual([
+      asset,
+      target,
+      ...services,
+    ]);
   });
 });
 
