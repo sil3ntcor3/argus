@@ -27,6 +27,7 @@ const overview = {
   workflows: 3,
   newVulnerabilities: 2,
   openVulnerabilities: { critical: 3, high: 2, medium: 1, low: 1, info: 1 },
+  weekly: [],
 };
 
 describe('ProjectOverviewPage', () => {
