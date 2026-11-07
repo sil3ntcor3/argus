@@ -8,13 +8,13 @@ import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
   type ProjectRunDto,
   type ProjectsControllerGetRunsJobRunType,
-  useProjectsControllerGetById,
   useProjectsControllerGetRuns,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { projectRouteId } from './project-route-id';
+import { ProjectWorkflowFilter } from './project-workflow-filter';
 
 const pageSizes = [20, 50, 100] as const;
 
@@ -125,13 +125,6 @@ function ProjectRunList({
 }: RunsProps & {
   canOpen: boolean;
 }) {
-  const projectQuery = useProjectsControllerGetById(projectId, {
-    query: { retry: false },
-  });
-  const bindings = projectQuery.data?.assetGroupWorkflows ?? [];
-  let selectedWorkflowLabel = 'Unavailable workflow';
-  if (projectQuery.isPending) selectedWorkflowLabel = 'Loading workflow';
-  if (projectQuery.isError) selectedWorkflowLabel = 'Workflow name unknown';
   const search = { trigger, workflow, pageSize };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetRuns(
@@ -198,44 +191,11 @@ function ProjectRunList({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-3">
-        {(bindings.length > 0 || workflow) && (
-          <label className="flex min-w-0 items-center gap-2 text-sm">
-            Workflow
-            <select
-              className="min-w-0 rounded-md border bg-background px-2 py-1"
-              value={workflow ?? ''}
-              onChange={(event) =>
-                onChange({
-                  ...search,
-                  page: 1,
-                  workflow: event.target.value || undefined,
-                })
-              }
-            >
-              <option value="">All workflows</option>
-              {workflow &&
-                !bindings.some((binding) => binding.id === workflow) && (
-                  <option value={workflow}>{selectedWorkflowLabel}</option>
-                )}
-              {bindings.map(({ id, workflow: boundWorkflow }) => {
-                // The API returns the saved name, which is absent from its schema.
-                const savedName =
-                  boundWorkflow &&
-                  'name' in boundWorkflow &&
-                  typeof boundWorkflow.name === 'string'
-                    ? boundWorkflow.name.trim()
-                    : '';
-                return (
-                  <option key={id} value={id}>
-                    {savedName ||
-                      boundWorkflow?.content?.name?.trim() ||
-                      'Unnamed workflow'}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-        )}
+        <ProjectWorkflowFilter
+          projectId={projectId}
+          workflow={workflow}
+          onChange={(next) => onChange({ ...search, page: 1, workflow: next })}
+        />
         <label className="flex w-fit items-center gap-2 text-sm">
           Trigger
           <select
@@ -278,19 +238,6 @@ function ProjectRunList({
           </select>
         </label>
       </div>
-      {projectQuery.isError && (
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <p role="status">Unable to load workflow choices</p>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={projectQuery.isFetching}
-            onClick={() => void projectQuery.refetch()}
-          >
-            Retry workflows
-          </Button>
-        </div>
-      )}
       {results}
       <nav
         aria-label="Project run pages"

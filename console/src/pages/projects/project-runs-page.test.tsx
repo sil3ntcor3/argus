@@ -228,6 +228,7 @@ describe('ProjectRunsPage', () => {
     ).toHaveValue(workflowId);
     fireEvent.click(screen.getByRole('button', { name: 'Retry workflows' }));
     expect(refetch).toHaveBeenCalledOnce();
+    expect(screen.getByRole('combobox', { name: 'Workflow' })).toHaveFocus();
   });
 
   it('resets paging while preserving filters when the page size changes', () => {
