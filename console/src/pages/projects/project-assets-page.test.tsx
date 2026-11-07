@@ -4,7 +4,11 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectAssetsPage } from './project-assets-page';
 
-const mock = vi.hoisted(() => ({ permission: vi.fn(), assets: vi.fn() }));
+const mock = vi.hoisted(() => ({
+  permission: vi.fn(),
+  assets: vi.fn(),
+  scope: vi.fn(),
+}));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
   useWorkspaceState: () => ({ state: { selectedWorkspaceId: 'fixture' } }),
 }));
@@ -12,6 +16,7 @@ vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetAssets: mock.assets,
+  useProjectsControllerGetScopeRules: mock.scope,
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -55,6 +60,9 @@ const asset: ProjectAssetDto = {
 describe('ProjectAssetsPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mock.scope.mockReturnValue({
+      data: { rules: [], manualAssets: 0, ruleAssets: 0, autoAddAssets: false },
+    });
     mock.permission.mockReturnValue({
       hasPermission: (key: string) =>
         ['group.read', 'asset.read', 'job.read'].includes(key),
@@ -117,6 +125,7 @@ describe('ProjectAssetsPage', () => {
       <ProjectAssetsPage projectId={projectId} page={1} onChange={vi.fn()} />,
     );
     expect(mock.assets).not.toHaveBeenCalled();
+    expect(mock.scope).not.toHaveBeenCalled();
   });
   it('composes source, page size, and literal search and resets the page on a change', () => {
     const onChange = vi.fn();

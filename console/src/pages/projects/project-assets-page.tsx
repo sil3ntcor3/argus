@@ -15,6 +15,7 @@ import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { ProjectListSearch } from './project-list-search';
 import { projectRouteId } from './project-route-id';
+import { ProjectScopeSummary } from './project-scope-summary';
 
 const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
@@ -187,6 +188,7 @@ function AssetList({
 
   return (
     <div className="space-y-4">
+      <ProjectScopeSummary projectId={projectId} />
       <ProjectListSearch
         label="Search assets"
         regionLabel="Project asset search"
