@@ -6,6 +6,12 @@ export enum ProjectFindingProvenance {
   NOT_SEEN = 'not_seen',
 }
 
+/** Only scans that could persist findings are evidence of a miss. */
+export const projectFindingSavedScanCondition = (alias: 'job' | 'j') => `
+  ${alias}.status = '${JobStatus.COMPLETED}'
+  AND ${alias}.category = '${ToolCategory.VULNERABILITIES}'
+  AND ${alias}."isSaveData" = true`;
+
 /** Reference scan for an owned asset and tool. Inputs are internal SQL expressions. */
 export const projectFindingReferenceRunJoin = (
   projectId: string,
@@ -22,8 +28,7 @@ LEFT JOIN LATERAL (
   JOIN targets t ON t.id = a."targetId" AND t."workspaceId" = p."workspaceId"
   WHERE h."projectId" = ${projectId}
     AND job."assetId" = ${assetId} AND job."toolId" = ${toolId}
-    AND job.status = '${JobStatus.COMPLETED}'
-    AND job.category = '${ToolCategory.VULNERABILITIES}'
+    AND ${projectFindingSavedScanCondition('job')}
   ORDER BY h."createdAt" DESC, h.id DESC
   LIMIT 1
 ) ref ON true`;
@@ -49,8 +54,14 @@ export const PROJECT_FINDING_PROVENANCE_SQL = `CASE
    AND ref.id IS DISTINCT FROM pv."lastSeenJobHistoryId"
    AND ref."createdAt" > COALESCE(seen_run."createdAt", pv."lastSeenAt" AT TIME ZONE 'UTC')
    AND NOT EXISTS (
-     SELECT 1 FROM project_vulnerability_observations observed
-     WHERE observed."projectVulnerabilityId" = pv.id AND observed."jobHistoryId" = ref.id
+     SELECT 1 FROM job_histories h
+     JOIN workflows w ON w.id = h."workflowId"
+     JOIN projects p ON p.id = h."projectId" AND p."workspaceId" = w."workspaceId"
+     WHERE h."projectId" = pv."projectId" AND h."createdAt" >= ref."createdAt"
+       AND (h.id = pv."firstSeenJobHistoryId" OR EXISTS (
+         SELECT 1 FROM project_vulnerability_observations observed
+         WHERE observed."projectVulnerabilityId" = pv.id AND observed."jobHistoryId" = h.id
+       ))
    ) THEN '${ProjectFindingProvenance.NOT_SEEN}'
   WHEN pv."timesSeen" <= 1 THEN '${ProjectFindingProvenance.NEW}'
   ELSE '${ProjectFindingProvenance.RECURRING}'

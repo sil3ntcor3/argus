@@ -13,11 +13,13 @@ import { ProjectAssetReadService } from './project-asset-read.service';
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
 import { ProjectRunReadService } from './project-run-read.service';
 import { ProjectFindingReadService } from './project-finding-read.service';
+import { ProjectFindingTimelineService } from './project-finding-timeline.service';
 
 @Module({
   imports: [AssetGroupModule, ProjectScopeModule],
   controllers: [ProjectsController],
   providers: [
+    ProjectFindingTimelineService,
     ProjectFindingReadService,
     ProjectRunReadService,
     ProjectWorkflowTemplatesService,

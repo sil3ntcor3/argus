@@ -66,10 +66,36 @@ const RANK_SQL = `CASE v.severity
 export class ProjectFindingReadService {
   constructor(private readonly dataSource: DataSource) {}
 
-  async list(
+  async get(
+    projectId: string,
+    workspaceId: string,
+    findingId: string,
+    executor: Pick<DataSource, 'query'> = this.dataSource,
+  ) {
+    if (!findingId) throw new NotFoundException('Project finding not found');
+    const {
+      data: [finding],
+    } = await this.readPage(
+      projectId,
+      workspaceId,
+      { page: 1, limit: 1, status: VulnerabilityStatus.ALL },
+      executor,
+      findingId,
+    );
+    if (!finding) throw new NotFoundException('Project finding not found');
+    return finding;
+  }
+
+  list(projectId: string, workspaceId: string, query: ProjectFindingQuery) {
+    return this.readPage(projectId, workspaceId, query, this.dataSource);
+  }
+
+  private async readPage(
     projectId: string,
     workspaceId: string,
     query: ProjectFindingQuery,
+    executor: Pick<DataSource, 'query'>,
+    findingId?: string,
   ) {
     const { page, limit } = query;
     const offset = (page - 1) * limit;
@@ -98,6 +124,8 @@ export class ProjectFindingReadService {
       );
     }
     if (query.assetId) conditions.push(`a.id = ${add(query.assetId)}`);
+    if (findingId !== undefined)
+      conditions.push(`pv."vulnerabilityId" = ${add(findingId)}`);
     const severitySelected = query.severity?.length
       ? `v.severity::text = ANY(${add(query.severity)}::text[])`
       : 'true';
@@ -177,7 +205,7 @@ export class ProjectFindingReadService {
          ${findingJoins} WHERE ${where}`;
 
     // Reuse one reference per asset/tool across the facet counts and page.
-    const rows = await this.dataSource.query<CountedFindingRow[]>(
+    const rows = await executor.query<CountedFindingRow[]>(
       `WITH owned AS (SELECT id FROM projects WHERE id = $1 AND "workspaceId" = $2),
         ${sightingCtes}
         matching AS MATERIALIZED (
