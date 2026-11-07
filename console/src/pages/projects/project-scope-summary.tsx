@@ -8,6 +8,7 @@ import {
 } from '@/services/apis/gen/queries';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useId, useRef, useState } from 'react';
+import { ProjectScopePreview } from './project-scope-preview';
 
 const count = new Intl.NumberFormat();
 const ruleLabels = {
@@ -142,6 +143,11 @@ export function ProjectScopeSummary({ projectId }: { projectId: string }) {
             {count.format(data.ruleAssets)} from rules
           </Badge>
         </div>
+        <ProjectScopePreview
+          key={projectId}
+          projectId={projectId}
+          rules={data.rules}
+        />
         {data.rules.length ? (
           <ScopeRuleList key={projectId} rules={data.rules} />
         ) : (
