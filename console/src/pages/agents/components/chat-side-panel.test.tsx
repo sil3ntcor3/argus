@@ -125,7 +125,10 @@ describe('ChatSidePanel', () => {
     const user = userEvent.setup();
     render(<Harness subagents={[subagent]} />);
 
-    expect(screen.getByRole('tab', { name: /Plan/ })).toHaveTextContent('1/2');
+    const plan = screen.getByRole('tab', { name: 'Plan 1/2' });
+    expect(plan.querySelector('[data-slot="tabs-badge"]')).toHaveTextContent(
+      '1/2',
+    );
     expect(screen.getByText('Scan ports')).toBeInTheDocument();
     expect(screen.queryByText('@researcher')).toBeNull();
 
@@ -153,8 +156,10 @@ describe('ChatSidePanel', () => {
       <Harness messages={toolMessages} onSelectToolCall={onSelectToolCall} />,
     );
 
-    const tab = screen.getByRole('tab', { name: /Tool calls/ });
-    expect(tab).toHaveTextContent('1/2');
+    const tab = screen.getByRole('tab', { name: 'Tool calls 1/2' });
+    expect(tab.querySelector('[data-slot="tabs-badge"]')).toHaveTextContent(
+      '1/2',
+    );
     await user.click(tab);
 
     // Input and output (or error) without unfolding anything
@@ -259,8 +264,11 @@ describe('ChatSidePanel', () => {
       />,
     );
 
-    await user.click(screen.getByRole('tab', { name: /Browser/ }));
-    expect(screen.getByRole('tab', { name: /Browser/ })).toHaveTextContent('2');
+    const browserTab = screen.getByRole('tab', { name: 'Browser 2' });
+    await user.click(browserTab);
+    expect(
+      browserTab.querySelector('[data-slot="tabs-badge"]'),
+    ).toHaveTextContent('2');
     expect(
       screen.getByRole('img', { name: /Main agent after .*click @e3/ }),
     ).toHaveAttribute('src', 'data:image/jpeg;base64,/9j/4AAQ');
