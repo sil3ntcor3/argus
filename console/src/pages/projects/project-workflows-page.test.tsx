@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { parse } from 'yaml';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectWorkflowsPage } from './project-workflows-page';
@@ -46,7 +47,16 @@ describe('ProjectWorkflowsPage', () => {
         assetGroupWorkflows: [
           {
             id: 'binding-1',
-            workflow: { name: 'Discovery', content: { name: 'Old label' } },
+            workflow: {
+              name: 'Discovery',
+              content: {
+                name: 'Old label',
+                jobs: {
+                  consume: { run: 'httpx', needs: ['scan'] },
+                  scan: { run: 'naabu' },
+                },
+              },
+            },
             schedule: '0 8 * 1 *',
             lastRun: {
               id: runId,
@@ -83,6 +93,26 @@ describe('ProjectWorkflowsPage', () => {
     render(<ProjectWorkflowsPage projectId={projectId} />);
     expect(screen.getByText('Completed')).toBeVisible();
     expect(screen.queryByRole('link', { name: /latest run/i })).toBeNull();
+  });
+
+  it('opens the selected workflow as YAML in dependency order and restores focus', async () => {
+    render(<ProjectWorkflowsPage projectId={projectId} />);
+    const trigger = screen.getByRole('button', {
+      name: 'View workflow for Discovery',
+    });
+    fireEvent.click(trigger);
+    const sheet = screen.getByRole('dialog', { name: 'Workflow definition' });
+    const source = sheet.querySelector('pre')?.textContent ?? '';
+    expect(parse(source)).toEqual({
+      name: 'Old label',
+      jobs: {
+        scan: { run: 'naabu' },
+        consume: { run: 'httpx', needs: ['scan'] },
+      },
+    });
+    expect(source.indexOf('scan:')).toBeLessThan(source.indexOf('consume:'));
+    fireEvent.keyDown(sheet, { key: 'Escape' });
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it('does not query when project access is missing', () => {
