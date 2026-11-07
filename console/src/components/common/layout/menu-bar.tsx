@@ -152,6 +152,7 @@ export const menu: NavGroup[] = [
         title: 'Tools',
         icon: <Cpu />,
         url: '/tools',
+        permission: 'workspace.read',
       },
       {
         title: 'Integrations',
@@ -174,6 +175,24 @@ export const menu: NavGroup[] = [
     ],
   },
 ];
+
+export function getVisibleNavGroups(
+  groups: NavGroup[],
+  hasPermission: (permission: string) => boolean,
+  role?: string | null,
+) {
+  return groups
+    .filter(
+      (group) => !group.roles?.length || (role != null && group.roles.includes(role)),
+    )
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) => !item.permission || hasPermission(item.permission),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+}
 
 // Set after the first sidebar mounts, so later mounts (menu switches) animate.
 let hasMountedSidebar = false;
@@ -328,21 +347,7 @@ export function AppSidebar({
                 </SidebarMenuItem>
               </SidebarMenu>
             )}
-            {groups
-              .map((group) => ({
-                ...group,
-                items: group.items.filter(
-                  (sub) => !sub.permission || hasPermission(sub.permission),
-                ),
-              }))
-              .filter(
-                (group) =>
-                  group.items.length > 0 &&
-                  (!group.roles ||
-                    group.roles.length === 0 ||
-                    (data?.user.role != null &&
-                      group.roles.includes(data.user.role))),
-              )
+            {getVisibleNavGroups(groups, hasPermission, data?.user.role)
               .map((group) => (
                 <SidebarGroup key={group.title} className="p-0">
                   <SidebarGroupContent>
