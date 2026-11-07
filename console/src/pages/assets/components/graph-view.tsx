@@ -31,7 +31,10 @@ import {
   useAssetsControllerGetAssetGraph,
   type AssetGraphResponseDto,
 } from '@/services/apis/gen/queries';
-import { applyClusterLayout } from './graph-cluster-layout';
+import {
+  applyClusterLayout,
+  getClusterFamilyMembership,
+} from './graph-cluster-layout';
 import {
   applyDagreLayout,
   applyForceLayout,
@@ -45,6 +48,7 @@ import {
 } from './graph-types';
 import { GraphNodeComponent, resolveNodeType } from './graph-node';
 import { GraphLegend } from './graph-legend';
+import { GraphFamilyOutlines } from './graph-family-outlines';
 import { GraphNodeSearch } from './graph-node-search';
 import AssetDetailSheet from './asset-detail-sheet';
 import GraphDetailSheet from './graph-detail-sheet';
@@ -492,6 +496,11 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
       prevPositions,
     );
 
+    const familyByNode =
+      layoutMode === 'Cluster'
+        ? layoutResult?.familyByNode ??
+          getClusterFamilyMembership({ nodes: inputNodes, edges: baseEdges })
+        : undefined;
     const rfNodes: Node[] = positionedNodes.map((node, index) => {
       return {
         id: node.id,
@@ -500,6 +509,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
         data: {
           ...node.data,
           clusterColor: colorById.get(node.id),
+          familyId: familyByNode?.get(node.id),
           alert: node.data.alert === true,
           severity:
             node.type === 'service' ? severityByService.get(node.id) : undefined,
@@ -613,7 +623,14 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
   const displayEdges = useMemo(() => {
     const focusId = hoveredNodeId ?? selectedNodeId;
-    if (!focusId) return edges;
+    if (!focusId) {
+      if (layoutMode !== 'Cluster') return edges;
+      return edges.map((edge) =>
+        edge.data?.type === 'belongs_to'
+          ? { ...edge, style: { ...edge.style, opacity: 0.18 } }
+          : edge,
+      );
+    }
     return edges.map((e) => {
       const baseOpacity =
         (e.style as { opacity?: number } | undefined)?.opacity ?? 0.55;
@@ -628,7 +645,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
         },
       };
     });
-  }, [edges, hoveredNodeId, selectedNodeId]);
+  }, [edges, hoveredNodeId, selectedNodeId, layoutMode]);
 
   const hoveredEdgeLabel = useMemo(() => {
     if (!hoveredEdgeId) return null;
@@ -894,6 +911,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           onlyRenderVisibleElements={displayNodes.length > 500}
         >
           <Background color="var(--color-graph-edge)" bgColor="var(--color-graph-canvas)" />
+          {layoutMode === 'Cluster' && <GraphFamilyOutlines nodes={nodes} />}
           <Controls />
           {displayNodes.length >= 200 && (
             <MiniMap

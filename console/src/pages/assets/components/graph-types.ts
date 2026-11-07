@@ -16,6 +16,8 @@ export type GraphNodeData = {
   label: string;
   metadata?: Record<string, unknown>;
   clusterColor?: string;
+  /** View-injected: target family used for the decorative outline. */
+  familyId?: string;
   alert?: boolean;
   lastScannedAt?: string;
   /** Severity derived by the view from the linked statusCode node. */
@@ -110,6 +112,7 @@ export type LayoutOutputEdge = {
 export type LayoutResult = {
   nodes: LayoutOutputNode[];
   edges: LayoutOutputEdge[];
+  familyByNode?: ReadonlyMap<string, string>;
 };
 
 type GraphPoint = LayoutOutputNode['position'];
@@ -124,7 +127,9 @@ const BADGE_HALF_HEIGHT: Record<NodeType, number> = {
   statusCode: 12,
 };
 
-function nodeFootprint(type: NodeType) {
+export const GRAPH_NODE_MAX_WIDTH = 110;
+
+export function nodeFootprint(type: NodeType) {
   const up = BADGE_HALF_HEIGHT[type];
   // A single 12.5px label line and 4px gap below the badge.
   const down = type === 'target' || type === 'technology' ? up : up + 17;
@@ -143,7 +148,7 @@ export function placeInFreeSpots(
   const gap = 14;
   // GraphNode caps both pill and label widths at 110px. A cell is wider
   // and taller than the maximum collision distance on either axis.
-  const minXGap = 110 + gap;
+  const minXGap = GRAPH_NODE_MAX_WIDTH + gap;
   const cellSize = 128;
   type Occupied = GraphPoint & ReturnType<typeof nodeFootprint>;
   const grid = new Map<string, Occupied[]>();

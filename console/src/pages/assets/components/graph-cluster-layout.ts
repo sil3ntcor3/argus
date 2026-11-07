@@ -157,11 +157,9 @@ function packFamilies(
   return positions;
 }
 
-/** Target-centered families with shared addresses between their domains. */
-export function applyClusterLayout(
-  graphData: { nodes: LayoutInputNode[]; edges: LayoutInputEdge[] },
-  fixed: ReadonlyMap<string, Point> = new Map(),
-): LayoutResult {
+type GraphInput = { nodes: LayoutInputNode[]; edges: LayoutInputEdge[] };
+
+function readClusterGraph(graphData: GraphInput) {
   const { nodes, edges } = dedupeGraph(graphData);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const targetByAsset = new Map<string, string>();
@@ -188,6 +186,33 @@ export function applyClusterLayout(
     }
   }
 
+  const familyByNode = new Map(targetByAsset);
+  for (const { id, type } of nodes) {
+    if (type === 'target') familyByNode.set(id, id);
+  }
+  const groupsByIp = new Map<string, string[]>();
+  for (const [ip, owners] of ownersByIp) {
+    const groups = [
+      ...new Set(owners.map((id) => targetByAsset.get(id) ?? '')),
+    ];
+    if (groups.length > 1) groupsByIp.set(ip, groups);
+    else if (groups[0]) familyByNode.set(ip, groups[0]);
+  }
+  return { nodes, edges, familyByNode, groupsByIp, ownersByIp, primaryIp };
+}
+
+/** Read current ownership without changing the layout or locked positions. */
+export function getClusterFamilyMembership(graphData: GraphInput) {
+  return readClusterGraph(graphData).familyByNode;
+}
+
+/** Target-centered families with shared addresses between their domains. */
+export function applyClusterLayout(
+  graphData: GraphInput,
+  fixed: ReadonlyMap<string, Point> = new Map(),
+): LayoutResult {
+  const { nodes, edges, familyByNode, groupsByIp, ownersByIp, primaryIp } =
+    readClusterGraph(graphData);
   const families = new Map<string, Family>();
   const ensureFamily = (id: string) => {
     const existing = families.get(id);
@@ -202,20 +227,11 @@ export function applyClusterLayout(
     families.set(id, family);
     return family;
   };
-  const groupsByIp = new Map<string, string[]>();
   for (const node of nodes) {
-    const owners = ownersByIp.get(node.id);
-    if (node.type === 'target') {
-      ensureFamily(node.id);
-    } else if (owners) {
-      const groups = [
-        ...new Set(owners.map((id) => targetByAsset.get(id) ?? '')),
-      ];
-      if (groups.length === 1) ensureFamily(groups[0]).localIps.push(node.id);
-      else groupsByIp.set(node.id, groups);
-    } else {
-      ensureFamily(targetByAsset.get(node.id) ?? '').members.push(node);
-    }
+    if (groupsByIp.has(node.id)) continue;
+    const family = ensureFamily(familyByNode.get(node.id) ?? '');
+    if (ownersByIp.has(node.id)) family.localIps.push(node.id);
+    else if (node.type !== 'target') family.members.push(node);
   }
 
   for (const family of families.values())
@@ -239,6 +255,7 @@ export function applyClusterLayout(
       .map(({ id }) => [id, positions.get(id)!]),
   );
   return {
+    familyByNode,
     nodes: placeInFreeSpots(
       nodes.map((node) => ({ ...node, position: positions.get(node.id)! })),
       fixed.size ? fixed : hubs,
