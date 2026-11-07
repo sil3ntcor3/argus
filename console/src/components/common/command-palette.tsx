@@ -21,12 +21,15 @@ import useDebounce from '@/hooks/use-debounce';
 import { usePermission } from '@/hooks/usePermission';
 import { useSearchControllerSearchAssetsTargets } from '@/services/apis/gen/queries';
 import { useSession } from '@/utils/authClient';
+import { CommandPaletteHistory } from './command-palette-history';
 import { getVisibleNavGroups, menu } from './layout/menu-bar';
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const returnFocus = useRef<HTMLElement | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const focusSearch = () => input.current?.focus();
   const navigate = useNavigate();
   const { data: session } = useSession();
   const {
@@ -102,6 +105,13 @@ export function CommandPalette() {
     void go();
   };
 
+  const searchAll = (value: string) =>
+    choose(() => navigate({ to: '/search', search: { query: value } }));
+  const fillSearch = (value: string) => {
+    setQuery(value);
+    focusSearch();
+  };
+
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild>
@@ -111,16 +121,19 @@ export function CommandPalette() {
           size="icon"
           aria-label="Open command palette"
           aria-keyshortcuts="Control+K Meta+K"
-          className="size-9 lg:h-8 lg:w-auto lg:px-2"
+          className="size-9 lg:h-8 lg:w-full lg:max-w-xs lg:justify-start lg:px-2"
         >
-          <Search className="size-4 lg:hidden" aria-hidden />
+          <Search className="size-4 shrink-0" aria-hidden />
+          <span className="hidden flex-1 truncate text-left font-normal lg:inline">
+            Search or jump to a page
+          </span>
           <kbd className="hidden text-xs text-muted-foreground lg:inline">
             Ctrl / ⌘ K
           </kbd>
         </Button>
       </DialogTrigger>
       <DialogContent
-        className="gap-0 overflow-hidden p-0 sm:p-0"
+        className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:p-0"
         onCloseAutoFocus={(event) => {
           const previous = returnFocus.current;
           returnFocus.current = null;
@@ -140,6 +153,7 @@ export function CommandPalette() {
         </DialogDescription>
         <Command shouldFilter={false} label="Search targets, assets, or pages">
           <CommandInput
+            ref={input}
             value={query}
             onValueChange={setQuery}
             placeholder="Search or jump to a page…"
@@ -217,14 +231,7 @@ export function CommandPalette() {
               <CommandGroup>
                 <CommandItem
                   value="search all"
-                  onSelect={() =>
-                    choose(() =>
-                      navigate({
-                        to: '/search',
-                        search: { query: term },
-                      }),
-                    )
-                  }
+                  onSelect={() => searchAll(term)}
                 >
                   <Search className="size-4" aria-hidden />
                   Search all targets and assets
@@ -233,6 +240,13 @@ export function CommandPalette() {
             )}
           </CommandList>
         </Command>
+        {open && !term && (
+          <CommandPaletteHistory
+            focusSearch={focusSearch}
+            onRepeat={canSearch ? searchAll : fillSearch}
+            onFill={fillSearch}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
