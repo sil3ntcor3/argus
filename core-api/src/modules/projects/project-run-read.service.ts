@@ -33,6 +33,8 @@ interface RunRow {
   scope: WorkflowRunScope | null;
   steps: WorkflowRunStepStates | null;
   workflowContent: Pick<WorkflowContent, 'jobs'> | null;
+  newVulnerabilities: number;
+  recurringVulnerabilities: number;
 }
 
 type CountedRunRow = (RunRow | { id: null }) & { total: number };
@@ -41,7 +43,7 @@ type CountedRunRow = (RunRow | { id: null }) & { total: number };
 export class ProjectRunReadService {
   constructor(private readonly dataSource: DataSource) {}
 
-  /** Pages owned run history before computing job status and step counts. */
+  /** Pages owned run history before computing status, steps and findings. */
   async list(projectId: string, workspaceId: string, query: ProjectRunQuery) {
     const { page, limit } = query;
     const offset = (page - 1) * limit;
@@ -75,11 +77,32 @@ export class ProjectRunReadService {
         ), page AS MATERIALIZED (
           SELECT * FROM matching ORDER BY "createdAt" DESC, id DESC
           LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+        ), sightings AS (
+          SELECT link.id AS link_id, legacy.run_id
+          FROM project_vulnerabilities link
+          CROSS JOIN LATERAL (VALUES (link."firstSeenJobHistoryId"), (link."lastSeenJobHistoryId")) legacy(run_id)
+          JOIN page p ON p.id = legacy.run_id
+          WHERE link."projectId" = $1
+          UNION
+          SELECT o."projectVulnerabilityId", o."jobHistoryId"
+          FROM project_vulnerability_observations o JOIN page p ON p.id = o."jobHistoryId"
+        ), findings AS (
+          SELECT s.run_id,
+            COUNT(*) FILTER (WHERE link."firstSeenJobHistoryId" = s.run_id)::int AS fresh,
+            COUNT(*) FILTER (WHERE link."firstSeenJobHistoryId" IS DISTINCT FROM s.run_id)::int AS recurring
+          FROM sightings s JOIN project_vulnerabilities link ON link.id = s.link_id
+          JOIN vulnerabilities v ON v.id = link."vulnerabilityId"
+          JOIN assets a ON a.id = v."assetId" JOIN targets t ON t.id = a."targetId"
+          WHERE link."projectId" = $1 AND t."workspaceId" = $2
+          GROUP BY s.run_id
         )
         SELECT totals.total, p.*,
-               (SELECT ${JOB_HISTORY_STATUS_SQL} FROM jobs job WHERE job."jobHistoryId" = p.id) AS status
+               (SELECT ${JOB_HISTORY_STATUS_SQL} FROM jobs job WHERE job."jobHistoryId" = p.id) AS status,
+               COALESCE(f.fresh, 0) AS "newVulnerabilities",
+               COALESCE(f.recurring, 0) AS "recurringVulnerabilities"
         FROM owned CROSS JOIN (SELECT COUNT(*)::int AS total FROM matching) totals
         LEFT JOIN page p ON true
+        LEFT JOIN findings f ON f.run_id = p.id
         ORDER BY p."createdAt" DESC, p.id DESC`,
       [...params, limit, offset],
     );
