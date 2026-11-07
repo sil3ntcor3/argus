@@ -184,6 +184,7 @@ export function ProjectListPage(props: ListProps) {
   } = useWorkspaceState();
   const permission = usePermission();
   let content: ReactNode;
+  let canCreate = false;
   if (!selectedWorkspaceId) {
     content = <p role="status">Select a workspace to view projects.</p>;
   } else if (permission.isLoading) {
@@ -196,6 +197,9 @@ export function ProjectListPage(props: ListProps) {
   ) {
     content = <AccessDenied />;
   } else {
+    canCreate =
+      permission.hasPermission('project.write') ||
+      permission.hasPermission('group.write');
     content = (
       <WorkspaceProjectList
         key={`${selectedWorkspaceId}:${props.search}`}
@@ -207,6 +211,13 @@ export function ProjectListPage(props: ListProps) {
     <Page
       title="Projects"
       description="Organize assets and see what each scan found"
+      action={
+        canCreate && (
+          <Button asChild>
+            <Link to="/projects/create">Create project</Link>
+          </Button>
+        )
+      }
     >
       {content}
     </Page>
