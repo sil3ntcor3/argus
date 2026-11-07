@@ -11,6 +11,7 @@ import {
 import { isAxiosError } from 'axios';
 import type { ReactNode } from 'react';
 import { z } from 'zod';
+import { ProjectFindingTrends } from './project-finding-trends';
 
 const countFormat = new Intl.NumberFormat();
 const projectIdSchema = z.string().uuid();
@@ -172,7 +173,12 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
   } else {
     title = project.data.name;
     description = project.data.description ?? undefined;
-    content = <OverviewSummary overview={overview.data} />;
+    content = (
+      <div className="space-y-4">
+        <OverviewSummary overview={overview.data} />
+        <ProjectFindingTrends weeks={overview.data.weekly} />
+      </div>
+    );
   }
 
   return (
