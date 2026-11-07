@@ -186,6 +186,13 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
         >
           View open findings
         </Link>
+        <Link
+          to="/projects/$id/assets"
+          params={{ id: projectId }}
+          className="ms-4 inline-block text-sm font-medium text-primary hover:underline"
+        >
+          View project assets
+        </Link>
         <ProjectFindingTrends weeks={overview.data.weekly} />
         <ProjectOverviewRuns
           lastRun={overview.data.lastRun}
