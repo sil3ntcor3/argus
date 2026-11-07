@@ -19,6 +19,7 @@ import { isAxiosError } from 'axios';
 import { type ReactNode, useMemo, useState } from 'react';
 import { projectRouteId } from './project-route-id';
 import { projectWorkflowLabel } from './project-workflow-label';
+import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
 
 const runDate = new Intl.DateTimeFormat(undefined, {
@@ -31,11 +32,15 @@ function WorkflowCard({
   canOpenRuns,
   projectId,
   editWorkspaceId,
+  runWorkspaceId,
+  hasAssets,
 }: {
   binding: AssetGroupWorkflow;
   canOpenRuns: boolean;
   projectId: string;
   editWorkspaceId?: string;
+  runWorkspaceId?: string;
+  hasAssets: boolean;
 }) {
   const [sourceRequested, setSourceRequested] = useState(false);
   const name = projectWorkflowLabel(binding.workflow);
@@ -63,8 +68,20 @@ function WorkflowCard({
             : `${cron} UTC`
           : 'Schedule disabled'}
       </p>
-      {(editWorkspaceId || definition) && (
+      {(editWorkspaceId || definition || runWorkspaceId) && (
         <div className="flex flex-wrap gap-2">
+          {runWorkspaceId && (
+            <ProjectWorkflowRunDialog
+              projectId={projectId}
+              bindingId={binding.id}
+              workflowName={name}
+              workspaceId={runWorkspaceId}
+              hasAssets={hasAssets}
+              hasSteps={Boolean(
+                definition?.jobs && Object.keys(definition.jobs).length,
+              )}
+            />
+          )}
           {editWorkspaceId && (
             <ProjectWorkflowScheduleDialog
               projectId={projectId}
@@ -116,10 +133,12 @@ function WorkflowList({
   projectId,
   canOpenRuns,
   editWorkspaceId,
+  runWorkspaceId,
 }: {
   projectId: string;
   canOpenRuns: boolean;
   editWorkspaceId?: string;
+  runWorkspaceId?: string;
 }) {
   const project = useProjectsControllerGetById(projectId, {
     query: { retry: false },
@@ -164,6 +183,8 @@ function WorkflowList({
           canOpenRuns={canOpenRuns}
           projectId={projectId}
           editWorkspaceId={editWorkspaceId}
+          runWorkspaceId={runWorkspaceId}
+          hasAssets={project.data.totalAssets > 0}
         />
       ))}
     </ul>
@@ -201,6 +222,11 @@ export function ProjectWorkflowsPage({ projectId }: { projectId: string }) {
           key={`${state.selectedWorkspaceId}:${parsedId.data}`}
           projectId={parsedId.data}
           canOpenRuns={permission.hasPermission('job.read')}
+          runWorkspaceId={
+            permission.hasPermission('workflow.write')
+              ? state.selectedWorkspaceId
+              : undefined
+          }
           editWorkspaceId={
             permission.hasPermission('project.write') ||
             permission.hasPermission('group.write')
