@@ -1,3 +1,4 @@
+import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { ProjectChange } from '@/common/enums/enum';
@@ -19,7 +20,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiHeader, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AssetGroupService } from '../asset-group/asset-group.service';
 import { AssetGroupAssetService } from '../asset-group/asset-group-asset.service';
 import { Asset } from '../assets/entities/assets.entity';
@@ -27,6 +28,8 @@ import { GetAllAssetGroupsQueryDto } from '../asset-group/dto/get-all-asset-grou
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
 import { ProjectMetadataReadService } from './project-metadata-read.service';
+import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
+import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
 import { ProjectViewDto } from './dto/project-view.dto';
 import {
   CreateProjectDto,
@@ -63,6 +66,7 @@ export class ProjectsController {
     private readonly assetCommands: ProjectAssetsCommandService,
     private readonly candidateAssets: AssetGroupAssetService,
     private readonly assetRead: ProjectAssetReadService,
+    private readonly workflowTemplates: ProjectWorkflowTemplatesService,
   ) {}
 
   @Doc({
@@ -77,6 +81,18 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.metadata.getMany(query, workspaceId);
+  }
+
+  @ApiOperation({
+    summary: 'Workflow templates',
+    description: 'Default workspace workflows with tool names and dependency outlines.',
+  })
+  @ApiHeader({ name: WORKSPACE_HEADER_NAME, description: 'Workspace ID' })
+  @ApiOkResponse({ type: [WorkflowTemplateDto] })
+  @WorkspaceAccess('project.read')
+  @Get('workflow-templates')
+  getWorkflowTemplates(@WorkspaceId() workspaceId: string) {
+    return this.workflowTemplates.list(workspaceId);
   }
 
   @Doc({
