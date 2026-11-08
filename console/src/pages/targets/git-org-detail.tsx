@@ -25,8 +25,7 @@ import {
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { FastScanDialog } from '../vulnerabilities/components/fast-scan-dialog';
-import { ListVulnerabilities } from '../vulnerabilities/list-vulnerabilitys';
-import VulnerabilitiesStatistic from '../vulnerabilities/vulnerabilites-statistic';
+import { VulnerabilitiesView } from '../vulnerabilities/vulnerabilities-view';
 import { TargetSwitcher } from './components/target-switcher';
 import SettingTarget from './setting-target';
 
@@ -124,9 +123,8 @@ export function GitOrgDetail({
         <TabsContent value="repositories" className="py-3">
           <RepositoriesTable targetId={target.id} />
         </TabsContent>
-        <TabsContent value="vulnerabilities" className="flex flex-col gap-5 py-3">
-          <VulnerabilitiesStatistic targetId={target.id} />
-          <ListVulnerabilities
+        <TabsContent value="vulnerabilities" className="py-3">
+          <VulnerabilitiesView
             targetId={target.id}
             actions={
               <FastScanDialog

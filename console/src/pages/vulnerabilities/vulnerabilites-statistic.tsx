@@ -1,84 +1,87 @@
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useVulnerabilitiesControllerGetVulnerabilitiesStatistics } from '@/services/apis/gen/queries';
-import clsx from 'clsx';
-import { useSearch } from '@tanstack/react-router';
 
-interface VulnerabilitiesStatisticProps {
-  targetId?: string;
-}
-const VulnerabilitiesStatistic = ({
+const severities = [
+  { key: 'critical', label: 'Critical', color: 'text-red-500' },
+  { key: 'high', label: 'High', color: 'text-orange-500' },
+  { key: 'medium', label: 'Medium', color: 'text-yellow-600' },
+  { key: 'low', label: 'Low', color: 'text-blue-500' },
+  { key: 'info', label: 'Info', color: 'text-foreground' },
+] as const;
+
+const grid = 'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5';
+
+/** Shows severity counts for the same workspace or target as the list. */
+export default function VulnerabilitiesStatistic({
   targetId,
-}: VulnerabilitiesStatisticProps) => {
+}: {
+  targetId?: string;
+}) {
   const { selectedWorkspace } = useWorkspaceSelector();
-  const search = useSearch({ strict: false });
-
-  // Use targetId from props if provided, otherwise use from URL
-  if (!targetId) {
-    targetId = (search as Record<string, string>).targetId || undefined;
-  }
-
-  const { data, isLoading } =
+  const { data, isLoading, isError, isFetching, errorUpdatedAt, refetch } =
     useVulnerabilitiesControllerGetVulnerabilitiesStatistics(
-      {
-        ...(targetId ? { targetIds: [targetId] } : {}),
-      },
+      targetId ? { targetIds: [targetId] } : {},
       {
         query: {
-          enabled: !!selectedWorkspace,
-          refetchInterval: 5000,
+          enabled: Boolean(selectedWorkspace),
+          refetchInterval: ({ state }) =>
+            state.data || !state.errorUpdatedAt ? 5000 : false,
+          retry: false,
         },
       },
     );
 
-  // Create a map of severity to count for easy access
-  const severityCounts = data?.data?.reduce(
-    (acc, item) => {
-      acc[item.severity] = item.count;
-      return acc;
-    },
-    {} as Record<string, number>,
-  ) || {
-    info: 0,
-    low: 0,
-    medium: 0,
-    high: 0,
-    critical: 0,
-  };
+  if (!data && (isError || errorUpdatedAt > 0)) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <p role="status" className="text-sm">
+          Unable to load severity counts
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          aria-label="Retry severity counts"
+          aria-disabled={isFetching}
+          className="aria-disabled:opacity-50"
+          onClick={() => {
+            if (!isFetching) void refetch();
+          }}
+        >
+          {isFetching ? 'Retrying…' : 'Retry'}
+        </Button>
+      </div>
+    );
+  }
 
-  // Loading state - show skeleton
   if (isLoading) {
     return (
-      <div className="flex items-center gap-12">
-        {[...Array(5)].map((_, index) => (
-          <div key={index} className="flex flex-col animate-pulse">
-            <div className="h-4 bg-muted rounded w-16 mb-1"></div>
-            <div className="h-8 bg-muted rounded w-8"></div>
-          </div>
+      <div className={grid} role="status" aria-label="Loading severity counts">
+        {severities.map(({ key }) => (
+          <Skeleton className="h-20" key={key} />
         ))}
       </div>
     );
   }
 
-  const severityConfig = [
-    { key: 'critical', label: 'Critical', color: 'text-red-500' },
-    { key: 'high', label: 'High', color: 'text-orange-500' },
-    { key: 'medium', label: 'Medium', color: 'text-yellow-500' },
-    { key: 'low', label: 'Low', color: 'text-blue-500' },
-    { key: 'info', label: 'Info', color: '' },
-  ];
+  const counts = new Map(
+    data?.data.map(({ severity, count }) => [severity, count]),
+  );
 
   return (
-    <div className="flex items-center gap-12">
-      {severityConfig.map(({ key, label, color }) => (
-        <div key={key} className="flex flex-col">
-          <span className="text-muted-foreground text-sm">{label}</span>
-          <span className={clsx('text-2xl font-bold ', color)}>
-            {severityCounts[key]}
-          </span>
-        </div>
-      ))}
+    <div className="space-y-2">
+      <h2 className="text-sm font-medium">Open findings by severity</h2>
+      <dl className={grid} aria-label="Finding severity counts">
+        {severities.map(({ key, label, color }) => (
+          <div key={key} className="min-w-0 rounded-lg border bg-card p-3">
+            <dt className="text-sm text-muted-foreground">{label}</dt>
+            <dd className={`text-xl font-semibold tabular-nums ${color}`}>
+              {counts.get(key) ?? 0}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
-};
-
-export default VulnerabilitiesStatistic;
+}
