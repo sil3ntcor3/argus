@@ -41,6 +41,7 @@ import {
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
+  getRowId?: (row: TData) => string;
   isLoading?: boolean;
   filterColumnKey?: string;
   filterValue?: string;
@@ -86,6 +87,7 @@ interface DataTableProps<TData, TValue> {
 export function DataTable<TData, TValue>({
   columns,
   data,
+  getRowId,
   isLoading = false,
   filterColumnKey,
   filterValue = '',
@@ -153,6 +155,7 @@ export function DataTable<TData, TValue>({
   const table = useReactTable({
     data,
     columns,
+    getRowId,
     state: {
       columnVisibility,
       rowSelection: tableState?.rowSelection || rowSelection,

@@ -84,8 +84,9 @@ const SettingTarget = ({
     (workspace) =>
       workspace.id === workspaceId && workspace.ownerId === session?.user.id,
   );
-  const mutationKey = ['target-settings', workspaceId, target.id];
-  const mutationFilter = { mutationKey, exact: true };
+  const mutationScope = ['target-settings', workspaceId];
+  const mutationKey = [...mutationScope, target.id];
+  const mutationFilter = { mutationKey: mutationScope };
   const changing = useIsMutating(mutationFilter) > 0;
   const canChange = () =>
     workspaceId === getGlobalWorkspaceId() &&

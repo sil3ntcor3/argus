@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import Image from '@/components/ui/image';
 import LogoFrame from '@/components/ui/logo-frame';
 import JobStatusBadge from '@/components/ui/job-status';
+import { usePermission } from '@/hooks/usePermission';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import type { GetManyTargetResponseDto } from '@/services/apis/gen/queries';
@@ -27,6 +28,7 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { ScanStatusFilter } from './components/scan-status-filter';
 import { ScopeFilter } from './components/scope-filter';
 import { StartDiscoveryButton } from './components/start-discovery-button';
+import { TargetBulkSchedule } from './components/target-bulk-schedule';
 import { TargetLogo } from './components/target-logo';
 import { TargetTypeBadge } from './components/target-type-badge';
 import { TargetTypeFilter } from './components/target-type-filter';
@@ -165,6 +167,12 @@ export function ListTargets() {
   const {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
+  const permission = usePermission();
+  const canSchedule = Boolean(selectedWorkspaceId) && permission.hasPermission('target.write');
+  const [selection, setSelection] = useState<{
+    scope: string;
+    rows: Record<string, boolean>;
+  }>({ scope: '', rows: {} });
   const navigate = useNavigate({ from: '/targets/' });
   const search = routeApi.useSearch();
 
@@ -227,6 +235,22 @@ export function ListTargets() {
     tableHandlers: { setPage, setPageSize, setFilter, setParams },
   } = useServerDataTable();
 
+  const listKey = [
+    'targets',
+    selectedWorkspaceId,
+    pageSize,
+    page,
+    sortBy,
+    sortOrder,
+    filter,
+    typeFilter,
+    statusFilter,
+    scopeFilter,
+  ];
+  const selectionScope = JSON.stringify([listKey, canSchedule]);
+  if (selection.scope !== selectionScope) {
+    setSelection({ scope: selectionScope, rows: {} });
+  }
   const { data, isLoading, refetch } =
     useTargetsControllerGetTargetsInWorkspace(
       {
@@ -242,24 +266,33 @@ export function ListTargets() {
       {
         query: {
           refetchInterval: 3000,
-          queryKey: [
-            'targets',
-            selectedWorkspaceId,
-            pageSize,
-            page,
-            sortBy,
-            sortOrder,
-            filter,
-            typeFilter,
-            statusFilter,
-            scopeFilter,
-          ],
+          queryKey: listKey,
         },
       },
     );
 
   const targets = data?.data ?? [];
   const total = data?.total ?? 0;
+  const selectedIds =
+    canSchedule && selection.scope === selectionScope
+      ? targets.filter(({ id }) => selection.rows[id]).map(({ id }) => id)
+      : [];
+  const rowSelection = Object.fromEntries(selectedIds.map((id) => [id, true]));
+
+  /** Drop only successful targets so the user can retry failures. */
+  function removeCompleted(updated: string[]) {
+    const completed = new Set(updated);
+    setSelection((previous) =>
+      previous.scope === selectionScope
+        ? {
+            scope: selectionScope,
+            rows: Object.fromEntries(
+              Object.entries(previous.rows).filter(([id]) => !completed.has(id)),
+            ),
+          }
+        : previous,
+    );
+  }
 
   if (!data && !isLoading)
     return (
@@ -277,6 +310,19 @@ export function ListTargets() {
     <DataTable
       data={targets}
       columns={targetColumns}
+      getRowId={(target) => target.id}
+      showCheckBox={canSchedule}
+      rowSelection={rowSelection}
+      onRowSelectionChange={(rows) => setSelection({ scope: selectionScope, rows })}
+      selectionHeader={() => (
+        <TargetBulkSchedule
+          key={selectionScope}
+          ids={selectedIds}
+          workspaceId={selectedWorkspaceId}
+          onComplete={removeCompleted}
+          onClear={() => setSelection({ scope: selectionScope, rows: {} })}
+        />
+      )}
       isLoading={isLoading}
       page={page}
       pageSize={pageSize}
