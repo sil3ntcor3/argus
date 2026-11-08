@@ -14,8 +14,7 @@ import AssetProvider from '../assets/context/asset-context';
 import { DiscoverUrlsDialog } from '../assets/components/discover-urls-dialog';
 import { ListAssets } from '../assets/list-assets';
 import { FastScanDialog } from '../vulnerabilities/components/fast-scan-dialog';
-import { ListVulnerabilities } from '../vulnerabilities/list-vulnerabilitys';
-import VulnerabilitiesStatistic from '../vulnerabilities/vulnerabilites-statistic';
+import { VulnerabilitiesView } from '../vulnerabilities/vulnerabilities-view';
 import AssetsDiscovering from './assets-discovering';
 import { GitOrgDetail } from './git-org-detail';
 import { TargetSwitcher } from './components/target-switcher';
@@ -143,18 +142,15 @@ export function DetailTarget() {
               value: 'vulnerabilities',
               text: 'Vulnerabilities',
               tab: (
-                <div className="flex flex-col gap-5">
-                  <VulnerabilitiesStatistic targetId={target.id} />
-                  <ListVulnerabilities
-                    targetId={target.id}
-                    actions={
-                      <FastScanDialog
-                        target={{ id: target.id, value: target.value }}
-                        disabled={target.status !== JobStatus.completed}
-                      />
-                    }
-                  />
-                </div>
+                <VulnerabilitiesView
+                  targetId={target.id}
+                  actions={
+                    <FastScanDialog
+                      target={{ id: target.id, value: target.value }}
+                      disabled={target.status !== JobStatus.completed}
+                    />
+                  }
+                />
               ),
             },
           ]}

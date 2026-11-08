@@ -1,6 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { fireEvent, within } from '@testing-library/react';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import Vulnerabilities from '@/pages/vulnerabilities/vulnerabilities';
+
+const mockStats = vi.hoisted(() => vi.fn());
 
 const mockWorkspaces = [{ id: 'ws-1', name: 'Test Workspace' }];
 const mockVulns = [
@@ -110,9 +113,8 @@ vi.mock('@/hooks/usePermission', () => ({
 }));
 
 vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import('@/services/apis/gen/queries')
-  >();
+  const actual =
+    await importOriginal<typeof import('@/services/apis/gen/queries')>();
   return {
     ...actual,
     useVulnerabilitiesControllerGetVulnerabilities: () => ({
@@ -120,22 +122,49 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
       isLoading: false,
       refetch: vi.fn(),
     }),
-    useVulnerabilitiesControllerGetVulnerabilitiesStatistics: () => ({
-      data: {
-        data: [
-          { severity: 'critical', count: 1 },
-          { severity: 'high', count: 1 },
-          { severity: 'medium', count: 0 },
-          { severity: 'low', count: 0 },
-          { severity: 'info', count: 0 },
-        ],
-      },
-      isLoading: false,
-    }),
+    useVulnerabilitiesControllerGetVulnerabilitiesStatistics: mockStats,
   };
 });
 
 describe('Vulnerabilities Page', () => {
+  beforeEach(() => {
+    mockStats.mockReset().mockReturnValue({
+      data: {
+        data: [
+          { severity: 'critical', count: 1 },
+          { severity: 'high', count: 1 },
+        ],
+      },
+      isLoading: false,
+    });
+  });
+
+  it('shows all five severity counts, including severities with no findings', async () => {
+    renderWithProviders(<Vulnerabilities />);
+    const summary = within(
+      await screen.findByLabelText('Finding severity counts'),
+    );
+    expect(summary.getByText('Critical').nextElementSibling).toHaveTextContent(
+      '1',
+    );
+    expect(summary.getByText('Low').nextElementSibling).toHaveTextContent('0');
+    expect(summary.getAllByRole('term')).toHaveLength(5);
+  });
+
+  it('lets the user retry a failed initial count request', async () => {
+    const refetch = vi.fn();
+    mockStats.mockReturnValue({ isError: true, refetch });
+    renderWithProviders(<Vulnerabilities />);
+    expect(
+      await screen.findByText('Unable to load severity counts'),
+    ).toBeVisible();
+    expect(screen.queryByLabelText('Finding severity counts')).toBeNull();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Retry severity counts' }),
+    );
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
   it('renders vulnerability table', async () => {
     renderWithProviders(<Vulnerabilities />);
 

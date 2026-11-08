@@ -2,8 +2,7 @@ import Page from '@/components/common/page';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import CreateWorkspace from '../workspaces/create-workspace';
 import { FastScanDialog } from './components/fast-scan-dialog';
-import { ListVulnerabilities } from './list-vulnerabilitys';
-import VulnerabilitiesStatistic from './vulnerabilites-statistic';
+import { VulnerabilitiesView } from './vulnerabilities-view';
 
 const Vulnerabilities = () => {
   const { workspaces } = useWorkspaceSelector();
@@ -16,10 +15,7 @@ const Vulnerabilities = () => {
       {workspaces.length === 0 ? (
         <CreateWorkspace />
       ) : (
-        <div className="flex flex-col gap-5">
-          <VulnerabilitiesStatistic />
-          <ListVulnerabilities actions={<FastScanDialog />} />
-        </div>
+        <VulnerabilitiesView actions={<FastScanDialog />} />
       )}
     </Page>
   );
