@@ -28,7 +28,7 @@ import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { ScanStatusFilter } from './components/scan-status-filter';
 import { ScopeFilter } from './components/scope-filter';
 import { StartDiscoveryButton } from './components/start-discovery-button';
-import { TargetBulkSchedule } from './components/target-bulk-schedule';
+import { TargetBulkActions } from './components/target-bulk-actions';
 import { TargetLogo } from './components/target-logo';
 import { TargetTypeBadge } from './components/target-type-badge';
 import { TargetTypeFilter } from './components/target-type-filter';
@@ -273,11 +273,13 @@ export function ListTargets() {
 
   const targets = data?.data ?? [];
   const total = data?.total ?? 0;
-  const selectedIds =
+  const selectedTargets =
     canSchedule && selection.scope === selectionScope
-      ? targets.filter(({ id }) => selection.rows[id]).map(({ id }) => id)
+      ? targets.filter(({ id }) => selection.rows[id])
       : [];
-  const rowSelection = Object.fromEntries(selectedIds.map((id) => [id, true]));
+  const rowSelection = Object.fromEntries(
+    selectedTargets.map(({ id }) => [id, true]),
+  );
 
   /** Drop only successful targets so the user can retry failures. */
   function removeCompleted(updated: string[]) {
@@ -315,9 +317,9 @@ export function ListTargets() {
       rowSelection={rowSelection}
       onRowSelectionChange={(rows) => setSelection({ scope: selectionScope, rows })}
       selectionHeader={() => (
-        <TargetBulkSchedule
+        <TargetBulkActions
           key={selectionScope}
-          ids={selectedIds}
+          targets={selectedTargets}
           workspaceId={selectedWorkspaceId}
           onComplete={removeCompleted}
           onClear={() => setSelection({ scope: selectionScope, rows: {} })}
