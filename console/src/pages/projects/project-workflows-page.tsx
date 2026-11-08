@@ -18,6 +18,7 @@ import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useMemo, useRef, useState } from 'react';
 import { projectRouteId } from './project-route-id';
+import { ProjectWorkflowCreateDialog } from './project-workflow-create-dialog';
 import { ProjectWorkflowDetachDialog } from './project-workflow-detach-dialog';
 import { projectWorkflowLabel } from './project-workflow-label';
 import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
@@ -189,6 +190,14 @@ function WorkflowList({
 
   return (
     <section ref={assignments} tabIndex={-1} aria-label="Workflow assignments">
+      {editWorkspaceId && (
+        <div className="mb-3 flex justify-end">
+          <ProjectWorkflowCreateDialog
+            projectId={projectId}
+            workspaceId={editWorkspaceId}
+          />
+        </div>
+      )}
       {bindings.length ? (
         <ul aria-label="Project workflows" className="space-y-2">
           {bindings.map((binding) => (
