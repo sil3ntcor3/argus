@@ -3,6 +3,7 @@ import { AssetGroupWorkflowService } from '@/modules/asset-group/asset-group-wor
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
 import { AssetsService } from '@/modules/assets/assets.service';
 import type { TargetDiscoverySchedulePayload } from '@/modules/targets/entities/target.entity';
+import { TargetsService } from '@/modules/targets/targets.service';
 import { WorkspacesService } from '@/modules/workspaces/workspaces.service';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
@@ -13,16 +14,28 @@ export class AssetsDiscoveryScheduleConsumer extends WorkerHost {
   constructor(
     private assetService: AssetsService,
     private workspaces: WorkspacesService,
+    private targets: TargetsService,
   ) {
     super();
   }
 
   async process(job: Job<TargetDiscoverySchedulePayload>): Promise<void> {
     const { id, workspaceId } = job.data;
-    const scope =
-      workspaceId ?? (await this.workspaces.getWorkspaceIdByTargetId(id));
-    if (!scope) throw new NotFoundException('Target not found');
-    await this.assetService.reScan(id, scope, JobRunType.SCHEDULED);
+    try {
+      const scope =
+        workspaceId ?? (await this.workspaces.getWorkspaceIdByTargetId(id));
+      if (!scope) throw new NotFoundException('Target not found');
+      await this.assetService.reScan(id, scope, JobRunType.SCHEDULED);
+    } catch (error) {
+      if (
+        !(error instanceof NotFoundException) ||
+        !(await this.targets.removeOrphanedDiscoverySchedule(
+          id,
+          job.repeatJobKey,
+        ))
+      )
+        throw error;
+    }
   }
 }
 
