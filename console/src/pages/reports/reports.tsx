@@ -344,6 +344,7 @@ export default function Reports() {
       ) : (
         <Tabs
           value={activeTab}
+          className="gap-4"
           onValueChange={(v) => {
             setTab(v);
             setPage(1);

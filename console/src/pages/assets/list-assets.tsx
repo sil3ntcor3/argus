@@ -105,11 +105,10 @@ export function ListAssets({
 
   return (
     <div className="w-full">
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={setTab} className="gap-4">
         <TriggerList tabTriggerList={tabList} />
-        {/* mb-2 + the Tabs gap-2 = the 16px DataTable leaves between its toolbar and table (vulns, targets). */}
         {!isExtraTab && (
-          <div className="mb-2 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <AssetFilterBar />
             {/* <ExportDataButton api="api/assets/services/export" prefix="assets" /> */}
             {tab === 'urls' && urlsActions}
