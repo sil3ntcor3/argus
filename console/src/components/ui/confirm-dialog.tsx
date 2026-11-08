@@ -46,11 +46,13 @@ export const ConfirmDialog = ({
 }: ConfirmDialogProps) => {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
+  const [inputValue, setInputValue] = useState('');
+  const instructionId = React.useId();
   const setOpen = (next: boolean) => {
+    if (!next) setInputValue('');
     if (controlledOpen === undefined) setInternalOpen(next);
     onOpenChange?.(next);
   };
-  const [inputValue, setInputValue] = useState('');
 
   const confirmTextRequired =
     typeToConfirm === true
@@ -63,12 +65,10 @@ export const ConfirmDialog = ({
   const handleConfirm = () => {
     onConfirm();
     setOpen(false);
-    setInputValue('');
   };
 
   const handleCancel = () => {
     setOpen(false);
-    setInputValue('');
   };
 
   const isConfirmEnabled = showInput
@@ -119,10 +119,11 @@ export const ConfirmDialog = ({
         {children}
         {showInput && (
           <div className="space-y-4 py-4">
-            <p className="text-sm text-muted-foreground">
+            <p id={instructionId} className="text-sm text-muted-foreground">
               Please type "{confirmTextRequired}" to confirm this action.
             </p>
             <Input
+              aria-labelledby={instructionId}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="w-full"

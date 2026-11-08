@@ -13,7 +13,7 @@ import {
   TargetType,
   useTargetsControllerGetTargetsInWorkspace,
 } from '@/services/apis/gen/queries';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +22,8 @@ import LogoFrame from '@/components/ui/logo-frame';
 import JobStatusBadge from '@/components/ui/job-status';
 import { usePermission } from '@/hooks/usePermission';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
-import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
+import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
+import { useSession } from '@/utils/authClient';
 import type { GetManyTargetResponseDto } from '@/services/apis/gen/queries';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
 import { ScanStatusFilter } from './components/scan-status-filter';
@@ -164,11 +165,14 @@ const targetColumns: ColumnDef<GetManyTargetResponseDto>[] = [
 const routeApi = getRouteApi('/_authed/targets/');
 
 export function ListTargets() {
-  const {
-    state: { selectedWorkspaceId },
-  } = useWorkspaceState();
+  const { selectedWorkspace: selectedWorkspaceId, workspaces } = useWorkspaceSelector();
+  const { data: session } = useSession();
   const permission = usePermission();
+  const targetList = useRef<HTMLElement>(null);
   const canSchedule = Boolean(selectedWorkspaceId) && permission.hasPermission('target.write');
+  const canDelete = canSchedule && workspaces.some(
+    (workspace) => workspace.id === selectedWorkspaceId && workspace.ownerId === session?.user.id,
+  );
   const [selection, setSelection] = useState<{
     scope: string;
     rows: Record<string, boolean>;
@@ -309,56 +313,60 @@ export function ListTargets() {
   };
 
   return (
-    <DataTable
-      data={targets}
-      columns={targetColumns}
-      getRowId={(target) => target.id}
-      showCheckBox={canSchedule}
-      rowSelection={rowSelection}
-      onRowSelectionChange={(rows) => setSelection({ scope: selectionScope, rows })}
-      selectionHeader={() => (
-        <TargetBulkActions
-          key={selectionScope}
-          targets={selectedTargets}
-          workspaceId={selectedWorkspaceId}
-          onComplete={removeCompleted}
-          onClear={() => setSelection({ scope: selectionScope, rows: {} })}
-        />
-      )}
-      isLoading={isLoading}
-      page={page}
-      pageSize={pageSize}
-      sortBy={sortBy}
-      sortOrder={sortOrder}
-      onPageChange={setPage}
-      onPageSizeChange={setPageSize}
-      onSortChange={(col, order) => {
-        setParams({ sortBy: col, sortOrder: order });
-      }}
-      filterColumnKey="value"
-      filterValue={filter}
-      onFilterChange={setFilter}
-      filterComponents={[
-        <TargetTypeFilter
-          key="type-filter"
-          value={typeFilter}
-          onValueChange={handleTypeFilterChange}
-        />,
-        <ScanStatusFilter
-          key="status-filter"
-          value={statusFilter}
-          onValueChange={handleStatusFilterChange}
-        />,
-        <ScopeFilter
-          key="scope-filter"
-          value={scopeFilter}
-          onValueChange={handleScopeFilterChange}
-        />,
-      ]}
-      toolbarComponents={[<StartDiscoveryButton key="start-discovery" />]}
-      totalItems={total}
-      onRowClick={handleRowClick}
-      rowClassName="cursor-pointer hover:bg-muted/50 transition-colors"
-    />
+    <section ref={targetList} tabIndex={-1} aria-label="Target results">
+      <DataTable
+        data={targets}
+        columns={targetColumns}
+        getRowId={(target) => target.id}
+        showCheckBox={canSchedule}
+        rowSelection={rowSelection}
+        onRowSelectionChange={(rows) => setSelection({ scope: selectionScope, rows })}
+        selectionHeader={() => (
+          <TargetBulkActions
+            key={selectionScope}
+            targets={selectedTargets}
+            workspaceId={selectedWorkspaceId}
+            canDelete={canDelete}
+            focusTargets={() => targetList.current?.focus()}
+            onComplete={removeCompleted}
+            onClear={() => setSelection({ scope: selectionScope, rows: {} })}
+          />
+        )}
+        isLoading={isLoading}
+        page={page}
+        pageSize={pageSize}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+        onSortChange={(col, order) => {
+          setParams({ sortBy: col, sortOrder: order });
+        }}
+        filterColumnKey="value"
+        filterValue={filter}
+        onFilterChange={setFilter}
+        filterComponents={[
+          <TargetTypeFilter
+            key="type-filter"
+            value={typeFilter}
+            onValueChange={handleTypeFilterChange}
+          />,
+          <ScanStatusFilter
+            key="status-filter"
+            value={statusFilter}
+            onValueChange={handleStatusFilterChange}
+          />,
+          <ScopeFilter
+            key="scope-filter"
+            value={scopeFilter}
+            onValueChange={handleScopeFilterChange}
+          />,
+        ]}
+        toolbarComponents={[<StartDiscoveryButton key="start-discovery" />]}
+        totalItems={total}
+        onRowClick={handleRowClick}
+        rowClassName="cursor-pointer hover:bg-muted/50 transition-colors"
+      />
+    </section>
   );
 }
