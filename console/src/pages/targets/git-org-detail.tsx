@@ -47,7 +47,7 @@ export function GitOrgDetail({
 }: {
   target: Target;
   tab: string | undefined;
-  refetch: () => void;
+  refetch: () => Promise<unknown>;
 }) {
   const navigate = useNavigate({ from: '/targets/$id/$tab' });
   const activeTab = TABS.some((t) => t.value === tab) ? tab! : 'repositories';
