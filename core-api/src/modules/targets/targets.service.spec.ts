@@ -1,5 +1,5 @@
 import type { UserContextPayload } from '@/common/interfaces/app.interface';
-import { AuditOutcome, IntegrationType } from '@/common/enums/enum';
+import { AuditOutcome, CronSchedule, IntegrationType } from '@/common/enums/enum';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
@@ -122,6 +122,36 @@ describe('TargetsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('loads the workspace when registering unqueued schedules on startup', async () => {
+    const id = randomUUID();
+    const workspaceId = randomUUID();
+    const scanSchedule = CronSchedule.DAILY;
+    const query = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([{ id, workspaceId, scanSchedule }]),
+    };
+    (mockTargetRepository.createQueryBuilder as jest.Mock).mockReturnValue(query);
+    (mockQueue.add as jest.Mock).mockResolvedValue({
+      repeatJobKey: 'target-repeat',
+    });
+
+    await service.handleUpdateScanSchedule();
+
+    expect(query.select).toHaveBeenCalledWith(
+      expect.arrayContaining(['target.workspaceId']),
+    );
+    expect(mockQueue.add).toHaveBeenCalledWith(
+      id,
+      { id, workspaceId },
+      { repeat: { pattern: scanSchedule } },
+    );
+    expect(mockTargetRepository.update).toHaveBeenCalledWith(id, {
+      jobId: 'target-repeat',
+    });
   });
 
   describe('createMultipleTargets', () => {

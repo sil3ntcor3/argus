@@ -2,7 +2,8 @@ import { JobRunType } from '@/common/enums/enum';
 import type { AssetGroupWorkflowService } from '@/modules/asset-group/asset-group-workflow.service';
 import type { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
 import type { AssetsService } from '@/modules/assets/assets.service';
-import type { Target } from '@/modules/targets/entities/target.entity';
+import type { TargetDiscoverySchedulePayload } from '@/modules/targets/entities/target.entity';
+import type { WorkspacesService } from '@/modules/workspaces/workspaces.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Job } from 'bullmq';
 import {
@@ -11,21 +12,49 @@ import {
 } from './scan-schedule.processor';
 
 describe('AssetsDiscoveryScheduleConsumer', () => {
-  it('re-scans the target as a scheduled run in its own workspace', async () => {
-    const assetsService = { reScan: jest.fn() };
-    const consumer = new AssetsDiscoveryScheduleConsumer(
-      assetsService as unknown as AssetsService,
-    );
+  const reScan = jest.fn();
+  const getWorkspaceIdByTargetId = jest.fn();
+  const consumer = new AssetsDiscoveryScheduleConsumer(
+    { reScan } as unknown as AssetsService,
+    { getWorkspaceIdByTargetId } as unknown as WorkspacesService,
+  );
+  const job = (workspaceId?: string) =>
+    ({
+      data: { id: 'target-1', workspaceId },
+    }) as unknown as Job<TargetDiscoverySchedulePayload>;
 
-    await consumer.process({
-      data: { id: 'target-1', workspaceId: 'workspace-1' },
-    } as unknown as Job<Target>);
+  beforeEach(() => {
+    reScan.mockReset();
+    getWorkspaceIdByTargetId.mockReset();
+  });
 
-    expect(assetsService.reScan).toHaveBeenCalledWith(
+  it('uses the queued workspace for a current scheduled run', async () => {
+    await consumer.process(job('workspace-1'));
+    expect(getWorkspaceIdByTargetId).not.toHaveBeenCalled();
+    expect(reScan).toHaveBeenCalledWith(
       'target-1',
       'workspace-1',
       JobRunType.SCHEDULED,
     );
+  });
+
+  it('resolves the workspace for an older queued run without a workspace ID', async () => {
+    getWorkspaceIdByTargetId.mockResolvedValue('workspace-1');
+    await consumer.process(job());
+    expect(getWorkspaceIdByTargetId).toHaveBeenCalledWith('target-1');
+    expect(reScan).toHaveBeenCalledWith(
+      'target-1',
+      'workspace-1',
+      JobRunType.SCHEDULED,
+    );
+  });
+
+  it('does not dispatch a legacy run without a target workspace', async () => {
+    getWorkspaceIdByTargetId.mockResolvedValue(null);
+    await expect(consumer.process(job())).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(reScan).not.toHaveBeenCalled();
   });
 });
 
