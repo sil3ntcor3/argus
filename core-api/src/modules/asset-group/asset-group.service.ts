@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { In, Not, Repository } from 'typeorm';
+import { In, Not, Repository, type EntityManager } from 'typeorm';
 import { JobsRegistryService } from '../jobs-registry/jobs-registry.service';
 import { Tool } from '../tools/entities/tools.entity';
 import {
@@ -375,7 +375,9 @@ export class AssetGroupService {
           .map((jobId) => this.scanScheduleQueue.removeJobScheduler(jobId)),
       );
 
-      await this.deleteOwnedWorkflows(groupId, workspaceId, groupWorkflows);
+      await this.workflowRepo.manager.transaction((manager) =>
+        this.deleteOwnedWorkflows(groupId, workspaceId, groupWorkflows, manager),
+      );
 
       const savedAssetGroup = await this.assetGroupRepo.findOne({
         where: { id: groupId },
@@ -401,41 +403,40 @@ export class AssetGroupService {
     groupId: string,
     workspaceId: string,
     bindings: AssetGroupWorkflow[],
+    manager: EntityManager,
   ): Promise<void> {
     const ids = bindings
       .filter((binding) => isGroupOwnedWorkflow(binding.workflow, groupId))
       .map((binding) => binding.workflowId);
     if (ids.length === 0) return;
 
-    await this.workflowRepo.manager.transaction(async (manager) => {
-      const workflows = manager.getRepository(Workflow);
-      // Lock before checking references: attaching a workflow takes a foreign-key
-      // lock, so a concurrent attachment cannot slip between this check/delete.
-      const locked = await workflows
-        .createQueryBuilder('workflow')
-        .select(['workflow.id', 'workflow.filePath', 'workflow.isCanDelete'])
-        .where({ id: In(ids), workspace: { id: workspaceId } })
-        .orderBy('workflow.id', 'ASC')
-        .setLock('pessimistic_write')
-        .getMany();
-      const candidates = locked
-        .filter((workflow) => isGroupOwnedWorkflow(workflow, groupId))
-        .map((workflow) => workflow.id);
-      if (candidates.length === 0) return;
+    const workflows = manager.getRepository(Workflow);
+    // Lock before checking references: attaching a workflow takes a foreign-key
+    // lock, so a concurrent attachment cannot slip between this check/delete.
+    const locked = await workflows
+      .createQueryBuilder('workflow')
+      .select(['workflow.id', 'workflow.filePath', 'workflow.isCanDelete'])
+      .where({ id: In(ids), workspace: { id: workspaceId } })
+      .orderBy('workflow.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getMany();
+    const candidates = locked
+      .filter((workflow) => isGroupOwnedWorkflow(workflow, groupId))
+      .map((workflow) => workflow.id);
+    if (candidates.length === 0) return;
 
-      const references = await manager.getRepository(AssetGroupWorkflow).find({
-        where: { workflowId: In(candidates), assetGroupId: Not(groupId) },
-        select: { workflowId: true },
-      });
-      const reused = new Set(references.map((binding) => binding.workflowId));
-      const deletable = candidates.filter((id) => !reused.has(id));
-      if (deletable.length > 0) {
-        await workflows.delete({
-          id: In(deletable),
-          workspace: { id: workspaceId },
-        });
-      }
+    const references = await manager.getRepository(AssetGroupWorkflow).find({
+      where: { workflowId: In(candidates), assetGroupId: Not(groupId) },
+      select: { workflowId: true },
     });
+    const reused = new Set(references.map((binding) => binding.workflowId));
+    const deletable = candidates.filter((id) => !reused.has(id));
+    if (deletable.length > 0) {
+      await workflows.delete({
+        id: In(deletable),
+        workspace: { id: workspaceId },
+      });
+    }
   }
 
   /**
@@ -556,31 +557,41 @@ export class AssetGroupService {
     workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
     try {
-      const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id, workspace: { id: workspaceId } },
-        relations: { assetGroupWorkflows: { workflow: true } },
+      await this.assetGroupRepo.manager.transaction(async (manager) => {
+        // A workflow creator holds the same project row lock until it saves the
+        // binding. Read assignments after the lock so that committed clones are
+        // included in the owned workflow cleanup. Allow foreign-key checks
+        // from in-flight runs while waiting for their workflow locks.
+        const [project] = await manager.query<{ id: string }[]>(
+          'SELECT id FROM projects WHERE id = $1 AND "workspaceId" = $2 FOR NO KEY UPDATE',
+          [id, workspaceId],
+        );
+        const groups = manager.getRepository(AssetGroup);
+        const assetGroup = project
+          ? await groups.findOne({
+              where: { id: project.id },
+              relations: { assetGroupWorkflows: { workflow: true } },
+            })
+          : null;
+        if (!assetGroup) {
+          throw new NotFoundException(`Asset group with ID "${id}" not found`);
+        }
+
+        const groupWorkflows = assetGroup.assetGroupWorkflows ?? [];
+        await Promise.all(
+          groupWorkflows
+            .map((binding) => binding.jobId)
+            .filter((jobId): jobId is string => Boolean(jobId))
+            .map((jobId) => this.scanScheduleQueue.removeJobScheduler(jobId)),
+        );
+        await this.deleteOwnedWorkflows(
+          assetGroup.id,
+          workspaceId,
+          groupWorkflows,
+          manager,
+        );
+        await groups.remove(assetGroup);
       });
-
-      if (!assetGroup) {
-        throw new NotFoundException(`Asset group with ID "${id}" not found`);
-      }
-
-      // Cancel the BullMQ repeat schedulers so no new runs are queued
-      // for the group's workflows while the group is being deleted.
-      const groupWorkflows = assetGroup.assetGroupWorkflows ?? [];
-      await Promise.all(
-        groupWorkflows
-          .map((agw) => agw.jobId)
-          .filter((jobId): jobId is string => Boolean(jobId))
-          .map((jobId) => this.scanScheduleQueue.removeJobScheduler(jobId)),
-      );
-
-      // Only generated, deletable workflows belong to this group. Shared
-      // workflows and their histories survive removal of this binding.
-      await this.deleteOwnedWorkflows(id, workspaceId, groupWorkflows);
-
-      // Delete the asset group itself
-      await this.assetGroupRepo.remove(assetGroup);
 
       return {
         message: `Asset group "${id}" successfully deleted`,
