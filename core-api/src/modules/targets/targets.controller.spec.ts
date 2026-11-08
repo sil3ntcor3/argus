@@ -9,6 +9,7 @@ describe('TargetsController workspace permission guards', () => {
   const cases: Array<[string, string, string[]]> = [
     ['createMultipleTargets', 'POST /bulk', ['target.write']],
     ['getTargetsInWorkspace', 'GET /', ['target.read']],
+    ['getTargetsSummary', 'GET /summary', ['target.read']],
     ['exportTargetsToCSV', 'GET /export', ['target.read']],
     ['getTargetById', 'GET /:id', ['target.read']],
     ['deleteTarget', 'DELETE /:id', ['target.write']],
