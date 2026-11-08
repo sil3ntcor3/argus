@@ -1,4 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { server } from '@/test/mocks/node';
+import { setGlobalWorkspaceId } from '@/utils/workspaceState';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
+import { http, HttpResponse } from 'msw';
 import { parse } from 'yaml';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -96,6 +106,9 @@ describe('ProjectWorkflowsPage', () => {
     expect(
       screen.queryByRole('button', { name: /run workflow for/i }),
     ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Create workflow' }),
+    ).toBeNull();
   });
 
   it('opens the selected workflow as YAML in dependency order and restores focus', async () => {
@@ -116,6 +129,124 @@ describe('ProjectWorkflowsPage', () => {
     expect(source.indexOf('scan:')).toBeLessThan(source.indexOf('consume:'));
     fireEvent.keyDown(sheet, { key: 'Escape' });
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('loads templates on demand and prevents a retry after an ambiguous create response', async () => {
+    const catalog = vi.fn();
+    const create = vi.fn();
+    server.use(
+      http.get('/api/projects/workflow-templates', () => {
+        catalog();
+        return HttpResponse.json([
+          { filePath: 'probe.yaml', name: 'Probe', jobs: [] },
+        ]);
+      }),
+      http.post('/api/projects/:id/workflows', async ({ request }) => {
+        create(await request.json());
+        return HttpResponse.json({}, { status: 502 });
+      }),
+    );
+    mock.permission.mockReturnValue({
+      hasPermission: (key: string) =>
+        ['project.read', 'group.write'].includes(key),
+    });
+    setGlobalWorkspaceId('fixture');
+    try {
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ProjectWorkflowsPage projectId={projectId} />
+        </QueryClientProvider>,
+      );
+      expect(catalog).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Create workflow' }));
+      const dialog = within(
+        screen.getByRole('dialog', { name: 'Create project workflow' }),
+      );
+      const submit = dialog.getByRole('button', { name: 'Create workflow' });
+      expect(submit).toBeDisabled();
+      await dialog.findByRole('option', { name: 'Probe' });
+      fireEvent.change(dialog.getByLabelText('Workflow template'), {
+        target: { value: 'probe.yaml' },
+      });
+      submit.focus();
+      fireEvent.click(submit);
+      expect(await dialog.findByRole('alert')).toHaveTextContent(
+        'may have created',
+      );
+      expect(submit).toHaveAttribute('aria-disabled', 'true');
+      expect(submit).toHaveFocus();
+      fireEvent.click(submit);
+      expect(create).toHaveBeenCalledExactlyOnceWith({
+        template: 'probe.yaml',
+      });
+    } finally {
+      setGlobalWorkspaceId(null);
+    }
+  });
+
+  it('keeps the pending action focused and blocks duplicates across remounts', async () => {
+    let finish = () => {};
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const create = vi.fn();
+    server.use(
+      http.get('/api/projects/workflow-templates', () =>
+        HttpResponse.json([
+          { filePath: 'probe.yaml', name: 'Probe', jobs: [] },
+        ]),
+      ),
+      http.post('/api/projects/:id/workflows', async () => {
+        create();
+        await pending;
+        return HttpResponse.json({}, { status: 400 });
+      }),
+    );
+    mock.permission.mockReturnValue({
+      hasPermission: (key: string) =>
+        ['project.read', 'project.write'].includes(key),
+    });
+    setGlobalWorkspaceId('fixture');
+    const client = new QueryClient();
+    const show = () =>
+      render(
+        <QueryClientProvider client={client}>
+          <ProjectWorkflowsPage projectId={projectId} />
+        </QueryClientProvider>,
+      );
+    try {
+      const first = show();
+      fireEvent.click(screen.getByRole('button', { name: 'Create workflow' }));
+      const dialog = within(screen.getByRole('dialog'));
+      await dialog.findByRole('option', { name: 'Probe' });
+      fireEvent.change(dialog.getByLabelText('Workflow template'), {
+        target: { value: 'probe.yaml' },
+      });
+      const submit = dialog.getByRole('button', { name: 'Create workflow' });
+      submit.focus();
+      fireEvent.click(submit);
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+      expect(submit).toHaveFocus();
+      first.unmount();
+
+      show();
+      const trigger = screen.getByRole('button', {
+        name: 'Creating workflow…',
+      });
+      expect(trigger).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(trigger);
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(create).toHaveBeenCalledTimes(1);
+      finish();
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'Create workflow' }),
+        ).toBeEnabled(),
+      );
+    } finally {
+      finish();
+      setGlobalWorkspaceId(null);
+    }
   });
 
   it('does not query when project access is missing', () => {
