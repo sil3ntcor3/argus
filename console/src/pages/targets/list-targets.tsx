@@ -7,6 +7,7 @@ dayjs.extend(relativeTime);
 
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableError } from '@/components/ui/data-table-error-boundary';
+import { scanScheduleOptions } from '@/components/scan-schedule-options';
 import {
   JobStatus,
   TargetScopeType,
@@ -98,20 +99,33 @@ const targetColumns: ColumnDef<GetManyTargetResponseDto>[] = [
   },
   {
     accessorKey: 'totalAssetServices',
-    header: 'Services',
+    header: () => (
+      <div className="flex flex-col">
+        <span>Surface</span>
+        <span className="text-xs font-normal text-muted-foreground">
+          Sort by services
+        </span>
+      </div>
+    ),
     cell: ({ row }) => {
+      const { type, totalAssets, totalAssetServices } = row.original;
       // A Git organization has no services; its size is its repositories.
-      if (row.original.type === TargetType.GIT_ORG) {
+      if (type === TargetType.GIT_ORG) {
         return (
-          <div className="text-muted-foreground font-medium">
-            {row.original.totalAssets} repositories
-          </div>
+          <span className="font-medium">
+            {totalAssets} {totalAssets === 1 ? 'repository' : 'repositories'}
+          </span>
         );
       }
-      const value: string = row.getValue('totalAssetServices');
       return (
-        <div className="text-muted-foreground font-medium">
-          {value} services
+        <div className="flex flex-col">
+          <span className="font-medium">
+            {totalAssetServices}{' '}
+            {totalAssetServices === 1 ? 'service' : 'services'}
+          </span>
+          <span className="text-muted-foreground">
+            {totalAssets} {totalAssets === 1 ? 'asset' : 'assets'}
+          </span>
         </div>
       );
     },
@@ -142,12 +156,28 @@ const targetColumns: ColumnDef<GetManyTargetResponseDto>[] = [
   // },
   {
     accessorKey: 'lastDiscoveredAt',
-    header: 'Last Discovery',
+    header: 'Discovery',
     cell: ({ row }) => {
-      const value: string = row.getValue('lastDiscoveredAt');
+      const { lastDiscoveredAt, scanSchedule } = row.original;
+      const discovered = lastDiscoveredAt ? dayjs(lastDiscoveredAt) : null;
+      const schedule =
+        !scanSchedule || scanSchedule === 'disabled'
+          ? 'Manual'
+          : (scanScheduleOptions.find(({ value }) => value === scanSchedule)
+              ?.label ?? 'Scheduled');
       return (
-        <div className="text-muted-foreground font-medium">
-          {dayjs(value).fromNow()}
+        <div className="flex flex-col">
+          {discovered ? (
+            <time className="flex flex-col" dateTime={lastDiscoveredAt}>
+              <span>{discovered.fromNow()}</span>
+              <span className="text-xs text-muted-foreground">
+                {discovered.format('MMM D, YYYY HH:mm')}
+              </span>
+            </time>
+          ) : (
+            <span>Never</span>
+          )}
+          <span className="text-muted-foreground">{schedule}</span>
         </div>
       );
     },

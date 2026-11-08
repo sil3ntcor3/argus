@@ -4,6 +4,7 @@ import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 import { server } from '@/test/mocks/node';
+import { mockTargets } from '@/test/mocks/data';
 import Targets from '@/pages/targets/targets';
 
 const canReadFindings = vi.hoisted(() => vi.fn(() => true));
@@ -146,11 +147,55 @@ describe('Targets Page', () => {
     });
 
     expect(screen.getByText('Target')).toBeInTheDocument();
-    expect(screen.getByText('Services')).toBeInTheDocument();
+    expect(screen.getByText('Surface')).toBeInTheDocument();
+    expect(screen.getByText('Sort by services')).toBeInTheDocument();
     // Type is a badge column; Source is an icon next to the target, not a column
     expect(screen.getByText('Type')).toBeInTheDocument();
     expect(screen.getByText('Domain')).toBeInTheDocument();
     expect(screen.queryByText('Source')).not.toBeInTheDocument();
+  });
+
+  it('shows target surface and saved discovery cadence from the list response', async () => {
+    const [domain, organization] = mockTargets;
+    server.use(
+      http.get('/api/targets', () =>
+        HttpResponse.json({
+          data: [
+            { ...domain, totalAssets: 2, scanSchedule: '0 0 * * *' },
+            {
+              ...organization,
+              value: 'github.com/argus-test',
+              type: 'GIT_ORG',
+              totalAssets: 1,
+              lastDiscoveredAt: null,
+            },
+          ],
+          total: 2,
+          page: 1,
+          totalPages: 1,
+        }),
+      ),
+    );
+    renderWithProviders(<Targets />, { routePath: '/_authed/targets/' });
+
+    const domainRow = within(
+      await screen.findByRole('row', { name: /example\.com/ }),
+    );
+    expect(domainRow.getByText('5 services')).toBeVisible();
+    expect(domainRow.getByText('2 assets')).toBeVisible();
+    expect(domainRow.getByText('Daily')).toBeVisible();
+    expect(domainRow.getByRole('time')).toHaveAttribute(
+      'datetime',
+      domain.lastDiscoveredAt,
+    );
+    expect(domainRow.getByRole('time')).toHaveTextContent(/202[56] \d{2}:\d{2}/);
+
+    const organizationRow = within(
+      screen.getByRole('row', { name: /github\.com\/argus-test/ }),
+    );
+    expect(organizationRow.getByText('1 repository')).toBeVisible();
+    expect(organizationRow.getByText('Never')).toBeVisible();
+    expect(organizationRow.getByText('Manual')).toBeVisible();
   });
 
   it('shows empty state when no targets', async () => {
