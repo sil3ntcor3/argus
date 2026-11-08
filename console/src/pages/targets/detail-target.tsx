@@ -1,6 +1,8 @@
+import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
 import { Button } from '@/components/ui/button';
 import JobStatusBadge from '@/components/ui/job-status';
+import { usePermission } from '@/hooks/usePermission';
 import {
   JobStatus,
   TargetType,
@@ -30,6 +32,7 @@ const routeApi = getRouteApi('/_authed/targets/$id/$tab');
 export function DetailTarget() {
   const { id, tab } = useParams({ from: '/_authed/targets/$id/$tab' });
   const { animation, tab: inventoryTab } = routeApi.useSearch();
+  const permission = usePermission();
   const navigate = useNavigate({ from: '/targets/$id/$tab' });
 
   const {
@@ -86,7 +89,11 @@ export function DetailTarget() {
     );
   }
 
-  const activeTab = tab === 'vulnerabilities' ? 'vulnerabilities' : 'assets';
+  const activeTab =
+    tab === 'vulnerabilities' || tab === 'settings' ? tab : 'assets';
+  const canChangeTarget = permission.hasPermission('target.write');
+  const scanning = target.status !== JobStatus.completed;
+  const scanTarget = { id: target.id, value: target.value };
 
   return (
     <Page
@@ -121,7 +128,6 @@ export function DetailTarget() {
             <p className="text-muted-foreground hidden md:block">
               {dayjs(target.lastDiscoveredAt).fromNow()}
             </p>
-            <SettingTarget target={target} refetch={refetch} />
           </div>
         </div>
       }
@@ -131,6 +137,9 @@ export function DetailTarget() {
           {[
             { value: 'assets', label: 'Assets' },
             { value: 'vulnerabilities', label: 'Vulnerabilities' },
+            ...(canChangeTarget
+              ? [{ value: 'settings', label: 'Settings' }]
+              : []),
           ].map(({ value, label }) => (
             <Button
               key={value}
@@ -154,7 +163,32 @@ export function DetailTarget() {
             </Button>
           ))}
         </nav>
-        {activeTab === 'vulnerabilities' ? (
+        {activeTab === 'settings' ? (
+          canChangeTarget ? (
+            <SettingTarget
+              key={target.id}
+              inline
+              target={target}
+              refetch={refetch}
+              scanActions={
+                <>
+                  {permission.hasPermission('vulnerability.write') && (
+                    <FastScanDialog target={scanTarget} disabled={scanning} />
+                  )}
+                  {target.type === TargetType.DOMAIN &&
+                    permission.hasPermission('asset.write') && (
+                      <DiscoverUrlsDialog
+                        target={scanTarget}
+                        disabled={scanning}
+                      />
+                    )}
+                </>
+              }
+            />
+          ) : (
+            <AccessDenied />
+          )
+        ) : activeTab === 'vulnerabilities' ? (
           <VulnerabilitiesView
             targetId={target.id}
             actions={
