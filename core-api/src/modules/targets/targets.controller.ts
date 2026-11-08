@@ -16,6 +16,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -33,13 +34,16 @@ import {
   TargetRepositoryDto,
   UpdateTargetDto,
 } from './dto/targets.dto';
+import { TargetSummaryDto } from './dto/target-summary.dto';
 import { Target } from './entities/target.entity';
+import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
 
 @Controller('targets')
 export class TargetsController {
   constructor(
     private readonly targetsService: TargetsService,
+    private readonly targetSummaryService: TargetSummaryService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -98,6 +102,25 @@ export class TargetsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.targetsService.getTargetsInWorkspace(query, workspaceId);
+  }
+
+  @Doc({
+    summary: 'Get target summary',
+    description: 'Counts across the selected workspace, with finding counts gated by vulnerability read access.',
+    response: { serialization: TargetSummaryDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('target.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get('summary')
+  getTargetsSummary(
+    @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+  ) {
+    const canReadFindings = request.permissions?.some(
+      (key) => key === '*' || key === 'vulnerability.read' || key === 'vulnerability.write',
+    );
+    return this.targetSummaryService.getSummary(workspaceId, canReadFindings ?? false);
   }
 
   @Doc({
