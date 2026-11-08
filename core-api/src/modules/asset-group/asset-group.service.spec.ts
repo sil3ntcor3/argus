@@ -26,6 +26,8 @@ describe('AssetGroupService', () => {
   const mockManager = {
     findOneBy: jest.fn(),
     find: jest.fn(),
+    transaction: jest.fn(),
+    query: jest.fn(),
   };
 
   const mockAssetGroupRepo = {
@@ -58,7 +60,7 @@ describe('AssetGroupService', () => {
   };
 
   const mockWorkflowRepo = {
-    manager: { transaction: jest.fn() },
+    manager: mockManager,
     createQueryBuilder: jest.fn(),
     findByIds: jest.fn(),
     create: jest.fn<
@@ -143,10 +145,20 @@ describe('AssetGroupService', () => {
     jest.clearAllMocks();
     lockedWorkflows.getMany.mockResolvedValue([]);
     mockWorkflowRepo.createQueryBuilder.mockReturnValue(lockedWorkflows);
-    mockWorkflowRepo.manager.transaction.mockImplementation(
-      (callback: (manager: EntityManager) => Promise<void>) => callback({
-        getRepository: (entity: unknown) => entity === Workflow ? mockWorkflowRepo : mockAssetGroupWorkflowRepo,
-      } as unknown as EntityManager),
+    mockManager.query.mockImplementation((_sql: string, [id]: [string]) =>
+      Promise.resolve([{ id }]),
+    );
+    mockManager.transaction.mockImplementation(
+      (callback: (manager: EntityManager) => Promise<void>) =>
+        callback({
+          query: mockManager.query,
+          getRepository: (entity: unknown) =>
+            entity === Workflow
+              ? mockWorkflowRepo
+              : entity === AssetGroup
+                ? mockAssetGroupRepo
+                : mockAssetGroupWorkflowRepo,
+        } as unknown as EntityManager),
     );
     mockAssetGroupCountBuilder.getRawOne.mockResolvedValue({
       totalAssets: '0',
