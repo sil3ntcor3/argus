@@ -41,7 +41,12 @@ import {
   GetManyWorkspaceQueryParamsDto,
   UpdateTargetDto,
 } from './dto/targets.dto';
-import { Target, TargetSource, TargetType } from './entities/target.entity';
+import {
+  Target,
+  TargetSource,
+  TargetType,
+  type TargetDiscoverySchedulePayload,
+} from './entities/target.entity';
 import {
   type Cidr,
   cidrsOverlap,
@@ -92,7 +97,7 @@ export class TargetsService implements OnModuleInit {
     public assetService: AssetsService,
     private eventEmitter: EventEmitter2,
     @InjectQueue(BullMQName.ASSETS_DISCOVERY_SCHEDULE)
-    private scanScheduleQueue: Queue<Target>,
+    private scanScheduleQueue: Queue<Required<TargetDiscoverySchedulePayload>>,
     private readonly auditService: AuditService,
     private readonly eventBridge: EventBridgeService,
   ) {}
@@ -1075,7 +1080,7 @@ export class TargetsService implements OnModuleInit {
   private async updateTargetScanScheduleJob(
     target: Target,
     scanSchedule: CronSchedule,
-  ): Promise<Job<Target> | null> {
+  ): Promise<Job<Required<TargetDiscoverySchedulePayload>> | null> {
     // Remove any existing jobs for this target
     if (target.jobId) {
       await this.scanScheduleQueue.removeJobScheduler(target.jobId);
@@ -1083,7 +1088,7 @@ export class TargetsService implements OnModuleInit {
     if (scanSchedule !== CronSchedule.DISABLED) {
       const job = await this.scanScheduleQueue.add(
         target.id, // Job name is the target ID
-        { id: target.id } as Target,
+        { id: target.id, workspaceId: target.workspaceId },
         {
           repeat: {
             pattern: scanSchedule,
@@ -1102,7 +1107,12 @@ export class TargetsService implements OnModuleInit {
   async handleUpdateScanSchedule(): Promise<void> {
     const targetSchedules = await this.repo
       .createQueryBuilder('target')
-      .select(['target.value', 'target.id', 'target.scanSchedule'])
+      .select([
+        'target.value',
+        'target.id',
+        'target.scanSchedule',
+        'target.workspaceId',
+      ])
       .where('target.scanSchedule IS NOT NULL')
       .andWhere('target.jobId IS NULL')
       .getMany();

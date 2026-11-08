@@ -207,3 +207,7 @@ export class Target extends BaseEntity {
   @JoinColumn({ name: 'workspaceId' })
   workspace: Relation<Workspace>;
 }
+
+/** Older scheduled jobs may contain only the target ID. */
+export type TargetDiscoverySchedulePayload = Pick<Target, 'id'> &
+  Partial<Pick<Target, 'workspaceId'>>;
