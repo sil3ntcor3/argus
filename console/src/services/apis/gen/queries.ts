@@ -4592,6 +4592,35 @@ export type WorkflowTemplateDto = {
   jobs: WorkflowTemplateJobDto[];
 };
 
+export type CreatedProjectWorkflowDtoSchedule =
+  (typeof CreatedProjectWorkflowDtoSchedule)[keyof typeof CreatedProjectWorkflowDtoSchedule];
+
+export const CreatedProjectWorkflowDtoSchedule = {
+  disabled: 'disabled',
+} as const;
+
+export type CreatedProjectWorkflowDto = {
+  /** Project workflow binding ID */
+  id: string;
+  /** Project-owned workflow ID */
+  workflowId: string;
+  name: string;
+  schedule: CreatedProjectWorkflowDtoSchedule;
+};
+
+export type CreateProjectWorkflowDto = {
+  /**
+   * File path from the workspace template catalog
+   * @maxLength 255
+   */
+  template: string;
+  /**
+   * Defaults to the template name
+   * @maxLength 120
+   */
+  name?: string;
+};
+
 export type CreateProjectDto = {
   /**
    * Name of the project
@@ -43956,6 +43985,101 @@ export function useProjectsControllerGetWorkflowTemplates<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * @summary Create a project workflow from a default template
+ */
+export const projectsControllerCreateWorkflow = (
+  id: string,
+  createProjectWorkflowDto: CreateProjectWorkflowDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<CreatedProjectWorkflowDto>(
+    {
+      url: `/api/projects/${id}/workflows`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createProjectWorkflowDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerCreateWorkflowMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+    TError,
+    { id: string; data: CreateProjectWorkflowDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+  TError,
+  { id: string; data: CreateProjectWorkflowDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerCreateWorkflow'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+    { id: string; data: CreateProjectWorkflowDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerCreateWorkflow(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerCreateWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>
+>;
+export type ProjectsControllerCreateWorkflowMutationBody =
+  CreateProjectWorkflowDto;
+export type ProjectsControllerCreateWorkflowMutationError = unknown;
+
+/**
+ * @summary Create a project workflow from a default template
+ */
+export const useProjectsControllerCreateWorkflow = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+      TError,
+      { id: string; data: CreateProjectWorkflowDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+  TError,
+  { id: string; data: CreateProjectWorkflowDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerCreateWorkflowMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * @summary Preview scope rules

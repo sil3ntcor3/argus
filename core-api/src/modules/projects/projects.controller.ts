@@ -39,6 +39,8 @@ import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
 import { ProjectMetadataReadService } from './project-metadata-read.service';
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
+import { ProjectWorkflowCreateService } from './project-workflow-create.service';
+import { CreatedProjectWorkflowDto, CreateProjectWorkflowDto } from './dto/project-workflow-create.dto';
 import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
 import { GetProjectRunsQueryDto, ProjectRunDto } from './dto/project-runs.dto';
 import { ProjectRunReadService } from './project-run-read.service';
@@ -88,6 +90,7 @@ export class ProjectsController {
     private readonly candidateAssets: AssetGroupAssetService,
     private readonly assetRead: ProjectAssetReadService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
+    private readonly workflowCreate: ProjectWorkflowCreateService,
     private readonly runRead: ProjectRunReadService,
     private readonly findingRead: ProjectFindingReadService,
     private readonly findingTimeline: ProjectFindingTimelineService,
@@ -118,6 +121,28 @@ export class ProjectsController {
   @Get('workflow-templates')
   getWorkflowTemplates(@WorkspaceId() workspaceId: string) {
     return this.workflowTemplates.list(workspaceId);
+  }
+
+  @Doc({
+    summary: 'Create a project workflow from a default template',
+    response: { serialization: CreatedProjectWorkflowDto, httpStatus: HttpStatus.CREATED },
+    request: { getWorkspaceId: true },
+  })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: (_body, result) => ({
+      change: ProjectChange.WORKFLOW_ADDED,
+      ...(result ? { workflow: (result as CreatedProjectWorkflowDto).name } : {}),
+    }),
+  })
+  @WorkspaceAccess('project.write')
+  @Post(':id/workflows')
+  createWorkflow(
+    @Param() { id }: IdQueryParamDto,
+    @Body() dto: CreateProjectWorkflowDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.workflowCreate.create(id, workspaceId, dto);
   }
 
   @Doc({
