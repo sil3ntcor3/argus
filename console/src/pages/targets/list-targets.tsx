@@ -269,7 +269,7 @@ export function ListTargets() {
   const handleRowClick = (target: GetManyTargetResponseDto) => {
     navigate({
       to: '/targets/$id/$tab',
-      params: { id: target.id, tab: 'asset-services' },
+      params: { id: target.id, tab: 'assets' },
     });
   };
 

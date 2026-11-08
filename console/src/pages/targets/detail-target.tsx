@@ -6,10 +6,15 @@ import {
   TargetType,
   useTargetsControllerGetTargetById,
 } from '@/services/apis/gen/queries';
-import { getRouteApi, useNavigate, useParams } from '@tanstack/react-router';
+import {
+  getRouteApi,
+  Link,
+  Navigate,
+  useNavigate,
+  useParams,
+} from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
 import AssetProvider from '../assets/context/asset-context';
 import { DiscoverUrlsDialog } from '../assets/components/discover-urls-dialog';
 import { ListAssets } from '../assets/list-assets';
@@ -24,7 +29,7 @@ const routeApi = getRouteApi('/_authed/targets/$id/$tab');
 
 export function DetailTarget() {
   const { id, tab } = useParams({ from: '/_authed/targets/$id/$tab' });
-  const { animation } = routeApi.useSearch();
+  const { animation, tab: inventoryTab } = routeApi.useSearch();
   const navigate = useNavigate({ from: '/targets/$id/$tab' });
 
   const {
@@ -35,20 +40,6 @@ export function DetailTarget() {
   } = useTargetsControllerGetTargetById(id || '', {
     query: { enabled: !!id, refetchInterval: 5000 },
   });
-
-  // Vulnerabilities used to be its own path tab; it now lives in the asset tab
-  // row (`?tab=vulnerabilities`). Git orgs still use the path tab.
-  const isLegacyVulnPath =
-    !!target && target.type !== TargetType.GIT_ORG && tab === 'vulnerabilities';
-  useEffect(() => {
-    if (!isLegacyVulnPath) return;
-    navigate({
-      to: '/targets/$id/$tab',
-      params: { id, tab: 'inventory' },
-      search: { tab: 'vulnerabilities' },
-      replace: true,
-    });
-  }, [isLegacyVulnPath, id, navigate]);
 
   if (isLoading) {
     return (
@@ -78,6 +69,25 @@ export function DetailTarget() {
     return <GitOrgDetail target={target} tab={tab} refetch={refetch} />;
   }
 
+  const legacyInventory = tab === 'inventory' || tab === 'asset-services';
+  const legacyFindings = inventoryTab === 'vulnerabilities';
+  if (legacyInventory || legacyFindings) {
+    return (
+      <Navigate
+        from="/targets/$id/$tab"
+        to="/targets/$id/$tab"
+        params={{ id, tab: legacyFindings ? 'vulnerabilities' : 'assets' }}
+        search={(previous) => ({
+          ...previous,
+          ...(legacyFindings ? { tab: undefined } : {}),
+        })}
+        replace
+      />
+    );
+  }
+
+  const activeTab = tab === 'vulnerabilities' ? 'vulnerabilities' : 'assets';
+
   return (
     <Page
       permission="target.read"
@@ -98,10 +108,10 @@ export function DetailTarget() {
                 const showAnimation =
                   target.status === JobStatus.pending ||
                   target.status === JobStatus.in_progress;
-                navigate({
-                  search: {
-                    animation: showAnimation ? 'true' : undefined,
-                  },
+                void navigate({
+                  to: '/targets/$id/$tab',
+                  params: { id, tab: 'assets' },
+                  search: { animation: showAnimation ? 'true' : undefined },
                   replace: true,
                 });
               }}
@@ -116,46 +126,71 @@ export function DetailTarget() {
         </div>
       }
     >
-      {animation &&
-        (target.status === JobStatus.in_progress ||
-          target.status === JobStatus.pending) && (
-          <AssetsDiscovering targetId={target.id} />
-        )}
-      <AssetProvider
-        targetId={target.id}
-        refetchInterval={
-          target.status === JobStatus.in_progress ? 1000 : 30 * 1000
-        }
-      >
-        <ListAssets
-          urlsActions={
-            // URL discovery only accepts domain targets.
-            target.type === TargetType.DOMAIN ? (
-              <DiscoverUrlsDialog
+      <div className="space-y-4">
+        <nav aria-label="Target sections" className="flex flex-wrap gap-2">
+          {[
+            { value: 'assets', label: 'Assets' },
+            { value: 'vulnerabilities', label: 'Vulnerabilities' },
+          ].map(({ value, label }) => (
+            <Button
+              key={value}
+              asChild
+              size="sm"
+              variant={activeTab === value ? 'secondary' : 'ghost'}
+            >
+              <Link
+                from="/targets/$id/$tab"
+                to="/targets/$id/$tab"
+                params={{ id, tab: value }}
+                search={
+                  activeTab === value
+                    ? true
+                    : (previous) => ({ ...previous, tab: undefined })
+                }
+                aria-current={activeTab === value ? 'page' : undefined}
+              >
+                {label}
+              </Link>
+            </Button>
+          ))}
+        </nav>
+        {activeTab === 'vulnerabilities' ? (
+          <VulnerabilitiesView
+            targetId={target.id}
+            actions={
+              <FastScanDialog
                 target={{ id: target.id, value: target.value }}
                 disabled={target.status !== JobStatus.completed}
               />
-            ) : null
-          }
-          extraTabs={[
-            {
-              value: 'vulnerabilities',
-              text: 'Vulnerabilities',
-              tab: (
-                <VulnerabilitiesView
-                  targetId={target.id}
-                  actions={
-                    <FastScanDialog
+            }
+          />
+        ) : (
+          <>
+            {animation &&
+              (target.status === JobStatus.in_progress ||
+                target.status === JobStatus.pending) && (
+                <AssetsDiscovering targetId={target.id} />
+              )}
+            <AssetProvider
+              targetId={target.id}
+              refetchInterval={
+                target.status === JobStatus.in_progress ? 1000 : 30 * 1000
+              }
+            >
+              <ListAssets
+                urlsActions={
+                  target.type === TargetType.DOMAIN ? (
+                    <DiscoverUrlsDialog
                       target={{ id: target.id, value: target.value }}
                       disabled={target.status !== JobStatus.completed}
                     />
-                  }
-                />
-              ),
-            },
-          ]}
-        />
-      </AssetProvider>
+                  ) : null
+                }
+              />
+            </AssetProvider>
+          </>
+        )}
+      </div>
     </Page>
   );
 }
