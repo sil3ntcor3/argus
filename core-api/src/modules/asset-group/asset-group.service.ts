@@ -558,6 +558,11 @@ export class AssetGroupService {
   ): Promise<DefaultMessageResponseDto> {
     try {
       await this.assetGroupRepo.manager.transaction(async (manager) => {
+        // Match workspace deletion's parent-to-child lock order.
+        await manager.query(
+          'SELECT id FROM workspaces WHERE id = $1 FOR KEY SHARE',
+          [workspaceId],
+        );
         // A workflow creator holds the same project row lock until it saves the
         // binding. Read assignments after the lock so that committed clones are
         // included in the owned workflow cleanup. Allow foreign-key checks

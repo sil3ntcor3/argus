@@ -176,6 +176,19 @@ describe('Canonical project metadata writes (e2e)', () => {
       ),
     ).toEqual([]);
   });
+
+  async function waitsFor(pid: number): Promise<boolean> {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const [row] = await app.dataSource.query<{ blocked: boolean }[]>(
+        'SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS blocked',
+        [pid],
+      );
+      if (row.blocked) return true;
+      await delay(10);
+    }
+    return false;
+  }
+
   it('deletes owned workflows committed while project deletion waits for the row lock', async () => {
     const { body } = await create({ name: randomUUID() }).expect(201);
     const projectId = (body as { id: string }).id;
@@ -185,29 +198,74 @@ describe('Canonical project metadata writes (e2e)', () => {
     await runner.startTransaction();
     let deletion: Promise<request.Response> | undefined;
     try {
-      await runner.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE', [projectId]);
-      const [{ pid }] = await runner.query<{ pid: number }[]>('SELECT pg_backend_pid() AS pid');
+      await runner.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE', [
+        projectId,
+      ]);
+      const [{ pid }] = await runner.query<{ pid: number }[]>(
+        'SELECT pg_backend_pid() AS pid',
+      );
       await runner.query(
         'INSERT INTO workflows (id,name,content,"filePath","workspaceId") VALUES ($1,$2,$3,$4,$5)',
-        [workflowId, 'Concurrent workflow', { jobs: {} }, `project-${projectId}-${workflowId}.yaml`, owner.workspace.id],
+        [
+          workflowId,
+          'Concurrent workflow',
+          { jobs: {} },
+          `project-${projectId}-${workflowId}.yaml`,
+          owner.workspace.id,
+        ],
       );
-      await runner.query('INSERT INTO project_workflows ("projectId","workflowId") VALUES ($1,$2)', [projectId, workflowId]);
+      await runner.query(
+        'INSERT INTO project_workflows ("projectId","workflowId") VALUES ($1,$2)',
+        [projectId, workflowId],
+      );
 
-      deletion = request(app.server).delete('/api/projects/' + projectId)
-        .set(owner.headers).then(response => response);
-      let blocked = false;
-      for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
-        const [row] = await app.dataSource.query<{ blocked: boolean }[]>(
-          'SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS blocked',
-          [pid],
-        );
-        blocked = row.blocked;
-        if (!blocked) await delay(10);
-      }
-      expect(blocked).toBe(true);
+      deletion = request(app.server)
+        .delete('/api/projects/' + projectId)
+        .set(owner.headers)
+        .then((response) => response);
+      expect(await waitsFor(pid)).toBe(true);
       await runner.commitTransaction();
       expect((await deletion).status).toBe(200);
-      expect(await app.dataSource.query('SELECT id FROM workflows WHERE id=$1', [workflowId])).toEqual([]);
+      expect(
+        await app.dataSource.query('SELECT id FROM workflows WHERE id=$1', [
+          workflowId,
+        ]),
+      ).toEqual([]);
+    } finally {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
+      await runner.release();
+      await deletion;
+    }
+  });
+
+  it('locks the workspace before the project so a workspace cascade can proceed', async () => {
+    const { body } = await create({ name: randomUUID() }).expect(201);
+    const projectId = (body as { id: string }).id;
+    const runner = app.dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    let deletion: Promise<request.Response> | undefined;
+    try {
+      await runner.query('SELECT id FROM workspaces WHERE id=$1 FOR UPDATE', [
+        owner.workspace.id,
+      ]);
+      const [{ pid }] = await runner.query<{ pid: number }[]>(
+        'SELECT pg_backend_pid() AS pid',
+      );
+      deletion = request(app.server)
+        .delete('/api/projects/' + projectId)
+        .set(owner.headers)
+        .then((response) => response);
+
+      expect(await waitsFor(pid)).toBe(true);
+      expect(
+        await runner.query(
+          'SELECT id FROM projects WHERE id=$1 FOR UPDATE NOWAIT',
+          [projectId],
+        ),
+      ).toEqual([{ id: projectId }]);
+      await runner.commitTransaction();
+      expect((await deletion).status).toBe(200);
     } finally {
       if (runner.isTransactionActive) await runner.rollbackTransaction();
       await runner.release();
