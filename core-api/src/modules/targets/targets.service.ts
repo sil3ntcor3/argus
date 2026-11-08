@@ -13,6 +13,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
@@ -88,6 +89,8 @@ function trimTrailingSlashes(value: string): string {
 
 @Injectable()
 export class TargetsService implements OnModuleInit {
+  private readonly logger = new Logger(TargetsService.name);
+
   constructor(
     @InjectRepository(Target)
     private readonly repo: Repository<Target>,
@@ -948,7 +951,30 @@ export class TargetsService implements OnModuleInit {
       });
     }
 
+    if (target.jobId) {
+      // The due consumer can retry cleanup if Redis is unavailable here.
+      void this.scanScheduleQueue
+        .removeJobScheduler(target.jobId)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Unable to remove schedule for deleted target "${id}"`,
+            error,
+          );
+        });
+    }
+
     return { message: 'Target deleted successfully' };
+  }
+
+  /** Drops a stale repeat entry only when the target was permanently removed. */
+  async removeOrphanedDiscoverySchedule(
+    id: string,
+    repeatJobKey?: string,
+  ): Promise<boolean> {
+    if (await this.repo.existsBy({ id })) return false;
+    if (repeatJobKey)
+      await this.scanScheduleQueue.removeJobScheduler(repeatJobKey);
+    return true;
   }
 
   /**

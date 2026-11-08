@@ -36,6 +36,7 @@ describe('TargetsService', () => {
   beforeEach(async () => {
     mockTargetRepository = {
       findOneBy: jest.fn(),
+      existsBy: jest.fn(),
       upsert: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
@@ -72,7 +73,7 @@ describe('TargetsService', () => {
 
     mockQueue = {
       add: jest.fn(),
-      removeJobScheduler: jest.fn(),
+      removeJobScheduler: jest.fn().mockResolvedValue(true),
     } as any;
 
     mockAuditService = {
@@ -1782,6 +1783,77 @@ describe('TargetsService', () => {
         undefined,
       );
       (mockTargetRepository.delete as jest.Mock).mockResolvedValue({ affected: 1 });
+    });
+
+    it('removes the target scheduler after deleting the row', async () => {
+      (mockTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        id,
+        jobId: 'target-repeat',
+      });
+
+      await service.deleteTarget(id, workspaceId, userContext);
+
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith('target-repeat');
+    });
+
+    it('preserves the scheduler if deletion fails', async () => {
+      (mockTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        id,
+        jobId: 'target-repeat',
+      });
+      const failure = new Error('deletion failed');
+      (mockTargetRepository.delete as jest.Mock).mockRejectedValue(failure);
+
+      await expect(service.deleteTarget(id, workspaceId, userContext)).rejects.toBe(
+        failure,
+      );
+      expect(mockQueue.removeJobScheduler).not.toHaveBeenCalled();
+    });
+
+    it('reports a successful deletion if Redis cleanup must be retried', async () => {
+      (mockTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        id,
+        jobId: 'target-repeat',
+      });
+      (mockQueue.removeJobScheduler as jest.Mock).mockRejectedValue(
+        new Error('Redis temporarily unavailable'),
+      );
+
+      await expect(service.deleteTarget(id, workspaceId, userContext)).resolves.toEqual({
+        message: 'Target deleted successfully',
+      });
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith('target-repeat');
+    });
+
+    it('returns and records the deletion while Redis cleanup is still pending', async () => {
+      (mockTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        id,
+        jobId: 'target-repeat',
+      });
+      (mockQueue.removeJobScheduler as jest.Mock).mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      await expect(
+        service.deleteTarget(id, workspaceId, userContext, auditContext),
+      ).resolves.toEqual({ message: 'Target deleted successfully' });
+      expect(mockAuditService.auditSafely).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'target.deleted' }),
+      );
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith('target-repeat');
+    });
+
+    it('removes a repeat job only when its target is absent', async () => {
+      (mockTargetRepository.existsBy as jest.Mock)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      await expect(service.removeOrphanedDiscoverySchedule(id, 'target-repeat')).resolves.toBe(false);
+      expect(mockQueue.removeJobScheduler).not.toHaveBeenCalled();
+      await expect(service.removeOrphanedDiscoverySchedule(id, 'target-repeat')).resolves.toBe(true);
+      expect(mockTargetRepository.existsBy).toHaveBeenCalledWith({ id });
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledTimes(1);
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith('target-repeat');
     });
 
     it('writes a target.deleted audit event with the deleted target as before-changes', async () => {
