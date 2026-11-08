@@ -1,5 +1,6 @@
 import { scanScheduleOptions } from '@/components/scan-schedule-options';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,6 +11,7 @@ import {
 import {
   JobStatus,
   TargetType,
+  targetsControllerDeleteTarget,
   targetsControllerGetTargetById,
   targetsControllerReScanTarget,
   targetsControllerUpdateTarget,
@@ -23,8 +25,8 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
-import { CalendarClock, ChevronDown, RefreshCw, X } from 'lucide-react';
-import { useState } from 'react';
+import { CalendarClock, ChevronDown, RefreshCw, Trash2, X } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 type BulkAction =
@@ -33,36 +35,45 @@ type BulkAction =
       ids: string[];
       scanSchedule: UpdateTargetDtoScanSchedule;
     }
-  | { kind: 'rediscover'; ids: string[]; busyCount: number };
+  | { kind: 'rediscover'; ids: string[]; busyCount: number }
+  | { kind: 'delete'; ids: string[] };
 
-type ScanTarget = Pick<
+type ActionTarget = Pick<
   GetManyTargetResponseDto,
-  'id' | 'type' | 'integrationId'
+  'id' | 'value' | 'type' | 'integrationId'
 > & { status: string };
 
 /** Skip active discovery and Git organizations without an integration. */
-function canRediscover({ status, type, integrationId }: ScanTarget) {
+function canRediscover({ status, type, integrationId }: ActionTarget) {
   return (
     status === JobStatus.completed &&
     (type !== TargetType.GIT_ORG || Boolean(integrationId))
   );
 }
 
-/** A transport error may follow a committed scan request. */
-function scanOutcomeUnknown(error: unknown) {
+/** A transport error may follow a committed request. */
+function writeOutcomeUnknown(error: unknown) {
   const status = isAxiosError(error) ? error.response?.status : undefined;
   return status === undefined || status === 408 || status >= 500;
+}
+
+function targetCount(count: number) {
+  return `${count} ${count === 1 ? 'target' : 'targets'}`;
 }
 
 /** Runs selected actions through the existing single-target APIs. */
 export function TargetBulkActions({
   targets,
   workspaceId,
+  canDelete,
+  focusTargets,
   onComplete,
   onClear,
 }: {
-  targets: ScanTarget[];
+  targets: ActionTarget[];
   workspaceId: string;
+  canDelete: boolean;
+  focusTargets: () => void;
   onComplete: (updatedIds: string[]) => void;
   onClear: () => void;
 }) {
@@ -72,6 +83,8 @@ export function TargetBulkActions({
   const mutationFilter = { mutationKey: mutationScope };
   const busy = useIsMutating(mutationFilter) > 0;
   const [open, setOpen] = useState(false);
+  const deleteTrigger = useRef<HTMLButtonElement>(null);
+  const confirmed = useRef(false);
   const ids = targets.map(({ id }) => id);
   const ready = targets.filter(canRediscover).map(({ id }) => id);
   const mutation = useMutation({
@@ -102,10 +115,12 @@ export function TargetBulkActions({
             await targetsControllerUpdateTarget(id, {
               scanSchedule: action.scanSchedule,
             });
-          else await targetsControllerReScanTarget(id);
+          else if (action.kind === 'rediscover')
+            await targetsControllerReScanTarget(id);
+          else await targetsControllerDeleteTarget(id);
           updated.push(id);
         } catch (error) {
-          if (action.kind === 'rediscover' && scanOutcomeUnknown(error))
+          if (action.kind !== 'schedule' && writeOutcomeUnknown(error))
             unconfirmed.push(id);
           else failed++;
         }
@@ -126,13 +141,13 @@ export function TargetBulkActions({
       });
       onComplete([...updated, ...unconfirmed]);
       if (!current) return;
-      const noun = updated.length === 1 ? 'target' : 'targets';
-      const verb =
-        action.kind === 'schedule'
-          ? 'Schedule set on'
-          : 'Re-discovery requested for';
+      const verb = {
+        schedule: 'Schedule set on',
+        rediscover: 'Re-discovery requested for',
+        delete: 'Deleted',
+      }[action.kind];
       const message =
-        `${verb} ${updated.length} ${noun}.` +
+        `${verb} ${targetCount(updated.length)}.` +
         (failed ? ` ${failed} failed.` : '') +
         (unconfirmed.length ? ` ${unconfirmed.length} unconfirmed.` : '') +
         (skipped ? ` ${skipped} skipped.` : '');
@@ -145,6 +160,7 @@ export function TargetBulkActions({
   function run(action: BulkAction) {
     if (
       action.ids.length > 0 &&
+      (action.kind !== 'delete' || canDelete) &&
       workspaceId === getGlobalWorkspaceId() &&
       !queryClient.isMutating(mutationFilter)
     )
@@ -154,7 +170,7 @@ export function TargetBulkActions({
   return (
     <div className="flex flex-wrap items-center gap-2 normal-case">
       <span className="text-sm font-medium">
-        {ids.length} {ids.length === 1 ? 'target' : 'targets'} selected
+        {targetCount(ids.length)} selected
       </span>
       <Button
         size="sm"
@@ -182,7 +198,7 @@ export function TargetBulkActions({
             className="aria-disabled:opacity-50"
           >
             <CalendarClock className="size-4" />
-            {busy ? 'Scheduling…' : 'Schedule'}
+            {busy ? 'Working…' : 'Schedule'}
             <ChevronDown className="size-3" />
           </Button>
         </DropdownMenuTrigger>
@@ -200,6 +216,43 @@ export function TargetBulkActions({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      {canDelete && (
+        <ConfirmDialog
+          key={[...ids].sort().join(',')}
+          title={`Delete ${targetCount(ids.length)}`}
+          description="Permanently delete these targets and their associated assets and findings."
+          typeToConfirm="delete"
+          onConfirm={() => {
+            confirmed.current = true;
+            run({ kind: 'delete', ids });
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const trigger = deleteTrigger.current;
+            if (!confirmed.current && trigger?.isConnected) trigger.focus();
+            else focusTargets();
+            confirmed.current = false;
+          }}
+          trigger={
+            <Button
+              ref={deleteTrigger}
+              size="sm"
+              variant="outline"
+              className="text-destructive"
+              disabled={busy}
+            >
+              <Trash2 className="size-4" />
+              Delete
+            </Button>
+          }
+        >
+          <ul className="max-h-40 space-y-1 overflow-y-auto break-all text-sm">
+            {targets.map(({ id, value }) => (
+              <li key={id}>{value}</li>
+            ))}
+          </ul>
+        </ConfirmDialog>
+      )}
       <Button
         size="sm"
         variant="ghost"
