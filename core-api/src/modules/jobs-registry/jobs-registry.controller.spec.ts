@@ -11,6 +11,7 @@ import { WorkersService } from '../workers/workers.service';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { JobsRegistryController } from './jobs-registry.controller';
 import { JobsRegistryService } from './jobs-registry.service';
+import { WorkflowRunnerService } from './workflow-runner.service';
 
 describe('JobsRegistryController', () => {
   // ── Existing decorator tests ────────────────────────────────────────
@@ -50,6 +51,10 @@ describe('JobsRegistryController', () => {
       expect(required('cancelJobHistory')).toEqual(['job.write']);
     });
 
+    it('requires job.write on retryJobHistory', () => {
+      expect(required('retryJobHistory')).toEqual(['job.write']);
+    });
+
     it('requires job.delete on deleteJob', () => {
       expect(required('deleteJob')).toEqual(['job.delete']);
     });
@@ -87,6 +92,7 @@ describe('JobsRegistryController', () => {
       const module: TestingModule = await Test.createTestingModule({
         controllers: [JobsRegistryController],
         providers: [
+          { provide: WorkflowRunnerService, useValue: {} },
           { provide: JobsRegistryService, useValue: mockJobsRegistryService },
           { provide: ConnectorRegistryService, useValue: mockConnectorRegistry },
           { provide: ToolConfigProfilesService, useValue: mockToolConfigProfilesService },
@@ -292,6 +298,7 @@ describe('JobsRegistryController', () => {
       const module: TestingModule = await Test.createTestingModule({
         controllers: [JobsRegistryController],
         providers: [
+          { provide: WorkflowRunnerService, useValue: {} },
           { provide: JobsRegistryService, useValue: mockJobsRegistryService },
           {
             provide: ConnectorRegistryService,
@@ -405,6 +412,7 @@ describe('JobsRegistryController', () => {
       const module: TestingModule = await Test.createTestingModule({
         controllers: [JobsRegistryController],
         providers: [
+          { provide: WorkflowRunnerService, useValue: {} },
           { provide: JobsRegistryService, useValue: mockJobsRegistryService },
           {
             provide: ConnectorRegistryService,
