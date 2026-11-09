@@ -7,6 +7,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  RouterContextProvider,
   RouterProvider,
 } from '@tanstack/react-router';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -857,6 +858,9 @@ describe('Target discovery changes', () => {
         expect(screen.getByText('Finding discovered')).toBeVisible();
       } else {
         expect(finding).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: 'Findings' }),
+        ).not.toBeInTheDocument();
       }
     },
   );
@@ -871,14 +875,20 @@ describe('Target discovery changes', () => {
     );
     server.use(http.get(changesPath, getChanges));
     const client = new QueryClient();
+    const router = createRouter({
+      routeTree: createRootRoute(),
+      history: createMemoryHistory(),
+    });
     const onAccessDenied = vi.fn();
     const view = (allowed: boolean) => (
       <QueryClientProvider client={client}>
-        <TargetChangesPanel
-          targetId={id}
-          canReadFindings={allowed}
-          onAccessDenied={onAccessDenied}
-        />
+        <RouterContextProvider router={router}>
+          <TargetChangesPanel
+            targetId={id}
+            canReadFindings={allowed}
+            onAccessDenied={onAccessDenied}
+          />
+        </RouterContextProvider>
       </QueryClientProvider>
     );
     const { rerender } = render(view(true));
@@ -888,6 +898,55 @@ describe('Target discovery changes', () => {
     expect(await screen.findByText(asset.label)).toBeVisible();
     expect(screen.queryByText('Finding')).not.toBeInTheDocument();
     expect(getChanges).toHaveBeenCalledTimes(2);
+  });
+
+  it('filters finding discoveries, resets the page, and links each finding', async () => {
+    const finding = {
+      ...service,
+      id: 'finding-1',
+      kind: 'vulnerability',
+      label: 'Historic finding',
+      severity: 'high',
+    };
+    const legacy = { ...finding, id: 'finding-2', label: 'Legacy finding' };
+    server.use(
+      http.get(changesPath, ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        const page = Number(params.get('page'));
+        const filtered = params.get('kind') === 'vulnerability';
+        return HttpResponse.json({
+          page,
+          hasNextPage: page === 1 && !filtered,
+          data: filtered
+            ? [finding, { ...legacy, severity: undefined }]
+            : [asset],
+        });
+      }),
+    );
+    const { user } = show('activity');
+    const feed = within(
+      await screen.findByRole('region', { name: 'Target changes' }),
+    );
+    expect(await feed.findByText(asset.label)).toBeVisible();
+    await user.click(feed.getByRole('button', { name: 'Next page' }));
+    expect(await feed.findByText('Page 2')).toBeVisible();
+    expect(await feed.findByText(asset.label)).toBeVisible();
+
+    const filter = feed.getByRole('button', { name: 'Findings' });
+    await user.click(filter);
+    expect(filter).toHaveAttribute('aria-pressed', 'true');
+    expect(await feed.findByText('Page 1')).toBeVisible();
+    expect(
+      await feed.findByRole('link', {
+        name: `${finding.label} on ${asset.label}`,
+        exact: true,
+      }),
+    ).toHaveAttribute('href', '/vulnerabilities/finding-1');
+    expect(
+      feed.getByRole('link', { name: `${legacy.label} on ${asset.label}` }),
+    ).toHaveAttribute('href', '/vulnerabilities/finding-2');
+    expect(feed.getByText('high')).toBeVisible();
+    expect(feed.queryByText(asset.label)).not.toBeInTheDocument();
   });
 
   it('lists and filters discoveries without job read access and resets pagination on filter change', async () => {
