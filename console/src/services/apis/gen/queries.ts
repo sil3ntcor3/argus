@@ -2061,6 +2061,8 @@ export type JobHistoryDetailResponseDto = {
    * @nullable
    */
   failureReason: string | null;
+  /** Whether the caller can attempt a retry from the recorded scope. The retry operation validates current availability. */
+  retryAvailable: boolean;
 };
 
 export type JobHistoryWorkflowResponseDto = {

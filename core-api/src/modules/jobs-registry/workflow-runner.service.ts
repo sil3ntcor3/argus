@@ -8,7 +8,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { isUUID } from 'class-validator';
 import { DataSource, In, type EntityManager, type QueryRunner } from 'typeorm';
 import { AssetGroupAsset } from '../asset-group/entities/asset-groups-assets.entity';
 import { lockProjectScope } from '../projects/project-scope-sync';
@@ -35,6 +34,7 @@ import type { RetryRunResponseDto } from './dto/retry-run-response.dto';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
 import { JobsRegistryService } from './jobs-registry.service';
+import { canRetryRunScope, getRecordedRunRetryScope } from './run-retry-scope';
 
 export interface StartRunInput {
   workflow: Workflow;
@@ -172,56 +172,37 @@ export class WorkflowRunnerService {
       );
     }
 
-    const { projectId, projectWorkflowId, scope } = history;
-    const projectRun = Boolean(projectId || projectWorkflowId);
-    const recordedIds = projectRun ? scope?.assetIds : scope?.targetIds;
-    if (
-      !scope ||
-      Object.keys(scope).length !== 1 ||
-      !Array.isArray(recordedIds) ||
-      recordedIds.length === 0 ||
-      !recordedIds.every((id) => isUUID(id))
-    ) {
+    const scope = getRecordedRunRetryScope(history);
+    if (!scope) {
       throw new BadRequestException('This run has no eligible recorded scope');
     }
-    const ids = [...new Set(recordedIds.map((id) => id.toLowerCase()))];
+    if (!canRetryRunScope(scope, permissions)) {
+      throw new ForbiddenException('You do not have permission to retry this run');
+    }
     const input: StartRunInput = {
       workflow: history.workflow,
       workspaceId,
       jobName: `Retry - ${history.jobHistoryName ?? history.workflow.name}`,
       jobRunType: JobRunType.MANUAL,
+      ...scope,
     };
     let validateScope: ((manager: EntityManager) => Promise<void>) | undefined;
-    if (projectRun) {
-      if (!projectId || !projectWorkflowId) {
-        throw new BadRequestException(
-          'This run has incomplete project provenance',
-        );
-      }
-      if (
-        !permissions.includes('*') &&
-        !permissions.includes('workflow.write')
-      ) {
-        throw new ForbiddenException('Project retries require workflow.write');
-      }
-      const projectScope = { projectId, projectWorkflowId, assetIds: ids };
-      Object.assign(input, projectScope);
+    if ('assetIds' in scope) {
       validateScope = (manager) =>
         this.validateProjectRetryScope(
           manager,
           workspaceId,
           history.workflow.id,
-          projectScope,
+          scope,
         );
     } else {
       const targets = await this.dataSource.getRepository(Target).countBy({
-        id: In(ids),
+        id: In(scope.targetIds),
         workspaceId,
       });
-      if (targets !== ids.length) {
+      if (targets !== scope.targetIds.length) {
         throw new BadRequestException('One or more recorded targets are unavailable');
       }
-      input.targetIds = ids;
     }
 
     const { jobHistory } = await this.startRun(input, validateScope);
