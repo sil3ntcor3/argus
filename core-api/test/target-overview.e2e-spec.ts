@@ -20,14 +20,17 @@ describe('Target overview API (e2e)', () => {
   const criticalInsight = { kind: 'critical_open', level: 'critical', count: 1 };
   const discoveryInsights = [newAssets, missingSchedule];
   const noOpenFindings = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  const targetTopFindings: unknown[] = [];
+  const foreignTopFindings: unknown[] = [];
   const redactedFindings = {
     openVulnerabilities: null,
     newVulnerabilities: null,
+    topVulnerabilities: null,
     insights: discoveryInsights,
   };
   const findingCounts = {
     openVulnerabilities: { ...noOpenFindings, critical: 1, high: 2 },
-    newVulnerabilities: 2,
+    newVulnerabilities: 3,
   };
   const metrics = {
     totalAssets: 2,
@@ -39,6 +42,7 @@ describe('Target overview API (e2e)', () => {
     lastRun: null,
     activeRuns: [],
     ...findingCounts,
+    topVulnerabilities: targetTopFindings,
     insights: [criticalInsight, ...discoveryInsights],
     exposure: {
       ports: [
@@ -122,8 +126,9 @@ describe('Target overview API (e2e)', () => {
     const foreign = await addAsset(foreignTarget, 1, true);
     for (const [asset, severity, age, archived, dismissed] of [
       [recent, 'critical', 6, false, false],
-      [older, 'high', 8, false, false],
       [disabled, 'high', 1, false, false],
+      [older, 'high', 8, false, false],
+      [older, 'unknown', 1, false, false],
       [recent, 'critical', 1, true, false],
       [recent, 'critical', 1, false, true],
       [foreign, 'critical', 1, false, false],
@@ -139,6 +144,17 @@ describe('Target overview API (e2e)', () => {
            VALUES ($1, $2, $3)`,
           [id, owner.user.userId, 'Fixture dismissal'],
         );
+      }
+      if (!archived && !dismissed && severity !== 'unknown') {
+        const [finding] = await app.dataSource.query<{ createdAt: Date }[]>(
+          `SELECT v.id, v.name, v.severity, a.value AS "assetValue", v."cveId", v."createdAt"
+           FROM vulnerabilities v JOIN assets a ON a.id = v."assetId" WHERE v.id = $1`,
+          [id],
+        );
+        (asset === foreign ? foreignTopFindings : targetTopFindings).push({
+          ...finding,
+          createdAt: finding.createdAt.toISOString(),
+        });
       }
     }
     const https = await addService(recent, 443, 6);
@@ -190,6 +206,7 @@ describe('Target overview API (e2e)', () => {
       activeRuns: [],
       openVulnerabilities: noOpenFindings,
       newVulnerabilities: 0,
+      topVulnerabilities: [],
       exposure: emptyExposure,
       insights: [missingSchedule],
     });
@@ -204,6 +221,7 @@ describe('Target overview API (e2e)', () => {
       activeRuns: [],
       openVulnerabilities: { ...noOpenFindings, critical: 1 },
       newVulnerabilities: 1,
+      topVulnerabilities: foreignTopFindings,
       insights: [criticalInsight, ...discoveryInsights],
       exposure: {
         ports: [{ name: '22', count: 1 }],
@@ -211,6 +229,59 @@ describe('Target overview API (e2e)', () => {
         statusCodes: [{ name: '503', count: 1 }],
       },
     });
+  });
+
+  it('ranks at most five open findings by severity, discovery time and ID', async () => {
+    const id = await makeTarget(owner.workspace.id);
+    const asset = await addAsset(id, 1, true);
+    const [{ value: assetValue }] = await app.dataSource.query<
+      { value: string }[]
+    >('SELECT value FROM assets WHERE id = $1', [asset]);
+    const prefix = randomUUID().slice(0, -1);
+    const findings = (
+      [
+        [3, 'critical', '2026-01-02T04:05:06.789Z', ['CVE-2026-12345']],
+        [2, 'critical', '2026-01-02T04:05:06.789Z', null],
+        [1, 'critical', '2026-01-01T04:05:06.789Z', null],
+        [4, 'high', '2026-01-03T04:05:06.789Z', null],
+        [5, 'medium', '2026-01-03T04:05:06.789Z', null],
+        [6, 'low', '2026-01-03T04:05:06.789Z', null],
+      ] as const
+    ).map(([suffix, severity, createdAt, cveId]) => ({
+      id: `${prefix}${suffix}`,
+      name: `Finding ${suffix}`,
+      severity,
+      createdAt,
+      cveId,
+      assetValue,
+    }));
+    for (const finding of [...findings].reverse()) {
+      await app.dataSource.query(
+        `INSERT INTO vulnerabilities (id, name, severity, "createdAt", "cveId", "assetId")
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          finding.id,
+          finding.name,
+          finding.severity,
+          new Date(finding.createdAt),
+          finding.cveId ? [null, ...finding.cveId] : null,
+          asset,
+        ],
+      );
+    }
+    const result = await overview(id, owner.headers).expect(200);
+    expect(result.body).toMatchObject({
+      openVulnerabilities: {
+        ...noOpenFindings,
+        critical: 3,
+        high: 1,
+        medium: 1,
+        low: 1,
+      },
+    });
+    expect(
+      (result.body as { topVulnerabilities: unknown }).topVulnerabilities,
+    ).toEqual(findings.slice(0, 5));
   });
 
   it('returns the saved BullMQ firing time and handles missing or disabled schedules', async () => {
