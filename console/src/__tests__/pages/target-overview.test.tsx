@@ -137,6 +137,36 @@ describe('Target Overview runs', () => {
     },
   ];
 
+  it('shows the current target tool in Overview and Activity', async () => {
+    const running = { ...activeRuns[1], jobsRunning: 1, currentTool: 'naabu' };
+    const pending = { ...activeRuns[0], currentTool: null };
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({
+          ...metrics,
+          lastRun: running,
+          activeRuns: [pending, running],
+        }),
+      ),
+      http.get(`/api${path}/runs`, () =>
+        HttpResponse.json({
+          data: [running, pending, run],
+          page: 1,
+          hasNextPage: false,
+        }),
+      ),
+    );
+    const { user } = show();
+    for (const name of ['Latest run', 'Active runs']) {
+      const panel = within(await screen.findByRole('region', { name }));
+      expect(panel.getByText('Running tool naabu')).toBeVisible();
+      expect(panel.getAllByText(/^Running tool/)).toHaveLength(1);
+    }
+    await user.click(screen.getByRole('link', { name: 'Activity' }));
+    expect(await screen.findByText('Running tool naabu')).toBeVisible();
+    expect(screen.getAllByText(/^Running tool/)).toHaveLength(1);
+  });
+
   it('shows active runs in API order and links to each run', async () => {
     server.use(
       http.get(`/api${path}/overview`, () =>

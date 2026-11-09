@@ -33,6 +33,11 @@ export function TargetRunRow({ run }: { run: TargetRunDto }) {
         {run.jobsDone} done · {run.jobsFailed} failed · {run.jobsRunning}{' '}
         running · {run.jobsTotal} total
       </p>
+      {run.currentTool && (
+        <p className="text-xs break-words text-muted-foreground">
+          Running tool {run.currentTool}
+        </p>
+      )}
     </li>
   );
 }
