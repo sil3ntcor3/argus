@@ -32,6 +32,16 @@ const ACTIVE_RUN_LIMIT = 5;
 const TOP_FINDING_LIMIT = 5;
 const TOP_FINDING_ORDER_SQL =
   'f.severity_rank DESC, f."createdAt" DESC, f.id DESC';
+const FINDING_WEEK_COUNT = 8;
+const WEEKLY_COUNT_COLUMNS_SQL = Object.values(Severity)
+  .map(
+    (severity) =>
+      `COUNT(*) FILTER (WHERE v.severity = '${severity}')::int AS ${severity}`,
+  )
+  .join(', ');
+const WEEKLY_OUTPUT_FIELDS_SQL = Object.values(Severity)
+  .map((severity) => `'${severity}', COALESCE(w.${severity}, 0)`)
+  .join(', ');
 const RECENT_DISCOVERY_DAYS = 7;
 const TLS_EXPIRY_DAYS = 30;
 const SCHEDULE_LOOKUP_TIMEOUT_MS = 500;
@@ -42,7 +52,7 @@ type ScheduleLookup = ReturnType<ScheduleReader['getScheduler']>;
 
 type FindingCounts = Pick<
   TargetOverviewDto,
-  'openVulnerabilities' | 'newVulnerabilities'
+  'openVulnerabilities' | 'newVulnerabilities' | 'weekly'
 >;
 
 type TopFindingJson = Omit<TargetTopVulnerabilityDto, 'createdAt'> & {
@@ -147,6 +157,17 @@ export class TargetOverviewService {
     workspaceId: string,
     access: { jobs: boolean; findings: boolean },
   ): Promise<TargetOverviewDto> {
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setUTCHours(0, 0, 0, 0);
+    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+    // Bind Date values so the driver encodes the UTC boundaries using the same
+    // local wall clock it uses for the legacy timestamp-without-zone column.
+    const weekStarts = Array.from({ length: FINDING_WEEK_COUNT }, (_, index) => {
+      const week = new Date(monday);
+      week.setUTCDate(monday.getUTCDate() - (FINDING_WEEK_COUNT - 1 - index) * 7);
+      return week;
+    });
     // Scope the services once and count them independently from the assets.
     // HTTP observations follow the response's owning service.
     const [overview] = await this.dataSource.query<TargetOverviewRow[]>(
@@ -214,6 +235,13 @@ export class TargetOverviewService {
                          END AS severity_rank
                   FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
                   WHERE a."targetId" = t.id AND ${openVulnerabilityCondition('v')}
+                ), week_counts AS (
+                  SELECT width_bucket(v."createdAt", $5::timestamp[]) AS week_number,
+                         ${WEEKLY_COUNT_COLUMNS_SQL}
+                  FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
+                  WHERE a."targetId" = t.id
+                    AND v."createdAt" BETWEEN ($5::timestamp[])[1] AND $6::timestamp
+                  GROUP BY 1
                 )
                 SELECT jsonb_build_object(
                   'openVulnerabilities', jsonb_build_object(
@@ -225,6 +253,12 @@ export class TargetOverviewService {
                   ),
                   'newVulnerabilities', COUNT(*) FILTER (WHERE "createdAt"
                     BETWEEN LOCALTIMESTAMP - INTERVAL '${RECENT_DISCOVERY_DAYS} days' AND LOCALTIMESTAMP),
+                  'weekly', (
+                    SELECT jsonb_agg(jsonb_build_object('week', s.week,
+                                      ${WEEKLY_OUTPUT_FIELDS_SQL}) ORDER BY s.week_number)
+                    FROM unnest($7::text[]) WITH ORDINALITY s(week, week_number)
+                    LEFT JOIN week_counts w USING (week_number)
+                  ),
                   'topVulnerabilities', COALESCE((
                     SELECT jsonb_agg(jsonb_build_object(
                       'id', f.id, 'name', v.name, 'severity', f.severity, 'assetValue', a.value,
@@ -266,7 +300,15 @@ export class TargetOverviewService {
                   COUNT(DISTINCT s.port)::int AS "openPorts"
              FROM target_services s
          ) service_counts`,
-      [id, workspaceId, access.jobs, access.findings],
+      [
+        id,
+        workspaceId,
+        access.jobs,
+        access.findings,
+        weekStarts,
+        now,
+        weekStarts.map((week) => week.toISOString().slice(0, 10)),
+      ],
     );
     if (!overview) throw new NotFoundException('Target not found');
 
@@ -333,6 +375,7 @@ export class TargetOverviewService {
       activeRuns: runs?.activeRuns.map(toTargetRunDto) ?? null,
       openVulnerabilities: findings?.openVulnerabilities ?? null,
       newVulnerabilities: findings?.newVulnerabilities ?? null,
+      weekly: findings?.weekly ?? null,
       topVulnerabilities:
         findings?.topVulnerabilities.map((finding) => ({
           ...finding,

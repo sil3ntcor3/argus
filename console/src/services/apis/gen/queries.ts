@@ -649,6 +649,21 @@ export type TargetTopVulnerabilityDto = {
   createdAt: string;
 };
 
+export type ProjectOverviewWeekDto = {
+  /** @minimum 0 */
+  critical: number;
+  /** @minimum 0 */
+  high: number;
+  /** @minimum 0 */
+  medium: number;
+  /** @minimum 0 */
+  low: number;
+  /** @minimum 0 */
+  info: number;
+  /** Monday in UTC */
+  week: string;
+};
+
 export type TargetExposureCountDto = {
   name: string;
   /**
@@ -741,6 +756,13 @@ export type TargetOverviewDto = {
    * @nullable
    */
   topVulnerabilities: TargetTopVulnerabilityDto[] | null;
+  /**
+   * Eight UTC Monday buckets of finding discoveries, oldest first, or null without vulnerability read access
+   * @minItems 8
+   * @maxItems 8
+   * @nullable
+   */
+  weekly: ProjectOverviewWeekDto[] | null;
   /** Most common service observations */
   exposure: TargetExposureDto;
   /** Discovery and schedule insights for the target */
@@ -5212,21 +5234,6 @@ export type ProjectOverviewRunRefDto = {
   workflowName: string;
   jobRunType: ProjectOverviewRunRefDtoJobRunType;
   status: ProjectOverviewRunRefDtoStatus;
-};
-
-export type ProjectOverviewWeekDto = {
-  /** @minimum 0 */
-  critical: number;
-  /** @minimum 0 */
-  high: number;
-  /** @minimum 0 */
-  medium: number;
-  /** @minimum 0 */
-  low: number;
-  /** @minimum 0 */
-  info: number;
-  /** Monday in UTC */
-  week: string;
 };
 
 export type ProjectOverviewActivityDtoKind =

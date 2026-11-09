@@ -50,6 +50,7 @@ describe('TargetOverviewService', () => {
         openVulnerabilities: null,
         newVulnerabilities: null,
         topVulnerabilities: null,
+        weekly: null,
         nextScanAt: null,
         lastRun: null,
         activeRuns: null,
@@ -59,7 +60,15 @@ describe('TargetOverviewService', () => {
     expect(query).toHaveBeenCalledTimes(1);
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('WHERE t.id = $1 AND t."workspaceId" = $2'),
-      [id, workspaceId, false, false],
+      [
+        id,
+        workspaceId,
+        false,
+        false,
+        expect.any(Array),
+        expect.any(Date),
+        expect.any(Array),
+      ],
     );
     expect(getJobScheduler).not.toHaveBeenCalled();
   });
