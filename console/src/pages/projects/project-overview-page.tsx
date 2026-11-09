@@ -1,4 +1,5 @@
 import AccessDenied from '@/components/common/access-denied';
+import { FindingTrends } from '@/components/common/finding-trends';
 import Page from '@/components/common/page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,6 @@ import {
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useId } from 'react';
-import { ProjectFindingTrends } from './project-finding-trends';
 import { ProjectOverviewActivity } from './project-overview-activity';
 import { ProjectOverviewFindings } from './project-overview-findings';
 import { ProjectOverviewRuns } from './project-overview-runs';
@@ -251,7 +251,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
             count={overview.data.workflows}
           />
         </div>
-        <ProjectFindingTrends weeks={overview.data.weekly} />
+        <FindingTrends weeks={overview.data.weekly} />
         <ProjectOverviewRuns
           lastRun={overview.data.lastRun}
           discoveryRuns={overview.data.newVulnerabilityRuns}

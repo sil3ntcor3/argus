@@ -1,4 +1,5 @@
 import type { ProjectOverviewWeekDto } from '@/services/apis/gen/queries';
+import { useId } from 'react';
 
 const severities = [
   { key: 'critical', label: 'Critical', color: 'bg-red-500' },
@@ -19,11 +20,8 @@ const longDate = new Intl.DateTimeFormat(undefined, {
 const countFormat = new Intl.NumberFormat();
 
 /** Shows the eight UTC week buckets and exposes exact counts as a table. */
-export function ProjectFindingTrends({
-  weeks,
-}: {
-  weeks: ProjectOverviewWeekDto[];
-}) {
+export function FindingTrends({ weeks }: { weeks: ProjectOverviewWeekDto[] }) {
+  const headingId = useId();
   const totals = weeks.map((week) =>
     severities.reduce((sum, { key }) => sum + week[key], 0),
   );
@@ -31,23 +29,21 @@ export function ProjectFindingTrends({
 
   return (
     <section
-      aria-labelledby="project-finding-trends-heading"
+      aria-labelledby={headingId}
       className="min-w-0 space-y-4 rounded-xl border bg-card p-4 text-card-foreground"
     >
       <div>
-        <h2
-          id="project-finding-trends-heading"
-          className="text-base font-semibold"
-        >
+        <h2 id={headingId} className="text-base font-semibold">
           New findings by week
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Eight weeks, starting on Monday in UTC.
+          Eight weeks starting Monday in UTC. Counts cover Critical, High,
+          Medium, Low, and Info findings.
         </p>
       </div>
       {max === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No new findings in these eight weeks.
+          No findings of these severities in the last eight weeks.
         </p>
       ) : (
         <div aria-hidden="true" className="space-y-3">
@@ -116,7 +112,7 @@ export function ProjectFindingTrends({
                     </th>
                   ))}
                   <th scope="col" className="py-2 pl-1">
-                    Total
+                    Total shown
                   </th>
                 </tr>
               </thead>
