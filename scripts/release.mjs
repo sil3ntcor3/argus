@@ -52,6 +52,11 @@ function currentTags() {
   return (git(['tag', '--list'], { allowFail: true }) || '').split('\n').filter(Boolean)
 }
 
+function remoteDefaultBranch() {
+  const output = git(['ls-remote', '--symref', 'origin', 'HEAD'])
+  return /^ref: refs\/heads\/(.+)\tHEAD$/m.exec(output)?.[1] || null
+}
+
 // --- output -----------------------------------------------------------------
 
 const problems = []
@@ -82,13 +87,15 @@ function detail(text) {
 function usage() {
   console.log(`
 ${bold('Usage')}  task release -- v0.9.0 [options]
-       task release VERSION=v0.9.0 [options]
+       task release version=v0.9.0 [options]  (VERSION= works too)
 
   The \`--\` is required by go-task: it treats a bare \`task release v0.9.0\` as a
   request for a task literally named \`v0.9.0\`. Both the \`--\` form and the
-  \`VERSION=\` form work; the latter is the one to use for a message with spaces.
+  \`version=\` form work; the latter is the one to use for a message with spaces.
 
   v0.9.0               Release version. \`v\` is added when missing: 0.9.0 -> v0.9.0
+  patch|minor|major    Bump the newest semver tag fetched from origin
+                       (increments its numeric version; name a version to promote a prerelease)
   --dry-run            Run every check, print the commands, push nothing
   --skip-checks        Do not run \`task lint\` / \`task test\` first
   --branch NAME        Branch the release must be cut from (default: remote HEAD)
@@ -143,6 +150,19 @@ function compareVersions(a, b) {
     if (a[key] !== b[key]) return a[key] < b[key] ? -1 : 1
   }
   return comparePrerelease(a.pre, b.pre)
+}
+
+function bumpVersion(from, kind) {
+  const { major, minor, patch } = parseVersion(from)
+  if (kind === 'major') return `v${major + 1}.0.0`
+  if (kind === 'minor') return `v${major}.${minor + 1}.0`
+  return `v${major}.${minor}.${patch + 1}`
+}
+
+function newestSemver(tags) {
+  return tags.filter((t) => parseVersion(t)).sort((a, b) =>
+    compareVersions(parseVersion(b), parseVersion(a)),
+  )[0] || null
 }
 
 // --- release notes ----------------------------------------------------------
@@ -307,6 +327,7 @@ if (notesFile === null && env('RELEASE_NOTES_FILE')) notesFile = env('RELEASE_NO
 if (truthy('RELEASE_DRY_RUN')) flags.add('--dry-run')
 if (truthy('RELEASE_SKIP_CHECKS')) flags.add('--skip-checks')
 if (truthy('RELEASE_ALL')) flags.add('--all')
+if (env('RELEASE_VERSION')) positional.unshift(env('RELEASE_VERSION'))
 for (const word of envWords('RELEASE_ARGS')) {
   if (word.startsWith('--')) flags.add(word)
   else positional.push(word)
@@ -319,9 +340,9 @@ const includeBots = flags.has('--all')
 
 // --- notes-only -------------------------------------------------------------
 // The path CI takes: no pre-flight, nothing is written to git, just the markdown
-// that becomes the release body. Skipped entirely when a version was supplied,
-// so `task release -- v0.9.0 --notes-only` is not silently a no-op.
-if (notesOnly && positional.length === 0) {
+// that becomes the release body. Never fall through into release creation.
+if (notesOnly) {
+  if (positional.length) fail('--notes-only cannot be combined with a release version; use --to REF')
   const to = resolveTo(toRef)
   const from = fromRef || resolveFrom(to)
   if (from && !revParse(from)) fail("--from '" + from + "' does not resolve to a commit")
@@ -344,13 +365,13 @@ if (positional.length === 0) {
 if (positional.length > 1) fail(`expected one VERSION, got: ${positional.join(', ')}`)
 
 const requested = positional[0]
-const tag = requested.startsWith('v') ? requested : 'v' + requested
-if (tag !== requested) {
+const bump = ['patch', 'minor', 'major'].includes(requested)
+let tag = bump ? null : (requested.startsWith('v') ? requested : 'v' + requested)
+if (tag && tag !== requested) {
   console.log(`${dim(`normalising ${requested} -> ${tag}`)}`)
 }
 
-const target = parseVersion(tag)
-if (!target) {
+if (tag && !parseVersion(tag)) {
   fail(`'${tag}' is not a version. Expected MAJOR.MINOR.PATCH, optionally with a prerelease suffix: task release -- v0.9.0, task release -- v0.9.0-rc.1`)
 }
 
@@ -360,8 +381,6 @@ heading('Pre-flight')
 
 if (!existsSync(resolve(ROOT, '.git'))) fail('not a git repository')
 if (!git(['remote', 'get-url', 'origin'], { allowFail: true })) fail('no `origin` remote configured')
-
-const branch = branchOverride || (git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], { allowFail: true }) || '').replace(/^origin\//, '') || 'main'
 
 // Fetch first: the latest-tag and upstream-HEAD answers are only trustworthy
 // against a fresh remote view, and a stale clone is how "tag already exists on
@@ -374,11 +393,15 @@ const branch = branchOverride || (git(['symbolic-ref', '--short', 'refs/remotes/
 // `--tags --prune` left the deleted tag in place and `--prune --prune-tags`
 // removed it. Anything dropped is announced rather than removed silently.
 const tagsBeforeFetch = currentTags()
-git(['fetch', 'origin', '--prune', '--prune-tags', '--quiet'], { allowFail: true })
-const prunedTags = tagsBeforeFetch.filter((t) => !currentTags().includes(t))
+git(['fetch', 'origin', '--prune', '--prune-tags', '--quiet'])
+const existingTags = new Set(currentTags())
+const prunedTags = tagsBeforeFetch.filter((t) => !existingTags.has(t))
 if (prunedTags.length > 0) {
   ok('dropped ' + prunedTags.length + ' stale local tag(s) no longer on origin: ' + prunedTags.join(', '))
 }
+
+const branch = branchOverride || remoteDefaultBranch()
+if (!branch) fail('origin did not advertise its default branch; use --branch NAME')
 
 const dirty = git(['status', '--porcelain'], { allowFail: true })
 if (dirty) {
@@ -398,12 +421,13 @@ if (currentBranch !== branch) {
 }
 
 const head = git(['rev-parse', 'HEAD'], { allowFail: true })
-const upstream = git(['rev-parse', `origin/${branch}`], { allowFail: true })
+const releaseBranchRef = `refs/heads/${branch}`
+const upstream = git(['ls-remote', '--refs', 'origin', releaseBranchRef]).split('\t')[0] || null
 if (upstream === null) {
   problems.push(`\`origin/${branch}\` does not exist — has it been pushed?`)
 } else if (head !== upstream) {
-  const ahead = +(git(['rev-list', '--count', `origin/${branch}..HEAD`], { allowFail: true }) || 0)
-  const behind = +(git(['rev-list', '--count', `HEAD..origin/${branch}`], { allowFail: true }) || 0)
+  const ahead = +(git(['rev-list', '--count', `${upstream}..HEAD`], { allowFail: true }) || 0)
+  const behind = +(git(['rev-list', '--count', `HEAD..${upstream}`], { allowFail: true }) || 0)
   problems.push(
     `HEAD diverges from \`origin/${branch}\`` + (ahead ? ` (${ahead} unpushed commit(s))` : '') + (behind ? ` (${behind} commit(s) behind)` : '')
   )
@@ -411,16 +435,22 @@ if (upstream === null) {
   ok(`HEAD matches \`origin/${branch}\``)
 }
 
-const existingTags = new Set(git(['tag', '--list'], { allowFail: true }).split('\n'))
+const newest = newestSemver([...existingTags])
+if (bump) {
+  if (!newest) fail('no semver tag on origin; specify the first release version explicitly')
+  tag = bumpVersion(newest, requested)
+  ok(`${requested} bump: ${newest} -> ${tag}`)
+}
+const target = parseVersion(tag)
 if (existingTags.has(tag)) problems.push(`tag \`${tag}\` already exists locally`)
-const remoteTag = git(['ls-remote', '--tags', 'origin', `refs/tags/${tag}`], { allowFail: true })
+const remoteTag = git(['ls-remote', '--tags', 'origin', `refs/tags/${tag}`])
 if (remoteTag) problems.push(`tag \`${tag}\` already exists on the remote`)
 
-const semverTags = [...existingTags].filter((t) => parseVersion(t)).sort((a, b) => compareVersions(parseVersion(b), parseVersion(a)))
-const newest = semverTags[0] || null
 // `--from` overrides which tag the notes start at, for a re-release of an
 // older range. Otherwise the range is "everything since the newest tag".
 const latest = fromRef || newest
+const latestTagRef = latest ? `refs/tags/${latest}` : null
+const latestTagOid = latestTagRef ? git(['rev-parse', '--verify', latestTagRef], { allowFail: true }) : null
 if (fromRef) {
   if (!existingTags.has(fromRef)) problems.push(`--from \`${fromRef}\` is not a tag in this clone`)
   else ok(`notes start at ${fromRef}`)
@@ -467,6 +497,36 @@ if (!skipChecks) {
 } else {
   heading('Checks')
   warn('skipped via --skip-checks — the release is unverified')
+}
+
+// Checks may take long enough for a new commit or release to reach origin.
+const currentOriginRefs = new Map(
+  git(['ls-remote', '--refs', 'origin', releaseBranchRef, 'refs/tags/*'])
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, ref] = line.split('\t')
+      return [ref, sha]
+    }),
+)
+if (
+  git(['rev-parse', 'HEAD']) !== head ||
+  git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch ||
+  currentOriginRefs.get(releaseBranchRef) !== head ||
+  (!branchOverride && remoteDefaultBranch() !== branch)
+) fail('release branch changed during checks; sync with origin and retry')
+const currentOriginTags = [...currentOriginRefs.keys()]
+  .filter((ref) => ref.startsWith('refs/tags/'))
+  .map((ref) => ref.slice('refs/tags/'.length))
+if (
+  currentOriginTags.includes(tag) ||
+  newestSemver(currentOriginTags) !== newest ||
+  (latestTagRef && (
+    currentOriginRefs.get(latestTagRef) !== latestTagOid ||
+    git(['rev-parse', '--verify', latestTagRef], { allowFail: true }) !== latestTagOid
+  ))
+) {
+  fail('release tags changed during checks; fetch and retry')
 }
 
 // --- the notes --------------------------------------------------------------
