@@ -532,6 +532,7 @@ export default function Runs() {
           steps={steps}
           tools={jobHistoryDetail.tools}
           activeJobsCount={activeJobsCount}
+          etaSeconds={runError ? null : jobHistoryDetail.etaSeconds}
         />
       )}
       {/* Workflow steps (DAG) — falls back to the tool list for runs created
