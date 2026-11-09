@@ -9,6 +9,7 @@ import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { Target } from './entities/target.entity';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { TargetsController } from './targets.controller';
+import { TargetOverviewService } from './target-overview.service';
 import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
 
@@ -22,7 +23,12 @@ import { TargetsService } from './targets.service';
     }),
   ],
   controllers: [TargetsController],
-  providers: [TargetsService, TargetSummaryService, TriggerWorkflowService],
+  providers: [
+    TargetsService,
+    TargetSummaryService,
+    TargetOverviewService,
+    TriggerWorkflowService,
+  ],
   exports: [TargetsService],
 })
 export class TargetsModule {}

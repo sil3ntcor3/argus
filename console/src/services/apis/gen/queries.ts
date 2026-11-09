@@ -592,6 +592,19 @@ export type GetManyTargetRepositoryDtoDto = {
   pageCount: number;
 };
 
+export type TargetOverviewDto = {
+  /** Enabled assets on the target */
+  totalAssets: number;
+  /** Enabled assets discovered in the last seven days */
+  newAssets: number;
+  /** Discovered services on the target */
+  totalServices: number;
+  /** Services discovered in the last seven days */
+  newServices: number;
+  /** Distinct ports among discovered services */
+  openPorts: number;
+};
+
 export type UpdateTargetDtoScanSchedule =
   (typeof UpdateTargetDtoScanSchedule)[keyof typeof UpdateTargetDtoScanSchedule];
 
@@ -12607,6 +12620,177 @@ export function useTargetsControllerGetTargetRepositories<
   const queryOptions = getTargetsControllerGetTargetRepositoriesQueryOptions(
     id,
     params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Returns workspace-scoped asset, service, and port counts for a target, including discoveries from the last seven days.
+ * @summary Get target overview
+ */
+export const targetsControllerGetTargetOverview = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<TargetOverviewDto>(
+    { url: `/api/targets/${id}/overview`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getTargetsControllerGetTargetOverviewQueryKey = (id: string) => {
+  return [`/api/targets/${id}/overview`] as const;
+};
+
+export const getTargetsControllerGetTargetOverviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getTargetsControllerGetTargetOverviewQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>
+  > = ({ signal }) =>
+    targetsControllerGetTargetOverview(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetOverviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>
+>;
+export type TargetsControllerGetTargetOverviewQueryError = unknown;
+
+export function useTargetsControllerGetTargetOverview<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetOverview<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetOverview<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target overview
+ */
+
+export function useTargetsControllerGetTargetOverview<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetOverviewQueryOptions(
+    id,
     options,
   );
 
