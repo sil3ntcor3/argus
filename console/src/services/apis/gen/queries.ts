@@ -2055,6 +2055,12 @@ export type JobHistoryDetailResponseDto = {
    * @nullable
    */
   etaSeconds: number | null;
+  /**
+   * Latest nonblank error message from a visible failed job in a closed run, or null when unavailable.
+   * @maxLength 500
+   * @nullable
+   */
+  failureReason: string | null;
 };
 
 export type JobHistoryWorkflowResponseDto = {

@@ -1256,6 +1256,11 @@ export class JobsRegistryService {
           )
         : null;
 
+    const failureReason =
+      jobHistory.isCompleted && activeJobsCount === 0
+        ? await this.findRunFailureReason(workspaceId, historyId)
+        : null;
+
     return {
       id: historyId,
       workflowName: workflow?.name,
@@ -1267,7 +1272,32 @@ export class JobsRegistryService {
       steps,
       activeJobsCount,
       etaSeconds,
+      failureReason,
     };
+  }
+
+  private async findRunFailureReason(
+    workspaceId: string,
+    historyId: string,
+  ): Promise<string | null> {
+    const latest = await this.jobErrorLogRepo
+      .createQueryBuilder('log')
+      .innerJoin('log.job', 'job')
+      .innerJoin('job.asset', 'asset')
+      .innerJoin('asset.target', 'target')
+      .where('job.jobHistoryId = :historyId', { historyId })
+      .andWhere('target.workspaceId = :workspaceId', { workspaceId })
+      .andWhere('job.status = :status', { status: JobStatus.FAILED })
+      .andWhere("log.logMessage ~ '[^[:space:]]'")
+      .select(
+        "LEFT(REGEXP_REPLACE(log.logMessage, '^[[:space:]]+|[[:space:]]+$', '', 'g'), 500)",
+        'message',
+      )
+      .orderBy('log.createdAt', 'DESC')
+      .addOrderBy('log.id', 'DESC')
+      .limit(1)
+      .getRawOne<{ message: string }>();
+    return latest?.message ?? null;
   }
 
   private async estimateRunEta(

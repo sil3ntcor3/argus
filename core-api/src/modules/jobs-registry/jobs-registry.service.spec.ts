@@ -898,6 +898,7 @@ describe('JobsRegistryService', () => {
         workflowName: 'test-workflow',
         jobHistoryName: 'test-job-history',
         etaSeconds: null,
+        failureReason: null,
         createdAt: mockJobHistory.createdAt,
         updatedAt: mockJobHistory.updatedAt,
         tools: [
@@ -992,6 +993,7 @@ describe('JobsRegistryService', () => {
         workflowName: 'test-workflow',
         jobHistoryName: 'test-job-history',
         etaSeconds: null,
+        failureReason: null,
         createdAt: mockJobHistory.createdAt,
         updatedAt: mockJobHistory.updatedAt,
         tools: [
@@ -1249,6 +1251,67 @@ describe('JobsRegistryService', () => {
           expect(history.limit).toHaveBeenCalledWith(20);
         } else {
           expect(history.getRawMany).not.toHaveBeenCalled();
+        }
+      },
+    );
+
+    it.each([
+      {
+        label: 'closed failed run',
+        closed: true,
+        active: 0,
+        message: 'Tool exited with code 1',
+      },
+      { label: 'no visible failed job log', closed: true, active: 0 },
+      { label: 'open run without active jobs', closed: false, active: 0 },
+      { label: 'closed run with active jobs', closed: true, active: 1 },
+    ])(
+      'returns the appropriate failure summary for $label',
+      async ({ closed, active, message }) => {
+        mockJobHistoryRepository.findOne.mockResolvedValue({
+          ...mockJobHistory,
+          isCompleted: closed,
+        });
+        mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
+          innerJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getExists: jest.fn().mockResolvedValue(true),
+        });
+        mockJobRepository.count.mockResolvedValueOnce(active);
+        mockJobRepository.getRawMany.mockResolvedValue([]);
+        mockToolsService.getInstalledTools.mockResolvedValue({ data: [] });
+        const logs = {
+          innerJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockReturnThis(),
+          getRawOne: jest
+            .fn()
+            .mockResolvedValue(message ? { message } : undefined),
+        };
+        mockJobErrorLogRepository.createQueryBuilder.mockReturnValue(logs);
+
+        const result = await service.getJobHistoryDetail(
+          mockWorkspaceId,
+          mockHistoryId,
+        );
+
+        expect(result.failureReason).toBe(message ?? null);
+        if (closed && active === 0) {
+          expect(logs.andWhere).toHaveBeenCalledWith(
+            'target.workspaceId = :workspaceId',
+            { workspaceId: mockWorkspaceId },
+          );
+          expect(logs.andWhere).toHaveBeenCalledWith('job.status = :status', {
+            status: JobStatus.FAILED,
+          });
+          expect(logs.limit).toHaveBeenCalledWith(1);
+        } else {
+          expect(logs.getRawOne).not.toHaveBeenCalled();
         }
       },
     );
