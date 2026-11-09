@@ -4,7 +4,7 @@ import { AssetService } from '@/modules/assets/entities/asset-services.entity';
 import { Asset } from '@/modules/assets/entities/assets.entity';
 import { ToolConfigProfile } from '@/modules/tools/entities/tool-config-profiles.entity';
 import { Tool } from '@/modules/tools/entities/tools.entity';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, Relation } from 'typeorm';
 import { JobErrorLog } from './job-error-log.entity';
 import { JobHistory } from './job-history.entity';
@@ -153,6 +153,11 @@ export class Job extends BaseEntity {
    */
   @Column({ type: 'jsonb', nullable: true, select: false })
   inputs?: Record<string, string> | null;
+
+  /** Private digest of the actual vulnerability scan dispatch, when recorded. */
+  @ApiHideProperty()
+  @Column({ type: 'varchar', nullable: true, select: false })
+  findingScanScopeKey?: string | null;
 
   /**
    * The asset service this job belongs to.
