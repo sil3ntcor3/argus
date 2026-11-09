@@ -175,6 +175,7 @@ export class TargetOverviewService {
     const [overview] = await this.dataSource.query<TargetOverviewRow[]>(
       `WITH owned AS (
          SELECT t.id, t."workspaceId", t."scanSchedule", t."jobId", $8::boolean AS "canReadProjects",
+                $4::boolean AS "canReadFindings",
                 ${staleTargetCondition('t')} AS stale,
                 EXTRACT(DAY FROM LOCALTIMESTAMP - t."lastDiscoveredAt")::int AS "daysSinceDiscovery"
          FROM targets t WHERE t.id = $1 AND t."workspaceId" = $2

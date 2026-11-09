@@ -112,6 +112,7 @@ describe('Target run history API (e2e)', () => {
       workflowName,
       projectId: null,
       projectName: null,
+      newVulnerabilities: 0,
     });
     await read(target, owner.headers, '?limit=1')
       .expect(200, {
@@ -213,6 +214,61 @@ describe('Target run history API (e2e)', () => {
       { id: linked, projectId, projectName },
       { id: foreignLinked, projectId: null, projectName: null },
       { id: unlinked, projectId: null, projectName: null },
+    ]);
+    const overview = await request(app.server)
+      .get(`/api/targets/${id}/overview`)
+      .set(owner.headers)
+      .expect(200);
+    expect(overview.body.lastRun).toEqual(activity.body.data[0]);
+    expect(overview.body.activeRuns).toEqual(activity.body.data);
+  });
+
+  it('counts original target findings per run, including archived and dismissed discoveries', async () => {
+    const workspace = owner.workspace.id;
+    const id = await makeTarget(workspace);
+    const sibling = await makeTarget(workspace);
+    const [workflow] = await app.dataSource.query<{ id: string }[]>(
+      'SELECT id FROM workflows WHERE "workspaceId" = $1 LIMIT 1',
+      [workspace],
+    );
+    const now = Date.now();
+    const run = await makeRun(workflow.id, [id], new Date(now).toISOString());
+    const otherRun = await makeRun(
+      workflow.id,
+      [id],
+      new Date(now - 60_000).toISOString(),
+    );
+    const assetSql = 'INSERT INTO assets (value, "targetId") VALUES ($1, $2)';
+    const asset = await insertId(assetSql, ['run-findings.example.test', id]);
+    const siblingAsset = await insertId(assetSql, [
+      'run-findings-sibling.example.test',
+      sibling,
+    ]);
+    for (const [history, assetId, archived, dismissed] of [
+      [run, asset, false, false],
+      [run, asset, true, false],
+      [run, asset, false, true],
+      [run, siblingAsset, false, false],
+      [otherRun, asset, false, false],
+      [null, asset, false, false],
+    ] as const) {
+      const finding = await insertId(
+        `INSERT INTO vulnerabilities (name, "assetId", "jobHistoryId", "isArchived")
+         VALUES ($1, $2, $3, $4)`,
+        [randomUUID(), assetId, history, archived],
+      );
+      if (dismissed) {
+        await app.dataSource.query(
+          `INSERT INTO vulnerability_dismissals ("vulnerabilityId", "userId", reason)
+           VALUES ($1, $2, $3)`,
+          [finding, owner.user.userId, 'Fixture dismissal'],
+        );
+      }
+    }
+    const activity = await read(id, owner.headers).expect(200);
+    expect(activity.body.data).toMatchObject([
+      { id: run, newVulnerabilities: 3 },
+      { id: otherRun, newVulnerabilities: 1 },
     ]);
     const overview = await request(app.server)
       .get(`/api/targets/${id}/overview`)
@@ -412,6 +468,11 @@ describe('Target run history API (e2e)', () => {
       'UPDATE job_histories SET "projectId" = $1 WHERE id = $2',
       [projectId, queued],
     );
+    await app.dataSource.query(
+      `INSERT INTO vulnerabilities (name, "assetId", "jobHistoryId")
+       SELECT $1, id, $2 FROM assets WHERE "targetId" = $3 ORDER BY id LIMIT 1`,
+      [randomUUID(), queued, target],
+    );
     for (const key of [
       null,
       'project.read',
@@ -430,6 +491,26 @@ describe('Target run history API (e2e)', () => {
         id: queued,
         projectId: key ? projectId : null,
         projectName: key ? projectName : null,
+        newVulnerabilities: null,
+      });
+      const overview = await request(app.server)
+        .get(`/api/targets/${target}/overview`)
+        .set(headers)
+        .expect(200);
+      expect(overview.body.lastRun).toEqual(activity.body.data[0]);
+    }
+
+    for (const key of ['vulnerability.read', 'vulnerability.write']) {
+      await app.dataSource.query(
+        'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
+        [['target.read', 'asset.read', 'job.read', key], role],
+      );
+      const activity = await read(target, headers).expect(200);
+      expect(activity.body.data[0]).toMatchObject({
+        id: queued,
+        projectId: null,
+        projectName: null,
+        newVulnerabilities: 1,
       });
       const overview = await request(app.server)
         .get(`/api/targets/${target}/overview`)

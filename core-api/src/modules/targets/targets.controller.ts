@@ -276,12 +276,10 @@ export class TargetsController {
     @Query() query: GetTargetRunsQueryDto,
     @Req() request: RequestWithMetadata,
   ) {
-    return this.targetRunHistoryService.list(
-      id,
-      workspaceId,
-      query,
-      canReadTargetData(request.permissions, 'project'),
-    );
+    return this.targetRunHistoryService.list(id, workspaceId, query, {
+      projects: canReadTargetData(request.permissions, 'project'),
+      findings: canReadTargetData(request.permissions, 'vulnerability'),
+    });
   }
 
   @Doc({
