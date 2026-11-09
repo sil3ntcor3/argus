@@ -113,6 +113,8 @@ export function DetailTarget() {
       : 'assets';
   const canReadAssets = !permission.error && permission.hasPermission('asset.read');
   const canReadJobs = !permission.error && permission.hasPermission('job.read');
+  const canReadFindings =
+    !permission.error && permission.hasPermission('vulnerability.read');
   const canReadActivity = canReadAssets || canReadJobs;
   const canChangeTarget = permission.hasPermission('target.write');
   const scanning = target.status !== JobStatus.completed;
@@ -202,6 +204,7 @@ export function DetailTarget() {
                 keyboardDestination.current = destination;
               }}
               onAccessDenied={permission.refetch}
+              canReadFindings={canReadFindings}
             />
           ) : (
             <AccessDenied />

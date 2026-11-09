@@ -7,6 +7,7 @@ import { useTargetsControllerGetTargetOverview } from '@/services/apis/gen/queri
 import { isAxiosError } from 'axios';
 import { useEffect } from 'react';
 import { TargetExposurePanel } from './target-exposure-panel';
+import { TargetFindingsCard } from './target-findings-card';
 import { TargetInsightsPanel } from './target-insights-panel';
 
 const formatCount = new Intl.NumberFormat();
@@ -17,13 +18,15 @@ export function TargetOverviewTab({
   targetId,
   canManageDiscovery,
   canReadJobs,
+  canReadFindings,
   onKeyboardNavigate,
   onAccessDenied,
 }: {
   targetId: string;
   canManageDiscovery: boolean;
   canReadJobs: boolean;
-  onKeyboardNavigate: (tab: 'assets' | 'settings') => void;
+  canReadFindings: boolean;
+  onKeyboardNavigate: (tab: 'assets' | 'settings' | 'vulnerabilities') => void;
   onAccessDenied: () => Promise<unknown>;
 }) {
   const {
@@ -32,7 +35,12 @@ export function TargetOverviewTab({
   const overview = useTargetsControllerGetTargetOverview(targetId, {
     query: {
       enabled: Boolean(selectedWorkspaceId),
-      queryKey: ['target-overview', selectedWorkspaceId, targetId],
+      queryKey: [
+        'target-overview',
+        selectedWorkspaceId,
+        targetId,
+        canReadFindings,
+      ],
       refetchOnMount: 'always',
       retry: false,
     },
@@ -121,6 +129,16 @@ export function TargetOverviewTab({
           ))}
         </div>
       )}
+      {canReadFindings &&
+        data?.openVulnerabilities != null &&
+        data.newVulnerabilities != null && (
+          <TargetFindingsCard
+            targetId={targetId}
+            counts={data.openVulnerabilities}
+            newCount={data.newVulnerabilities}
+            onKeyboardNavigate={() => onKeyboardNavigate('vulnerabilities')}
+          />
+        )}
       {data?.insights && (
         <TargetInsightsPanel
           insights={data.insights}

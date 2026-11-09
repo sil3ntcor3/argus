@@ -19,6 +19,7 @@ dayjs.extend(relativeTime);
 
 const canReadAssets = vi.hoisted(() => vi.fn(() => true));
 const canReadJobs = vi.hoisted(() => vi.fn(() => true));
+const canReadFindings = vi.hoisted(() => vi.fn(() => true));
 const canWriteTarget = vi.hoisted(() => vi.fn(() => false));
 const refetchPermissions = vi.hoisted(() => vi.fn());
 const id = 'd14d1c3f-9752-4b8a-93c8-48ea3c3212ab';
@@ -37,6 +38,7 @@ vi.mock('@/hooks/usePermission', () => ({
       key === 'target.read' ||
       (key === 'asset.read' && canReadAssets()) ||
       (key === 'job.read' && canReadJobs()) ||
+      (key === 'vulnerability.read' && canReadFindings()) ||
       (key === 'target.write' && canWriteTarget()),
     isLoading: false,
     error: null,
@@ -51,6 +53,9 @@ vi.mock('@/pages/assets/context/asset-context', () => ({
 }));
 vi.mock('@/pages/assets/list-assets', () => ({
   ListAssets: () => <p>Asset inventory</p>,
+}));
+vi.mock('@/pages/vulnerabilities/vulnerabilities-view', () => ({
+  VulnerabilitiesView: () => <p>Target vulnerability list</p>,
 }));
 
 function show(tab = 'overview') {
@@ -80,6 +85,7 @@ function show(tab = 'overview') {
 beforeEach(() => {
   canReadAssets.mockReturnValue(true);
   canReadJobs.mockReturnValue(true);
+  canReadFindings.mockReturnValue(true);
   canWriteTarget.mockReturnValue(false);
   refetchPermissions.mockClear();
   server.use(
@@ -376,6 +382,68 @@ describe('Target Overview tab', () => {
     ).toBeVisible();
     expect(refetchPermissions).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('Target Overview findings', () => {
+  const findings = { critical: 1, high: 2, medium: 0, low: 0, info: 0 };
+
+  it('shows finding counts and transfers focus when opening the target list by keyboard', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({
+          ...metrics,
+          openVulnerabilities: findings,
+          newVulnerabilities: 2,
+        }),
+      ),
+    );
+    const { user, router } = show();
+    const card = within(
+      await screen.findByRole('region', { name: 'Open vulnerabilities' }),
+    );
+    expect(card.getByText('3')).toBeVisible();
+    expect(card.getByText('2 new in the last 7 days')).toBeVisible();
+    expect(card.getByText('critical')).toBeVisible();
+    const link = card.getByRole('link', { name: 'See vulnerabilities' });
+    expect(link).toHaveAttribute('href', `${path}/vulnerabilities`);
+    link.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText('Target vulnerability list')).toBeVisible();
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(`${path}/vulnerabilities`);
+      const nav = within(
+        screen.getByRole('navigation', { name: 'Target sections' }),
+      );
+      expect(nav.getByRole('link', { name: 'Vulnerabilities' })).toHaveFocus();
+    });
+  });
+
+  it.each([
+    {
+      allowed: false,
+      fields: { openVulnerabilities: findings, newVulnerabilities: 2 },
+    },
+    {
+      allowed: true,
+      fields: { openVulnerabilities: null, newVulnerabilities: null },
+    },
+    { allowed: true, fields: {} },
+  ])(
+    'hides unavailable finding counts ($allowed, $fields)',
+    async ({ allowed, fields }) => {
+      canReadFindings.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({ ...metrics, ...fields }),
+        ),
+      );
+      show();
+      expect(await screen.findByText('Enabled assets')).toBeVisible();
+      expect(
+        screen.queryByRole('region', { name: 'Open vulnerabilities' }),
+      ).not.toBeInTheDocument();
+    },
+  );
 });
 
 describe('Target Activity tab', () => {
