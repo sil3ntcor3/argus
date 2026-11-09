@@ -3098,6 +3098,30 @@ export type GetVulnerabilitiesStatisticsResponseDto = {
   data: VulnerabilityStatisticsDto[];
 };
 
+export type VulnerabilityTimelineEventDtoType =
+  (typeof VulnerabilityTimelineEventDtoType)[keyof typeof VulnerabilityTimelineEventDtoType];
+
+export const VulnerabilityTimelineEventDtoType = {
+  detected: 'detected',
+  status_changed: 'status_changed',
+} as const;
+
+export type VulnerabilityTimelineEventDto = {
+  id: string;
+  type: VulnerabilityTimelineEventDtoType;
+  occurredAt: string;
+  /** @nullable */
+  fromStatus: string | null;
+  /** @nullable */
+  toStatus: string | null;
+  /** @nullable */
+  jobHistoryId: string | null;
+};
+
+export type VulnerabilityTimelineResponseDto = {
+  data: VulnerabilityTimelineEventDto[];
+};
+
 export type AnalyzeVulnerabilityDto = {
   /** Force rerun analysis even if already analyzed */
   forceRerun?: boolean;
@@ -33312,6 +33336,222 @@ export function useVulnerabilitiesControllerGetVulnerabilityById<
 } {
   const queryOptions =
     getVulnerabilitiesControllerGetVulnerabilityByIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Returns up to 500 detection and status events, newest first.
+ * @summary Get vulnerability timeline
+ */
+export const vulnerabilitiesControllerGetVulnerabilityTimeline = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<VulnerabilityTimelineResponseDto>(
+    { url: `/api/vulnerabilities/${id}/timeline`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerGetVulnerabilityTimelineQueryKey = (
+  id: string,
+) => {
+  return [`/api/vulnerabilities/${id}/timeline`] as const;
+};
+
+export const getVulnerabilitiesControllerGetVulnerabilityTimelineQueryOptions =
+  <
+    TData = Awaited<
+      ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+    >,
+    TError = unknown,
+  >(
+    id: string,
+    options?: {
+      query?: Partial<
+        UseQueryOptions<
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >,
+          TError,
+          TData
+        >
+      >;
+      request?: SecondParameter<typeof orvalClient>;
+    },
+  ) => {
+    const { query: queryOptions, request: requestOptions } = options ?? {};
+
+    const queryKey =
+      queryOptions?.queryKey ??
+      getVulnerabilitiesControllerGetVulnerabilityTimelineQueryKey(id);
+
+    const queryFn: QueryFunction<
+      Awaited<
+        ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+      >
+    > = ({ signal }) =>
+      vulnerabilitiesControllerGetVulnerabilityTimeline(
+        id,
+        requestOptions,
+        signal,
+      );
+
+    return {
+      queryKey,
+      queryFn,
+      enabled: id !== null && id !== undefined,
+      ...queryOptions,
+    } as UseQueryOptions<
+      Awaited<
+        ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+      >,
+      TError,
+      TData
+    > & { queryKey: DataTag<QueryKey, TData, TError> };
+  };
+
+export type VulnerabilitiesControllerGetVulnerabilityTimelineQueryResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+    >
+  >;
+export type VulnerabilitiesControllerGetVulnerabilityTimelineQueryError =
+  unknown;
+
+export function useVulnerabilitiesControllerGetVulnerabilityTimeline<
+  TData = Awaited<
+    ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+  >,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+        >,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useVulnerabilitiesControllerGetVulnerabilityTimeline<
+  TData = Awaited<
+    ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+  >,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+        >,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useVulnerabilitiesControllerGetVulnerabilityTimeline<
+  TData = Awaited<
+    ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+  >,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+        >,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get vulnerability timeline
+ */
+
+export function useVulnerabilitiesControllerGetVulnerabilityTimeline<
+  TData = Awaited<
+    ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+  >,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+        >,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getVulnerabilitiesControllerGetVulnerabilityTimelineQueryOptions(
+      id,
+      options,
+    );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

@@ -3,17 +3,21 @@ import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
+import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
   Body,
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { User } from '../auth/entities/user.entity';
 import { AnalyzeVulnerabilityDto } from './dto/analyze-vulnerability.dto';
@@ -27,6 +31,7 @@ import {
 } from './dto/get-vulnerability-statistics.dto';
 import { GetVulnerabilitiesQueryDto } from './dto/get-vulnerability.dto';
 import { ScanDto } from './dto/scan.dto';
+import { VulnerabilityTimelineResponseDto } from './dto/vulnerability-timeline.dto';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
@@ -114,6 +119,34 @@ export class VulnerabilitiesController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.vulnerabilitiesService.getVulnerability(id, workspaceId);
+  }
+
+  @Doc({
+    summary: 'Get vulnerability timeline',
+    description: 'Returns up to 500 detection and status events, newest first.',
+    response: { serialization: VulnerabilityTimelineResponseDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('vulnerability.read')
+  @Get(':id/timeline')
+  @Header('Cache-Control', 'private, no-store')
+  getVulnerabilityTimeline(
+    @Param('id', ParseUUIDPipe) id: string,
+    @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+  ) {
+    const canReadJobs =
+      request.permissions?.some(
+        (permission) =>
+          permission === '*' ||
+          permission === 'job.read' ||
+          permission === 'job.write',
+      ) ?? false;
+    return this.vulnerabilitiesService.getVulnerabilityTimeline(
+      id,
+      workspaceId,
+      canReadJobs,
+    );
   }
 
   @Doc({
