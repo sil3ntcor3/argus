@@ -90,6 +90,12 @@ beforeEach(() => {
       }),
     ),
     http.get(`/api${path}/overview`, () => HttpResponse.json(metrics)),
+    http.get(`/api${path}/changes`, () =>
+      HttpResponse.json({ data: [], page: 1, hasNextPage: false }),
+    ),
+    http.get(`/api${path}/runs`, () =>
+      HttpResponse.json({ data: [], page: 1, hasNextPage: false }),
+    ),
   );
 });
 
@@ -228,10 +234,15 @@ describe('Target Activity tab', () => {
     expect(more).not.toBeInTheDocument();
   });
 
-  it('hides Activity and skips the run request without job read access', async () => {
+  it('hides Activity and skips both requests without job or asset read access', async () => {
+    canReadAssets.mockReturnValue(false);
     canReadJobs.mockReturnValue(false);
     const getRuns = vi.fn(() => HttpResponse.json(pageOne));
-    server.use(http.get(runsPath, getRuns));
+    const getChanges = vi.fn();
+    server.use(
+      http.get(runsPath, getRuns),
+      http.get(`/api${path}/changes`, getChanges),
+    );
     show('activity');
     expect(
       await screen.findByText(/don.t have permission to access this page/),
@@ -240,6 +251,7 @@ describe('Target Activity tab', () => {
       screen.queryByRole('link', { name: 'Activity' }),
     ).not.toBeInTheDocument();
     expect(getRuns).not.toHaveBeenCalled();
+    expect(getChanges).not.toHaveBeenCalled();
   });
 
   it('rechecks permissions and hides cached runs after the API revokes access', async () => {
@@ -259,6 +271,118 @@ describe('Target Activity tab', () => {
     expect(
       screen.queryByRole('link', { name: /Network discovery/ }),
     ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/don.t have permission to access this page/),
+    ).toBeVisible();
+    expect(refetchPermissions).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Target discovery changes', () => {
+  const changesPath = `/api${path}/changes`;
+  const asset = {
+    kind: 'asset',
+    id: 'asset-1',
+    at: '2026-01-02T03:04:05Z',
+    label: 'new.example.test',
+    assetValue: null,
+  };
+  const service = {
+    ...asset,
+    kind: 'service',
+    id: 'service-1',
+    label: 'https://new.example.test:8443',
+    assetValue: asset.label,
+  };
+
+  it('lists and filters discoveries without job read access and resets pagination on filter change', async () => {
+    canReadJobs.mockReturnValue(false);
+    const getRuns = vi.fn();
+    server.use(
+      http.get(`/api${path}/runs`, getRuns),
+      http.get(changesPath, ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        const page = Number(params.get('page'));
+        const kind = params.get('kind');
+        return HttpResponse.json({
+          page,
+          hasNextPage: page === 1 && !kind,
+          data: page === 2 || kind === 'service' ? [service] : [asset],
+        });
+      }),
+    );
+    const { user } = show('assets');
+    await user.click(await screen.findByRole('link', { name: 'Activity' }));
+    const changes = within(
+      await screen.findByRole('region', { name: 'Target changes' }),
+    );
+    expect(await changes.findByText(asset.label)).toBeVisible();
+    expect(getRuns).not.toHaveBeenCalled();
+    const next = changes.getByRole('button', { name: 'Next page' });
+    await user.click(next);
+    expect(await changes.findByText(service.label)).toBeVisible();
+    expect(changes.getByText('Page 2')).toBeVisible();
+    expect(next).toHaveFocus();
+    const services = changes.getByRole('button', { name: 'Services' });
+    await user.click(services);
+    expect(services).toHaveAttribute('aria-pressed', 'true');
+    expect(await changes.findByText('Page 1')).toBeVisible();
+    expect(await changes.findByText(service.label)).toBeVisible();
+  });
+
+  it('hides changes without asset read access and does not request them', async () => {
+    canReadAssets.mockReturnValue(false);
+    const getChanges = vi.fn();
+    server.use(http.get(changesPath, getChanges));
+    show('activity');
+    expect(
+      await screen.findByRole('region', { name: 'Target activity' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('region', { name: 'Target changes' }),
+    ).not.toBeInTheDocument();
+    expect(getChanges).not.toHaveBeenCalled();
+  });
+
+  it('moves keyboard focus to the feed heading after a successful retry', async () => {
+    server.use(
+      http.get(changesPath, () => new HttpResponse(null, { status: 503 })),
+    );
+    const { user } = show('activity');
+    const retry = await screen.findByRole('button', {
+      name: 'Retry discoveries',
+    });
+    server.use(
+      http.get(changesPath, () =>
+        HttpResponse.json({ page: 1, data: [asset] }),
+      ),
+    );
+    retry.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText(asset.label)).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Changes' })).toHaveFocus(),
+    );
+  });
+
+  it('clears previously shown discoveries and rechecks permissions on a forbidden response', async () => {
+    canReadJobs.mockReturnValue(false);
+    server.use(
+      http.get(changesPath, () =>
+        HttpResponse.json({ page: 1, data: [asset] }),
+      ),
+    );
+    const { user } = show('activity');
+    expect(await screen.findByText(asset.label)).toBeVisible();
+    await user.click(screen.getByRole('link', { name: 'Assets', exact: true }));
+    server.use(
+      http.get(changesPath, async () => {
+        await delay(150);
+        return new HttpResponse(null, { status: 403 });
+      }),
+    );
+    await user.click(screen.getByRole('link', { name: 'Activity' }));
+    expect(screen.queryByText(asset.label)).not.toBeInTheDocument();
     expect(
       await screen.findByText(/don.t have permission to access this page/),
     ).toBeVisible();
