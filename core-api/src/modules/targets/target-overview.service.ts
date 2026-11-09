@@ -1,5 +1,10 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { BullMQName, CronSchedule, JobStatus } from '@/common/enums/enum';
+import {
+  BullMQName,
+  CronSchedule,
+  JobStatus,
+  Severity,
+} from '@/common/enums/enum';
 import { openVulnerabilityCondition } from '@/modules/vulnerabilities/open-vulnerability';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -9,6 +14,7 @@ import {
   TargetInsightKind,
   TargetInsightLevel,
   type TargetOverviewDto,
+  type TargetTopVulnerabilityDto,
 } from './dto/target-overview.dto';
 import type { TargetRunDto } from './dto/target-runs.dto';
 import { staleTargetCondition } from './stale-target-condition';
@@ -23,6 +29,9 @@ import {
 
 const EXPOSURE_LIMIT = 6;
 const ACTIVE_RUN_LIMIT = 5;
+const TOP_FINDING_LIMIT = 5;
+const TOP_FINDING_ORDER_SQL =
+  'f.severity_rank DESC, f."createdAt" DESC, f.id DESC';
 const RECENT_DISCOVERY_DAYS = 7;
 const TLS_EXPIRY_DAYS = 30;
 const SCHEDULE_LOOKUP_TIMEOUT_MS = 500;
@@ -35,6 +44,10 @@ type FindingCounts = Pick<
   TargetOverviewDto,
   'openVulnerabilities' | 'newVulnerabilities'
 >;
+
+type TopFindingJson = Omit<TargetTopVulnerabilityDto, 'createdAt'> & {
+  createdAt: string;
+};
 
 type TargetRunJson = Omit<TargetRunDto, 'createdAt' | 'updatedAt'> & {
   createdAt: string;
@@ -51,7 +64,12 @@ function toTargetRunDto(run: TargetRunJson): TargetRunDto {
 
 type TargetOverviewRow = Omit<
   TargetOverviewDto,
-  'insights' | 'nextScanAt' | 'lastRun' | 'activeRuns' | keyof FindingCounts
+  | 'insights'
+  | 'nextScanAt'
+  | 'lastRun'
+  | 'activeRuns'
+  | 'topVulnerabilities'
+  | keyof FindingCounts
 > & {
   jobId: string | null;
   scanSchedule: CronSchedule | null;
@@ -59,7 +77,7 @@ type TargetOverviewRow = Omit<
   daysSinceDiscovery: number | null;
   expiringTlsServices: number;
   runs: { lastRun: TargetRunJson | null; activeRuns: TargetRunJson[] } | null;
-  findings: FindingCounts | null;
+  findings: (FindingCounts & { topVulnerabilities: TopFindingJson[] }) | null;
 };
 
 @Injectable()
@@ -187,19 +205,41 @@ export class TargetOverviewService {
                 )
               ) END AS runs,
               CASE WHEN $4::boolean THEN (
+                WITH open_findings AS MATERIALIZED (
+                  SELECT v.id, v.severity, v."createdAt",
+                         CASE v.severity
+                           WHEN '${Severity.CRITICAL}' THEN 5 WHEN '${Severity.HIGH}' THEN 4
+                           WHEN '${Severity.MEDIUM}' THEN 3 WHEN '${Severity.LOW}' THEN 2
+                           WHEN '${Severity.INFO}' THEN 1
+                         END AS severity_rank
+                  FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
+                  WHERE a."targetId" = t.id AND ${openVulnerabilityCondition('v')}
+                )
                 SELECT jsonb_build_object(
                   'openVulnerabilities', jsonb_build_object(
-                    'critical', COUNT(*) FILTER (WHERE v.severity = 'critical'),
-                    'high', COUNT(*) FILTER (WHERE v.severity = 'high'),
-                    'medium', COUNT(*) FILTER (WHERE v.severity = 'medium'),
-                    'low', COUNT(*) FILTER (WHERE v.severity = 'low'),
-                    'info', COUNT(*) FILTER (WHERE v.severity = 'info')
+                    'critical', COUNT(*) FILTER (WHERE severity = 'critical'),
+                    'high', COUNT(*) FILTER (WHERE severity = 'high'),
+                    'medium', COUNT(*) FILTER (WHERE severity = 'medium'),
+                    'low', COUNT(*) FILTER (WHERE severity = 'low'),
+                    'info', COUNT(*) FILTER (WHERE severity = 'info')
                   ),
-                  'newVulnerabilities', COUNT(*) FILTER (WHERE v."createdAt"
-                    BETWEEN LOCALTIMESTAMP - INTERVAL '${RECENT_DISCOVERY_DAYS} days' AND LOCALTIMESTAMP)
+                  'newVulnerabilities', COUNT(*) FILTER (WHERE "createdAt"
+                    BETWEEN LOCALTIMESTAMP - INTERVAL '${RECENT_DISCOVERY_DAYS} days' AND LOCALTIMESTAMP),
+                  'topVulnerabilities', COALESCE((
+                    SELECT jsonb_agg(jsonb_build_object(
+                      'id', f.id, 'name', v.name, 'severity', f.severity, 'assetValue', a.value,
+                      'cveId', array_remove(v."cveId", NULL::text), 'createdAt', f."createdAt"
+                    ) ORDER BY ${TOP_FINDING_ORDER_SQL})
+                    FROM (
+                      SELECT * FROM open_findings f
+                      WHERE f.severity_rank IS NOT NULL
+                      ORDER BY ${TOP_FINDING_ORDER_SQL} LIMIT ${TOP_FINDING_LIMIT}
+                    ) f
+                    JOIN vulnerabilities v ON v.id = f.id
+                    JOIN assets a ON a.id = v."assetId"
+                  ), '[]'::jsonb)
                 )
-                FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
-                WHERE a."targetId" = t.id AND ${openVulnerabilityCondition('v')}
+                FROM open_findings
               ) END AS findings,
               (SELECT COUNT(*)::int FROM latest_certificates
                WHERE "notAfter" <= CURRENT_TIMESTAMP + INTERVAL '${TLS_EXPIRY_DAYS} days'
@@ -293,6 +333,11 @@ export class TargetOverviewService {
       activeRuns: runs?.activeRuns.map(toTargetRunDto) ?? null,
       openVulnerabilities: findings?.openVulnerabilities ?? null,
       newVulnerabilities: findings?.newVulnerabilities ?? null,
+      topVulnerabilities:
+        findings?.topVulnerabilities.map((finding) => ({
+          ...finding,
+          createdAt: new Date(finding.createdAt),
+        })) ?? null,
       insights,
     };
   }

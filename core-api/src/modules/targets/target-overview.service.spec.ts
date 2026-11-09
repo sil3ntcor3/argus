@@ -49,6 +49,7 @@ describe('TargetOverviewService', () => {
         ...counts,
         openVulnerabilities: null,
         newVulnerabilities: null,
+        topVulnerabilities: null,
         nextScanAt: null,
         lastRun: null,
         activeRuns: null,

@@ -1,3 +1,4 @@
+import { Severity } from '@/common/enums/enum';
 import { SeverityCountsDto } from '@/modules/projects/dto/project-assets-read.dto';
 import { ApiProperty } from '@nestjs/swagger';
 import { TargetRunDto } from './target-runs.dto';
@@ -51,6 +52,26 @@ class TargetInsightDto {
 
   @ApiProperty({ required: false, type: String, format: 'uuid' })
   runId?: string;
+}
+
+export class TargetTopVulnerabilityDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ enum: Severity, enumName: 'Severity' })
+  severity: Severity;
+
+  @ApiProperty()
+  assetValue: string;
+
+  @ApiProperty({ type: [String], nullable: true })
+  cveId: string[] | null;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt: Date;
 }
 
 export class TargetOverviewDto {
@@ -108,6 +129,15 @@ export class TargetOverviewDto {
     description: 'Open findings first seen in the last seven days, or null without vulnerability read access',
   })
   newVulnerabilities: number | null;
+
+  @ApiProperty({
+    type: () => [TargetTopVulnerabilityDto],
+    nullable: true,
+    maxItems: 5,
+    description:
+      'Open findings ranked by severity and discovery time, or null without vulnerability read access',
+  })
+  topVulnerabilities: TargetTopVulnerabilityDto[] | null;
 
   @ApiProperty({
     type: TargetExposureDto,

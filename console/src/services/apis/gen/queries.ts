@@ -629,6 +629,26 @@ export type TargetRunDto = {
   jobsRunning: number;
 };
 
+export type Severity = (typeof Severity)[keyof typeof Severity];
+
+export const Severity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type TargetTopVulnerabilityDto = {
+  id: string;
+  name: string;
+  severity: Severity;
+  assetValue: string;
+  /** @nullable */
+  cveId: string[] | null;
+  createdAt: string;
+};
+
 export type TargetExposureCountDto = {
   name: string;
   /**
@@ -715,6 +735,12 @@ export type TargetOverviewDto = {
    * @nullable
    */
   newVulnerabilities: number | null;
+  /**
+   * Open findings ranked by severity and discovery time, or null without vulnerability read access
+   * @maxItems 5
+   * @nullable
+   */
+  topVulnerabilities: TargetTopVulnerabilityDto[] | null;
   /** Most common service observations */
   exposure: TargetExposureDto;
   /** Discovery and schedule insights for the target */
