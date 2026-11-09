@@ -103,7 +103,19 @@ describe('Finding dismissal and reopen history (e2e)', () => {
       await request(app.server)
         .get(`/api/vulnerabilities/${vulnerabilityId}/timeline`)
         .set(owner.headers)
-        .expect(200, { data: [] });
+        .expect(200, {
+          data: [
+            {
+              id: events[0].id,
+              type: 'dismissed',
+              occurredAt: events[0].occurredAt.toISOString(),
+              fromStatus: null,
+              toStatus: null,
+              jobHistoryId: null,
+              dismissalReason: fields.reason,
+            },
+          ],
+        });
     }
   });
 
@@ -159,7 +171,20 @@ describe('Finding dismissal and reopen history (e2e)', () => {
       await request(app.server)
         .get(`/api/vulnerabilities/${findingId}/timeline`)
         .set(owner.headers)
-        .expect(200, { data: [] });
+        .expect(200, {
+          data: [
+            {
+              id: events[0].id,
+              type: 'reopened',
+              occurredAt: events[0].occurredAt.toISOString(),
+              fromStatus: null,
+              toStatus: null,
+              jobHistoryId: null,
+              dismissalReason: reason,
+              ...(expiry ? { expiresAt: expiry } : {}),
+            },
+          ],
+        });
     }
   });
 

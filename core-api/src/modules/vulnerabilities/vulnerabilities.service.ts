@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
+import { isISO8601 } from 'class-validator';
 import { In, Repository } from 'typeorm';
 import { AgentsCompletionsService } from '../agents/agents.completions';
 import { User } from '../auth/entities/user.entity';
@@ -36,13 +37,17 @@ import {
   GetVulnerabilitiesQueryDto,
   VulnerabilityStatus,
 } from './dto/get-vulnerability.dto';
-import type {
-  VulnerabilityTimelineEventDto,
-  VulnerabilityTimelineResponseDto,
+import {
+  TIMELINE_EVENT_TYPES,
+  type VulnerabilityTimelineEventDto,
+  type VulnerabilityTimelineResponseDto,
 } from './dto/vulnerability-timeline.dto';
 import { dismissFindings, type FindingDismissalInput } from './dismiss-findings';
 import { Vulnerability } from './entities/vulnerability.entity';
-import { RISK_ACCEPTED } from './finding-dismissal-reason';
+import {
+  FINDING_DISMISS_REASONS,
+  RISK_ACCEPTED,
+} from './finding-dismissal-reason';
 import {
   activeDismissalCondition,
   openVulnerabilityCondition,
@@ -381,34 +386,70 @@ export class VulnerabilitiesService {
     workspaceId: string,
     canReadJobs: boolean,
   ): Promise<VulnerabilityTimelineResponseDto> {
-    type TimelineRow = VulnerabilityTimelineEventDto | { id: null };
+    type TimelineRow =
+      | (Omit<VulnerabilityTimelineEventDto, 'dismissalReason' | 'expiresAt'> & {
+          rawReason: string | null;
+          rawExpiry: string | null;
+        })
+      | { id: null };
     // An owned finding with no events still has one row; a missing or foreign
     // finding has none. Both the finding and the event must be in scope.
     const rows = await this.vulnerabilitiesRepository.manager.query<
       TimelineRow[]
     >(
-      `SELECT event.id, event.type, event."occurredAt", event."fromStatus", event."toStatus",
-              CASE WHEN workflow."workspaceId" = target."workspaceId" THEN history.id END AS "jobHistoryId"
+      `SELECT event.id, event.type, event."occurredAt",
+              CASE WHEN event.type IN ('detected', 'status_changed') THEN event."fromStatus" END AS "fromStatus",
+              CASE WHEN event.type IN ('detected', 'status_changed') THEN event."toStatus" END AS "toStatus",
+              CASE WHEN workflow."workspaceId" = target."workspaceId" THEN history.id END AS "jobHistoryId",
+              CASE event.type
+                WHEN 'dismissed' THEN event.data ->> 'reason'
+                WHEN 'reopened' THEN event.data ->> 'previousReason'
+                WHEN 'risk_expired' THEN 'risk_accepted'
+              END AS "rawReason",
+              CASE WHEN event.type IN ('dismissed', 'reopened', 'risk_expired')
+                THEN event.data ->> 'expiresAt'
+              END AS "rawExpiry"
        FROM vulnerabilities AS finding
        JOIN assets AS asset ON asset.id = finding."assetId"
        JOIN targets AS target ON target.id = asset."targetId"
        LEFT JOIN LATERAL (
-         SELECT id, type, "occurredAt", "fromStatus", "toStatus", "jobHistoryId"
+         SELECT id, type, "occurredAt", "fromStatus", "toStatus", "jobHistoryId", data
          FROM vulnerability_events
          WHERE "vulnerabilityId" = finding.id AND "workspaceId" = target."workspaceId"
-           AND type IN ('detected', 'status_changed')
+           AND type = ANY($4::varchar[])
          ORDER BY "occurredAt" DESC, id DESC
          LIMIT 500
        ) AS event ON true
-       LEFT JOIN job_histories AS history ON $3::boolean AND history.id = event."jobHistoryId"
+       LEFT JOIN job_histories AS history
+         ON $3::boolean AND event.type IN ('detected', 'status_changed') AND history.id = event."jobHistoryId"
        LEFT JOIN workflows AS workflow ON workflow.id = history."workflowId"
        WHERE finding.id = $1 AND target."workspaceId" = $2
        ORDER BY event."occurredAt" DESC, event.id DESC`,
-      [id, workspaceId, canReadJobs],
+      [id, workspaceId, canReadJobs, TIMELINE_EVENT_TYPES],
     );
     if (rows.length === 0)
       throw new NotFoundException('Vulnerability not found');
-    return { data: rows.filter((row) => row.id !== null) };
+    const data: VulnerabilityTimelineEventDto[] = [];
+    for (const row of rows) {
+      if (row.id === null) continue;
+      const { rawReason, rawExpiry, ...event } = row;
+      const dismissalReason = FINDING_DISMISS_REASONS.find(
+        (reason) => reason === rawReason,
+      );
+      const expiresAt =
+        dismissalReason === RISK_ACCEPTED &&
+        rawExpiry &&
+        /(?:Z|[+-]\d{2}:\d{2})$/.test(rawExpiry) &&
+        isISO8601(rawExpiry, { strict: true, strictSeparator: true })
+          ? new Date(rawExpiry)
+          : undefined;
+      data.push({
+        ...event,
+        ...(dismissalReason ? { dismissalReason } : {}),
+        ...(expiresAt && Number.isFinite(expiresAt.getTime()) ? { expiresAt } : {}),
+      });
+    }
+    return { data };
   }
 
   /**

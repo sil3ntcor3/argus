@@ -170,6 +170,59 @@ describe('Finding lifecycle timeline API (e2e)', () => {
     }
   });
 
+  it('exposes dismissal and expiry history without private or malformed metadata', async () => {
+    const own = await makeFinding(await makeAsset(owner.workspace.id));
+    const expiresAt = '2026-03-14T12:30:00.000Z';
+    const day = (index: number) => new Date(Date.parse(occurredAt) + index * 1_000);
+    const add = (type: string, index: number, data: Record<string, unknown>, scope = owner.workspace.id) =>
+      insertId(
+        `INSERT INTO vulnerability_events
+           ("vulnerabilityId", "workspaceId", type, "fromStatus", "toStatus",
+            "jobHistoryId", "actorId", "occurredAt", data)
+         VALUES ($1, $2, $3, 'private-state', 'private-state', $4, $5, $6, $7)`,
+        [own, scope, type, run, owner.user.userId, day(index), data],
+      );
+    const dismissed = await add('dismissed', 1, {
+      reason: 'risk_accepted',
+      expiresAt: expiresAt.replace('Z', '+00:00'),
+      comment: 'Private note',
+    });
+    const expired = await add('risk_expired', 2, {
+      expiresAt,
+      acceptedById: owner.user.userId,
+    });
+    const reopened = await add('reopened', 3, {
+      previousReason: 'wont_fix',
+      expiresAt,
+    });
+    const malformed = await add('dismissed', 4, {
+      reason: 'risk_accepted',
+      expiresAt: '2026-02-30T12:30:00Z',
+    });
+    const unknownReason = await add('reopened', 5, {
+      previousReason: { comment: 'Private note' },
+      expiresAt,
+    });
+    await add('dismissed', 6, { reason: 'false_positive' }, other.workspace.id);
+    const row = (id: string, type: string, index: number) => ({
+      id,
+      type,
+      occurredAt: day(index).toISOString(),
+      fromStatus: null,
+      toStatus: null,
+      jobHistoryId: null,
+    });
+    await timeline(own, owner.headers).expect(200, {
+      data: [
+        row(unknownReason, 'reopened', 5),
+        { ...row(malformed, 'dismissed', 4), dismissalReason: 'risk_accepted' },
+        { ...row(reopened, 'reopened', 3), dismissalReason: 'wont_fix' },
+        { ...row(expired, 'risk_expired', 2), dismissalReason: 'risk_accepted', expiresAt },
+        { ...row(dismissed, 'dismissed', 1), dismissalReason: 'risk_accepted', expiresAt },
+      ],
+    });
+  });
+
   it('bounds the result to the newest 500 events', async () => {
     await app.dataSource.query(
       `INSERT INTO vulnerability_events ("vulnerabilityId", "workspaceId", type, "occurredAt")
