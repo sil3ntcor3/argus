@@ -41,6 +41,9 @@ export class TargetRunDto {
   @ApiProperty({ type: String, format: 'date-time' })
   updatedAt: Date;
 
+  @ApiProperty({ description: 'Whether the workflow engine has closed the run' })
+  isCompleted: boolean;
+
   @ApiProperty({
     enum: JobStatus,
     enumName: 'JobStatus',

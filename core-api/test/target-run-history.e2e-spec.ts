@@ -110,6 +110,7 @@ describe('Target run history API (e2e)', () => {
       updatedAt: time,
       jobRunType: 'manual',
       workflowName,
+      isCompleted: false,
       projectId: null,
       projectName: null,
       newVulnerabilities: 0,
@@ -344,7 +345,7 @@ describe('Target run history API (e2e)', () => {
         [workflow.id, { targetIds: [id] }, days, finished],
       );
     const failed = await makeHistory(0);
-    await makeHistory(0.5, true);
+    const closed = await makeHistory(0.5, true);
     const pending = await makeHistory(1);
     const running = await makeHistory(2);
     await makeHistory(8);
@@ -394,6 +395,20 @@ describe('Target run history API (e2e)', () => {
     expect(beyond.body).toMatchObject({ page: 3, total: 2, data: [] });
     const full = await read(id, owner.headers).expect(200);
     expect(full.body.total).toBe(5);
+    expect(full.body.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: closed,
+          isCompleted: true,
+          status: 'pending',
+        }),
+        expect.objectContaining({
+          id: pending,
+          isCompleted: false,
+          status: 'pending',
+        }),
+      ]),
+    );
     const unfiltered = await read(id, owner.headers, '?active=false').expect(200);
     expect(unfiltered.body).toEqual(full.body);
     await read(id, owner.headers, '?active=1').expect(400);
@@ -424,7 +439,19 @@ describe('Target run history API (e2e)', () => {
       .set(owner.headers)
       .expect(200);
     expect(overview.body).toMatchObject({
-      lastRun: { id: failed, status: 'failed' },
+      lastRun: { id: failed, isCompleted: false, status: 'failed' },
+      activeRuns: data,
+    });
+    await app.dataSource.query(
+      'UPDATE job_histories SET "isCompleted" = true WHERE id = $1',
+      [failed],
+    );
+    const closedOverview = await request(app.server)
+      .get(`/api/targets/${id}/overview`)
+      .set(owner.headers)
+      .expect(200);
+    expect(closedOverview.body).toMatchObject({
+      lastRun: { id: failed, isCompleted: true, status: 'failed' },
       activeRuns: data,
     });
   });
