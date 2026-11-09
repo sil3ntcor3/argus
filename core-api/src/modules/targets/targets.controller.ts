@@ -238,7 +238,7 @@ export class TargetsController {
   @Doc({
     summary: 'Get target overview',
     description:
-      'Returns workspace-scoped asset and service counts, recent discoveries, and the most common service ports, technologies, and primary HTTP status codes.',
+      'Returns workspace-scoped asset and service counts, discovery insights, and the most common service ports, technologies, and primary HTTP status codes.',
     response: { serialization: TargetOverviewDto },
     request: { getWorkspaceId: true },
   })

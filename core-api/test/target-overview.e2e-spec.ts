@@ -12,12 +12,15 @@ describe('Target overview API (e2e)', () => {
   let emptyTarget: string;
   let foreignTarget: string;
   const emptyExposure = { ports: [], technologies: [], statusCodes: [] };
+  const missingSchedule = { kind: 'no_schedule', level: 'info' };
+  const newAssets = { kind: 'new_assets', level: 'info', count: 1, days: 7 };
   const metrics = {
     totalAssets: 2,
     newAssets: 1,
     totalServices: 4,
     newServices: 3,
     openPorts: 2,
+    insights: [newAssets, missingSchedule],
     exposure: {
       ports: [
         { name: '80', count: 2 },
@@ -143,6 +146,7 @@ describe('Target overview API (e2e)', () => {
       newServices: 0,
       openPorts: 0,
       exposure: emptyExposure,
+      insights: [missingSchedule],
     });
     await overview(foreignTarget, other.headers).expect(200, {
       totalAssets: 1,
@@ -150,6 +154,7 @@ describe('Target overview API (e2e)', () => {
       totalServices: 1,
       newServices: 1,
       openPorts: 1,
+      insights: [newAssets, missingSchedule],
       exposure: {
         ports: [{ name: '22', count: 1 }],
         technologies: [{ name: 'Foreign', count: 1 }],
@@ -176,6 +181,32 @@ describe('Target overview API (e2e)', () => {
       technologies: firstSix((i) => `Technology ${i}`),
       statusCodes: firstSix((i) => String(200 + i)),
     });
+  });
+
+  it('uses the same stale rule for old and absent discovery dates', async () => {
+    const id = await makeTarget(owner.workspace.id);
+    await app.dataSource.query(
+      `UPDATE targets SET "lastDiscoveredAt" = NULL, "scanSchedule" = NULL WHERE id = $1`,
+      [id],
+    );
+    const never = await overview(id, owner.headers).expect(200);
+    expect(never.body.insights).toEqual([
+      { kind: 'stale_scan', level: 'warning' },
+      missingSchedule,
+    ]);
+
+    for (const [days, expected] of [
+      [31, [{ kind: 'stale_scan', level: 'warning', days: 31 }]],
+      [29, []],
+    ] as const) {
+      await app.dataSource.query(
+        `UPDATE targets SET "lastDiscoveredAt" = LOCALTIMESTAMP - $2 * INTERVAL '1 day',
+                            "scanSchedule" = '0 0 * * *' WHERE id = $1`,
+        [id, days],
+      );
+      const result = await overview(id, owner.headers).expect(200);
+      expect(result.body.insights).toEqual(expected);
+    }
   });
 
   it('returns the same 404 for a missing target or one in another workspace', async () => {
