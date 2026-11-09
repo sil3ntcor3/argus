@@ -7,19 +7,25 @@ import { Link } from '@tanstack/react-router';
 const actions: Partial<
   Record<
     TargetInsightDto['kind'],
-    { tab: 'assets' | 'settings'; label: string; search?: { tab: 'tls' } }
+    | { tab: 'assets' | 'settings'; label: string; search?: { tab: 'tls' } }
+    | { tab: 'run'; label: string }
   >
 > = {
+  last_run_failed: { tab: 'run', label: 'Open run' },
   tls_expiring: { tab: 'assets', label: 'See TLS', search: { tab: 'tls' } },
   stale_scan: { tab: 'settings', label: 'Open discovery settings' },
   new_assets: { tab: 'assets', label: 'See assets' },
   no_schedule: { tab: 'settings', label: 'Configure schedule' },
 };
 const formatCount = new Intl.NumberFormat();
+const runIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Describes the discovery record without assuming a successful scan. */
 function describeInsight({ kind, count, days }: TargetInsightDto) {
   switch (kind) {
+    case 'last_run_failed':
+      return 'The latest target run failed.';
     case 'tls_expiring': {
       if (count === undefined || days === undefined) {
         return 'TLS certificates need attention.';
@@ -53,14 +59,17 @@ export function TargetInsightsPanel({
   insights,
   targetId,
   canManageDiscovery,
+  canReadJobs,
   onKeyboardNavigate,
 }: {
   insights: TargetInsightDto[];
   targetId: string;
   canManageDiscovery: boolean;
+  canReadJobs: boolean;
   onKeyboardNavigate: (tab: 'assets' | 'settings') => void;
 }) {
   const rows = insights.flatMap((insight) => {
+    if (insight.kind === 'last_run_failed' && !canReadJobs) return [];
     const description = describeInsight(insight);
     const action = actions[insight.kind];
     return description && action ? [{ insight, description, action }] : [];
@@ -83,7 +92,17 @@ export function TargetInsightsPanel({
                 )}
                 <p>{description}</p>
               </div>
-              {(action.tab === 'assets' || canManageDiscovery) && (
+              {action.tab === 'run' &&
+                typeof insight.runId === 'string' &&
+                runIdPattern.test(insight.runId) && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/jobs/runs/$id" params={{ id: insight.runId }}>
+                      {action.label}
+                    </Link>
+                  </Button>
+                )}
+              {(action.tab === 'assets' ||
+                (action.tab === 'settings' && canManageDiscovery)) && (
                 <Button variant="outline" size="sm" asChild>
                   <Link
                     to="/targets/$id/$tab"

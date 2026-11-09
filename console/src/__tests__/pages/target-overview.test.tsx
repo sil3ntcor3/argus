@@ -103,6 +103,46 @@ beforeEach(() => {
 });
 
 describe('Target Overview tab', () => {
+  const failedRun = '96e23195-3829-45b2-b170-2a16eaf57cbc';
+  it.each([
+    { allowed: true, runId: failedRun },
+    { allowed: false, runId: failedRun },
+    { allowed: true, runId: '..' },
+  ])(
+    'only links a valid failed run with job read access ($allowed, $runId)',
+    async ({ allowed, runId }) => {
+      canReadJobs.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({
+            ...metrics,
+            insights: [
+              { kind: 'last_run_failed', level: 'warning', runId },
+              { kind: 'no_schedule', level: 'info' },
+            ],
+          }),
+        ),
+      );
+      show();
+      const insights = within(
+        await screen.findByRole('region', { name: 'Discovery insights' }),
+      );
+      expect(insights.getByText('No discovery schedule.')).toBeVisible();
+      const warning = insights.queryByText('The latest target run failed.');
+      if (allowed) expect(warning).toBeVisible();
+      else expect(warning).not.toBeInTheDocument();
+      if (allowed && runId === failedRun) {
+        expect(
+          insights.getByRole('link', { name: 'Open run' }),
+        ).toHaveAttribute('href', `/jobs/runs/${runId}`);
+      } else {
+        expect(
+          insights.queryByRole('link', { name: 'Open run' }),
+        ).not.toBeInTheDocument();
+      }
+    },
+  );
+
   it('shows TLS expiry to asset readers and opens the TLS inventory by keyboard', async () => {
     server.use(
       http.get(`/api${path}/overview`, () =>
