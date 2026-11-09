@@ -108,7 +108,7 @@ beforeEach(() => {
   );
 });
 
-describe('Target Overview latest run', () => {
+describe('Target Overview runs', () => {
   const run = {
     id: '96e23195-3829-45b2-b170-2a16eaf57cbc',
     workflowName: 'Discovery workflow',
@@ -121,6 +121,55 @@ describe('Target Overview latest run', () => {
     jobsFailed: 1,
     jobsRunning: 0,
   };
+
+  const activeRuns = [
+    { ...run, workflowName: 'Queued discovery', status: 'pending' },
+    {
+      ...run,
+      id: '08450c37-55f9-42d5-9876-2c212a3d43a1',
+      workflowName: 'Running discovery',
+      status: 'in_progress',
+    },
+  ];
+
+  it('shows active runs in API order and links to each run', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, activeRuns }),
+      ),
+    );
+    show();
+    const active = within(
+      await screen.findByRole('region', { name: 'Active runs' }),
+    );
+    expect(
+      active.getAllByRole('link').map((link) => link.getAttribute('href')),
+    ).toEqual(activeRuns.map(({ id }) => `/jobs/runs/${id}`));
+    expect(active.getByText('Pending')).toBeVisible();
+    expect(active.getByText('In Progress')).toBeVisible();
+  });
+
+  it.each([
+    { allowed: false, runs: activeRuns },
+    { allowed: true, runs: [] },
+    { allowed: true, runs: null },
+    { allowed: true, runs: undefined },
+  ])(
+    'hides unavailable or empty active runs ($allowed, $runs)',
+    async ({ allowed, runs }) => {
+      canReadJobs.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({ ...metrics, activeRuns: runs }),
+        ),
+      );
+      show();
+      expect(await screen.findByText('Enabled assets')).toBeVisible();
+      expect(
+        screen.queryByRole('region', { name: 'Active runs' }),
+      ).not.toBeInTheDocument();
+    },
+  );
 
   it('shows the latest run details and link to the run', async () => {
     server.use(
