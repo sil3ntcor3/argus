@@ -1,3 +1,4 @@
+import { SeverityCountsDto } from '@/modules/projects/dto/project-assets-read.dto';
 import { ApiProperty } from '@nestjs/swagger';
 
 class TargetExposureCountDto {
@@ -66,6 +67,20 @@ export class TargetOverviewDto {
 
   @ApiProperty({ description: 'Distinct ports among discovered services' })
   openPorts: number;
+
+  @ApiProperty({
+    type: () => SeverityCountsDto,
+    nullable: true,
+    description: 'Open findings by severity, or null without vulnerability read access',
+  })
+  openVulnerabilities: SeverityCountsDto | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description: 'Open findings first seen in the last seven days, or null without vulnerability read access',
+  })
+  newVulnerabilities: number | null;
 
   @ApiProperty({
     type: TargetExposureDto,

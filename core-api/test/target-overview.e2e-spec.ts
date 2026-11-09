@@ -14,12 +14,19 @@ describe('Target overview API (e2e)', () => {
   const emptyExposure = { ports: [], technologies: [], statusCodes: [] };
   const missingSchedule = { kind: 'no_schedule', level: 'info' };
   const newAssets = { kind: 'new_assets', level: 'info', count: 1, days: 7 };
+  const noOpenFindings = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  const redactedFindings = { openVulnerabilities: null, newVulnerabilities: null };
+  const findingCounts = {
+    openVulnerabilities: { ...noOpenFindings, critical: 1, high: 2 },
+    newVulnerabilities: 2,
+  };
   const metrics = {
     totalAssets: 2,
     newAssets: 1,
     totalServices: 4,
     newServices: 3,
     openPorts: 2,
+    ...findingCounts,
     insights: [newAssets, missingSchedule],
     exposure: {
       ports: [
@@ -101,6 +108,27 @@ describe('Target overview API (e2e)', () => {
     const older = await addAsset(target, 8, true);
     const disabled = await addAsset(target, 1, false);
     const foreign = await addAsset(foreignTarget, 1, true);
+    for (const [asset, severity, age, archived, dismissed] of [
+      [recent, 'critical', 6, false, false],
+      [older, 'high', 8, false, false],
+      [disabled, 'high', 1, false, false],
+      [recent, 'critical', 1, true, false],
+      [recent, 'critical', 1, false, true],
+      [foreign, 'critical', 1, false, false],
+    ] as const) {
+      const id = await insertId(
+        `INSERT INTO vulnerabilities (name, severity, "assetId", "isArchived", "createdAt")
+         VALUES ($1, $2, $3, $4, LOCALTIMESTAMP - $5 * INTERVAL '1 day')`,
+        [randomUUID(), severity, asset, archived, age],
+      );
+      if (dismissed) {
+        await app.dataSource.query(
+          `INSERT INTO vulnerability_dismissals ("vulnerabilityId", "userId", reason)
+           VALUES ($1, $2, $3)`,
+          [id, owner.user.userId, 'Fixture dismissal'],
+        );
+      }
+    }
     const https = await addService(recent, 443, 6);
     await observe(https, 'Nginx', 200);
     await observe(https, 'Nginx', 200);
@@ -145,6 +173,8 @@ describe('Target overview API (e2e)', () => {
       totalServices: 0,
       newServices: 0,
       openPorts: 0,
+      openVulnerabilities: noOpenFindings,
+      newVulnerabilities: 0,
       exposure: emptyExposure,
       insights: [missingSchedule],
     });
@@ -154,6 +184,8 @@ describe('Target overview API (e2e)', () => {
       totalServices: 1,
       newServices: 1,
       openPorts: 1,
+      openVulnerabilities: { ...noOpenFindings, critical: 1 },
+      newVulnerabilities: 1,
       insights: [newAssets, missingSchedule],
       exposure: {
         ports: [{ name: '22', count: 1 }],
@@ -301,10 +333,26 @@ describe('Target overview API (e2e)', () => {
         'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
         [permissions, role],
       );
-      if (allowed) await overview(target, headers).expect(200, metrics);
+      if (allowed)
+        await overview(target, headers).expect(200, {
+          ...metrics,
+          ...redactedFindings,
+        });
       else await overview(target, headers).expect(403);
     }
 
+    for (const findingPermission of ['vulnerability.read', 'vulnerability.write']) {
+      await app.dataSource.query(
+        'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
+        [['target.read', 'asset.read', findingPermission], role],
+      );
+      await overview(target, headers).expect(200, metrics);
+    }
+    const restrictedMetrics = { ...metrics, ...redactedFindings };
+    await app.dataSource.query(
+      'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
+      [['target.read', 'asset.read'], role],
+    );
     const workflows = await app.dataSource.query<
       { id: string; workspaceId: string }[]
     >(
@@ -349,14 +397,17 @@ describe('Target overview API (e2e)', () => {
         ...metrics.insights,
       ],
     };
-    await overview(target, headers).expect(200, metrics);
+    await overview(target, headers).expect(200, restrictedMetrics);
     await overview(target, owner.headers).expect(200, failedMetrics);
     for (const jobPermission of ['job.read', 'job.write']) {
       await app.dataSource.query(
         'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
         [['target.read', 'asset.read', jobPermission], role],
       );
-      await overview(target, headers).expect(200, failedMetrics);
+      await overview(target, headers).expect(200, {
+        ...failedMetrics,
+        ...redactedFindings,
+      });
     }
     // For equal timestamps, run history and the insight both prefer the
     // greater ID. A pending run wins the tie and suppresses the warning.
@@ -366,6 +417,6 @@ describe('Target overview API (e2e)', () => {
        FROM job_histories WHERE id = $1`,
       [failed],
     );
-    await overview(target, headers).expect(200, metrics);
+    await overview(target, headers).expect(200, restrictedMetrics);
   });
 });

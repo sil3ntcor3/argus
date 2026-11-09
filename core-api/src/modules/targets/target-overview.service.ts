@@ -1,4 +1,5 @@
 import { CronSchedule, JobStatus } from '@/common/enums/enum';
+import { openVulnerabilityCondition } from '@/modules/vulnerabilities/open-vulnerability';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { JOB_HISTORY_STATUS_SQL } from '../jobs-registry/job-history-status';
@@ -14,12 +15,18 @@ const EXPOSURE_LIMIT = 6;
 const RECENT_DISCOVERY_DAYS = 7;
 const TLS_EXPIRY_DAYS = 30;
 
-type TargetOverviewRow = Omit<TargetOverviewDto, 'insights'> & {
+type FindingCounts = Pick<
+  TargetOverviewDto,
+  'openVulnerabilities' | 'newVulnerabilities'
+>;
+
+type TargetOverviewRow = Omit<TargetOverviewDto, 'insights' | keyof FindingCounts> & {
   scanSchedule: CronSchedule | null;
   stale: boolean;
   daysSinceDiscovery: number | null;
   expiringTlsServices: number;
   failedRunId: string | null;
+  findings: FindingCounts | null;
 };
 
 @Injectable()
@@ -29,7 +36,7 @@ export class TargetOverviewService {
   async getOverview(
     id: string,
     workspaceId: string,
-    canReadJobs = false,
+    access: { jobs: boolean; findings: boolean },
   ): Promise<TargetOverviewDto> {
     // Scope the services once and count them independently from the assets.
     // HTTP observations follow the response's owning service.
@@ -71,6 +78,21 @@ export class TargetOverviewService {
                 WHERE (SELECT ${JOB_HISTORY_STATUS_SQL}
                        FROM jobs job WHERE job."jobHistoryId" = latest.id) = '${JobStatus.FAILED}'
               ) END AS "failedRunId",
+              CASE WHEN $4::boolean THEN (
+                SELECT jsonb_build_object(
+                  'openVulnerabilities', jsonb_build_object(
+                    'critical', COUNT(*) FILTER (WHERE v.severity = 'critical'),
+                    'high', COUNT(*) FILTER (WHERE v.severity = 'high'),
+                    'medium', COUNT(*) FILTER (WHERE v.severity = 'medium'),
+                    'low', COUNT(*) FILTER (WHERE v.severity = 'low'),
+                    'info', COUNT(*) FILTER (WHERE v.severity = 'info')
+                  ),
+                  'newVulnerabilities', COUNT(*) FILTER (WHERE v."createdAt"
+                    BETWEEN LOCALTIMESTAMP - INTERVAL '${RECENT_DISCOVERY_DAYS} days' AND LOCALTIMESTAMP)
+                )
+                FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
+                WHERE a."targetId" = t.id AND ${openVulnerabilityCondition('v')}
+              ) END AS findings,
               (SELECT COUNT(*)::int FROM latest_certificates
                WHERE "notAfter" <= CURRENT_TIMESTAMP + INTERVAL '${TLS_EXPIRY_DAYS} days'
               ) AS "expiringTlsServices",
@@ -96,7 +118,7 @@ export class TargetOverviewService {
                   COUNT(DISTINCT s.port)::int AS "openPorts"
              FROM target_services s
          ) service_counts`,
-      [id, workspaceId, canReadJobs],
+      [id, workspaceId, access.jobs, access.findings],
     );
     if (!overview) throw new NotFoundException('Target not found');
 
@@ -106,6 +128,7 @@ export class TargetOverviewService {
       daysSinceDiscovery,
       expiringTlsServices,
       failedRunId,
+      findings,
       ...metrics
     } = overview;
     const insights: TargetOverviewDto['insights'] = [];
@@ -145,6 +168,11 @@ export class TargetOverviewService {
         level: TargetInsightLevel.INFO,
       });
     }
-    return { ...metrics, insights };
+    return {
+      ...metrics,
+      openVulnerabilities: findings?.openVulnerabilities ?? null,
+      newVulnerabilities: findings?.newVulnerabilities ?? null,
+      insights,
+    };
   }
 }
