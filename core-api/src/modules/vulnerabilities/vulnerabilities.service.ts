@@ -36,6 +36,10 @@ import {
   GetVulnerabilitiesQueryDto,
   VulnerabilityStatus,
 } from './dto/get-vulnerability.dto';
+import type {
+  VulnerabilityTimelineEventDto,
+  VulnerabilityTimelineResponseDto,
+} from './dto/vulnerability-timeline.dto';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
 import { openVulnerabilityCondition } from './open-vulnerability';
@@ -354,6 +358,41 @@ export class VulnerabilitiesService {
    */
   async markIsArchived(id: string, isArchived: boolean): Promise<void> {
     await this.vulnerabilitiesRepository.update({ id }, { isArchived });
+  }
+
+  async getVulnerabilityTimeline(
+    id: string,
+    workspaceId: string,
+    canReadJobs: boolean,
+  ): Promise<VulnerabilityTimelineResponseDto> {
+    type TimelineRow = VulnerabilityTimelineEventDto | { id: null };
+    // An owned finding with no events still has one row; a missing or foreign
+    // finding has none. Both the finding and the event must be in scope.
+    const rows = await this.vulnerabilitiesRepository.manager.query<
+      TimelineRow[]
+    >(
+      `SELECT event.id, event.type, event."occurredAt", event."fromStatus", event."toStatus",
+              CASE WHEN workflow."workspaceId" = target."workspaceId" THEN history.id END AS "jobHistoryId"
+       FROM vulnerabilities AS finding
+       JOIN assets AS asset ON asset.id = finding."assetId"
+       JOIN targets AS target ON target.id = asset."targetId"
+       LEFT JOIN LATERAL (
+         SELECT id, type, "occurredAt", "fromStatus", "toStatus", "jobHistoryId"
+         FROM vulnerability_events
+         WHERE "vulnerabilityId" = finding.id AND "workspaceId" = target."workspaceId"
+           AND type IN ('detected', 'status_changed')
+         ORDER BY "occurredAt" DESC, id DESC
+         LIMIT 500
+       ) AS event ON true
+       LEFT JOIN job_histories AS history ON $3::boolean AND history.id = event."jobHistoryId"
+       LEFT JOIN workflows AS workflow ON workflow.id = history."workflowId"
+       WHERE finding.id = $1 AND target."workspaceId" = $2
+       ORDER BY event."occurredAt" DESC, event.id DESC`,
+      [id, workspaceId, canReadJobs],
+    );
+    if (rows.length === 0)
+      throw new NotFoundException('Vulnerability not found');
+    return { data: rows.filter((row) => row.id !== null) };
   }
 
   /**
