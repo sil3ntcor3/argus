@@ -1,6 +1,9 @@
-import { CronSchedule, JobStatus } from '@/common/enums/enum';
+import { setTimeout as delay } from 'node:timers/promises';
+import { BullMQName, CronSchedule, JobStatus } from '@/common/enums/enum';
 import { openVulnerabilityCondition } from '@/modules/vulnerabilities/open-vulnerability';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { JobScheduler } from 'bullmq';
 import { DataSource } from 'typeorm';
 import { JOB_HISTORY_STATUS_SQL } from '../jobs-registry/job-history-status';
 import {
@@ -14,13 +17,22 @@ import { TARGET_RUN_CTES, TARGET_RUN_ORDER_SQL } from './target-run-sql';
 const EXPOSURE_LIMIT = 6;
 const RECENT_DISCOVERY_DAYS = 7;
 const TLS_EXPIRY_DAYS = 30;
+const SCHEDULE_LOOKUP_TIMEOUT_MS = 500;
+const MAX_PENDING_SCHEDULE_LOOKUPS = 16;
+
+type ScheduleReader = Pick<JobScheduler, 'getScheduler'>;
+type ScheduleLookup = ReturnType<ScheduleReader['getScheduler']>;
 
 type FindingCounts = Pick<
   TargetOverviewDto,
   'openVulnerabilities' | 'newVulnerabilities'
 >;
 
-type TargetOverviewRow = Omit<TargetOverviewDto, 'insights' | keyof FindingCounts> & {
+type TargetOverviewRow = Omit<
+  TargetOverviewDto,
+  'insights' | 'nextScanAt' | keyof FindingCounts
+> & {
+  jobId: string | null;
   scanSchedule: CronSchedule | null;
   stale: boolean;
   daysSinceDiscovery: number | null;
@@ -31,7 +43,65 @@ type TargetOverviewRow = Omit<TargetOverviewDto, 'insights' | keyof FindingCount
 
 @Injectable()
 export class TargetOverviewService {
-  constructor(private readonly dataSource: DataSource) {}
+  private readonly pendingSchedules = new Map<string, ScheduleLookup>();
+  private scheduleReader?: Promise<ScheduleReader>;
+
+  constructor(
+    private readonly dataSource: DataSource,
+    @InjectQueue(BullMQName.ASSETS_DISCOVERY_SCHEDULE)
+    private readonly scanScheduleQueue: {
+      client: Promise<{ status: string }>;
+      jobScheduler: Promise<ScheduleReader>;
+    },
+  ) {}
+
+  /** Bounds Redis commands that can outlive an individual request's deadline. */
+  private readSchedule(jobId: string): ScheduleLookup | undefined {
+    const pending = this.pendingSchedules.get(jobId);
+    if (pending || this.pendingSchedules.size >= MAX_PENDING_SCHEDULE_LOOKUPS)
+      return pending;
+
+    const lookup = (async () => {
+      try {
+        const client = await this.scanScheduleQueue.client;
+        if (client.status !== 'ready') return undefined;
+        const reader = await (this.scheduleReader ??=
+          this.scanScheduleQueue.jobScheduler);
+        return await reader.getScheduler(jobId);
+      } catch {
+        return undefined;
+      }
+    })().finally(() => this.pendingSchedules.delete(jobId));
+    const deadline = new AbortController();
+    const timedLookup = Promise.race([
+      lookup,
+      delay(SCHEDULE_LOOKUP_TIMEOUT_MS, undefined, {
+        signal: deadline.signal,
+      }),
+    ]).finally(() => deadline.abort());
+    this.pendingSchedules.set(jobId, timedLookup);
+    return timedLookup;
+  }
+
+  /** Reads the saved schedule without letting Redis delays block Overview. */
+  private async getNextScanAt(
+    id: string,
+    jobId: string | null,
+    scanSchedule: CronSchedule | null,
+  ): Promise<Date | null> {
+    if (!jobId || !scanSchedule || scanSchedule === CronSchedule.DISABLED)
+      return null;
+    const schedule = await this.readSchedule(jobId);
+    if (
+      !schedule?.next ||
+      schedule.name !== id.toLowerCase() ||
+      schedule.pattern !== scanSchedule
+    ) {
+      return null;
+    }
+    const nextScanAt = new Date(schedule.next);
+    return Number.isNaN(nextScanAt.getTime()) ? null : nextScanAt;
+  }
 
   async getOverview(
     id: string,
@@ -42,7 +112,7 @@ export class TargetOverviewService {
     // HTTP observations follow the response's owning service.
     const [overview] = await this.dataSource.query<TargetOverviewRow[]>(
       `WITH owned AS (
-         SELECT t.id, t."workspaceId", t."scanSchedule", ${staleTargetCondition('t')} AS stale,
+         SELECT t.id, t."workspaceId", t."scanSchedule", t."jobId", ${staleTargetCondition('t')} AS stale,
                 EXTRACT(DAY FROM LOCALTIMESTAMP - t."lastDiscoveredAt")::int AS "daysSinceDiscovery"
          FROM targets t WHERE t.id = $1 AND t."workspaceId" = $2
        ), target_services AS MATERIALIZED (
@@ -70,7 +140,7 @@ export class TargetOverviewService {
          WHERE c."notAfter" IS NOT NULL
          ORDER BY r."serviceId", r."createdAt" DESC, r.id DESC
        )
-       SELECT t."scanSchedule", t.stale, t."daysSinceDiscovery",
+       SELECT t."scanSchedule", t."jobId", t.stale, t."daysSinceDiscovery",
               CASE WHEN $3::boolean THEN (
                 WITH ${TARGET_RUN_CTES}
                 SELECT latest.id
@@ -123,6 +193,7 @@ export class TargetOverviewService {
     if (!overview) throw new NotFoundException('Target not found');
 
     const {
+      jobId,
       scanSchedule,
       stale,
       daysSinceDiscovery,
@@ -178,6 +249,7 @@ export class TargetOverviewService {
     }
     return {
       ...metrics,
+      nextScanAt: await this.getNextScanAt(id, jobId, scanSchedule),
       openVulnerabilities: findings?.openVulnerabilities ?? null,
       newVulnerabilities: findings?.newVulnerabilities ?? null,
       insights,

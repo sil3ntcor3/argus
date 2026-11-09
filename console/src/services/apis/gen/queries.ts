@@ -653,6 +653,11 @@ export type TargetOverviewDto = {
   /** Distinct ports among discovered services */
   openPorts: number;
   /**
+   * Next recorded discovery firing time, or null when unavailable
+   * @nullable
+   */
+  nextScanAt: string | null;
+  /**
    * Open findings by severity, or null without vulnerability read access
    * @nullable
    */

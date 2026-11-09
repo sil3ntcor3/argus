@@ -71,6 +71,15 @@ export class TargetOverviewDto {
   openPorts: number;
 
   @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Next recorded discovery firing time, or null when unavailable',
+  })
+  nextScanAt: Date | null;
+
+  @ApiProperty({
     type: () => SeverityCountsDto,
     nullable: true,
     description: 'Open findings by severity, or null without vulnerability read access',
