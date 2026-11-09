@@ -243,7 +243,9 @@ export const vulnerabilityColumns: ColumnDef<Vulnerability, unknown>[] = [
                       ? 'False positive'
                       : dismissal.reason === 'used_in_test'
                         ? 'Used in tests'
-                        : "Won't fix"}
+                        : dismissal.reason === 'risk_accepted'
+                          ? 'Risk accepted'
+                          : "Won't fix"}
                     {dismissal.comment && (
                       <>
                         <br />

@@ -40,8 +40,10 @@ import type {
   VulnerabilityTimelineEventDto,
   VulnerabilityTimelineResponseDto,
 } from './dto/vulnerability-timeline.dto';
+import { dismissFindings, type FindingDismissalInput } from './dismiss-findings';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
+import { RISK_ACCEPTED } from './finding-dismissal-reason';
 import {
   activeDismissalCondition,
   openVulnerabilityCondition,
@@ -289,6 +291,7 @@ export class VulnerabilitiesService {
         'dismissal',
         activeDismissalCondition('dismissal'),
       )
+      .addSelect('dismissal.expiresAt')
       .leftJoinAndSelect('dismissal.user', 'user')
       .where('workspaces.id = :workspaceId', { workspaceId })
       .andWhere('vulnerabilities.id = :id', { id });
@@ -301,6 +304,10 @@ export class VulnerabilitiesService {
       );
     }
 
+    const dismissal = vulnerability.vulnerabilityDismissal;
+    if (dismissal && (dismissal.reason !== RISK_ACCEPTED || !dismissal.expiresAt)) {
+      delete dismissal.expiresAt;
+    }
     return vulnerability;
   }
 
@@ -431,61 +438,10 @@ export class VulnerabilitiesService {
     ids: string[],
     workspaceId: string,
     user: User,
-    dismiss: { reason: VulnerabilityDismissal['reason']; comment?: string },
+    dismiss: FindingDismissalInput,
   ) {
-    // Validate all vulnerabilities exist and belong to the workspace
-    const vulnerabilities = await this.vulnerabilitiesRepository.find({
-      where: {
-        id: In(ids),
-        asset: {
-          target: { workspaceId },
-        },
-      },
-    });
-
-    const foundIds = vulnerabilities.map((v) => v.id);
-    const notFoundIds = ids.filter((id) => !foundIds.includes(id));
-    if (notFoundIds.length > 0) {
-      throw new NotFoundException(
-        `Vulnerabilities not found: ${notFoundIds.join(', ')}`,
-      );
-    }
-
-    // Check which are already dismissed
-    const alreadyDismissed = await this.dismissRepo.find({
-      where: {
-        vulnerabilityId: In(ids),
-      },
-    });
-
-    if (alreadyDismissed.length > 0) {
-      throw new BadRequestException(
-        `Vulnerabilities already dismissed: ${alreadyDismissed.map((d) => d.vulnerabilityId).join(', ')}`,
-      );
-    }
-
-    // Create dismissal records for all
-    const dismissals = ids.map((id) =>
-      this.dismissRepo.create({
-        vulnerabilityId: id,
-        userId: user.id,
-        reason: dismiss.reason,
-        comment: dismiss.comment,
-      }),
-    );
-
-    await this.dismissRepo.save(dismissals);
-    // TypeORM populates nullable columns on save, including private fields.
-    return dismissals.map(
-      ({ id, vulnerabilityId, userId, reason, comment, createdAt, updatedAt }) => ({
-        id,
-        vulnerabilityId,
-        userId,
-        reason,
-        comment,
-        createdAt,
-        updatedAt,
-      }),
+    return this.vulnerabilitiesRepository.manager.transaction((manager) =>
+      dismissFindings(manager, ids, workspaceId, user.id, dismiss),
     );
   }
 

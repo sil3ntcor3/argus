@@ -1770,6 +1770,7 @@ export const VulnerabilityDismissalReason = {
   false_positive: 'false_positive',
   used_in_test: 'used_in_test',
   wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
 } as const;
 
 export type VulnerabilitySeverity =
@@ -1861,6 +1862,8 @@ export type VulnerabilityDismissal = {
   userId: string;
   reason: VulnerabilityDismissalReason;
   comment: string;
+  /** Expiry of a timed risk acceptance */
+  expiresAt?: string;
   user: User;
   vulnerability: Vulnerability;
 };
@@ -3134,6 +3137,7 @@ export const BulkDismissVulnerabilitiesDtoReason = {
   false_positive: 'false_positive',
   used_in_test: 'used_in_test',
   wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
 } as const;
 
 export type BulkDismissVulnerabilitiesDto = {
@@ -3141,6 +3145,8 @@ export type BulkDismissVulnerabilitiesDto = {
   reason: BulkDismissVulnerabilitiesDtoReason;
   /** @nullable */
   comment: string | null;
+  /** Required for risk acceptance only */
+  expiresAt?: string;
 };
 
 export type BulkReopenVulnerabilitiesDto = {
