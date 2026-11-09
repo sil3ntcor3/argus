@@ -4,6 +4,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { CodeBlock } from '@/components/common/code-block';
 import Page from '@/components/common/page';
 import { WorkflowFileSheet } from '@/components/common/workflow-file-sheet';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
@@ -534,6 +535,15 @@ export default function Runs() {
           activeJobsCount={activeJobsCount}
           etaSeconds={runError ? null : jobHistoryDetail.etaSeconds}
         />
+      )}
+      {!runError && activeJobsCount === 0 && jobHistoryDetail?.failureReason && (
+        <Alert variant="destructive" className="mb-4">
+          <TriangleAlert aria-hidden="true" />
+          <AlertTitle>Latest job failure</AlertTitle>
+          <AlertDescription className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {jobHistoryDetail.failureReason}
+          </AlertDescription>
+        </Alert>
       )}
       {/* Workflow steps (DAG) — falls back to the tool list for runs created
           before the workflow engine existed. */}
