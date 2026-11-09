@@ -387,6 +387,40 @@ describe('Target Overview tab', () => {
 describe('Target Overview findings', () => {
   const findings = { critical: 1, high: 2, medium: 0, low: 0, info: 0 };
 
+  it.each([true, false])(
+    'only shows the critical insight and its action with vulnerability read access %s',
+    async (allowed) => {
+      canReadFindings.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({
+            ...metrics,
+            insights: [
+              { kind: 'critical_open', level: 'critical', count: 2 },
+              { kind: 'no_schedule', level: 'info' },
+            ],
+          }),
+        ),
+      );
+      show();
+      const insights = within(
+        await screen.findByRole('region', { name: 'Discovery insights' }),
+      );
+      const warning = insights.queryByText('2 open critical vulnerabilities.');
+      const action = insights.queryByRole('link', {
+        name: 'Review vulnerabilities',
+      });
+      if (allowed) {
+        expect(insights.getByText('Critical', { exact: true })).toBeVisible();
+        expect(warning).toBeVisible();
+        expect(action).toHaveAttribute('href', `${path}/vulnerabilities`);
+      } else {
+        expect(warning).not.toBeInTheDocument();
+        expect(action).not.toBeInTheDocument();
+      }
+    },
+  );
+
   it('shows finding counts and transfers focus when opening the target list by keyboard', async () => {
     server.use(
       http.get(`/api${path}/overview`, () =>
