@@ -4,7 +4,7 @@ import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
 
-describe('Finding dismissal history (e2e)', () => {
+describe('Finding dismissal and reopen history (e2e)', () => {
   let app: TestApp;
   let owner: Awaited<ReturnType<typeof createUserWithWorkspace>>;
   let other: typeof owner;
@@ -41,6 +41,17 @@ describe('Finding dismissal history (e2e)', () => {
       .post('/api/vulnerabilities/dismiss')
       .set(owner.headers)
       .send({ ids, ...fields });
+  const makeDismissal = (id: string, user = owner, expiresAt: Date | null = null) =>
+    insertId(
+      `INSERT INTO vulnerability_dismissals ("vulnerabilityId","userId",reason,"expiresAt")
+       VALUES ($1,$2,$3,$4)`,
+      [id, user.user.userId, expiresAt ? 'risk_accepted' : 'wont_fix', expiresAt],
+    );
+  const reopen = (ids: string[]) =>
+    request(app.server)
+      .post('/api/vulnerabilities/reopen')
+      .set(owner.headers)
+      .send({ ids });
   const eventsFor = (id: string) =>
     app.dataSource.getRepository(VulnerabilityEvent).find({
       where: { vulnerabilityId: id },
@@ -115,5 +126,69 @@ describe('Finding dismissal history (e2e)', () => {
     const events = await eventsFor(id);
     expect(events.map(({ type }) => type)).toEqual(['risk_expired', 'dismissed']);
     expect(events[1].data).toMatchObject(fields);
+  });
+
+  it('reopens by dismissal ID, writes one event per finding, and keeps it private', async () => {
+    const id = await finding();
+    const second = await finding();
+    const expiresAt = new Date(Date.now() + 86_400_000);
+    const ordinary = await makeDismissal(id);
+    const timed = await makeDismissal(second, owner, expiresAt);
+    const responses = await Promise.all([
+      reopen([ordinary, timed, ordinary]),
+      reopen([timed, ordinary]),
+    ]);
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 404]);
+
+    for (const [findingId, reason, expiry] of [
+      [id, 'wont_fix', null],
+      [second, 'risk_accepted', expiresAt.toISOString()],
+    ] as const) {
+      const events = await eventsFor(findingId);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        workspaceId: owner.workspace.id,
+        actorId: owner.user.userId,
+        type: 'reopened',
+        data: { previousReason: reason },
+      });
+      const recordedExpiry = events[0].data?.expiresAt;
+      expect(
+        typeof recordedExpiry === 'string' ? new Date(recordedExpiry).toISOString() : recordedExpiry,
+      ).toBe(expiry);
+      await request(app.server)
+        .get(`/api/vulnerabilities/${findingId}/timeline`)
+        .set(owner.headers)
+        .expect(200, { data: [] });
+    }
+  });
+
+  it('leaves both dismissals and histories untouched when a request includes a foreign ID', async () => {
+    const id = await finding();
+    const foreign = await finding(foreignAsset);
+    const ownDismissal = await makeDismissal(id);
+    const foreignDismissal = await makeDismissal(foreign, other);
+    await reopen([ownDismissal, foreignDismissal]).expect(404);
+    expect(await eventsFor(id)).toEqual([]);
+    expect(await eventsFor(foreign)).toEqual([]);
+    const { body } = await request(app.server)
+      .get(`/api/vulnerabilities/${id}`)
+      .set(owner.headers)
+      .expect(200);
+    expect(body).toMatchObject({ vulnerabilityDismissal: { id: ownDismissal } });
+  });
+
+  it('records expiry when a stale reopen removes an elapsed risk acceptance', async () => {
+    const id = await finding();
+    const elapsed = await makeDismissal(id, owner, new Date(Date.now() - 86_400_000));
+    await reopen([elapsed]).expect(201);
+    const events = await eventsFor(id);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: 'risk_expired',
+      workspaceId: owner.workspace.id,
+      actorId: null,
+      data: { acceptedById: owner.user.userId },
+    });
   });
 });

@@ -254,11 +254,13 @@ export class VulnerabilitiesController {
   @Post('reopen')
   bulkReopenVulnerabilities(
     @WorkspaceId() workspaceId: string,
+    @UserContext() user: User,
     @Body() dto: BulkReopenVulnerabilitiesDto,
   ) {
     return this.vulnerabilitiesService.bulkReopenVulnerabilities(
       dto.ids,
       workspaceId,
+      user,
     );
   }
 }
