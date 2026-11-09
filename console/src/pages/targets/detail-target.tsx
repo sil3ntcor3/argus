@@ -24,6 +24,7 @@ import { FastScanDialog } from '../vulnerabilities/components/fast-scan-dialog';
 import { VulnerabilitiesView } from '../vulnerabilities/vulnerabilities-view';
 import AssetsDiscovering from './assets-discovering';
 import { GitOrgDetail } from './git-org-detail';
+import { TargetOverviewTab } from './components/target-overview-tab';
 import { TargetSwitcher } from './components/target-switcher';
 import SettingTarget from './setting-target';
 
@@ -90,7 +91,10 @@ export function DetailTarget() {
   }
 
   const activeTab =
-    tab === 'vulnerabilities' || tab === 'settings' ? tab : 'assets';
+    tab === 'overview' || tab === 'vulnerabilities' || tab === 'settings'
+      ? tab
+      : 'assets';
+  const canReadAssets = !permission.error && permission.hasPermission('asset.read');
   const canChangeTarget = permission.hasPermission('target.write');
   const scanning = target.status !== JobStatus.completed;
   const scanTarget = { id: target.id, value: target.value };
@@ -135,6 +139,7 @@ export function DetailTarget() {
       <div className="space-y-4">
         <nav aria-label="Target sections" className="flex flex-wrap gap-2">
           {[
+            ...(canReadAssets ? [{ value: 'overview', label: 'Overview' }] : []),
             { value: 'assets', label: 'Assets' },
             { value: 'vulnerabilities', label: 'Vulnerabilities' },
             ...(canChangeTarget
@@ -163,7 +168,16 @@ export function DetailTarget() {
             </Button>
           ))}
         </nav>
-        {activeTab === 'settings' ? (
+        {activeTab === 'overview' ? (
+          canReadAssets ? (
+            <TargetOverviewTab
+              targetId={target.id}
+              onAccessDenied={permission.refetch}
+            />
+          ) : (
+            <AccessDenied />
+          )
+        ) : activeTab === 'settings' ? (
           canChangeTarget ? (
             <SettingTarget
               key={target.id}
