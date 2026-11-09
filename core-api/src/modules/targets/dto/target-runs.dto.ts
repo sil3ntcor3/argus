@@ -68,4 +68,12 @@ export class TargetRunDto {
 
   @ApiProperty({ minimum: 0, description: 'Running jobs on the target' })
   jobsRunning: number;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'Tool on the running target job with the latest claim time. Missing times sort last, and ties use job ID descending.',
+  })
+  currentTool: string | null;
 }
