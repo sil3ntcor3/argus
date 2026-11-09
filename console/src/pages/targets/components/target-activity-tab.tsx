@@ -1,7 +1,9 @@
 import AccessDenied from '@/components/common/access-denied';
 import { Button } from '@/components/ui/button';
 import JobStatusBadge from '@/components/ui/job-status';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
   type TargetRunDto,
@@ -9,7 +11,7 @@ import {
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 const runDate = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -55,6 +57,8 @@ export function TargetActivityTab({
   const {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
+  const [activeOnly, setActiveOnly] = useState(false);
+  const filterId = useId();
   const list = useRef<HTMLUListElement>(null);
   const keyboardLoad = useRef<{ button: HTMLButtonElement; index: number }>(
     null,
@@ -74,11 +78,11 @@ export function TargetActivityTab({
     refetch,
   } = useTargetsControllerGetTargetRunsInfinite(
     targetId,
-    { limit: 10 },
+    { limit: 10, active: activeOnly || undefined },
     {
       query: {
         enabled: Boolean(selectedWorkspaceId),
-        queryKey: ['target-runs', selectedWorkspaceId, targetId],
+        queryKey: ['target-runs', selectedWorkspaceId, targetId, activeOnly],
         initialPageParam: 1,
         getNextPageParam: (last) =>
           last.hasNextPage ? last.page + 1 : undefined,
@@ -123,7 +127,29 @@ export function TargetActivityTab({
 
   return (
     <section aria-label="Target activity" className="space-y-3">
-      <h2 className="text-base font-semibold">Runs</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">Runs</h2>
+        {!denied && (
+          <div className="flex items-center gap-2">
+            <Switch
+              id={filterId}
+              aria-describedby={`${filterId}-description`}
+              checked={activeOnly}
+              onCheckedChange={setActiveOnly}
+            />
+            <Label htmlFor={filterId} className="font-normal">
+              Active runs only
+            </Label>
+            <span id={`${filterId}-description`} className="sr-only">
+              Show pending or running runs started in the last seven days.
+            </span>
+          </div>
+        )}
+      </div>
+      <p role="status" aria-label="Run results" className="sr-only">
+        {runs &&
+          `Showing ${runs.length} ${activeOnly ? 'active ' : ''}${runs.length === 1 ? 'run' : 'runs'}.`}
+      </p>
       {denied ? (
         <AccessDenied />
       ) : failed ? (
@@ -150,7 +176,9 @@ export function TargetActivityTab({
         </div>
       ) : runs.length === 0 ? (
         <p className="rounded-lg border p-4 text-sm text-muted-foreground">
-          No runs for this target yet.
+          {activeOnly
+            ? 'No active runs started in the last seven days.'
+            : 'No runs for this target yet.'}
         </p>
       ) : (
         <>
