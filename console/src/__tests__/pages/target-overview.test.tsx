@@ -1,3 +1,4 @@
+import { TargetChangesPanel } from '@/pages/targets/components/target-changes-panel';
 import DetailTarget from '@/pages/targets/detail-target';
 import { server } from '@/test/mocks/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -826,6 +827,68 @@ describe('Target discovery changes', () => {
     label: 'https://new.example.test:8443',
     assetValue: asset.label,
   };
+
+  it.each([true, false])(
+    'labels mixed-feed findings only with vulnerability access (%s)',
+    async (allowed) => {
+      canReadFindings.mockReturnValue(allowed);
+      server.use(
+        http.get(changesPath, () =>
+          HttpResponse.json({
+            page: 1,
+            hasNextPage: false,
+            data: [
+              asset,
+              {
+                ...service,
+                id: 'finding-1',
+                kind: 'vulnerability',
+                label: 'Historic finding',
+              },
+            ],
+          }),
+        ),
+      );
+      show('activity');
+      expect(await screen.findByText(asset.label)).toBeVisible();
+      const finding = screen.queryByText('Historic finding');
+      if (allowed) {
+        expect(finding).toBeVisible();
+        expect(screen.getByText('Finding discovered')).toBeVisible();
+      } else {
+        expect(finding).not.toBeInTheDocument();
+      }
+    },
+  );
+
+  it('removes findings and refreshes the mounted feed when access changes', async () => {
+    const getChanges = vi.fn(() =>
+      HttpResponse.json({
+        page: 1,
+        hasNextPage: false,
+        data: [asset, { ...service, kind: 'vulnerability', label: 'Finding' }],
+      }),
+    );
+    server.use(http.get(changesPath, getChanges));
+    const client = new QueryClient();
+    const onAccessDenied = vi.fn();
+    const view = (allowed: boolean) => (
+      <QueryClientProvider client={client}>
+        <TargetChangesPanel
+          targetId={id}
+          canReadFindings={allowed}
+          onAccessDenied={onAccessDenied}
+        />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view(true));
+    expect(await screen.findByText('Finding')).toBeVisible();
+    rerender(view(false));
+    expect(screen.queryByText('Finding')).not.toBeInTheDocument();
+    expect(await screen.findByText(asset.label)).toBeVisible();
+    expect(screen.queryByText('Finding')).not.toBeInTheDocument();
+    expect(getChanges).toHaveBeenCalledTimes(2);
+  });
 
   it('lists and filters discoveries without job read access and resets pagination on filter change', async () => {
     canReadJobs.mockReturnValue(false);

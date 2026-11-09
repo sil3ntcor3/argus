@@ -14,6 +14,15 @@ describe('Target changes API (e2e)', () => {
   let tiedAsset: string;
   let service: string;
   let primaryService: string;
+  let findingTarget: string;
+  let findingRows: Array<{
+    id: string;
+    kind: string;
+    label: string;
+    at: string;
+    assetValue: string;
+    severity?: string;
+  }>;
   const early = '2026-01-02T03:04:05.000Z';
   const late = '2026-01-03T03:04:05.000Z';
 
@@ -50,6 +59,20 @@ describe('Target changes API (e2e)', () => {
     );
   }
 
+  function makeFinding(
+    assetId: string,
+    label: string,
+    severity: string,
+    at: string,
+    archived = false,
+  ) {
+    return insertId(
+      `INSERT INTO vulnerabilities (name, severity, "assetId", "createdAt", "isArchived")
+       VALUES ($1, $2, $3, $4, $5)`,
+      [label, severity, assetId, new Date(at), archived],
+    );
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     await app.app.listen(0);
@@ -72,6 +95,51 @@ describe('Target changes API (e2e)', () => {
       'primary.example.test:443',
       early,
     );
+
+    findingTarget = await makeTarget(owner.workspace.id);
+    const assetValue = 'findings.example.test';
+    const findingAsset = await makeAsset(findingTarget, assetValue);
+    await makeService(findingAsset, 'findings:443', late);
+    const archived = await makeFinding(
+      findingAsset,
+      'Archived',
+      'high',
+      late,
+      true,
+    );
+    const dismissed = await makeFinding(
+      findingAsset,
+      'Dismissed',
+      'medium',
+      late,
+    );
+    const legacy = await makeFinding(
+      findingAsset,
+      'Legacy severity',
+      'unknown',
+      early,
+    );
+    await app.dataSource.query(
+      'INSERT INTO vulnerability_dismissals ("vulnerabilityId", "userId", reason) VALUES ($1, $2, $3)',
+      [dismissed, owner.user.userId, 'Fixture dismissal'],
+    );
+    const siblingFindingAsset = await makeAsset(
+      sibling,
+      'sibling-findings.example.test',
+    );
+    await makeFinding(siblingFindingAsset, 'Sibling finding', 'critical', late);
+    const foreign = await makeAsset(
+      await makeTarget(other.workspace.id),
+      'foreign.example.test',
+    );
+    await makeFinding(foreign, 'Foreign finding', 'critical', late);
+    findingRows = [
+      { id: archived, label: 'Archived', at: late, severity: 'high' },
+      { id: dismissed, label: 'Dismissed', at: late, severity: 'medium' },
+      { id: legacy, label: 'Legacy severity', at: early },
+    ]
+      .sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id))
+      .map((row) => ({ ...row, kind: 'vulnerability', assetValue }));
   });
 
   afterAll(async () => {
@@ -143,7 +211,7 @@ describe('Target changes API (e2e)', () => {
   });
 
   it('validates input and returns the same response for missing and foreign targets', async () => {
-    await read(target, owner.headers, '?kind=vulnerability').expect(400);
+    await read(target, owner.headers, '?kind=fixed').expect(400);
     await read(target, owner.headers, '?page=1.5').expect(400);
     await read(target, owner.headers, '?limit=101').expect(400);
     await read('invalid', owner.headers).expect(400);
@@ -157,6 +225,36 @@ describe('Target changes API (e2e)', () => {
     const missing = await read(randomUUID(), owner.headers).expect(404);
     const foreign = await read(otherTarget, owner.headers).expect(404);
     expect(foreign.body).toEqual(missing.body);
+  });
+
+  it('includes historical finding discoveries in the scoped mixed feed', async () => {
+    const mixed = await read(findingTarget, owner.headers).expect(200);
+    expect(mixed.body).toMatchObject({
+      total: 5,
+      data: [
+        { kind: 'asset', label: 'findings.example.test', at: late },
+        { kind: 'service', label: 'findings:443', at: late },
+        ...findingRows,
+      ],
+    });
+    const filtered = await read(
+      findingTarget,
+      owner.headers,
+      '?kind=vulnerability&limit=1&page=2',
+    ).expect(200);
+    expect(filtered.body).toMatchObject({
+      total: 3,
+      page: 2,
+      hasNextPage: true,
+      data: [findingRows[1]],
+    });
+    const all = await read(
+      findingTarget,
+      owner.headers,
+      '?kind=vulnerability',
+    ).expect(200);
+    expect((all.body as { data: unknown[] }).data).toEqual(findingRows);
+    await read(findingTarget, other.headers, '?kind=vulnerability').expect(404);
   });
 
   it('requires both target and asset read access in the selected workspace', async () => {
@@ -186,6 +284,24 @@ describe('Target changes API (e2e)', () => {
         [keys, role],
       );
       await read(target, headers).expect(status);
+    }
+    const restricted = await read(findingTarget, headers).expect(200);
+    expect(restricted.body).toMatchObject({
+      total: 2,
+      data: [{ kind: 'asset' }, { kind: 'service' }],
+    });
+    await read(findingTarget, headers, '?kind=vulnerability').expect(403);
+    for (const key of ['vulnerability.read', 'vulnerability.write']) {
+      await app.dataSource.query(
+        'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
+        [['target.read', 'asset.read', key], role],
+      );
+      const allowed = await read(
+        findingTarget,
+        headers,
+        '?kind=vulnerability',
+      ).expect(200);
+      expect((allowed.body as { data: unknown[] }).data).toEqual(findingRows);
     }
   });
 });

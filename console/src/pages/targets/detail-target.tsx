@@ -229,6 +229,7 @@ export function DetailTarget() {
                 <TargetChangesPanel
                   key={`changes-${target.id}`}
                   targetId={target.id}
+                  canReadFindings={canReadFindings}
                   onAccessDenied={permission.refetch}
                 />
               )}
