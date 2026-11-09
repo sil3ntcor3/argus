@@ -100,6 +100,62 @@ beforeEach(() => {
 });
 
 describe('Target Overview tab', () => {
+  it('shows ranked exposure groups and their service counts', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({
+          ...metrics,
+          exposure: {
+            ports: [
+              { name: '443', count: 2 },
+              { name: '80', count: 1 },
+            ],
+            technologies: [{ name: 'Nginx', count: 2 }],
+            statusCodes: [{ name: '200', count: 2 }],
+          },
+        }),
+      ),
+    );
+    show();
+    const exposure = within(
+      await screen.findByRole('region', { name: 'Target exposure' }),
+    );
+    const ports = within(exposure.getByRole('list', { name: 'Ports' }));
+    const rows = ports.getAllByRole('listitem');
+    expect(within(rows[0]).getByText('443')).toBeVisible();
+    expect(within(rows[0]).getByText('2 services')).toBeVisible();
+    expect(within(rows[1]).getByText('1 service')).toBeVisible();
+    expect(
+      within(exposure.getByRole('list', { name: 'Technologies' })).getByText(
+        'Nginx',
+      ),
+    ).toBeVisible();
+    expect(
+      within(
+        exposure.getByRole('list', { name: 'Primary HTTP status codes' }),
+      ).getByText('200'),
+    ).toBeVisible();
+  });
+
+  it('shows empty exposure groups without empty lists', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({
+          ...metrics,
+          exposure: { ports: [], technologies: [], statusCodes: [] },
+        }),
+      ),
+    );
+    show();
+    const exposure = within(
+      await screen.findByRole('region', { name: 'Target exposure' }),
+    );
+    expect(exposure.getByText('No ports discovered.')).toBeVisible();
+    expect(exposure.getByText('No technologies detected.')).toBeVisible();
+    expect(exposure.getByText('No HTTP status codes recorded.')).toBeVisible();
+    expect(exposure.queryByRole('list')).not.toBeInTheDocument();
+  });
+
   it('opens from Assets and displays totals, recent discoveries, and zero values', async () => {
     const { user, router } = show('assets');
     expect(await screen.findByText('Asset inventory')).toBeVisible();

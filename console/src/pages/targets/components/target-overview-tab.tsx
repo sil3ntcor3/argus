@@ -6,6 +6,7 @@ import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { useTargetsControllerGetTargetOverview } from '@/services/apis/gen/queries';
 import { isAxiosError } from 'axios';
 import { useEffect } from 'react';
+import { TargetExposurePanel } from './target-exposure-panel';
 
 const formatCount = new Intl.NumberFormat();
 const grid = 'grid gap-3 sm:grid-cols-3';
@@ -51,7 +52,7 @@ export function TargetOverviewTab({
   const data = !failed && isFetchedAfterMount ? overview.data : undefined;
 
   return (
-    <section aria-label="Target overview">
+    <section aria-label="Target overview" className="space-y-4">
       {denied ? (
         <AccessDenied />
       ) : failed ? (
@@ -113,6 +114,7 @@ export function TargetOverviewTab({
           ))}
         </div>
       )}
+      {data?.exposure && <TargetExposurePanel exposure={data.exposure} />}
     </section>
   );
 }
