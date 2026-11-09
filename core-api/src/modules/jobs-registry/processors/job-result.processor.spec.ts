@@ -106,6 +106,24 @@ describe('JobResultProcessor', () => {
     expect(processor).toBeDefined();
   });
 
+  it('passes private scan scope only to result ingestion', async () => {
+    const digest = 'a'.repeat(64);
+    const job = { ...baseJob, findingScanScopeKey: digest, isPublishEvent: true };
+    const payload = [{ name: 'finding' }];
+    mockJobsRegistryService.findJobForUpdate.mockResolvedValue(job);
+    mockStorageService.readJsonFile.mockResolvedValue({ payload });
+
+    await processor.process(baseBullJob);
+
+    expect(mockDataAdapterService.syncData).toHaveBeenCalledWith({ job, data: payload });
+    expect(mockWorkflowRunnerService.onJobTerminal.mock.calls[0][0])
+      .not.toHaveProperty('findingScanScopeKey');
+    expect(mockRedisService.publish).toHaveBeenCalledWith(
+      'jobs:job-1',
+      expect.not.stringContaining(digest),
+    );
+  });
+
   describe('when the job is not found', () => {
     it('should delete the orphaned result file instead of leaking it', async () => {
       mockJobsRegistryService.findJobForUpdate.mockResolvedValue(null);

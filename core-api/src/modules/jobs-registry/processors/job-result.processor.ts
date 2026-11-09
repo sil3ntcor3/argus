@@ -119,11 +119,11 @@ export class JobResultProcessor extends WorkerHost {
     const [bucket, ...rest] = resultRef.split('/');
     const fileName = rest.join('/');
 
-    const job = await this.jobsRegistryService.findJobForUpdate(
+    const claimedJob = await this.jobsRegistryService.findJobForUpdate(
       workerId,
       jobId,
     );
-    if (!job) {
+    if (!claimedJob) {
       // The job is no longer ours: deleted, or (the common case) cancelled or
       // re-run while the worker was still executing it — the lookup only
       // matches IN_PROGRESS. Nothing can be processed — delete the staged
@@ -142,6 +142,8 @@ export class JobResultProcessor extends WorkerHost {
       return;
     }
 
+    // Only ingestion needs the private scope. The terminal job is published.
+    const { findingScanScopeKey, ...job } = claimedJob;
     try {
       // A result is shaped by the endpoint it was posted to; syncing it through
       // a different category's handler would write the wrong data. Retrying
@@ -237,7 +239,7 @@ export class JobResultProcessor extends WorkerHost {
       if (job.isSaveData && dataForSync !== undefined) {
         await this.dataAdapterService.syncData({
           data: dataForSync,
-          job,
+          job: findingScanScopeKey ? { ...job, findingScanScopeKey } : job,
         });
       }
 

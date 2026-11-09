@@ -1072,25 +1072,19 @@ export class JobsRegistryService {
    * @returns
    */
   public async findJobForUpdate(workerId: string, jobId: string) {
-    return this.repo.findOne({
-      where: {
-        workerId,
-        id: jobId,
-        status: JobStatus.IN_PROGRESS,
-      },
-      relations: {
-        asset: {
-          target: true,
+    return this.repo
+      .createQueryBuilder('job')
+      .setFindOptions({
+        where: { workerId, id: jobId, status: JobStatus.IN_PROGRESS },
+        relations: {
+          asset: { target: true },
+          jobHistory: { workflow: { workspace: true } },
+          tool: true,
+          assetService: true,
         },
-        jobHistory: {
-          workflow: {
-            workspace: true,
-          },
-        },
-        tool: true,
-        assetService: true,
-      },
-    });
+      })
+      .addSelect('job.findingScanScopeKey')
+      .getOne();
   }
 
   public async getManyJobHistories(

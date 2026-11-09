@@ -980,7 +980,6 @@ export class DataAdapterService {
         delete vulnValues.timesDetected;
         delete vulnValues.resurfacedCount;
         delete vulnValues.missedScans;
-        delete vulnValues.scanScopeKey;
         delete vulnValues.fixedAt;
         return {
           ...vulnValues,
@@ -999,6 +998,8 @@ export class DataAdapterService {
           modificationDate: normalizeTimestamp(vulnValues.modificationDate),
           firstDetectedDate: now,
           lastSeenDate: now,
+          // Replace or clear coverage from the server's saved job only.
+          scanScopeKey: job.findingScanScopeKey ?? null,
         };
       });
 
@@ -1062,7 +1063,7 @@ export class DataAdapterService {
           .values(chunk)
           .orUpdate({
             conflict_target: ['fingerprint'],
-            overwrite: [...RESCAN_OVERWRITE_COLUMNS],
+            overwrite: [...RESCAN_OVERWRITE_COLUMNS, 'scanScopeKey'],
           })
           .returning('*')
           .execute();
