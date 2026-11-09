@@ -3,6 +3,7 @@ import { openVulnerabilityCondition } from '@/modules/vulnerabilities/open-vulne
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { TargetSummaryDto } from './dto/target-summary.dto';
+import { staleTargetCondition } from './stale-target-condition';
 
 type FindingFields = Pick<
   TargetSummaryDto,
@@ -28,8 +29,7 @@ export class TargetSummaryService {
                 WHERE a."targetId" = t.id AND j.status IN ($2, $3)
               ))::int AS scanning,
               COUNT(*) FILTER (WHERE t."scanSchedule" <> $4)::int AS scheduled,
-              COUNT(*) FILTER (WHERE t."lastDiscoveredAt" IS NULL
-                OR t."lastDiscoveredAt" < LOCALTIMESTAMP - INTERVAL '30 days')::int AS stale
+              COUNT(*) FILTER (WHERE ${staleTargetCondition('t')})::int AS stale
          FROM targets t WHERE t."workspaceId" = $1`,
       [
         workspaceId,

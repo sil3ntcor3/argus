@@ -15,6 +15,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Header,
   Param,
@@ -38,6 +39,17 @@ import { TargetSummaryDto } from './dto/target-summary.dto';
 import { Target } from './entities/target.entity';
 import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
+
+function canReadTargetFindings(permissions: RequestWithMetadata['permissions']) {
+  return (
+    permissions?.some(
+      (key) =>
+        key === '*' ||
+        key === 'vulnerability.read' ||
+        key === 'vulnerability.write',
+    ) ?? false
+  );
+}
 
 @Controller('targets')
 export class TargetsController {
@@ -100,7 +112,17 @@ export class TargetsController {
   getTargetsInWorkspace(
     @Query() query: GetManyWorkspaceQueryParamsDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+    @Res({ passthrough: true }) response: NodeResponse,
   ) {
+    if (query.hasCritical) {
+      response.setHeader('Cache-Control', 'private, no-store');
+      if (!canReadTargetFindings(request.permissions)) {
+        throw new ForbiddenException(
+          'Filtering by critical findings requires vulnerability read access',
+        );
+      }
+    }
     return this.targetsService.getTargetsInWorkspace(query, workspaceId);
   }
 
@@ -117,10 +139,10 @@ export class TargetsController {
     @WorkspaceId() workspaceId: string,
     @Req() request: RequestWithMetadata,
   ) {
-    const canReadFindings = request.permissions?.some(
-      (key) => key === '*' || key === 'vulnerability.read' || key === 'vulnerability.write',
+    return this.targetSummaryService.getSummary(
+      workspaceId,
+      canReadTargetFindings(request.permissions),
     );
-    return this.targetSummaryService.getSummary(workspaceId, canReadFindings ?? false);
   }
 
   @Doc({
