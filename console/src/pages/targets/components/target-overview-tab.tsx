@@ -71,6 +71,7 @@ export function TargetOverviewTab({
 
   const failed = isError || errorUpdatedAt > dataUpdatedAt;
   const data = !failed && isFetchedAfterMount ? overview.data : undefined;
+  const activeRuns = canReadJobs ? data?.activeRuns : null;
   const nextScan =
     typeof data?.nextScanAt === 'string' ? new Date(data.nextScanAt) : null;
 
@@ -167,6 +168,22 @@ export function TargetOverviewTab({
             ) : (
               <p className="text-sm text-muted-foreground">No runs to show.</p>
             )}
+          </Card>
+        </section>
+      )}
+      {activeRuns && activeRuns.length > 0 && (
+        <section aria-label="Active runs">
+          <Card className="gap-2 p-4">
+            <h2 className="text-base font-semibold">Active runs</h2>
+            <p className="text-xs text-muted-foreground">
+              Up to five active runs created in the last seven days. Job counts
+              are for this target.
+            </p>
+            <ul role="list" className="divide-y rounded-md border">
+              {activeRuns.map((run) => (
+                <TargetRunRow key={run.id} run={run} />
+              ))}
+            </ul>
           </Card>
         </section>
       )}
