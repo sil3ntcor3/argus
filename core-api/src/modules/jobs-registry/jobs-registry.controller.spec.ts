@@ -1,3 +1,5 @@
+import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
+import { Metadata } from '@grpc/grpc-js';
 import { WorkspacePermissions } from '@/common/decorators/workspace-permissions.decorator';
 import { ToolCategory } from '@/common/enums/enum';
 import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
@@ -447,9 +449,11 @@ describe('JobsRegistryController', () => {
 
   describe('vulnerability result endpoints', () => {
     let controller: JobsRegistryController;
+    let workerContext: { getWorker: jest.Mock };
     let mockJobsRegistryService: any;
 
     beforeEach(async () => {
+      workerContext = { getWorker: jest.fn().mockReturnValue({ id: 'worker-uuid' }) };
       mockJobsRegistryService = {
         updateResultByCategory: jest.fn().mockResolvedValue({
           jobId: 'bull-job-id',
@@ -476,7 +480,7 @@ describe('JobsRegistryController', () => {
           },
           { provide: WorkspacesService, useValue: { getWorkspace: jest.fn() } },
           { provide: WorkersService, useValue: { validateWorkerToken: jest.fn() } },
-          { provide: GrpcWorkerContext, useValue: { setWorker: jest.fn() } },
+          { provide: GrpcWorkerContext, useValue: workerContext },
         ],
       }).compile();
 
@@ -506,6 +510,46 @@ describe('JobsRegistryController', () => {
       ).toEqual(['high', 'critical', 'info']);
       expect(category).toBe(ToolCategory.VULNERABILITIES);
       expect(result).toEqual({ success: true });
+    });
+
+    it.each([
+      [true, false, true],
+      [false, false, undefined],
+      [undefined, false, undefined],
+      [true, true, undefined],
+    ])('only trusts explicit gRPC coverage %s with error=%s when complete', async (coverageComplete, error, expected) => {
+      const metadata = new Metadata();
+      metadata.set(WORKER_TOKEN_HEADER, 'worker-token');
+      await controller.resultVulnerabilities({
+        workerId: 'worker-uuid',
+        jobId: 'job-uuid',
+        error,
+        coverageComplete,
+        vulnerabilities: { values: [] },
+      }, metadata);
+
+      const [, passedDto, , coverage] =
+        mockJobsRegistryService.updateResultByCategory.mock.calls[0];
+      expect(passedDto.payload).toEqual([]);
+      expect(passedDto).not.toHaveProperty('coverageComplete');
+      expect(coverage).toBe(expected);
+    });
+
+    it('does not trust coverage from a token belonging to a different worker', async () => {
+      workerContext.getWorker.mockReturnValue({ id: 'different-worker' });
+      const metadata = new Metadata();
+      metadata.set(WORKER_TOKEN_HEADER, 'different-worker-token');
+      await controller.resultVulnerabilities({
+        workerId: 'worker-uuid',
+        jobId: 'job-uuid',
+        error: false,
+        coverageComplete: true,
+        vulnerabilities: { values: [] },
+      }, metadata);
+      expect(workerContext.getWorker).toHaveBeenCalledWith('different-worker-token');
+      expect(mockJobsRegistryService.updateResultByCategory).toHaveBeenCalledWith(
+        'worker-uuid', expect.objectContaining({ payload: [] }), ToolCategory.VULNERABILITIES, undefined,
+      );
     });
 
     it('falls back to info for unrecognized severity', async () => {

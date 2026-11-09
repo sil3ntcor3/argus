@@ -438,7 +438,7 @@ func submitCategoryResult(ctx context.Context, grpcClient *grpcclient.Client, jo
 	case "ports_scanner":
 		return grpcClient.SubmitPortsResult(ctx, jobID, isError, raw, nil)
 	case "vulnerabilities":
-		return grpcClient.SubmitVulnerabilitiesResult(ctx, jobID, isError, raw, nil)
+		return grpcClient.SubmitVulnerabilitiesResult(ctx, jobID, isError, raw, nil, false)
 	case "screenshot":
 		return grpcClient.SubmitScreenshotResult(ctx, jobID, isError, raw)
 	case "url_discovery":
@@ -1156,7 +1156,7 @@ drain:
 				log.Warning("[%s] Connector stopped early (%s): submitted %d port(s) collected so far", entry.jobID, reason, len(ports))
 			}
 		} else {
-			if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns); err != nil {
+			if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns, false); err != nil {
 				log.ErrorE(fmt.Sprintf("[%s] Failed to submit partial vulnerabilities", entry.jobID), err)
 			} else {
 				log.Warning("[%s] Connector stopped early (%s): submitted %d finding(s) collected so far", entry.jobID, reason, len(vulns))
@@ -1183,7 +1183,7 @@ drain:
 	case entry.category == "vulnerabilities":
 		// Clean Done: submit the aggregated findings exactly once (raw is ""
 		// per contract — findings travel in the structured payload).
-		if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns); err != nil {
+		if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns, hadDone && !hasError); err != nil {
 			log.ErrorE(fmt.Sprintf("[%s] Failed to submit connector vulnerabilities", entry.jobID), err)
 		} else {
 			log.Info("[%s] connector vulnerabilities result submitted: exec=%s findings=%d", entry.jobID, execID, len(vulns))

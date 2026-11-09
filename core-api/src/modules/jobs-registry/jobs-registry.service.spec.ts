@@ -134,6 +134,10 @@ describe('JobsRegistryService', () => {
 
   const mockStorageService = {
     upload: jest.fn(),
+    uploadFile: jest.fn().mockResolvedValue({ path: 'job-results/file.json' }),
+  };
+  const mockJobResultQueue = {
+    add: jest.fn().mockResolvedValue({ id: 'queued-job', queueName: 'job-result' }),
   };
 
   const mockToolsService = {
@@ -219,7 +223,7 @@ describe('JobsRegistryService', () => {
         },
         {
           provide: getQueueToken(BullMQName.JOB_RESULT),
-          useValue: { add: jest.fn() },
+          useValue: mockJobResultQueue,
         },
         {
           provide: EventEmitter2,
@@ -248,6 +252,38 @@ describe('JobsRegistryService', () => {
     // The mocks are module-scoped, so cancel pushes must not leak between tests.
     mockWorkerStreamRegistry.publishCancel.mockClear();
     mockWorkerStreamRegistry.publishJobsAvailable.mockReset().mockResolvedValue(undefined);
+  });
+
+  it.each([
+    [true, false, ToolCategory.VULNERABILITIES, true],
+    [undefined, false, ToolCategory.VULNERABILITIES, undefined],
+    [true, true, ToolCategory.VULNERABILITIES, undefined],
+    [true, false, ToolCategory.PORTS_SCANNER, undefined],
+  ])('only queues trusted coverage %s from successful vulnerability reports', async (trusted, error, category, expected) => {
+    mockJobResultQueue.add.mockClear();
+    const dto = { jobId: 'job-id', error, coverageComplete: true };
+    await service.updateResultByCategory('worker-id', dto, category, trusted);
+
+    const [, result] = mockJobResultQueue.add.mock.calls[0] as [string, { coverageComplete?: boolean }];
+    expect(result.coverageComplete).toBe(expected);
+  });
+
+  it('stages separate objects for same-millisecond coverage and legacy results', async () => {
+    mockStorageService.uploadFile.mockClear();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+    try {
+      await service.updateResultByCategory(
+        'worker-id', { jobId: 'job-id', error: false }, ToolCategory.VULNERABILITIES, true,
+      );
+      await service.updateResult('worker-id', {
+        jobId: 'job-id', data: { error: false, payload: [] },
+      });
+      const uploads = mockStorageService.uploadFile.mock.calls as [string, Buffer, string][];
+      const keys = uploads.map(([key]) => key);
+      expect(new Set(keys).size).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   describe('reRunJob', () => {

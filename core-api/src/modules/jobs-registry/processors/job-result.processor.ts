@@ -111,6 +111,7 @@ export class JobResultProcessor extends WorkerHost {
       jobId: string;
       resultRef: string;
       category?: string;
+      coverageComplete?: true;
     }>,
   ): Promise<void> {
     const { workerId, jobId, resultRef, category } = bullJob.data;

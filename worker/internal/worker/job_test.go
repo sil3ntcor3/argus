@@ -89,12 +89,13 @@ type testJobsServer struct {
 }
 
 type capturedResult struct {
-	jobID   string
-	raw     string
-	isError bool
-	vulns   []*pb.Vulnerability
-	urls    []*pb.DiscoveredUrl
-	ports   []int32
+	jobID            string
+	raw              string
+	isError          bool
+	coverageComplete *bool
+	vulns            []*pb.Vulnerability
+	urls             []*pb.DiscoveredUrl
+	ports            []int32
 }
 
 func (s *testJobsServer) Next(_ context.Context, _ *pb.Worker) (*pb.Job, error) {
@@ -157,7 +158,7 @@ func (s *testJobsServer) ResultVulnerabilities(_ context.Context, req *pb.Vulner
 	if req.Raw != nil {
 		raw = *req.Raw
 	}
-	s.results = append(s.results, capturedResult{jobID: req.JobId, raw: raw, isError: req.Error, vulns: req.GetVulnerabilities().GetValues()})
+	s.results = append(s.results, capturedResult{jobID: req.JobId, raw: raw, isError: req.Error, coverageComplete: req.CoverageComplete, vulns: req.GetVulnerabilities().GetValues()})
 	return &pb.JobResponse{Success: true}, nil
 }
 

@@ -877,7 +877,7 @@ export class JobsRegistryService {
     workerId: string,
     dto: UpdateResultDto,
   ): Promise<{ jobId: string; queueId: string }> {
-    const fileName = `${dto.jobId}-${Date.now()}.json`;
+    const fileName = `${dto.jobId}-${randomUUID()}.json`;
     const { path: resultRef } = await this.storageService.uploadFile(
       fileName,
       Buffer.from(JSON.stringify(dto.data)),
@@ -916,8 +916,9 @@ export class JobsRegistryService {
     workerId: string,
     dto: BaseResultDto,
     category: ToolCategory,
+    trustedCoverageComplete?: boolean,
   ): Promise<{ jobId: string; queueId: string }> {
-    const fileName = `${dto.jobId}-${Date.now()}.json`;
+    const fileName = `${dto.jobId}-${randomUUID()}.json`;
     const { path: resultRef } = await this.storageService.uploadFile(
       fileName,
       Buffer.from(JSON.stringify(dto)),
@@ -931,6 +932,13 @@ export class JobsRegistryService {
         jobId: dto.jobId,
         resultRef,
         category,
+        // The wire marker comes from the authenticated gRPC handler, not the
+        // HTTP DTO or stored scanner payload. Nothing consumes it yet.
+        ...(trustedCoverageComplete === true &&
+          dto.error === false &&
+          category === ToolCategory.VULNERABILITIES
+          ? { coverageComplete: true }
+          : {}),
       },
       {
         attempts: 3,
