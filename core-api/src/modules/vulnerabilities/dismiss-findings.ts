@@ -126,6 +126,15 @@ export async function dismissFindings(
     }),
   );
   await repository.save(dismissals);
+  // Use the statement time so a replacement is recorded after its expiry event.
+  await manager.query(
+    `INSERT INTO vulnerability_events
+       ("vulnerabilityId", "workspaceId", type, "actorId", "occurredAt", data)
+     SELECT "vulnerabilityId", $2::uuid, 'dismissed', "userId", statement_timestamp(),
+            jsonb_build_object('reason', reason, 'comment', comment, 'expiresAt', $3::text)
+     FROM vulnerability_dismissals WHERE id = ANY($1::uuid[])`,
+    [dismissals.map(({ id }) => id), workspaceId, expiresAt?.toISOString() ?? null],
+  );
   return dismissals.map(
     ({
       id,
