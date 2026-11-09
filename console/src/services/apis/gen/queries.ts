@@ -592,6 +592,43 @@ export type GetManyTargetRepositoryDtoDto = {
   pageCount: number;
 };
 
+export type JobRunType = (typeof JobRunType)[keyof typeof JobRunType];
+
+export const JobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type TargetRunDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Status of the entire run */
+  status: JobStatus;
+  jobRunType: JobRunType;
+  workflowName: string;
+  /**
+   * Jobs on the target
+   * @minimum 0
+   */
+  jobsTotal: number;
+  /**
+   * Completed or skipped jobs on the target
+   * @minimum 0
+   */
+  jobsDone: number;
+  /**
+   * Failed jobs on the target
+   * @minimum 0
+   */
+  jobsFailed: number;
+  /**
+   * Running jobs on the target
+   * @minimum 0
+   */
+  jobsRunning: number;
+};
+
 export type TargetExposureCountDto = {
   name: string;
   /**
@@ -658,6 +695,11 @@ export type TargetOverviewDto = {
    */
   nextScanAt: string | null;
   /**
+   * Latest target run, or null without job read access or a run
+   * @nullable
+   */
+  lastRun: TargetRunDto | null;
+  /**
    * Open findings by severity, or null without vulnerability read access
    * @nullable
    */
@@ -671,43 +713,6 @@ export type TargetOverviewDto = {
   exposure: TargetExposureDto;
   /** Discovery and schedule insights for the target */
   insights: TargetInsightDto[];
-};
-
-export type JobRunType = (typeof JobRunType)[keyof typeof JobRunType];
-
-export const JobRunType = {
-  manual: 'manual',
-  scheduled: 'scheduled',
-} as const;
-
-export type TargetRunDto = {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-  /** Status of the entire run */
-  status: JobStatus;
-  jobRunType: JobRunType;
-  workflowName: string;
-  /**
-   * Jobs on the target
-   * @minimum 0
-   */
-  jobsTotal: number;
-  /**
-   * Completed or skipped jobs on the target
-   * @minimum 0
-   */
-  jobsDone: number;
-  /**
-   * Failed jobs on the target
-   * @minimum 0
-   */
-  jobsFailed: number;
-  /**
-   * Running jobs on the target
-   * @minimum 0
-   */
-  jobsRunning: number;
 };
 
 export type GetManyTargetRunDtoDto = {

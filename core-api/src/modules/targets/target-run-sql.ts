@@ -1,3 +1,6 @@
+import { JobStatus } from '@/common/enums/enum';
+import { JOB_HISTORY_STATUS_SQL } from '../jobs-registry/job-history-status';
+
 /** Shared run membership for a workspace-scoped `owned` target CTE. */
 export const TARGET_RUN_CTES = `
   target_assets AS MATERIALIZED (
@@ -18,3 +21,19 @@ export const TARGET_RUN_CTES = `
   )`;
 
 export const TARGET_RUN_ORDER_SQL = '"createdAt" DESC, id DESC';
+
+/** Public run fields from an owned run aliased as h. */
+export const TARGET_RUN_FIELDS_SQL =
+  'h.id, h."createdAt", h."updatedAt", h."jobRunType", h."workflowName"';
+
+/** Whole-run status and target-only counts for a selected run aliased as p. */
+export const TARGET_RUN_STATUS_SQL = `(SELECT ${JOB_HISTORY_STATUS_SQL}
+  FROM jobs job WHERE job."jobHistoryId" = p.id)`;
+
+export const TARGET_RUN_COUNTS_SQL = `
+  SELECT COUNT(*)::int AS "jobsTotal",
+         COUNT(*) FILTER (WHERE job.status IN ('${JobStatus.COMPLETED}', '${JobStatus.SKIPPED}'))::int AS "jobsDone",
+         COUNT(*) FILTER (WHERE job.status = '${JobStatus.FAILED}')::int AS "jobsFailed",
+         COUNT(*) FILTER (WHERE job.status = '${JobStatus.IN_PROGRESS}')::int AS "jobsRunning"
+  FROM jobs job JOIN target_assets a ON a.id = job."assetId"
+  WHERE job."jobHistoryId" = p.id`;

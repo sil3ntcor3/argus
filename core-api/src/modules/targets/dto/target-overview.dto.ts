@@ -1,5 +1,6 @@
 import { SeverityCountsDto } from '@/modules/projects/dto/project-assets-read.dto';
 import { ApiProperty } from '@nestjs/swagger';
+import { TargetRunDto } from './target-runs.dto';
 
 class TargetExposureCountDto {
   @ApiProperty()
@@ -78,6 +79,13 @@ export class TargetOverviewDto {
       'Next recorded discovery firing time, or null when unavailable',
   })
   nextScanAt: Date | null;
+
+  @ApiProperty({
+    type: () => TargetRunDto,
+    nullable: true,
+    description: 'Latest target run, or null without job read access or a run',
+  })
+  lastRun: TargetRunDto | null;
 
   @ApiProperty({
     type: () => SeverityCountsDto,

@@ -5,14 +5,20 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { JobScheduler } from 'bullmq';
 import { DataSource } from 'typeorm';
-import { JOB_HISTORY_STATUS_SQL } from '../jobs-registry/job-history-status';
 import {
   TargetInsightKind,
   TargetInsightLevel,
   type TargetOverviewDto,
 } from './dto/target-overview.dto';
+import type { TargetRunDto } from './dto/target-runs.dto';
 import { staleTargetCondition } from './stale-target-condition';
-import { TARGET_RUN_CTES, TARGET_RUN_ORDER_SQL } from './target-run-sql';
+import {
+  TARGET_RUN_COUNTS_SQL,
+  TARGET_RUN_CTES,
+  TARGET_RUN_FIELDS_SQL,
+  TARGET_RUN_ORDER_SQL,
+  TARGET_RUN_STATUS_SQL,
+} from './target-run-sql';
 
 const EXPOSURE_LIMIT = 6;
 const RECENT_DISCOVERY_DAYS = 7;
@@ -30,14 +36,19 @@ type FindingCounts = Pick<
 
 type TargetOverviewRow = Omit<
   TargetOverviewDto,
-  'insights' | 'nextScanAt' | keyof FindingCounts
+  'insights' | 'nextScanAt' | 'lastRun' | keyof FindingCounts
 > & {
   jobId: string | null;
   scanSchedule: CronSchedule | null;
   stale: boolean;
   daysSinceDiscovery: number | null;
   expiringTlsServices: number;
-  failedRunId: string | null;
+  lastRun:
+    | (Omit<TargetRunDto, 'createdAt' | 'updatedAt'> & {
+        createdAt: string;
+        updatedAt: string;
+      })
+    | null;
   findings: FindingCounts | null;
 };
 
@@ -143,11 +154,16 @@ export class TargetOverviewService {
        SELECT t."scanSchedule", t."jobId", t.stale, t."daysSinceDiscovery",
               CASE WHEN $3::boolean THEN (
                 WITH ${TARGET_RUN_CTES}
-                SELECT latest.id
-                FROM (SELECT id FROM owned_runs ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT 1) latest
-                WHERE (SELECT ${JOB_HISTORY_STATUS_SQL}
-                       FROM jobs job WHERE job."jobHistoryId" = latest.id) = '${JobStatus.FAILED}'
-              ) END AS "failedRunId",
+                SELECT row_to_json(run)
+                FROM (
+                  SELECT p.*, stats.*, ${TARGET_RUN_STATUS_SQL} AS status
+                  FROM (
+                    SELECT ${TARGET_RUN_FIELDS_SQL}
+                    FROM owned_runs h ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT 1
+                  ) p
+                  CROSS JOIN LATERAL (${TARGET_RUN_COUNTS_SQL}) stats
+                ) run
+              ) END AS "lastRun",
               CASE WHEN $4::boolean THEN (
                 SELECT jsonb_build_object(
                   'openVulnerabilities', jsonb_build_object(
@@ -198,7 +214,7 @@ export class TargetOverviewService {
       stale,
       daysSinceDiscovery,
       expiringTlsServices,
-      failedRunId,
+      lastRun: run,
       findings,
       ...metrics
     } = overview;
@@ -211,11 +227,11 @@ export class TargetOverviewService {
         count: openCritical,
       });
     }
-    if (failedRunId) {
+    if (run?.status === JobStatus.FAILED) {
       insights.push({
         kind: TargetInsightKind.LAST_RUN_FAILED,
         level: TargetInsightLevel.WARNING,
-        runId: failedRunId,
+        runId: run.id,
       });
     }
     if (expiringTlsServices > 0) {
@@ -250,6 +266,13 @@ export class TargetOverviewService {
     return {
       ...metrics,
       nextScanAt: await this.getNextScanAt(id, jobId, scanSchedule),
+      lastRun: run
+        ? {
+            ...run,
+            createdAt: new Date(run.createdAt),
+            updatedAt: new Date(run.updatedAt),
+          }
+        : null,
       openVulnerabilities: findings?.openVulnerabilities ?? null,
       newVulnerabilities: findings?.newVulnerabilities ?? null,
       insights,
