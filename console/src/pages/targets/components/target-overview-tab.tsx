@@ -1,4 +1,5 @@
 import AccessDenied from '@/components/common/access-denied';
+import { FindingTrends } from '@/components/common/finding-trends';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -198,6 +199,9 @@ export function TargetOverviewTab({
             onKeyboardNavigate={() => onKeyboardNavigate('vulnerabilities')}
           />
         )}
+      {canReadFindings && data?.weekly != null && (
+        <FindingTrends weeks={data.weekly} />
+      )}
       {canReadFindings && data?.topVulnerabilities != null && (
         <TargetTopFindingsPanel findings={data.topVulnerabilities} />
       )}

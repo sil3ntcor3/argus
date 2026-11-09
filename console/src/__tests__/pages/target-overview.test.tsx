@@ -812,6 +812,88 @@ describe('Target Activity tab', () => {
   });
 });
 
+describe('Target Overview weekly findings', () => {
+  const emptyWeeks = Array.from({ length: 8 }, (_, index) => ({
+    week: new Date(Date.UTC(2026, 8, 14 + index * 7))
+      .toISOString()
+      .slice(0, 10),
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0,
+  }));
+  const weekly = emptyWeeks.map((week, index) => ({
+    ...week,
+    high: index === 0 ? 3 : 0,
+  }));
+
+  it('shows the eight weeks and exact counts through the keyboard', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, weekly }),
+      ),
+    );
+    const { user } = show();
+    const trends = within(
+      await screen.findByRole('region', { name: 'New findings by week' }),
+    );
+    const toggle = trends.getByText('View weekly counts');
+    toggle.focus();
+    await user.keyboard('{Enter}');
+    const rows = within(trends.getByRole('table')).getAllByRole('row');
+    expect(rows).toHaveLength(9);
+    expect(rows[1].querySelector('time')).toHaveAttribute(
+      'datetime',
+      weekly[0].week,
+    );
+    expect(
+      within(rows[1])
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['0', '3', '0', '0', '0', '3']);
+  });
+
+  it('explains zero buckets when findings have no recognized severity', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({
+          ...metrics,
+          newVulnerabilities: 1,
+          weekly: emptyWeeks,
+        }),
+      ),
+    );
+    show();
+    expect(
+      await screen.findByText(
+        'No findings of these severities in the last eight weeks.',
+      ),
+    ).toBeVisible();
+  });
+
+  it.each([
+    { allowed: false, response: weekly },
+    { allowed: true, response: null },
+    { allowed: true, response: undefined },
+  ])(
+    'hides missing or redacted weekly counts ($allowed, $response)',
+    async ({ allowed, response }) => {
+      canReadFindings.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({ ...metrics, weekly: response }),
+        ),
+      );
+      show();
+      expect(await screen.findByText('Enabled assets')).toBeVisible();
+      expect(
+        screen.queryByRole('region', { name: 'New findings by week' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+});
+
 describe('Target discovery changes', () => {
   const changesPath = `/api${path}/changes`;
   const asset = {
