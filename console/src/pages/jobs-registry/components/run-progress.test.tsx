@@ -8,6 +8,38 @@ describe('RunProgress', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
+  it('shows estimates with units and clears them when a run settles', () => {
+    const tools = [
+      { id: '1', name: 'First', logoUrl: '', status: 'completed' as const },
+      { id: '2', name: 'Second', logoUrl: '', status: 'in_progress' as const },
+    ];
+    const { rerender } = render(
+      <RunProgress tools={tools} activeJobsCount={1} etaSeconds={45} />,
+    );
+    expect(screen.getByText('About 45 sec left')).toBeVisible();
+
+    rerender(
+      <RunProgress tools={tools} activeJobsCount={1} etaSeconds={120} />,
+    );
+    expect(screen.getByText('About 2 min left')).toBeVisible();
+
+    rerender(
+      <RunProgress tools={tools} activeJobsCount={1} etaSeconds={3660} />,
+    );
+    expect(screen.getByText('About 1 hr 1 min left')).toBeVisible();
+
+    rerender(<RunProgress tools={tools} activeJobsCount={1} etaSeconds={0} />);
+    expect(screen.getByText('Less than 1 sec left')).toBeVisible();
+
+    rerender(
+      <RunProgress tools={tools} activeJobsCount={1} etaSeconds={null} />,
+    );
+    expect(screen.queryByText(/left/)).not.toBeInTheDocument();
+
+    rerender(<RunProgress tools={tools} activeJobsCount={0} etaSeconds={45} />);
+    expect(screen.queryByText(/left/)).not.toBeInTheDocument();
+  });
+
   it('uses settled tools for older run details without workflow steps', () => {
     render(
       <RunProgress

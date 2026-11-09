@@ -3,14 +3,27 @@ import { Progress } from '@/components/ui/progress';
 import type { JobHistoryDetailResponseDto } from '@/services/apis/gen/queries';
 
 type RunProgressProps = Partial<
-  Pick<JobHistoryDetailResponseDto, 'steps' | 'tools' | 'activeJobsCount'>
+  Pick<
+    JobHistoryDetailResponseDto,
+    'steps' | 'tools' | 'activeJobsCount' | 'etaSeconds'
+  >
 >;
+
+function formatEta(seconds: number): string {
+  if (seconds === 0) return 'Less than 1 sec left';
+  if (seconds < 60) return `About ${seconds} sec left`;
+  const minutes = Math.round(seconds / 60);
+  return minutes < 60
+    ? `About ${minutes} min left`
+    : `About ${Math.floor(minutes / 60)} hr ${minutes % 60} min left`;
+}
 
 /** Shows settled steps using the run detail already loaded for the graph. */
 export function RunProgress({
   steps = [],
   tools = [],
   activeJobsCount = 0,
+  etaSeconds,
 }: RunProgressProps) {
   const hasSteps = steps.length > 0;
   const total = hasSteps ? steps.length : tools.length;
@@ -46,6 +59,11 @@ export function RunProgress({
             <span className="tabular-nums text-muted-foreground">
               {progress}%
             </span>
+            {activeJobsCount > 0 && etaSeconds != null && (
+              <span className="text-xs text-muted-foreground">
+                {formatEta(etaSeconds)}
+              </span>
+            )}
           </div>
           {activeJobsCount > 0 && (
             <span className="text-xs text-muted-foreground">
