@@ -11,7 +11,11 @@ import { TargetFindingsCard } from './target-findings-card';
 import { TargetInsightsPanel } from './target-insights-panel';
 
 const formatCount = new Intl.NumberFormat();
-const grid = 'grid gap-3 sm:grid-cols-3';
+const formatScanTime = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+const grid = 'grid gap-3 sm:grid-cols-2 xl:grid-cols-4';
 
 /** Displays the asset and service surface of one target. */
 export function TargetOverviewTab({
@@ -65,6 +69,8 @@ export function TargetOverviewTab({
 
   const failed = isError || errorUpdatedAt > dataUpdatedAt;
   const data = !failed && isFetchedAfterMount ? overview.data : undefined;
+  const nextScan =
+    typeof data?.nextScanAt === 'string' ? new Date(data.nextScanAt) : null;
 
   return (
     <section aria-label="Target overview" className="space-y-4">
@@ -117,6 +123,20 @@ export function TargetOverviewTab({
               </dd>
             </Card>
           ))}
+          <Card className="min-w-0 gap-2 p-4">
+            <dt className="text-sm text-muted-foreground">
+              Scheduled discovery
+            </dt>
+            <dd className="text-sm font-medium">
+              {nextScan && !Number.isNaN(nextScan.getTime()) ? (
+                <time dateTime={nextScan.toISOString()}>
+                  {formatScanTime.format(nextScan)}
+                </time>
+              ) : (
+                'No scheduled time available'
+              )}
+            </dd>
+          </Card>
         </dl>
       ) : (
         <div
@@ -124,7 +144,7 @@ export function TargetOverviewTab({
           role="status"
           aria-label="Loading target overview"
         >
-          {[0, 1, 2].map((index) => (
+          {[0, 1, 2, 3].map((index) => (
             <Skeleton key={index} className="h-24" />
           ))}
         </div>
