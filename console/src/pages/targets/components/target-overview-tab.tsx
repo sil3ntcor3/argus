@@ -7,6 +7,7 @@ import { useTargetsControllerGetTargetOverview } from '@/services/apis/gen/queri
 import { isAxiosError } from 'axios';
 import { useEffect } from 'react';
 import { TargetExposurePanel } from './target-exposure-panel';
+import { TargetInsightsPanel } from './target-insights-panel';
 
 const formatCount = new Intl.NumberFormat();
 const grid = 'grid gap-3 sm:grid-cols-3';
@@ -14,9 +15,13 @@ const grid = 'grid gap-3 sm:grid-cols-3';
 /** Displays the asset and service surface of one target. */
 export function TargetOverviewTab({
   targetId,
+  canManageDiscovery,
+  onKeyboardNavigate,
   onAccessDenied,
 }: {
   targetId: string;
+  canManageDiscovery: boolean;
+  onKeyboardNavigate: (tab: 'assets' | 'settings') => void;
   onAccessDenied: () => Promise<unknown>;
 }) {
   const {
@@ -113,6 +118,14 @@ export function TargetOverviewTab({
             <Skeleton key={index} className="h-24" />
           ))}
         </div>
+      )}
+      {data?.insights && (
+        <TargetInsightsPanel
+          insights={data.insights}
+          targetId={targetId}
+          canManageDiscovery={canManageDiscovery}
+          onKeyboardNavigate={onKeyboardNavigate}
+        />
       )}
       {data?.exposure && <TargetExposurePanel exposure={data.exposure} />}
     </section>
