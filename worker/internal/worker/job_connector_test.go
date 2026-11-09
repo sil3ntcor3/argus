@@ -68,8 +68,8 @@ func TestHandleConnectorResultAggregatesVulnerabilityChunks(t *testing.T) {
 	if got.jobID != "job-vuln-1" {
 		t.Fatalf("jobID: got %q, want job-vuln-1", got.jobID)
 	}
-	if got.isError {
-		t.Fatal("expected isError=false for a clean done")
+	if got.isError || got.coverageComplete == nil || !*got.coverageComplete {
+		t.Fatal("expected explicit complete coverage for a clean Done")
 	}
 	if got.raw != "" {
 		t.Fatalf("expected raw \"\" for the aggregated submission, got %q", got.raw)
@@ -172,7 +172,7 @@ func TestHandleConnectorResultEmptyVulnerabilitiesSubmitsEmptyOnce(t *testing.T)
 	if len(results) != 1 {
 		t.Fatalf("expected exactly 1 submission for an empty clean done, got %d", len(results))
 	}
-	if results[0].isError || results[0].raw != "" || len(results[0].vulns) != 0 {
+	if results[0].isError || results[0].coverageComplete == nil || !*results[0].coverageComplete || results[0].raw != "" || len(results[0].vulns) != 0 {
 		t.Fatalf("expected clean empty submission, got %+v", results[0])
 	}
 }
@@ -387,8 +387,8 @@ func TestHandleConnectorResultErrorWithFindingsDeliversPartialSuccess(t *testing
 		t.Fatalf("expected exactly 1 submission, got %d", len(results))
 	}
 	got := results[0]
-	if got.isError {
-		t.Fatal("isError must be false: results already in hand must be delivered as success")
+	if got.isError || got.coverageComplete != nil {
+		t.Fatal("partial findings must be delivered as success without complete coverage")
 	}
 	if got.raw != "" {
 		t.Fatalf("expected raw \"\" for the partial submission, got %q", got.raw)
@@ -454,8 +454,8 @@ func TestHandleConnectorResultDisconnectWithFindingsDeliversPartialSuccess(t *te
 	if len(results) != 1 {
 		t.Fatalf("expected exactly 1 submission, got %d", len(results))
 	}
-	if results[0].isError {
-		t.Fatal("disconnect with findings must deliver them as success, not error")
+	if results[0].isError || results[0].coverageComplete != nil {
+		t.Fatal("disconnect must preserve findings without asserting complete coverage")
 	}
 	if len(results[0].vulns) != 1 {
 		t.Fatalf("expected the streamed finding preserved, got %d", len(results[0].vulns))

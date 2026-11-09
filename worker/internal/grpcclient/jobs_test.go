@@ -238,7 +238,7 @@ func TestSubmitVulnerabilitiesResult(t *testing.T) {
 	}
 
 	vulns := []*jobsRegistry.Vulnerability{{Name: "CVE-2024-0001"}}
-	err := srv.client.SubmitVulnerabilitiesResult(context.Background(), "job-1", false, "nuclei.json", vulns)
+	err := srv.client.SubmitVulnerabilitiesResult(context.Background(), "job-1", false, "nuclei.json", vulns, true)
 	if err != nil {
 		t.Fatal(err)
 	}

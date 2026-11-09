@@ -1,3 +1,5 @@
+import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
+import type { Metadata } from '@grpc/grpc-js';
 import { Public, WorkspaceId } from '@/common/decorators/app.decorator';
 import { WorkerTokenAuth } from '@/common/decorators/worker-token-auth.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
@@ -5,6 +7,7 @@ import { DefaultMessageResponseDto } from '@/common/dtos/default-message-respons
 import { GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import { Severity, ToolCategory } from '@/common/enums/enum';
+import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
@@ -126,6 +129,7 @@ export class JobsRegistryController {
     private readonly toolConfigProfilesService: ToolConfigProfilesService,
     private readonly integrationsService: IntegrationsService,
     private readonly workflowRunnerService: WorkflowRunnerService,
+    private readonly grpcWorkerContext: GrpcWorkerContext,
   ) {}
 
   @WorkspaceAccess('job.read')
@@ -781,13 +785,22 @@ export class JobsRegistryController {
     error,
     raw,
     vulnerabilities,
+    coverageComplete,
   }: {
     workerId: string;
     jobId: string;
     error: boolean;
     raw?: string;
     vulnerabilities?: { values: Vulnerability[] };
-  }): Promise<{ success: boolean }> {
+    coverageComplete?: boolean;
+  }, metadata?: Metadata): Promise<{ success: boolean }> {
+    const token = metadata?.get(WORKER_TOKEN_HEADER)[0];
+    const trustedCoverageComplete =
+      coverageComplete === true &&
+      error === false &&
+      Array.isArray(vulnerabilities?.values) &&
+      typeof token === 'string' &&
+      this.grpcWorkerContext.getWorker(token)?.id === workerId;
     const dto = plainToInstance(VulnerabilitiesResultDto, {
       jobId,
       error,
@@ -801,6 +814,7 @@ export class JobsRegistryController {
       workerId,
       dto,
       ToolCategory.VULNERABILITIES,
+      trustedCoverageComplete ? true : undefined,
     );
     return { success: !!result.jobId };
   }
