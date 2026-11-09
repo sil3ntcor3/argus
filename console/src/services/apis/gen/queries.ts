@@ -22223,8 +22223,8 @@ export const useJobsRegistryControllerCancelJobHistory = <
 };
 
 /**
- * Starts a new manual run from the current workflow and the original recorded targets.
- * @summary Retry a closed target run
+ * Starts a new manual run from the current workflow and recorded target or project asset scope.
+ * @summary Retry a closed run
  */
 export const jobsRegistryControllerRetryJobHistory = (
   id: string,
@@ -22286,7 +22286,7 @@ export type JobsRegistryControllerRetryJobHistoryMutationResult = NonNullable<
 export type JobsRegistryControllerRetryJobHistoryMutationError = void;
 
 /**
- * @summary Retry a closed target run
+ * @summary Retry a closed run
  */
 export const useJobsRegistryControllerRetryJobHistory = <
   TError = void,

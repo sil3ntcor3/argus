@@ -16,11 +16,12 @@ import type {
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { DataSource, In } from 'typeorm';
+import { DataSource, In, type EntityManager } from 'typeorm';
 import { JobHistory } from './entities/job-history.entity';
 import { randomUUID } from 'node:crypto';
 import { Job } from './entities/job.entity';
@@ -234,10 +235,16 @@ describe('WorkflowRunnerService', () => {
     service = module.get(WorkflowRunnerService);
   }
 
-  describe('retryTargetRun', () => {
+  describe('retryRun', () => {
     const workspaceId = randomUUID();
     const targetId = randomUUID();
     const recorded = { targetIds: [targetId, targetId] };
+    const assetId = randomUUID();
+    const projectScope = {
+      projectId: randomUUID(),
+      projectWorkflowId: randomUUID(),
+      scope: { assetIds: [assetId, assetId] },
+    };
     const definition = workflow([{ run: 'nuclei' }]);
 
     async function setupRetry(
@@ -246,6 +253,7 @@ describe('WorkflowRunnerService', () => {
         hasActiveJobs?: boolean;
         visibleTargets?: number;
         runnable?: boolean;
+        eligibleProjectAssets?: string[];
       } = {},
     ) {
       const fake = createFakeDb({
@@ -279,17 +287,47 @@ describe('WorkflowRunnerService', () => {
       );
       await setup(fake);
       const newHistory = createFakeDb({ id: 'new-history' }).history;
-      const start = jest.spyOn(service, 'startRun').mockResolvedValue({
-        jobHistory: options.runnable === false ? null : newHistory,
-        dispatched: 1,
-      });
-      return { original: fake.history, query, existsBy, countBy, start };
+      const projectAssets = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        setLock: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue(
+          (options.eligibleProjectAssets ?? [assetId]).map((id) => ({ id })),
+        ),
+      };
+      const manager = {
+        queryRunner: { isTransactionActive: true },
+        query: jest.fn().mockResolvedValue([{ id: projectScope.projectId }]),
+        getRepository: jest.fn().mockReturnValue({
+          createQueryBuilder: () => projectAssets,
+        }),
+      };
+      const start = jest.spyOn(service, 'startRun').mockImplementation(
+        async (_input, validateScope) => {
+          await validateScope?.(manager as unknown as EntityManager);
+          return {
+            jobHistory: options.runnable === false ? null : newHistory,
+            dispatched: 1,
+          };
+        },
+      );
+      return {
+        original: fake.history,
+        query,
+        existsBy,
+        countBy,
+        start,
+        manager,
+        projectAssets,
+      };
     }
 
     it('starts a fresh manual run from the selected workspace and recorded targets', async () => {
       const { original, query, existsBy, countBy, start } = await setupRetry();
 
-      const result = await service.retryTargetRun(workspaceId, original.id);
+      const result = await service.retryRun(workspaceId, original.id, ['job.write']);
 
       expect(query.andWhere).toHaveBeenCalledWith(
         'workflow.workspaceId = :workspaceId',
@@ -303,13 +341,16 @@ describe('WorkflowRunnerService', () => {
         id: In([targetId]),
         workspaceId,
       });
-      expect(start).toHaveBeenCalledWith({
-        workflow: definition,
-        workspaceId,
-        jobName: 'Retry - ' + original.jobHistoryName,
-        jobRunType: JobRunType.MANUAL,
-        targetIds: [targetId],
-      });
+      expect(start).toHaveBeenCalledWith(
+        {
+          workflow: definition,
+          workspaceId,
+          jobName: 'Retry - ' + original.jobHistoryName,
+          jobRunType: JobRunType.MANUAL,
+          targetIds: [targetId],
+        },
+        undefined,
+      );
       expect(result).toEqual({
         jobHistoryId: 'new-history',
         message: 'Run started',
@@ -383,20 +424,106 @@ describe('WorkflowRunnerService', () => {
     ])('rejects $label without starting a run', async ({ options, error }) => {
       const { original, start } = await setupRetry(options);
       await expect(
-        service.retryTargetRun(workspaceId, original.id),
+        service.retryRun(workspaceId, original.id, ['job.write']),
       ).rejects.toThrow(error);
       expect(start).not.toHaveBeenCalled();
+    });
+
+    it.each(['workflow.write', '*'])(
+      'preserves project provenance and validates scope at creation with %s',
+      async (permission) => {
+        const { original, start, manager, projectAssets } = await setupRetry({
+          history: projectScope,
+        });
+
+        await expect(
+          service.retryRun(workspaceId, original.id, ['job.write', permission]),
+        ).resolves.toMatchObject({ jobHistoryId: 'new-history' });
+
+        expect(start).toHaveBeenCalledWith(
+          expect.objectContaining({
+            projectId: projectScope.projectId,
+            projectWorkflowId: projectScope.projectWorkflowId,
+            assetIds: [assetId],
+            jobRunType: JobRunType.MANUAL,
+          }),
+          expect.any(Function),
+        );
+        expect(manager.query).toHaveBeenNthCalledWith(
+          1,
+          expect.stringContaining('FROM workspaces WHERE id = $1 FOR KEY SHARE'),
+          [workspaceId],
+        );
+        expect(manager.query).toHaveBeenNthCalledWith(
+          2,
+          expect.stringContaining('FOR UPDATE'),
+          [projectScope.projectId, workspaceId],
+        );
+        expect(manager.query).toHaveBeenNthCalledWith(
+          3,
+          expect.stringMatching(/FROM workflows .*FOR KEY SHARE/),
+          [definition.id, workspaceId],
+        );
+        expect(projectAssets.andWhere).toHaveBeenCalledWith(
+          'asset.id = ANY(:assetIds)',
+          { assetIds: [assetId] },
+        );
+      },
+    );
+
+    it('requires workflow launch permission for a project retry', async () => {
+      const { original, start } = await setupRetry({ history: projectScope });
+      await expect(
+        service.retryRun(workspaceId, original.id, ['job.write']),
+      ).rejects.toThrow(ForbiddenException);
+      expect(start).not.toHaveBeenCalled();
+    });
+
+    it('rejects the project retry when the recorded scope no longer matches', async () => {
+      const { original } = await setupRetry({
+        history: projectScope,
+        eligibleProjectAssets: [],
+      });
+      await expect(
+        service.retryRun(workspaceId, original.id, ['job.write', 'workflow.write']),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('returns a bad request when the current workflow has no runnable steps', async () => {
       const { original } = await setupRetry({ runnable: false });
       await expect(
-        service.retryTargetRun(workspaceId, original.id),
+        service.retryRun(workspaceId, original.id, ['job.write']),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('startRun', () => {
+    it('validates the scope before saving or dispatching a run', async () => {
+      const fake = createFakeDb();
+      await setup(fake);
+      getToolByNames.mockResolvedValue([
+        tool('nuclei', ToolCategory.VULNERABILITIES),
+      ]);
+      const validateScope = jest.fn().mockRejectedValue(new BadRequestException());
+
+      await expect(
+        service.startRun(
+          {
+            workflow: workflow([{ run: 'nuclei' }]),
+            workspaceId: 'workspace-1',
+            jobName: 'Rejected scope',
+            assetIds: [randomUUID()],
+          },
+          validateScope,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(validateScope).toHaveBeenCalledTimes(1);
+      expect(fake.history.scope).toBeNull();
+      expect(emit).not.toHaveBeenCalled();
+      expect(createNewJob).not.toHaveBeenCalled();
+    });
+
     it('forwards normalized input preferences without changing the run scope', async () => {
       await setup(createFakeDb());
       getToolByNames.mockResolvedValue([tool('nuclei', ToolCategory.VULNERABILITIES)]);
