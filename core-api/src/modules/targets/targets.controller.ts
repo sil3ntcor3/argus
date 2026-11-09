@@ -36,9 +36,11 @@ import {
   UpdateTargetDto,
 } from './dto/targets.dto';
 import { TargetOverviewDto } from './dto/target-overview.dto';
+import { GetTargetRunsQueryDto, TargetRunDto } from './dto/target-runs.dto';
 import { TargetSummaryDto } from './dto/target-summary.dto';
 import { Target } from './entities/target.entity';
 import { TargetOverviewService } from './target-overview.service';
+import { TargetRunHistoryService } from './target-run-history.service';
 import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
 
@@ -59,6 +61,7 @@ export class TargetsController {
     private readonly targetsService: TargetsService,
     private readonly targetSummaryService: TargetSummaryService,
     private readonly targetOverviewService: TargetOverviewService,
+    private readonly targetRunHistoryService: TargetRunHistoryService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -241,6 +244,24 @@ export class TargetsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.targetOverviewService.getOverview(id, workspaceId);
+  }
+
+  @Doc({
+    summary: 'Get target run history',
+    description:
+      'Lists runs scoped to or scanning the target, newest first, with job counts for that target.',
+    response: { serialization: GetManyResponseDto(TargetRunDto) },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('target.read', 'job.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/runs')
+  getTargetRuns(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @Query() query: GetTargetRunsQueryDto,
+  ) {
+    return this.targetRunHistoryService.list(id, workspaceId, query);
   }
 
   @Doc({
