@@ -555,6 +555,7 @@ export class JobsRegistryService {
       const queryBuilder = queryRunner.manager
         .createQueryBuilder(Job, 'jobs')
         .addSelect('jobs.inputs')
+        .addSelect('statement_timestamp()', 'scanClaimInstant')
         .innerJoinAndSelect('jobs.asset', 'asset')
         .innerJoinAndSelect('asset.target', 'target')
         .leftJoinAndSelect('jobs.tool', 'tool')
@@ -625,15 +626,21 @@ export class JobsRegistryService {
       queryBuilder.leftJoinAndSelect('jobs.assetService', 'assetService');
 
       // [OPT-4] SKIP LOCKED avoids workers blocking each other on the same rows
-      const jobs = await queryBuilder
+      const { entities: jobs, raw } = await queryBuilder
         .setLock('pessimistic_write', undefined, ['jobs'])
         .limit(claimSize)
-        .getMany();
+        .getRawAndEntities<{ scanClaimInstant?: unknown }>();
 
       if (jobs.length === 0) {
         await queryRunner.rollbackTransaction();
         return [];
       }
+
+      // Use PostgreSQL's absolute clock, not the adjusted claim generation.
+      const instant = raw[0]?.scanClaimInstant;
+      const scanClaimInstant = instant instanceof Date && Number.isFinite(instant.getTime())
+        ? instant
+        : undefined;
 
       // The timestamp also distinguishes this claim from an older one on
       // the same worker. Make it increase even if a replica's clock lags.
@@ -651,13 +658,14 @@ export class JobsRegistryService {
           status: JobStatus.IN_PROGRESS,
           pickJobAt: claimedAt,
           findingScanScopeKey: null,
+          findingScanClaimedAt: null,
         },
       );
 
       await queryRunner.commitTransaction();
 
       return jobs.map((job) =>
-        this.toGetNextJobResult(worker, isBuiltInTools, job, claimedAt),
+        this.toGetNextJobResult(worker, isBuiltInTools, job, claimedAt, scanClaimInstant),
       );
     } catch (error) {
       Logger.error(
@@ -671,7 +679,7 @@ export class JobsRegistryService {
     }
   }
 
-  /** Stores a private scope only for the exact claim being handed to a worker. */
+  /** Stores private evidence only for the exact claim being handed to a worker. */
   async recordFindingScanScope(
     job: GetNextJobResult,
     workerId: string,
@@ -722,9 +730,16 @@ export class JobsRegistryService {
            FOR UPDATE SKIP LOCKED
          )
          UPDATE jobs AS job
-         SET "findingScanScopeKey" = $5
+         SET "findingScanScopeKey" = $5, "findingScanClaimedAt" = $6::timestamptz
          FROM claim WHERE job.id = claim.id`,
-        [job.id, workerId, JobStatus.IN_PROGRESS, job.claimedAt, findingScanScopeKey],
+        [
+          job.id,
+          workerId,
+          JobStatus.IN_PROGRESS,
+          job.claimedAt,
+          findingScanScopeKey,
+          job.scanClaimInstant?.toISOString() ?? null,
+        ],
       );
     } catch {
       // A scope recording problem must not prevent dispatch or log config.
@@ -742,12 +757,14 @@ export class JobsRegistryService {
     isBuiltInTools: boolean,
     job: Job,
     claimedAt: Date,
+    scanClaimInstant: Date | undefined,
   ): GetNextJobResult {
     const base: GetNextJobResult = {
       id: job.id,
       // Results carry the job ID but no attempt ID. A delayed response from
       // an older attempt must never inherit a different scope after reclaim.
       claimedAt: job.pickJobAt ? undefined : claimedAt,
+      scanClaimInstant: job.pickJobAt ? undefined : scanClaimInstant,
       inputs: job.inputs,
       category: job.category,
       createdAt: job.createdAt,

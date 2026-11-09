@@ -45,6 +45,8 @@ export class GetNextJobResponseDto extends PickType(Job, [
 export interface GetNextJobResult extends GetNextJobResponseDto {
   /** Generation for a first claim only, excluded from worker responses. */
   claimedAt?: Date;
+  /** Absolute database time of the first claim, separate from its generation. */
+  scanClaimInstant?: Date;
   /** Private dispatch snapshot, explicitly selected only for worker claims. */
   inputs?: Record<string, string> | null;
   tool?: { id: string; name: string };
