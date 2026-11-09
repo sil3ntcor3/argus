@@ -36,6 +36,7 @@ describe('Target overview API (e2e)', () => {
     newServices: 3,
     openPorts: 2,
     nextScanAt: null,
+    lastRun: null,
     ...findingCounts,
     insights: [criticalInsight, ...discoveryInsights],
     exposure: {
@@ -184,6 +185,7 @@ describe('Target overview API (e2e)', () => {
       newServices: 0,
       openPorts: 0,
       nextScanAt: null,
+      lastRun: null,
       openVulnerabilities: noOpenFindings,
       newVulnerabilities: 0,
       exposure: emptyExposure,
@@ -196,6 +198,7 @@ describe('Target overview API (e2e)', () => {
       newServices: 1,
       openPorts: 1,
       nextScanAt: null,
+      lastRun: null,
       openVulnerabilities: { ...noOpenFindings, critical: 1 },
       newVulnerabilities: 1,
       insights: [criticalInsight, ...discoveryInsights],
@@ -434,12 +437,35 @@ describe('Target overview API (e2e)', () => {
        VALUES ($1, $2, $3, 'vulnerabilities', 'failed')`,
       [failed, siblingAsset, tool.id],
     );
+    await app.dataSource.query(
+      `INSERT INTO jobs ("jobHistoryId", "assetId", "toolId", category, status)
+       SELECT $1, a.id, $2, 'vulnerabilities', 'completed'
+       FROM assets a WHERE a."targetId" = $3 ORDER BY a.id LIMIT 1`,
+      [failed, tool.id, target],
+    );
 
     // A failure on a sibling asset still sets the whole run's status. Its ID
     // is visible only with effective job read access.
+    const latestHistoryRow = async () => {
+      const result = await request(app.server)
+        .get(`/api/targets/${target}/runs?limit=1`)
+        .set(owner.headers)
+        .expect(200);
+      return (result.body as { data: unknown[] }).data[0];
+    };
+    const lastRun = await latestHistoryRow();
+    expect(lastRun).toMatchObject({
+      id: failed,
+      status: 'failed',
+      jobsTotal: 1,
+      jobsDone: 1,
+      jobsFailed: 0,
+      jobsRunning: 0,
+    });
     const failedRun = { kind: 'last_run_failed', level: 'warning', runId: failed };
     const failedMetrics = {
       ...metrics,
+      lastRun,
       insights: [criticalInsight, failedRun, ...discoveryInsights],
     };
     await overview(target, headers).expect(200, restrictedMetrics);
@@ -468,6 +494,14 @@ describe('Target overview API (e2e)', () => {
        FROM job_histories WHERE id = $1`,
       [failed],
     );
-    await overview(target, headers).expect(200, restrictedMetrics);
+    const pendingRun = await latestHistoryRow();
+    expect(pendingRun).toMatchObject({
+      id: 'ffffffff-ffff-4fff-bfff-ffffffffffff',
+      status: 'pending',
+    });
+    await overview(target, headers).expect(200, {
+      ...restrictedMetrics,
+      lastRun: pendingRun,
+    });
   });
 });

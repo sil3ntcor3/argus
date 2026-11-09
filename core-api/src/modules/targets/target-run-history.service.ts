@@ -11,7 +11,13 @@ import type {
   GetTargetRunsQueryDto,
   TargetRunDto,
 } from './dto/target-runs.dto';
-import { TARGET_RUN_CTES, TARGET_RUN_ORDER_SQL } from './target-run-sql';
+import {
+  TARGET_RUN_COUNTS_SQL,
+  TARGET_RUN_CTES,
+  TARGET_RUN_FIELDS_SQL,
+  TARGET_RUN_ORDER_SQL,
+  TARGET_RUN_STATUS_SQL,
+} from './target-run-sql';
 
 type CountedRun = Omit<TargetRunDto, 'id'> & {
   id: string | null;
@@ -42,7 +48,7 @@ export class TargetRunHistoryService {
       `WITH owned AS (
          SELECT id, "workspaceId" FROM targets WHERE id = $1 AND "workspaceId" = $2
        ), ${TARGET_RUN_CTES}, matching AS MATERIALIZED (
-         SELECT h.id, h."createdAt", h."updatedAt", h."jobRunType", h."workflowName"
+         SELECT ${TARGET_RUN_FIELDS_SQL}
          FROM owned_runs h
          WHERE CASE
            WHEN NOT $5::boolean THEN true
@@ -55,18 +61,10 @@ export class TargetRunHistoryService {
        ), page AS MATERIALIZED (
          SELECT * FROM matching ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT $3 OFFSET $4
        )
-       SELECT totals.total, p.*, stats.*,
-         (SELECT ${JOB_HISTORY_STATUS_SQL} FROM jobs job WHERE job."jobHistoryId" = p.id) AS status
+       SELECT totals.total, p.*, stats.*, ${TARGET_RUN_STATUS_SQL} AS status
        FROM owned CROSS JOIN (SELECT COUNT(*)::int AS total FROM matching) totals
        LEFT JOIN page p ON true
-       CROSS JOIN LATERAL (
-         SELECT COUNT(*)::int AS "jobsTotal",
-                COUNT(*) FILTER (WHERE job.status IN ('${JobStatus.COMPLETED}', '${JobStatus.SKIPPED}'))::int AS "jobsDone",
-                COUNT(*) FILTER (WHERE job.status = '${JobStatus.FAILED}')::int AS "jobsFailed",
-                COUNT(*) FILTER (WHERE job.status = '${JobStatus.IN_PROGRESS}')::int AS "jobsRunning"
-         FROM jobs job JOIN target_assets a ON a.id = job."assetId"
-         WHERE job."jobHistoryId" = p.id
-       ) stats
+       CROSS JOIN LATERAL (${TARGET_RUN_COUNTS_SQL}) stats
        ORDER BY p."createdAt" DESC, p.id DESC`,
       [id, workspaceId, limit, offset, active],
     );
