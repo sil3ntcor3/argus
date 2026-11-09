@@ -207,6 +207,7 @@ export class VulnerabilitiesController {
     response: {
       serialization: VulnerabilityDismissal,
       isArray: true,
+      httpStatus: HttpStatus.CREATED,
     },
     request: {
       getWorkspaceId: true,
@@ -216,8 +217,8 @@ export class VulnerabilitiesController {
     // No before/after status is derivable decorator-only — the row carries the
     // bulk action and the affected count (plan §4 row 21: high-evidence event).
     metadata: (body) => {
-      const ids = (body as { ids?: string[] })?.ids;
-      return { action: 'dismiss', count: ids?.length ?? 0 };
+      const ids = (body as { ids?: unknown })?.ids;
+      return { action: 'dismiss', count: Array.isArray(ids) ? new Set(ids).size : 0 };
     },
   })
   @WorkspaceAccess('vulnerability.write')

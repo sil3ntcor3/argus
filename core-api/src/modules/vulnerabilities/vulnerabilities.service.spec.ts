@@ -24,8 +24,8 @@ describe('VulnerabilitiesService', () => {
   let mockToolsService: { getToolByNames: jest.Mock };
   let mockTargetRepository: { find: jest.Mock };
   let mockWorkflowRunnerService: { startRun: jest.Mock };
-  let mockFindings: { find: jest.Mock };
-  let mockDismissals: { find: jest.Mock; create: jest.Mock; save: jest.Mock };
+  let mockDismissQuery: jest.Mock;
+  let mockDismissals: { create: jest.Mock; save: jest.Mock };
 
   beforeEach(() => {
     mockJobRegistryService = { createNewJob: jest.fn() };
@@ -39,8 +39,17 @@ describe('VulnerabilitiesService', () => {
         ]),
     };
     mockWorkflowRunnerService = { startRun: jest.fn() };
-    mockFindings = { find: jest.fn() };
-    mockDismissals = { find: jest.fn(), create: jest.fn(), save: jest.fn() };
+    mockDismissQuery = jest.fn();
+    mockDismissals = { create: jest.fn(), save: jest.fn() };
+    const manager = {
+      query: mockDismissQuery,
+      getRepository: () => mockDismissals,
+    };
+    const mockFindings = {
+      manager: {
+        transaction: (run: (tx: typeof manager) => Promise<unknown>) => run(manager),
+      },
+    };
 
     service = new VulnerabilitiesService(
       mockFindings as unknown as Repository<Vulnerability>,
@@ -67,8 +76,10 @@ describe('VulnerabilitiesService', () => {
       updatedAt: new Date(),
     };
     const entity = { ...fields };
-    mockFindings.find.mockResolvedValue([{ id: fields.vulnerabilityId }]);
-    mockDismissals.find.mockResolvedValue([]);
+    mockDismissQuery
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: fields.vulnerabilityId }])
+      .mockResolvedValueOnce([]);
     mockDismissals.create.mockReturnValue(entity);
     mockDismissals.save.mockImplementationOnce(() => {
       // TypeORM populates unset nullable columns when saving the entity.
