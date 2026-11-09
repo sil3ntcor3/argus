@@ -1,6 +1,9 @@
 import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
 import { JobRunType, JobStatus } from '@/common/enums/enum';
 import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsOptional } from 'class-validator';
+import { parseBooleanQuery } from './parse-boolean-query';
 
 export class GetTargetRunsQueryDto extends PickType(GetManyBaseQueryParams, [
   'page',
@@ -16,6 +19,16 @@ export class GetTargetRunsQueryDto extends PickType(GetManyBaseQueryParams, [
     default: 10,
   })
   declare limit: number;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Only unfinished runs from the last seven days that are pending or in progress',
+  })
+  @IsOptional()
+  @Transform(parseBooleanQuery)
+  @IsBoolean()
+  active?: boolean;
 }
 
 export class TargetRunDto {

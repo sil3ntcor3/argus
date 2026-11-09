@@ -14,6 +14,7 @@ import {
 } from 'class-validator';
 import { Target, TargetType } from '../entities/target.entity';
 import { TargetSourceDto } from '../target-source.dto';
+import { parseBooleanQuery } from './parse-boolean-query';
 
 export class GitOrgTargetSettingsDto {
   @ApiProperty({
@@ -181,12 +182,6 @@ export class GetManyTargetResponseDto {
 
   @ApiProperty()
   internalNetworkId: string;
-}
-
-function parseBooleanQuery({ value }: { value: unknown }) {
-  if (value === 'true') return true;
-  if (value === 'false') return false;
-  return value;
 }
 
 export class GetManyWorkspaceQueryParamsDto extends GetManyBaseQueryParams {
