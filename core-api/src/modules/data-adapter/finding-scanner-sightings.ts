@@ -1,10 +1,20 @@
 import type { EntityManager } from 'typeorm';
 
-/** Lock source parents before taking finding row locks, as run deletion does. */
+/** Lock provenance parents before taking finding row locks, as deletion does. */
 export async function lockFindingScannerSourceParents(
   manager: EntityManager,
   jobId: string,
 ): Promise<void> {
+  await manager.query(
+    `SELECT workspace.id
+     FROM jobs AS job
+     JOIN assets AS asset ON asset.id = job."assetId"
+     JOIN targets AS target ON target.id = asset."targetId"
+     JOIN workspaces AS workspace ON workspace.id = target."workspaceId"
+     WHERE job.id = $1
+     FOR KEY SHARE OF workspace`,
+    [jobId],
+  );
   await manager.query(
     `SELECT history.id
      FROM jobs AS job
@@ -16,7 +26,7 @@ export async function lockFindingScannerSourceParents(
   );
 }
 
-/** Record scanner provenance and count each newly observed run in the upsert transaction. */
+/** Record first detection and distinct scanner runs under the upsert's finding locks. */
 export async function recordFindingScannerSightings(
   manager: EntityManager,
   jobId: string,
@@ -24,10 +34,13 @@ export async function recordFindingScannerSightings(
 ): Promise<void> {
   if (findingIds.length === 0) return;
 
+  // Recover detections saved during a staged rollout from their stored date.
+  // Only attach the run when it is the original run already locked above.
   await manager.query(
     `WITH report AS (
        SELECT finding.id AS "vulnerabilityId", job."toolId",
-              history.id AS "jobHistoryId", history."projectId", target."workspaceId"
+              history.id AS "jobHistoryId", history."projectId", target."workspaceId",
+              finding."jobHistoryId" AS "firstRunId", finding."firstDetectedDate"
        FROM jobs AS job
        JOIN job_histories AS history ON history.id = job."jobHistoryId"
        JOIN workflows AS workflow ON workflow.id = history."workflowId"
@@ -37,6 +50,18 @@ export async function recordFindingScannerSightings(
          ON finding."assetId" = job."assetId" AND finding."toolId" = job."toolId"
        WHERE job.id = $1 AND finding.id = ANY($2::uuid[])
          AND workflow."workspaceId" = target."workspaceId"
+     ), detection AS (
+       INSERT INTO vulnerability_events
+         ("vulnerabilityId", "workspaceId", type, "toStatus", "jobHistoryId", "occurredAt")
+       SELECT report."vulnerabilityId", report."workspaceId", 'detected', 'new',
+              CASE WHEN report."firstRunId" = report."jobHistoryId" THEN report."jobHistoryId" END,
+              report."firstDetectedDate"
+       FROM report
+       WHERE report."firstDetectedDate" IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM vulnerability_events AS event
+           WHERE event."vulnerabilityId" = report."vulnerabilityId" AND event.type = 'detected'
+         )
      ), inserted AS (
        INSERT INTO vulnerability_sources ("vulnerabilityId", kind, "toolId", "jobHistoryId")
        SELECT "vulnerabilityId", 'tool', "toolId", "jobHistoryId" FROM report
