@@ -8,7 +8,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 dayjs.extend(relativeTime);
 
 const canReadAssets = vi.hoisted(() => vi.fn(() => true));
+const canReadJobs = vi.hoisted(() => vi.fn(() => true));
 const refetchPermissions = vi.hoisted(() => vi.fn());
 const id = 'd14d1c3f-9752-4b8a-93c8-48ea3c3212ab';
 const path = `/targets/${id}`;
@@ -32,7 +33,9 @@ const metrics = {
 vi.mock('@/hooks/usePermission', () => ({
   usePermission: () => ({
     hasPermission: (key: string) =>
-      key === 'target.read' || (key === 'asset.read' && canReadAssets()),
+      key === 'target.read' ||
+      (key === 'asset.read' && canReadAssets()) ||
+      (key === 'job.read' && canReadJobs()),
     isLoading: false,
     error: null,
     refetch: refetchPermissions,
@@ -72,24 +75,25 @@ function show(tab = 'overview') {
   return { user: userEvent.setup(), router };
 }
 
-describe('Target Overview tab', () => {
-  beforeEach(() => {
-    canReadAssets.mockReturnValue(true);
-    refetchPermissions.mockClear();
-    server.use(
-      http.get(`/api${path}`, () =>
-        HttpResponse.json({
-          id,
-          type: 'DOMAIN',
-          value: 'overview.example.test',
-          status: 'completed',
-          lastDiscoveredAt: '2026-01-01T00:00:00Z',
-        }),
-      ),
-      http.get(`/api${path}/overview`, () => HttpResponse.json(metrics)),
-    );
-  });
+beforeEach(() => {
+  canReadAssets.mockReturnValue(true);
+  canReadJobs.mockReturnValue(true);
+  refetchPermissions.mockClear();
+  server.use(
+    http.get(`/api${path}`, () =>
+      HttpResponse.json({
+        id,
+        type: 'DOMAIN',
+        value: 'overview.example.test',
+        status: 'completed',
+        lastDiscoveredAt: '2026-01-01T00:00:00Z',
+      }),
+    ),
+    http.get(`/api${path}/overview`, () => HttpResponse.json(metrics)),
+  );
+});
 
+describe('Target Overview tab', () => {
   it('opens from Assets and displays totals, recent discoveries, and zero values', async () => {
     const { user, router } = show('assets');
     expect(await screen.findByText('Asset inventory')).toBeVisible();
@@ -156,6 +160,105 @@ describe('Target Overview tab', () => {
     );
     await user.click(screen.getByRole('link', { name: 'Overview' }));
     expect(screen.queryByText('Enabled assets')).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/don.t have permission to access this page/),
+    ).toBeVisible();
+    expect(refetchPermissions).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Target Activity tab', () => {
+  const firstRun = {
+    id: 'run-1',
+    workflowName: 'Network discovery',
+    status: 'in_progress',
+    jobRunType: 'manual',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+    jobsTotal: 2,
+    jobsDone: 1,
+    jobsFailed: 0,
+    jobsRunning: 1,
+  };
+  const runsPath = `/api${path}/runs`;
+  const pageOne = {
+    data: [firstRun],
+    page: 1,
+    limit: 10,
+    total: 2,
+    hasNextPage: true,
+    pageCount: 2,
+  };
+
+  it('appends pages, keeps existing runs on a later-page failure, and links to run details', async () => {
+    let failMore = true;
+    server.use(
+      http.get(runsPath, ({ request }) => {
+        const page = new URL(request.url).searchParams.get('page');
+        if (page === '1') return HttpResponse.json(pageOne);
+        if (failMore) return new HttpResponse(null, { status: 503 });
+        return HttpResponse.json({
+          ...pageOne,
+          page: 2,
+          hasNextPage: false,
+          data: [{ ...firstRun, id: 'run-2', workflowName: 'Repository sync' }],
+        });
+      }),
+    );
+    const { user } = show('assets');
+    await user.click(await screen.findByRole('link', { name: 'Activity' }));
+    const first = await screen.findByRole('link', {
+      name: /Network discovery.*Manual.*run-1/,
+    });
+    expect(first).toHaveAttribute('href', '/jobs/runs/run-1');
+    expect(
+      screen.getByText(/1 done.*0 failed.*1 running.*2 total/),
+    ).toBeVisible();
+    const more = screen.getByRole('button', { name: 'Load more runs' });
+    await user.click(more);
+    expect(await screen.findByText('Could not load more runs.')).toBeVisible();
+    expect(first).toBeVisible();
+    failMore = false;
+    expect(more).toHaveFocus();
+    await user.keyboard('{Enter}');
+    const next = await screen.findByRole('link', { name: /Repository sync/ });
+    expect(next).toBeVisible();
+    await waitFor(() => expect(next).toHaveFocus());
+    expect(first).toBeVisible();
+    expect(more).not.toBeInTheDocument();
+  });
+
+  it('hides Activity and skips the run request without job read access', async () => {
+    canReadJobs.mockReturnValue(false);
+    const getRuns = vi.fn(() => HttpResponse.json(pageOne));
+    server.use(http.get(runsPath, getRuns));
+    show('activity');
+    expect(
+      await screen.findByText(/don.t have permission to access this page/),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('link', { name: 'Activity' }),
+    ).not.toBeInTheDocument();
+    expect(getRuns).not.toHaveBeenCalled();
+  });
+
+  it('rechecks permissions and hides cached runs after the API revokes access', async () => {
+    server.use(http.get(runsPath, () => HttpResponse.json(pageOne)));
+    const { user } = show('activity');
+    expect(
+      await screen.findByRole('link', { name: /Network discovery/ }),
+    ).toBeVisible();
+    await user.click(screen.getByRole('link', { name: 'Assets', exact: true }));
+    server.use(
+      http.get(runsPath, async () => {
+        await delay(150);
+        return new HttpResponse(null, { status: 403 });
+      }),
+    );
+    await user.click(screen.getByRole('link', { name: 'Activity' }));
+    expect(
+      screen.queryByRole('link', { name: /Network discovery/ }),
+    ).not.toBeInTheDocument();
     expect(
       await screen.findByText(/don.t have permission to access this page/),
     ).toBeVisible();
