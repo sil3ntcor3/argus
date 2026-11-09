@@ -975,6 +975,13 @@ export class DataAdapterService {
         });
         const vulnValues = { ...vuln } as unknown as Record<string, string | number | boolean | object | null>;
         delete vulnValues.id;
+        // Lifecycle metadata belongs to Argus, never to the result payload.
+        delete vulnValues.detectionStatus;
+        delete vulnValues.timesDetected;
+        delete vulnValues.resurfacedCount;
+        delete vulnValues.missedScans;
+        delete vulnValues.scanScopeKey;
+        delete vulnValues.fixedAt;
         return {
           ...vulnValues,
           ...normalizeCodeFields(vulnValues),
