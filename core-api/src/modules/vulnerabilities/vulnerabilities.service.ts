@@ -41,13 +41,13 @@ import type {
   VulnerabilityTimelineResponseDto,
 } from './dto/vulnerability-timeline.dto';
 import { dismissFindings, type FindingDismissalInput } from './dismiss-findings';
-import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
 import { RISK_ACCEPTED } from './finding-dismissal-reason';
 import {
   activeDismissalCondition,
   openVulnerabilityCondition,
 } from './open-vulnerability';
+import { reopenFindings } from './reopen-findings';
 import { compileVulnerabilityFilter } from './vulnerability-filter';
 
 @Injectable()
@@ -57,8 +57,6 @@ export class VulnerabilitiesService {
   constructor(
     @InjectRepository(Vulnerability)
     private vulnerabilitiesRepository: Repository<Vulnerability>,
-    @InjectRepository(VulnerabilityDismissal)
-    private dismissRepo: Repository<VulnerabilityDismissal>,
     @InjectQueue(BullMQName.VULNERABILITY_ANALYSIS)
     private vulnerabilityAnalysisQueue: Queue,
     private jobRegistryService: JobsRegistryService,
@@ -445,27 +443,10 @@ export class VulnerabilitiesService {
     );
   }
 
-  async bulkReopenVulnerabilities(ids: string[], workspaceId: string) {
-    const dismissals = await this.dismissRepo.find({
-      where: {
-        id: In(ids),
-        vulnerability: {
-          asset: {
-            target: { workspaceId },
-          },
-        },
-      },
-    });
-
-    const foundIds = dismissals.map((d) => d.id);
-    const notFoundIds = ids.filter((id) => !foundIds.includes(id));
-    if (notFoundIds.length > 0) {
-      throw new NotFoundException(
-        `Dismissed vulnerabilities not found: ${notFoundIds.join(', ')}`,
-      );
-    }
-
-    await this.dismissRepo.delete({ id: In(ids) });
+  async bulkReopenVulnerabilities(ids: string[], workspaceId: string, user: User) {
+    return this.vulnerabilitiesRepository.manager.transaction((manager) =>
+      reopenFindings(manager, ids, workspaceId, user.id),
+    );
   }
 
   async analyzeVulnerability(

@@ -13,7 +13,6 @@ import type { NotificationsService } from '../notifications/notifications.servic
 import type { Target } from '../targets/entities/target.entity';
 import type { ToolsService } from '../tools/tools.service';
 import type { WorkflowsService } from '../workflows/workflows.service';
-import type { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import type { Vulnerability } from './entities/vulnerability.entity';
 import { VulnerabilitiesService } from './vulnerabilities.service';
 
@@ -53,7 +52,6 @@ describe('VulnerabilitiesService', () => {
 
     service = new VulnerabilitiesService(
       mockFindings as unknown as Repository<Vulnerability>,
-      mockDismissals as unknown as Repository<VulnerabilityDismissal>,
       {} as Queue,
       mockJobRegistryService as unknown as JobsRegistryService,
       mockToolsService as unknown as ToolsService,
