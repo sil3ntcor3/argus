@@ -2072,6 +2072,11 @@ export type JobHistoryWorkflowResponseDto = {
   steps: WorkflowStepStatusDto[];
 };
 
+export type RetryRunResponseDto = {
+  message: string;
+  jobHistoryId: string;
+};
+
 export type PickToolIdName = {
   id: string;
   name: string;
@@ -22213,6 +22218,98 @@ export const useJobsRegistryControllerCancelJobHistory = <
 > => {
   return useMutation(
     getJobsRegistryControllerCancelJobHistoryMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Starts a new manual run from the current workflow and the original recorded targets.
+ * @summary Retry a closed target run
+ */
+export const jobsRegistryControllerRetryJobHistory = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<RetryRunResponseDto>(
+    {
+      url: `/api/jobs-registry/histories/${id}/re-run`,
+      method: 'POST',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getJobsRegistryControllerRetryJobHistoryMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['jobsRegistryControllerRetryJobHistory'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return jobsRegistryControllerRetryJobHistory(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsRegistryControllerRetryJobHistoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>
+>;
+
+export type JobsRegistryControllerRetryJobHistoryMutationError = void;
+
+/**
+ * @summary Retry a closed target run
+ */
+export const useJobsRegistryControllerRetryJobHistory = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getJobsRegistryControllerRetryJobHistoryMutationOptions(options),
     queryClient,
   );
 };

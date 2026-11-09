@@ -13,6 +13,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpStatus,
   Logger,
   Param,
   Post,
@@ -20,7 +21,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
-import { ApiConflictResponse } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiNotFoundResponse,
+} from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
@@ -55,7 +60,9 @@ import {
   VulnerabilitiesResultDto,
   WorkerIdParams,
 } from './dto/jobs-registry.dto';
+import { RetryRunResponseDto } from './dto/retry-run-response.dto';
 import { JobsRegistryService } from './jobs-registry.service';
+import { WorkflowRunnerService } from './workflow-runner.service';
 
 /**
  * Packs a single JSON-ish value into a `google.protobuf.Value` wire object.
@@ -115,6 +122,7 @@ export class JobsRegistryController {
     private readonly connectorRegistry: ConnectorRegistryService,
     private readonly toolConfigProfilesService: ToolConfigProfilesService,
     private readonly integrationsService: IntegrationsService,
+    private readonly workflowRunnerService: WorkflowRunnerService,
   ) {}
 
   @WorkspaceAccess('job.read')
@@ -418,6 +426,30 @@ export class JobsRegistryController {
     @Param() params: IdQueryParamDto,
   ) {
     return this.jobsRegistryService.cancelJobHistory(workspaceId, params.id);
+  }
+
+  @WorkspaceAccess('job.write')
+  @Doc({
+    summary: 'Retry a closed target run',
+    description:
+      'Starts a new manual run from the current workflow and the original recorded targets.',
+    response: {
+      httpStatus: HttpStatus.CREATED,
+      serialization: RetryRunResponseDto,
+    },
+    request: { getWorkspaceId: true },
+  })
+  @ApiBadRequestResponse({
+    description: 'Unsupported scope, unavailable targets, or no runnable steps.',
+  })
+  @ApiNotFoundResponse({ description: 'Run not found in this workspace.' })
+  @ApiConflictResponse({ description: 'The run is open or has active jobs.' })
+  @Post('/histories/:id/re-run')
+  retryJobHistory(
+    @WorkspaceId() workspaceId: string,
+    @Param() { id }: IdQueryParamDto,
+  ): Promise<RetryRunResponseDto> {
+    return this.workflowRunnerService.retryTargetRun(workspaceId, id);
   }
 
   @WorkspaceAccess('job.delete')

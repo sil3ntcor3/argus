@@ -1,7 +1,15 @@
 import { EventTriggerType, JobRunType, JobStatus } from '@/common/enums/enum';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { DataSource, type QueryRunner } from 'typeorm';
+import { isUUID } from 'class-validator';
+import { DataSource, In, type QueryRunner } from 'typeorm';
+import { Target } from '../targets/entities/target.entity';
 import { Tool } from '../tools/entities/tools.entity';
 import { ToolsService } from '../tools/tools.service';
 import { Workflow } from '../workflows/entities/workflow.entity';
@@ -20,6 +28,7 @@ import {
 } from '../workflows/workflow-graph';
 import { resolveToolCategory } from '../tools/tool-categories';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import type { RetryRunResponseDto } from './dto/retry-run-response.dto';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
 import { JobsRegistryService } from './jobs-registry.service';
@@ -125,6 +134,73 @@ export class WorkflowRunnerService {
 
     const { dispatched } = await this.advance(jobHistory.id, context);
     return { jobHistory, dispatched };
+  }
+
+  /** Starts a fresh run within a closed run's recorded target scope. */
+  public async retryTargetRun(
+    workspaceId: string,
+    historyId: string,
+  ): Promise<RetryRunResponseDto> {
+    const history = await this.dataSource
+      .getRepository(JobHistory)
+      .createQueryBuilder('history')
+      .innerJoinAndSelect('history.workflow', 'workflow')
+      .addSelect(['history.projectId', 'history.projectWorkflowId'])
+      .where('history.id = :historyId', { historyId })
+      .andWhere('workflow.workspaceId = :workspaceId', { workspaceId })
+      .getOne();
+    if (!history) {
+      throw new NotFoundException('Job history not found in workspace');
+    }
+    if (
+      !history.isCompleted ||
+      (await this.dataSource.getRepository(Job).existsBy({
+        jobHistory: { id: historyId },
+        status: In([JobStatus.PENDING, JobStatus.IN_PROGRESS]),
+      }))
+    ) {
+      throw new ConflictException(
+        'Only closed runs with no active jobs can be retried',
+      );
+    }
+
+    const scope = history.scope;
+    const recordedTargets = scope?.targetIds;
+    if (
+      history.projectId ||
+      history.projectWorkflowId ||
+      !scope ||
+      Object.keys(scope).length !== 1 ||
+      !Array.isArray(recordedTargets) ||
+      recordedTargets.length === 0 ||
+      !recordedTargets.every((targetId) => isUUID(targetId))
+    ) {
+      throw new BadRequestException(
+        'This run has no eligible recorded target scope',
+      );
+    }
+    const targetIds = [
+      ...new Set(recordedTargets.map((id) => id.toLowerCase())),
+    ];
+    const targets = await this.dataSource.getRepository(Target).countBy({
+      id: In(targetIds),
+      workspaceId,
+    });
+    if (targets !== targetIds.length) {
+      throw new BadRequestException('One or more recorded targets are unavailable');
+    }
+
+    const { jobHistory } = await this.startRun({
+      workflow: history.workflow,
+      workspaceId,
+      jobName: `Retry - ${history.jobHistoryName ?? history.workflow.name}`,
+      jobRunType: JobRunType.MANUAL,
+      targetIds,
+    });
+    if (!jobHistory) {
+      throw new BadRequestException('This workflow has no runnable steps');
+    }
+    return { jobHistoryId: jobHistory.id, message: 'Run started' };
   }
 
   /**
