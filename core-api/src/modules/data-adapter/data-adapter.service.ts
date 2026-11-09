@@ -29,6 +29,10 @@ import { StorageService } from '../storage/storage.service';
 import { Vulnerability } from '../vulnerabilities/entities/vulnerability.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { DataAdapterInput } from './data-adapter.interface';
+import {
+  lockFindingScannerSourceParents,
+  recordFindingScannerSightings,
+} from './finding-scanner-sightings';
 import { recordProjectFindingSightings } from './project-finding-sightings';
 import { serviceForUrl } from './url-owner';
 
@@ -1003,6 +1007,8 @@ export class DataAdapterService {
         };
       });
 
+      await lockFindingScannerSourceParents(manager, job.id);
+
       // Deduplicate and acquire finding locks in one order across concurrent batches.
       const uniqueValues = Array.from(
         new Map(values.map((v) => [v.fingerprint, v])).values(),
@@ -1070,9 +1076,10 @@ export class DataAdapterService {
         insertedVulnerabilities.push(...(result.raw as Vulnerability[]));
       }
 
-      await recordProjectFindingSightings(
-        manager, job.id, insertedVulnerabilities.map((finding) => finding.id),
-      );
+      const findingIds = insertedVulnerabilities.map((finding) => finding.id);
+      // Check prior project observations before this callback can create one.
+      await recordFindingScannerSightings(manager, job.id, findingIds);
+      await recordProjectFindingSightings(manager, job.id, findingIds);
 
       // Only send notifications for truly new vulnerabilities,
       // not for existing ones that were just updated
