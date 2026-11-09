@@ -1065,7 +1065,10 @@ export class JobsRegistryService {
       id: string;
       createdAt: Date;
       updatedAt: Date;
-      totalJobs: string; // COUNT returns string in some databases
+      totalJobs: string; // COUNT returns string in PostgreSQL.
+      completedJobs: string;
+      failedJobs: string;
+      cancelledJobs: string;
       status: JobStatus;
       workflowName: string;
       jobHistoryName: string;
@@ -1101,6 +1104,9 @@ export class JobsRegistryService {
         '"jobHistory"."jobRunType" as "jobRunType"',
         'COUNT(job.id) as "totalJobs"',
         `${JOB_HISTORY_STATUS_SQL} as "status"`,
+        `COUNT(*) FILTER (WHERE job.status = '${JobStatus.COMPLETED}') as "completedJobs"`,
+        `COUNT(*) FILTER (WHERE job.status = '${JobStatus.FAILED}') as "failedJobs"`,
+        `COUNT(*) FILTER (WHERE job.status = '${JobStatus.CANCELLED}') as "cancelledJobs"`,
         'COUNT(*) OVER () as "total"',
       ])
       .groupBy('jobHistory.id')
@@ -1119,17 +1125,33 @@ export class JobsRegistryService {
     const total =
       rawResults.length > 0 ? parseInt(rawResults[0].total, 10) : 0;
 
-    // Transform raw results to match the response DTO structure
-    const transformedData = rawResults.map((raw) => ({
-      id: raw.id,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt,
-      totalJobs: parseInt(raw.totalJobs),
-      status: raw.status,
-      workflowName: raw.workflowName,
-      jobHistoryName: raw.jobHistoryName,
-      jobRunType: raw.jobRunType,
-    }));
+    const transformedData = rawResults.map((raw) => {
+      const totalJobs = Number(raw.totalJobs);
+      const completedJobs = Number(raw.completedJobs);
+      const failedJobs = Number(raw.failedJobs);
+      const settledJobs = completedJobs + failedJobs + Number(raw.cancelledJobs);
+      const progress =
+        totalJobs > 0
+          ? Math.min(
+              settledJobs === totalJobs ? 100 : 99,
+              Math.round((settledJobs / totalJobs) * 100),
+            )
+          : 0;
+
+      return {
+        id: raw.id,
+        createdAt: raw.createdAt,
+        updatedAt: raw.updatedAt,
+        totalJobs,
+        completedJobs,
+        failedJobs,
+        progress,
+        status: raw.status,
+        workflowName: raw.workflowName,
+        jobHistoryName: raw.jobHistoryName,
+        jobRunType: raw.jobRunType,
+      };
+    });
 
     return getManyResponse({ query, data: transformedData, total });
   }
