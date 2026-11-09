@@ -10,6 +10,7 @@ import { TargetExposurePanel } from './target-exposure-panel';
 import { TargetFindingsCard } from './target-findings-card';
 import { TargetInsightsPanel } from './target-insights-panel';
 import { TargetRunRow } from './target-run-row';
+import { TargetTopFindingsPanel } from './target-top-findings-panel';
 
 const formatCount = new Intl.NumberFormat();
 const formatScanTime = new Intl.DateTimeFormat(undefined, {
@@ -197,6 +198,9 @@ export function TargetOverviewTab({
             onKeyboardNavigate={() => onKeyboardNavigate('vulnerabilities')}
           />
         )}
+      {canReadFindings && data?.topVulnerabilities != null && (
+        <TargetTopFindingsPanel findings={data.topVulnerabilities} />
+      )}
       {data?.insights && (
         <TargetInsightsPanel
           insights={data.insights}

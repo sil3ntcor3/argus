@@ -536,6 +536,79 @@ describe('Target Overview next discovery', () => {
   );
 });
 
+describe('Target Overview top findings', () => {
+  const findings = [
+    {
+      id: 'e16f1518-0345-4ae9-b195-fc1955c53227',
+      name: 'Critical finding',
+      severity: 'critical',
+      assetValue: 'target.example.test',
+      cveId: ['CVE-2026-12345'],
+      createdAt: '2026-11-01T14:00:00.000Z',
+    },
+    {
+      id: 'c98206de-2f97-4e18-bb4c-a1bd4e24641e',
+      name: 'High finding',
+      severity: 'high',
+      assetValue: 'other.example.test',
+      cveId: null,
+      createdAt: '2026-11-02T14:00:00.000Z',
+    },
+  ];
+
+  it('shows ranked findings with asset, severity and the existing detail link', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, topVulnerabilities: findings }),
+      ),
+    );
+    show();
+    const top = within(
+      await screen.findByRole('region', { name: 'Top findings' }),
+    );
+    expect(
+      top.getAllByRole('link').map((link) => link.getAttribute('href')),
+    ).toEqual(findings.map(({ id }) => `/vulnerabilities/${id}`));
+    expect(top.getByText('critical')).toBeVisible();
+    expect(top.getByText('target.example.test')).toBeVisible();
+    expect(top.getByText('CVE-2026-12345')).toBeVisible();
+  });
+
+  it('shows an empty state for an authorized empty ranking', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, topVulnerabilities: [] }),
+      ),
+    );
+    show();
+    const top = within(
+      await screen.findByRole('region', { name: 'Top findings' }),
+    );
+    expect(top.getByText('No findings to preview.')).toBeVisible();
+  });
+
+  it.each([
+    { allowed: false, data: findings },
+    { allowed: true, data: null },
+    { allowed: true, data: undefined },
+  ])(
+    'hides redacted or unavailable rankings ($allowed)',
+    async ({ allowed, data }) => {
+      canReadFindings.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({ ...metrics, topVulnerabilities: data }),
+        ),
+      );
+      show();
+      expect(await screen.findByText('Enabled assets')).toBeVisible();
+      expect(
+        screen.queryByRole('region', { name: 'Top findings' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+});
+
 describe('Target Overview findings', () => {
   const findings = { critical: 1, high: 2, medium: 0, low: 0, info: 0 };
 
