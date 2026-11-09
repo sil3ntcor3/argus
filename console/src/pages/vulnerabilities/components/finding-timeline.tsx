@@ -29,9 +29,16 @@ const statusLabels = new Map([
   ['resurfaced', 'Resurfaced'],
 ]);
 
-/** Describe the two recorded lifecycle event types. */
+const eventLabels = new Map([
+  ['detected', 'First detected'],
+  ['dismissed', 'Dismissed'],
+  ['reopened', 'Reopened'],
+  ['risk_expired', 'Risk acceptance expired'],
+]);
+
 function eventLabel(event: VulnerabilityTimelineEventDto) {
-  if (event.type === 'detected') return 'First detected';
+  if (event.type !== 'status_changed')
+    return eventLabels.get(event.type) ?? 'Finding updated';
   const from = statusLabels.get(event.fromStatus ?? '');
   const to = statusLabels.get(event.toStatus ?? '');
   return from && to ? `${from} → ${to}` : 'Status changed';

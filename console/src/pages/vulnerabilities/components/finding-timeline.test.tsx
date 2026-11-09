@@ -89,6 +89,28 @@ describe('FindingTimeline', () => {
     expect(dialog.queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('describes dismissal history and keeps unknown events neutral', () => {
+    useTimeline.mockReturnValue({
+      data: {
+        data: ['risk_expired', 'reopened', 'dismissed', 'future_event'].map(
+          (type) => ({
+            ...events[1],
+            id: type,
+            type,
+            fromStatus: null,
+            toStatus: null,
+          }),
+        ),
+      },
+      isFetchedAfterMount: true,
+    });
+    const rows = open().getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Risk acceptance expired');
+    expect(rows[1]).toHaveTextContent('Reopened');
+    expect(rows[2]).toHaveTextContent('Dismissed');
+    expect(rows[3]).toHaveTextContent('Finding updated');
+  });
+
   it('shows a loading state while awaiting events', () => {
     useTimeline.mockReturnValue({
       data: { data: events },
