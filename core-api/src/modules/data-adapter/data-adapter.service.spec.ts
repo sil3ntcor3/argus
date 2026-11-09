@@ -1650,7 +1650,8 @@ describe('DataAdapterService', () => {
       },
     ] as unknown as Vulnerability[];
 
-    it('handles vulnerability data without accepting scanner-supplied lifecycle state', async () => {
+    const storedScopes = [null, 'a'.repeat(64)];
+    it.each(storedScopes)('uses only the saved job scope %s', async (findingScanScopeKey) => {
       mockDataSource.transaction.mockImplementation(
         async (callback: (manager: any) => Promise<any>) => {
           await callback(mockQueryRunner.manager);
@@ -1690,7 +1691,7 @@ describe('DataAdapterService', () => {
       };
       await service.vulnerabilities({
         data: [{ ...mockVulnerabilities[0], ...scannerLifecycle }],
-        job: mockJob,
+        job: { ...mockJob, findingScanScopeKey },
       });
 
       expect(mockDataSource.transaction).toHaveBeenCalled();
@@ -1705,10 +1706,17 @@ describe('DataAdapterService', () => {
       expect(mockQueryBuilder.into).toHaveBeenCalledWith(Vulnerability);
       const [finding] = mockQueryBuilder.values.mock.calls[0][0] as Vulnerability[];
       expect(finding.name).toBe(mockVulnerabilities[0].name);
-      for (const field of Object.keys(scannerLifecycle)) {
+      expect(finding.scanScopeKey).toBe(findingScanScopeKey);
+      for (const field of Object.keys(scannerLifecycle).filter(
+        key => key !== 'scanScopeKey',
+      )) {
         expect(finding).not.toHaveProperty(field);
       }
-      expect(mockQueryBuilder.orUpdate).toHaveBeenCalled();
+      expect(mockQueryBuilder.orUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overwrite: expect.arrayContaining(['scanScopeKey']),
+        }),
+      );
       expect(mockQueryBuilder.returning).toHaveBeenCalledWith('*');
       expect(mockQueryBuilder.execute).toHaveBeenCalled();
     });
