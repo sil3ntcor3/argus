@@ -20,6 +20,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
+import { ApiConflictResponse } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
@@ -400,13 +401,16 @@ export class JobsRegistryController {
   @Doc({
     summary: 'Cancel a job history',
     description:
-      'Cancels every job of a run that has not reached a terminal state and stops the workflow from spawning further steps',
+      'Cancels an open run and stops the workflow from spawning further steps.',
     response: {
       serialization: DefaultMessageResponseDto,
     },
     request: {
       getWorkspaceId: true,
     },
+  })
+  @ApiConflictResponse({
+    description: 'The workflow engine has already closed the run.',
   })
   @Post('/histories/:id/cancel')
   cancelJobHistory(
