@@ -700,6 +700,12 @@ export type TargetOverviewDto = {
    */
   lastRun: TargetRunDto | null;
   /**
+   * Recent unfinished runs, or null without job read access
+   * @maxItems 5
+   * @nullable
+   */
+  activeRuns: TargetRunDto[] | null;
+  /**
    * Open findings by severity, or null without vulnerability read access
    * @nullable
    */

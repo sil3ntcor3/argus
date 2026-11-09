@@ -40,7 +40,7 @@ describe('TargetOverviewService', () => {
         stale: false,
         daysSinceDiscovery: 1,
         expiringTlsServices: 0,
-        lastRun: null,
+        runs: null,
         findings: null,
       },
     ]);
@@ -51,6 +51,7 @@ describe('TargetOverviewService', () => {
         newVulnerabilities: null,
         nextScanAt: null,
         lastRun: null,
+        activeRuns: null,
         insights: [],
       },
     );

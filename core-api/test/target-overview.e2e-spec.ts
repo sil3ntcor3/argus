@@ -37,6 +37,7 @@ describe('Target overview API (e2e)', () => {
     openPorts: 2,
     nextScanAt: null,
     lastRun: null,
+    activeRuns: [],
     ...findingCounts,
     insights: [criticalInsight, ...discoveryInsights],
     exposure: {
@@ -186,6 +187,7 @@ describe('Target overview API (e2e)', () => {
       openPorts: 0,
       nextScanAt: null,
       lastRun: null,
+      activeRuns: [],
       openVulnerabilities: noOpenFindings,
       newVulnerabilities: 0,
       exposure: emptyExposure,
@@ -199,6 +201,7 @@ describe('Target overview API (e2e)', () => {
       openPorts: 1,
       nextScanAt: null,
       lastRun: null,
+      activeRuns: [],
       openVulnerabilities: { ...noOpenFindings, critical: 1 },
       newVulnerabilities: 1,
       insights: [criticalInsight, ...discoveryInsights],
@@ -387,6 +390,7 @@ describe('Target overview API (e2e)', () => {
         await overview(target, headers).expect(200, {
           ...metrics,
           ...redactedFindings,
+          activeRuns: null,
         });
       else await overview(target, headers).expect(403);
     }
@@ -396,9 +400,16 @@ describe('Target overview API (e2e)', () => {
         'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
         [['target.read', 'asset.read', findingPermission], role],
       );
-      await overview(target, headers).expect(200, metrics);
+      await overview(target, headers).expect(200, {
+        ...metrics,
+        activeRuns: null,
+      });
     }
-    const restrictedMetrics = { ...metrics, ...redactedFindings };
+    const restrictedMetrics = {
+      ...metrics,
+      ...redactedFindings,
+      activeRuns: null,
+    };
     await app.dataSource.query(
       'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
       [['target.read', 'asset.read'], role],
@@ -474,7 +485,10 @@ describe('Target overview API (e2e)', () => {
       'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
       [['target.read', 'asset.read', 'vulnerability.read'], role],
     );
-    await overview(target, headers).expect(200, metrics);
+    await overview(target, headers).expect(200, {
+      ...metrics,
+      activeRuns: null,
+    });
     for (const jobPermission of ['job.read', 'job.write']) {
       await app.dataSource.query(
         'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
@@ -502,6 +516,7 @@ describe('Target overview API (e2e)', () => {
     await overview(target, headers).expect(200, {
       ...restrictedMetrics,
       lastRun: pendingRun,
+      activeRuns: [pendingRun],
     });
   });
 });
