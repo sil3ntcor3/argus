@@ -23,7 +23,7 @@ export class TargetRunHistoryService {
 
   /** Pages owned runs before rolling up status and target-specific progress. */
   async list(id: string, workspaceId: string, query: GetTargetRunsQueryDto) {
-    const { page, limit } = query;
+    const { page, limit, active = false } = query;
     const offset = (page - 1) * limit;
     if (
       !Number.isSafeInteger(page) ||
@@ -54,6 +54,14 @@ export class TargetRunHistoryService {
          FROM target_runs r JOIN job_histories h ON h.id = r.id
          JOIN workflows w ON w.id = h."workflowId"
          JOIN owned t ON w."workspaceId" = t."workspaceId"
+         WHERE CASE
+           WHEN NOT $5::boolean THEN true
+           WHEN h."isCompleted" IS DISTINCT FROM FALSE
+             OR h."createdAt" <= LOCALTIMESTAMP - INTERVAL '7 days' THEN false
+           ELSE (SELECT ${JOB_HISTORY_STATUS_SQL}
+                   FROM jobs job WHERE job."jobHistoryId" = h.id)
+                IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')
+         END
        ), page AS MATERIALIZED (
          SELECT * FROM matching ORDER BY "createdAt" DESC, id DESC LIMIT $3 OFFSET $4
        )
@@ -70,7 +78,7 @@ export class TargetRunHistoryService {
          WHERE job."jobHistoryId" = p.id
        ) stats
        ORDER BY p."createdAt" DESC, p.id DESC`,
-      [id, workspaceId, limit, offset],
+      [id, workspaceId, limit, offset, active],
     );
     if (!rows.length) throw new NotFoundException('Target not found');
 

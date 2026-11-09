@@ -5704,6 +5704,10 @@ export type TargetsControllerGetTargetRunsParams = {
    * @maximum 100
    */
   limit?: number;
+  /**
+   * Only unfinished runs from the last seven days that are pending or in progress
+   */
+  active?: boolean;
 };
 
 export type TargetsControllerGetTargetChangesParams = {

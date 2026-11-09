@@ -162,6 +162,77 @@ describe('Target run history API (e2e)', () => {
     expect(other.body).toEqual(missing.body);
   });
 
+  it('filters recent unfinished runs by whole-run status before pagination', async () => {
+    const id = await makeTarget(owner.workspace.id);
+    const sibling = await makeTarget(owner.workspace.id);
+    const [workflow] = await app.dataSource.query<{ id: string }[]>(
+      'SELECT id FROM workflows WHERE "workspaceId" = $1 LIMIT 1',
+      [owner.workspace.id],
+    );
+    const makeHistory = (days: number, finished = false) =>
+      insertId(
+        `INSERT INTO job_histories ("workflowId", scope, "createdAt", "isCompleted")
+         VALUES ($1, $2, LOCALTIMESTAMP - $3 * INTERVAL '1 day', $4)`,
+        [workflow.id, { targetIds: [id] }, days, finished],
+      );
+    const failed = await makeHistory(0);
+    await makeHistory(0.5, true);
+    const pending = await makeHistory(1);
+    const running = await makeHistory(2);
+    await makeHistory(8);
+    const [tool] = await app.dataSource.query<{ id: string }[]>(
+      'SELECT id FROM tools WHERE name = $1',
+      ['nuclei'],
+    );
+    const assetSql = 'INSERT INTO assets (value, "targetId") VALUES ($1, $2)';
+    const asset = await insertId(assetSql, ['active.example.test', id]);
+    const siblingAsset = await insertId(assetSql, [
+      'sibling.example.test',
+      sibling,
+    ]);
+    await app.dataSource.query(
+      `INSERT INTO jobs ("jobHistoryId", "assetId", "toolId", category, status)
+       VALUES ($1, $3, $5, 'vulnerabilities', 'in_progress'),
+              ($1, $4, $5, 'vulnerabilities', 'failed'),
+              ($2, $3, $5, 'vulnerabilities', 'in_progress')`,
+      [failed, running, asset, siblingAsset, tool.id],
+    );
+
+    const first = await read(id, owner.headers, '?active=true&limit=1').expect(
+      200,
+    );
+    const second = await read(
+      id,
+      owner.headers,
+      '?active=true&limit=1&page=2',
+    ).expect(200);
+    const beyond = await read(
+      id,
+      owner.headers,
+      '?active=true&limit=1&page=3',
+    ).expect(200);
+    expect(first.body).toMatchObject({
+      page: 1,
+      total: 2,
+      hasNextPage: true,
+      data: [{ id: pending, status: 'pending' }],
+    });
+    expect(second.body).toMatchObject({
+      page: 2,
+      total: 2,
+      hasNextPage: false,
+      data: [{ id: running, status: 'in_progress' }],
+    });
+    expect(beyond.body).toMatchObject({ page: 3, total: 2, data: [] });
+    const full = await read(id, owner.headers).expect(200);
+    expect(full.body.total).toBe(5);
+    const unfiltered = await read(id, owner.headers, '?active=false').expect(200);
+    expect(unfiltered.body).toEqual(full.body);
+    await read(id, owner.headers, '?active=1').expect(400);
+    await read(id, owner.headers, '?active=true&active=false').expect(400);
+    await read(id, foreign.headers, '?active=true').expect(404);
+  });
+
   it('requires target and job read access in the selected workspace', async () => {
     const workspace = owner.workspace.id;
     const headers = wsHeaders(foreign.user.cookie, workspace);
