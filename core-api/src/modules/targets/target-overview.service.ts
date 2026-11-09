@@ -132,6 +132,14 @@ export class TargetOverviewService {
       ...metrics
     } = overview;
     const insights: TargetOverviewDto['insights'] = [];
+    const openCritical = findings?.openVulnerabilities?.critical ?? 0;
+    if (openCritical > 0) {
+      insights.push({
+        kind: TargetInsightKind.CRITICAL_OPEN,
+        level: TargetInsightLevel.CRITICAL,
+        count: openCritical,
+      });
+    }
     if (failedRunId) {
       insights.push({
         kind: TargetInsightKind.LAST_RUN_FAILED,

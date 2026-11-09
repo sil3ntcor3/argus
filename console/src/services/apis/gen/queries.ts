@@ -614,6 +614,7 @@ export type TargetInsightKind =
   (typeof TargetInsightKind)[keyof typeof TargetInsightKind];
 
 export const TargetInsightKind = {
+  critical_open: 'critical_open',
   last_run_failed: 'last_run_failed',
   tls_expiring: 'tls_expiring',
   stale_scan: 'stale_scan',
@@ -625,6 +626,7 @@ export type TargetInsightLevel =
   (typeof TargetInsightLevel)[keyof typeof TargetInsightLevel];
 
 export const TargetInsightLevel = {
+  critical: 'critical',
   warning: 'warning',
   info: 'info',
 } as const;

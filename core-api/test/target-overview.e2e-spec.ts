@@ -14,8 +14,14 @@ describe('Target overview API (e2e)', () => {
   const emptyExposure = { ports: [], technologies: [], statusCodes: [] };
   const missingSchedule = { kind: 'no_schedule', level: 'info' };
   const newAssets = { kind: 'new_assets', level: 'info', count: 1, days: 7 };
+  const criticalInsight = { kind: 'critical_open', level: 'critical', count: 1 };
+  const discoveryInsights = [newAssets, missingSchedule];
   const noOpenFindings = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
-  const redactedFindings = { openVulnerabilities: null, newVulnerabilities: null };
+  const redactedFindings = {
+    openVulnerabilities: null,
+    newVulnerabilities: null,
+    insights: discoveryInsights,
+  };
   const findingCounts = {
     openVulnerabilities: { ...noOpenFindings, critical: 1, high: 2 },
     newVulnerabilities: 2,
@@ -27,7 +33,7 @@ describe('Target overview API (e2e)', () => {
     newServices: 3,
     openPorts: 2,
     ...findingCounts,
-    insights: [newAssets, missingSchedule],
+    insights: [criticalInsight, ...discoveryInsights],
     exposure: {
       ports: [
         { name: '80', count: 2 },
@@ -186,7 +192,7 @@ describe('Target overview API (e2e)', () => {
       openPorts: 1,
       openVulnerabilities: { ...noOpenFindings, critical: 1 },
       newVulnerabilities: 1,
-      insights: [newAssets, missingSchedule],
+      insights: [criticalInsight, ...discoveryInsights],
       exposure: {
         ports: [{ name: '22', count: 1 }],
         technologies: [{ name: 'Foreign', count: 1 }],
@@ -390,15 +396,18 @@ describe('Target overview API (e2e)', () => {
 
     // A failure on a sibling asset still sets the whole run's status. Its ID
     // is visible only with effective job read access.
+    const failedRun = { kind: 'last_run_failed', level: 'warning', runId: failed };
     const failedMetrics = {
       ...metrics,
-      insights: [
-        { kind: 'last_run_failed', level: 'warning', runId: failed },
-        ...metrics.insights,
-      ],
+      insights: [criticalInsight, failedRun, ...discoveryInsights],
     };
     await overview(target, headers).expect(200, restrictedMetrics);
     await overview(target, owner.headers).expect(200, failedMetrics);
+    await app.dataSource.query(
+      'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
+      [['target.read', 'asset.read', 'vulnerability.read'], role],
+    );
+    await overview(target, headers).expect(200, metrics);
     for (const jobPermission of ['job.read', 'job.write']) {
       await app.dataSource.query(
         'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
@@ -407,6 +416,7 @@ describe('Target overview API (e2e)', () => {
       await overview(target, headers).expect(200, {
         ...failedMetrics,
         ...redactedFindings,
+        insights: [failedRun, ...discoveryInsights],
       });
     }
     // For equal timestamps, run history and the insight both prefer the
