@@ -35,10 +35,15 @@ import {
   TargetRepositoryDto,
   UpdateTargetDto,
 } from './dto/targets.dto';
+import {
+  GetTargetChangesQueryDto,
+  TargetChangeDto,
+} from './dto/target-changes.dto';
 import { TargetOverviewDto } from './dto/target-overview.dto';
 import { GetTargetRunsQueryDto, TargetRunDto } from './dto/target-runs.dto';
 import { TargetSummaryDto } from './dto/target-summary.dto';
 import { Target } from './entities/target.entity';
+import { TargetChangesService } from './target-changes.service';
 import { TargetOverviewService } from './target-overview.service';
 import { TargetRunHistoryService } from './target-run-history.service';
 import { TargetSummaryService } from './target-summary.service';
@@ -62,6 +67,7 @@ export class TargetsController {
     private readonly targetSummaryService: TargetSummaryService,
     private readonly targetOverviewService: TargetOverviewService,
     private readonly targetRunHistoryService: TargetRunHistoryService,
+    private readonly targetChangesService: TargetChangesService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -262,6 +268,23 @@ export class TargetsController {
     @Query() query: GetTargetRunsQueryDto,
   ) {
     return this.targetRunHistoryService.list(id, workspaceId, query);
+  }
+
+  @Doc({
+    summary: 'Get target discovery changes',
+    description: 'Lists discovered assets and services for a target, newest first.',
+    response: { serialization: GetManyResponseDto(TargetChangeDto) },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('target.read', 'asset.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/changes')
+  getTargetChanges(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @Query() query: GetTargetChangesQueryDto,
+  ) {
+    return this.targetChangesService.list(id, workspaceId, query);
   }
 
   @Doc({
