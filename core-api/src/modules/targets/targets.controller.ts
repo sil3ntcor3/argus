@@ -35,8 +35,10 @@ import {
   TargetRepositoryDto,
   UpdateTargetDto,
 } from './dto/targets.dto';
+import { TargetOverviewDto } from './dto/target-overview.dto';
 import { TargetSummaryDto } from './dto/target-summary.dto';
 import { Target } from './entities/target.entity';
+import { TargetOverviewService } from './target-overview.service';
 import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
 
@@ -56,6 +58,7 @@ export class TargetsController {
   constructor(
     private readonly targetsService: TargetsService,
     private readonly targetSummaryService: TargetSummaryService,
+    private readonly targetOverviewService: TargetOverviewService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -221,6 +224,23 @@ export class TargetsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.targetsService.getTargetRepositories(id, workspaceId, query);
+  }
+
+  @Doc({
+    summary: 'Get target overview',
+    description:
+      'Returns workspace-scoped asset, service, and port counts for a target, including discoveries from the last seven days.',
+    response: { serialization: TargetOverviewDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('target.read', 'asset.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/overview')
+  getTargetOverview(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.targetOverviewService.getOverview(id, workspaceId);
   }
 
   @Doc({
