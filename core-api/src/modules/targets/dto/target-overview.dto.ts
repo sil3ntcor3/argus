@@ -21,6 +21,7 @@ class TargetExposureDto {
 }
 
 export enum TargetInsightKind {
+  CRITICAL_OPEN = 'critical_open',
   LAST_RUN_FAILED = 'last_run_failed',
   TLS_EXPIRING = 'tls_expiring',
   STALE_SCAN = 'stale_scan',
@@ -29,6 +30,7 @@ export enum TargetInsightKind {
 }
 
 export enum TargetInsightLevel {
+  CRITICAL = 'critical',
   WARNING = 'warning',
   INFO = 'info',
 }
