@@ -639,6 +639,12 @@ export type TargetRunDto = {
    * @nullable
    */
   currentTool: string | null;
+  /**
+   * Findings first attributed to this run on the target, including later archives and dismissals. Null without vulnerability read access.
+   * @minimum 0
+   * @nullable
+   */
+  newVulnerabilities: number | null;
 };
 
 export type Severity = (typeof Severity)[keyof typeof Severity];

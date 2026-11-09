@@ -46,7 +46,7 @@ export const TARGET_RUN_PROJECT_SQL = `
   JOIN projects project ON project.id = h."projectId" AND project."workspaceId" = t."workspaceId"
   WHERE t."canReadProjects"`;
 
-/** Progress counts and the current tool on the selected target. */
+/** Job progress and first-attributed findings on the selected target. */
 export const TARGET_RUN_PROGRESS_SQL = `
   SELECT COUNT(*)::int AS "jobsTotal",
          COUNT(*) FILTER (WHERE job.status IN ('${JobStatus.COMPLETED}', '${JobStatus.SKIPPED}'))::int AS "jobsDone",
@@ -57,6 +57,11 @@ export const TARGET_RUN_PROGRESS_SQL = `
            FROM jobs running JOIN target_assets a ON a.id = running."assetId"
            WHERE running."jobHistoryId" = p.id AND running.status = '${JobStatus.IN_PROGRESS}'
            ORDER BY running."pickJobAt" DESC NULLS LAST, running.id DESC LIMIT 1
-         )) AS "currentTool"
+         )) AS "currentTool",
+         CASE WHEN (SELECT "canReadFindings" FROM owned) THEN (
+           SELECT COUNT(*)::int
+           FROM vulnerabilities v JOIN target_assets a ON a.id = v."assetId"
+           WHERE v."jobHistoryId" = p.id
+         ) END AS "newVulnerabilities"
   FROM jobs job JOIN target_assets a ON a.id = job."assetId"
   WHERE job."jobHistoryId" = p.id`;

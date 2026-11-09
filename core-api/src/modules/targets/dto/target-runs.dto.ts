@@ -88,4 +88,13 @@ export class TargetRunDto {
       'Tool on the running target job with the latest claim time. Missing times sort last, and ties use job ID descending.',
   })
   currentTool: string | null;
+
+  @ApiProperty({
+    type: 'integer',
+    minimum: 0,
+    nullable: true,
+    description:
+      'Findings first attributed to this run on the target, including later archives and dismissals. Null without vulnerability read access.',
+  })
+  newVulnerabilities: number | null;
 }

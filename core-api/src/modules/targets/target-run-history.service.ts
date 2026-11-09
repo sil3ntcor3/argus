@@ -33,7 +33,7 @@ export class TargetRunHistoryService {
     id: string,
     workspaceId: string,
     query: GetTargetRunsQueryDto,
-    canReadProjects: boolean,
+    access: { projects: boolean; findings: boolean },
   ) {
     const { page, limit, active = false } = query;
     const offset = (page - 1) * limit;
@@ -51,7 +51,8 @@ export class TargetRunHistoryService {
     // Ownership, total and page share one snapshot, including an empty page.
     const rows = await this.dataSource.query<CountedRun[]>(
       `WITH owned AS (
-         SELECT id, "workspaceId", $6::boolean AS "canReadProjects"
+         SELECT id, "workspaceId", $6::boolean AS "canReadProjects",
+                $7::boolean AS "canReadFindings"
          FROM targets WHERE id = $1 AND "workspaceId" = $2
        ), ${TARGET_RUN_CTES}, matching AS MATERIALIZED (
          SELECT ${TARGET_RUN_FIELDS_SQL}
@@ -69,7 +70,7 @@ export class TargetRunHistoryService {
        CROSS JOIN LATERAL (${TARGET_RUN_PROGRESS_SQL}) stats
        LEFT JOIN LATERAL (${TARGET_RUN_PROJECT_SQL}) project ON true
        ORDER BY p."createdAt" DESC, p.id DESC`,
-      [id, workspaceId, limit, offset, active, canReadProjects],
+      [id, workspaceId, limit, offset, active, access.projects, access.findings],
     );
     if (!rows.length) throw new NotFoundException('Target not found');
 

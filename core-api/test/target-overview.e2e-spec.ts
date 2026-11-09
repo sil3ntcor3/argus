@@ -651,7 +651,7 @@ describe('Target overview API (e2e)', () => {
         .get(`/api/targets/${target}/runs?limit=1`)
         .set(owner.headers)
         .expect(200);
-      return (result.body as { data: unknown[] }).data[0];
+      return (result.body as { data: Record<string, unknown>[] }).data[0];
     };
     const lastRun = await latestHistoryRow();
     expect(lastRun).toMatchObject({
@@ -687,6 +687,7 @@ describe('Target overview API (e2e)', () => {
       await overview(target, headers).expect(200, {
         ...failedMetrics,
         ...redactedFindings,
+        lastRun: { ...lastRun, newVulnerabilities: null },
         insights: [failedRun, ...discoveryInsights],
         projects: null,
       });
@@ -704,10 +705,11 @@ describe('Target overview API (e2e)', () => {
       id: 'ffffffff-ffff-4fff-bfff-ffffffffffff',
       status: 'pending',
     });
+    const redactedPendingRun = { ...pendingRun, newVulnerabilities: null };
     await overview(target, headers).expect(200, {
       ...restrictedMetrics,
-      lastRun: pendingRun,
-      activeRuns: [pendingRun],
+      lastRun: redactedPendingRun,
+      activeRuns: [redactedPendingRun],
     });
 
     const project = await insertId(
