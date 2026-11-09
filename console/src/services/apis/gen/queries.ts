@@ -664,6 +664,15 @@ export type ProjectOverviewWeekDto = {
   week: string;
 };
 
+export type TargetProjectRefDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  hexColor: string | null;
+  /** @minimum 1 */
+  assets: number;
+};
+
 export type TargetExposureCountDto = {
   name: string;
   /**
@@ -763,6 +772,12 @@ export type TargetOverviewDto = {
    * @nullable
    */
   weekly: ProjectOverviewWeekDto[] | null;
+  /**
+   * Non-archived projects containing target assets, or null without project read access
+   * @maxItems 6
+   * @nullable
+   */
+  projects: TargetProjectRefDto[] | null;
   /** Most common service observations */
   exposure: TargetExposureDto;
   /** Discovery and schedule insights for the target */

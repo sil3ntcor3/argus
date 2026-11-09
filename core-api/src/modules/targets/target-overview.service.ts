@@ -30,6 +30,7 @@ import {
 const EXPOSURE_LIMIT = 6;
 const ACTIVE_RUN_LIMIT = 5;
 const TOP_FINDING_LIMIT = 5;
+const PROJECT_LIMIT = 6;
 const TOP_FINDING_ORDER_SQL =
   'f.severity_rank DESC, f."createdAt" DESC, f.id DESC';
 const FINDING_WEEK_COUNT = 8;
@@ -155,7 +156,7 @@ export class TargetOverviewService {
   async getOverview(
     id: string,
     workspaceId: string,
-    access: { jobs: boolean; findings: boolean },
+    access: { jobs: boolean; findings: boolean; projects: boolean },
   ): Promise<TargetOverviewDto> {
     const now = new Date();
     const monday = new Date(now);
@@ -275,6 +276,16 @@ export class TargetOverviewService {
                 )
                 FROM open_findings
               ) END AS findings,
+              CASE WHEN $8::boolean THEN COALESCE((
+                SELECT jsonb_agg(project ORDER BY project.assets DESC, project.name, project.id)
+                FROM (
+                  SELECT p.id, p.name, p."hexColor", COUNT(*)::int AS assets
+                  FROM assets a JOIN project_assets pa ON pa."assetId" = a.id
+                  JOIN projects p ON p.id = pa."projectId" AND p."workspaceId" = t."workspaceId"
+                  WHERE a."targetId" = t.id AND p."archivedAt" IS NULL
+                  GROUP BY p.id ORDER BY assets DESC, p.name, p.id LIMIT ${PROJECT_LIMIT}
+                ) project
+              ), '[]'::jsonb) END AS projects,
               (SELECT COUNT(*)::int FROM latest_certificates
                WHERE "notAfter" <= CURRENT_TIMESTAMP + INTERVAL '${TLS_EXPIRY_DAYS} days'
               ) AS "expiringTlsServices",
@@ -308,6 +319,7 @@ export class TargetOverviewService {
         weekStarts,
         now,
         weekStarts.map((week) => week.toISOString().slice(0, 10)),
+        access.projects,
       ],
     );
     if (!overview) throw new NotFoundException('Target not found');
