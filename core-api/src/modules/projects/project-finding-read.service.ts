@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { VulnerabilityStatus } from '../vulnerabilities/dto/get-vulnerability.dto';
-import { openVulnerabilityCondition } from '../vulnerabilities/open-vulnerability';
+import {
+  activeDismissalCondition,
+  openVulnerabilityCondition,
+} from '../vulnerabilities/open-vulnerability';
 import {
   PROJECT_FINDING_PROVENANCE_SQL,
   ProjectFindingProvenance,
@@ -57,6 +60,7 @@ type CountedFindingRow = (FindingRow | { id: null }) & {
 
 const DISMISSED_SQL = `EXISTS (
   SELECT 1 FROM vulnerability_dismissals vd WHERE vd."vulnerabilityId" = v.id
+    AND ${activeDismissalCondition('vd')}
 )`;
 const RANK_SQL = `CASE v.severity
   WHEN '${Severity.CRITICAL}' THEN 5 WHEN '${Severity.HIGH}' THEN 4
