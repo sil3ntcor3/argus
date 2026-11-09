@@ -610,6 +610,32 @@ export type TargetExposureDto = {
   statusCodes: TargetExposureCountDto[];
 };
 
+export type TargetInsightKind =
+  (typeof TargetInsightKind)[keyof typeof TargetInsightKind];
+
+export const TargetInsightKind = {
+  stale_scan: 'stale_scan',
+  new_assets: 'new_assets',
+  no_schedule: 'no_schedule',
+} as const;
+
+export type TargetInsightLevel =
+  (typeof TargetInsightLevel)[keyof typeof TargetInsightLevel];
+
+export const TargetInsightLevel = {
+  warning: 'warning',
+  info: 'info',
+} as const;
+
+export type TargetInsightDto = {
+  kind: TargetInsightKind;
+  level: TargetInsightLevel;
+  /** @minimum 1 */
+  count?: number;
+  /** @minimum 1 */
+  days?: number;
+};
+
 export type TargetOverviewDto = {
   /** Enabled assets on the target */
   totalAssets: number;
@@ -623,6 +649,8 @@ export type TargetOverviewDto = {
   openPorts: number;
   /** Most common service observations */
   exposure: TargetExposureDto;
+  /** Discovery and schedule insights for the target */
+  insights: TargetInsightDto[];
 };
 
 export type JobRunType = (typeof JobRunType)[keyof typeof JobRunType];
@@ -12752,7 +12780,7 @@ export function useTargetsControllerGetTargetRepositories<
 }
 
 /**
- * Returns workspace-scoped asset and service counts, recent discoveries, and the most common service ports, technologies, and primary HTTP status codes.
+ * Returns workspace-scoped asset and service counts, discovery insights, and the most common service ports, technologies, and primary HTTP status codes.
  * @summary Get target overview
  */
 export const targetsControllerGetTargetOverview = (

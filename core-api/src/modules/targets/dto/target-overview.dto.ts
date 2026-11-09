@@ -19,6 +19,31 @@ class TargetExposureDto {
   statusCodes: TargetExposureCountDto[];
 }
 
+export enum TargetInsightKind {
+  STALE_SCAN = 'stale_scan',
+  NEW_ASSETS = 'new_assets',
+  NO_SCHEDULE = 'no_schedule',
+}
+
+export enum TargetInsightLevel {
+  WARNING = 'warning',
+  INFO = 'info',
+}
+
+class TargetInsightDto {
+  @ApiProperty({ enum: TargetInsightKind, enumName: 'TargetInsightKind' })
+  kind: TargetInsightKind;
+
+  @ApiProperty({ enum: TargetInsightLevel, enumName: 'TargetInsightLevel' })
+  level: TargetInsightLevel;
+
+  @ApiProperty({ required: false, minimum: 1 })
+  count?: number;
+
+  @ApiProperty({ required: false, minimum: 1 })
+  days?: number;
+}
+
 export class TargetOverviewDto {
   @ApiProperty({ description: 'Enabled assets on the target' })
   totalAssets: number;
@@ -42,4 +67,10 @@ export class TargetOverviewDto {
     description: 'Most common service observations',
   })
   exposure: TargetExposureDto;
+
+  @ApiProperty({
+    type: [TargetInsightDto],
+    description: 'Discovery and schedule insights for the target',
+  })
+  insights: TargetInsightDto[];
 }
