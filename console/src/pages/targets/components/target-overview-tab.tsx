@@ -16,11 +16,13 @@ const grid = 'grid gap-3 sm:grid-cols-3';
 export function TargetOverviewTab({
   targetId,
   canManageDiscovery,
+  canReadJobs,
   onKeyboardNavigate,
   onAccessDenied,
 }: {
   targetId: string;
   canManageDiscovery: boolean;
+  canReadJobs: boolean;
   onKeyboardNavigate: (tab: 'assets' | 'settings') => void;
   onAccessDenied: () => Promise<unknown>;
 }) {
@@ -124,6 +126,7 @@ export function TargetOverviewTab({
           insights={data.insights}
           targetId={targetId}
           canManageDiscovery={canManageDiscovery}
+          canReadJobs={canReadJobs}
           onKeyboardNavigate={onKeyboardNavigate}
         />
       )}

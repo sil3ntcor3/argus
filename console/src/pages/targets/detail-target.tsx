@@ -197,6 +197,7 @@ export function DetailTarget() {
             <TargetOverviewTab
               targetId={target.id}
               canManageDiscovery={canChangeTarget}
+              canReadJobs={canReadJobs}
               onKeyboardNavigate={(destination) => {
                 keyboardDestination.current = destination;
               }}
