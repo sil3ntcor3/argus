@@ -384,6 +384,39 @@ describe('Target Overview tab', () => {
   });
 });
 
+describe('Target Overview next discovery', () => {
+  it('shows the scheduled time with a machine-readable timestamp', async () => {
+    const nextScanAt = '2026-12-01T05:00:00.000Z';
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, nextScanAt }),
+      ),
+    );
+    show();
+    expect(await screen.findByText('Scheduled discovery')).toBeVisible();
+    const formatted = new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(nextScanAt));
+    expect(screen.getByText(formatted)).toHaveAttribute('datetime', nextScanAt);
+  });
+
+  it.each([null, undefined, 'invalid', 42])(
+    'shows an unavailable state for a missing or invalid schedule (%s)',
+    async (nextScanAt) => {
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({ ...metrics, nextScanAt }),
+        ),
+      );
+      show();
+      expect(
+        await screen.findByText('No scheduled time available'),
+      ).toBeVisible();
+    },
+  );
+});
+
 describe('Target Overview findings', () => {
   const findings = { critical: 1, high: 2, medium: 0, low: 0, info: 0 };
 
