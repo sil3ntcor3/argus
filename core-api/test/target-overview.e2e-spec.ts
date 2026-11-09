@@ -209,6 +209,64 @@ describe('Target overview API (e2e)', () => {
     }
   });
 
+  it('counts only the latest dated TLS certificate per service in the selected target', async () => {
+    async function record(
+      service: string,
+      age: number,
+      expiresIn: number | null,
+      denormalizedService = service,
+    ) {
+      const response = await insertId(
+        `INSERT INTO http_responses ("assetServiceId", "createdAt")
+         VALUES ($1, LOCALTIMESTAMP - $2 * INTERVAL '1 day')`,
+        [service, age],
+      );
+      // Backfilled certificates shared a timestamp. Give older probes larger
+      // certificate IDs so the test catches sorting by certificate fields.
+      const certificateId = `${String(age).padStart(8, '0')}${randomUUID().slice(8)}`;
+      await app.dataSource.query(
+        `INSERT INTO tls_certificates (id, "httpResponseId", "assetServiceId", "createdAt", "notAfter")
+         VALUES ($1, $2, $3, TIMESTAMP '2026-01-01 00:00:00',
+                 CURRENT_TIMESTAMP + $4 * INTERVAL '1 day')`,
+        [certificateId, response, denormalizedService, expiresIn],
+      );
+    }
+
+    const id = await makeTarget(owner.workspace.id);
+    const asset = await addAsset(id, 8, true);
+    const expiring = await addService(asset, 443);
+    const renewed = await addService(asset, 8443);
+    const expired = await addService(asset, 9443);
+    const undated = await addService(asset, 10443);
+    await record(expiring, 2, 5);
+    await record(expiring, 1, 14);
+    await record(renewed, 2, -1);
+    await record(renewed, 1, 60);
+    await record(expired, 2, -1);
+    await record(expired, 1, null);
+    await record(undated, 1, null);
+
+    const foreign = await makeTarget(other.workspace.id);
+    const foreignAsset = await addAsset(foreign, 8, true);
+    await record(await addService(foreignAsset, 443), 0, 3, renewed);
+    const warning = (count: number) => ({
+      kind: 'tls_expiring',
+      level: 'warning',
+      count,
+      days: 30,
+    });
+    const ownedOverview = await overview(id, owner.headers).expect(200);
+    const foreignOverview = await overview(foreign, other.headers).expect(200);
+    expect(ownedOverview.body.insights).toEqual([
+      warning(2),
+      missingSchedule,
+    ]);
+    expect(foreignOverview.body.insights).toEqual([
+      warning(1),
+      missingSchedule,
+    ]);
+  });
+
   it('returns the same 404 for a missing target or one in another workspace', async () => {
     const missing = await overview(randomUUID(), owner.headers).expect(404);
     const foreign = await overview(foreignTarget, owner.headers).expect(404);

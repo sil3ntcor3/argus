@@ -614,6 +614,7 @@ export type TargetInsightKind =
   (typeof TargetInsightKind)[keyof typeof TargetInsightKind];
 
 export const TargetInsightKind = {
+  tls_expiring: 'tls_expiring',
   stale_scan: 'stale_scan',
   new_assets: 'new_assets',
   no_schedule: 'no_schedule',

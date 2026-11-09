@@ -29,6 +29,7 @@ describe('TargetOverviewService', () => {
         scanSchedule: CronSchedule.DAILY,
         stale: false,
         daysSinceDiscovery: 1,
+        expiringTlsServices: 0,
       },
     ]);
     await expect(service.getOverview(id, workspaceId)).resolves.toEqual({

@@ -10,11 +10,13 @@ import { staleTargetCondition } from './stale-target-condition';
 
 const EXPOSURE_LIMIT = 6;
 const RECENT_DISCOVERY_DAYS = 7;
+const TLS_EXPIRY_DAYS = 30;
 
 type TargetOverviewRow = Omit<TargetOverviewDto, 'insights'> & {
   scanSchedule: CronSchedule | null;
   stale: boolean;
   daysSinceDiscovery: number | null;
+  expiringTlsServices: number;
 };
 
 @Injectable()
@@ -37,7 +39,7 @@ export class TargetOverviewService {
          FROM owned t JOIN assets a ON a."targetId" = t.id
          JOIN asset_services s ON s."assetId" = a.id
        ), target_responses AS MATERIALIZED (
-         SELECT r.id, s.id AS "serviceId"
+         SELECT r.id, s.id AS "serviceId", r."createdAt"
          FROM target_services s JOIN http_responses r ON r."assetServiceId" = s.id
        ), top_ports AS (
          SELECT port, COUNT(*)::int AS count FROM target_services
@@ -51,8 +53,16 @@ export class TargetOverviewService {
          FROM target_responses r JOIN http_status_codes h ON h."httpResponseId" = r.id
          WHERE h."isPrimary" AND h."statusCode" > 0
          GROUP BY h."statusCode" ORDER BY count DESC, h."statusCode" LIMIT ${EXPOSURE_LIMIT}
+       ), latest_certificates AS (
+         SELECT DISTINCT ON (r."serviceId") r."serviceId", c."notAfter"
+         FROM target_responses r JOIN tls_certificates c ON c."httpResponseId" = r.id
+         WHERE c."notAfter" IS NOT NULL
+         ORDER BY r."serviceId", r."createdAt" DESC, r.id DESC
        )
        SELECT t."scanSchedule", t.stale, t."daysSinceDiscovery",
+              (SELECT COUNT(*)::int FROM latest_certificates
+               WHERE "notAfter" <= CURRENT_TIMESTAMP + INTERVAL '${TLS_EXPIRY_DAYS} days'
+              ) AS "expiringTlsServices",
               asset_counts.*, service_counts.*, jsonb_build_object(
          'ports', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', port::text, 'count', count)
            ORDER BY count DESC, port) FROM top_ports), '[]'::jsonb),
@@ -79,8 +89,22 @@ export class TargetOverviewService {
     );
     if (!overview) throw new NotFoundException('Target not found');
 
-    const { scanSchedule, stale, daysSinceDiscovery, ...metrics } = overview;
+    const {
+      scanSchedule,
+      stale,
+      daysSinceDiscovery,
+      expiringTlsServices,
+      ...metrics
+    } = overview;
     const insights: TargetOverviewDto['insights'] = [];
+    if (expiringTlsServices > 0) {
+      insights.push({
+        kind: TargetInsightKind.TLS_EXPIRING,
+        level: TargetInsightLevel.WARNING,
+        count: expiringTlsServices,
+        days: TLS_EXPIRY_DAYS,
+      });
+    }
     if (stale) {
       insights.push({
         kind: TargetInsightKind.STALE_SCAN,
