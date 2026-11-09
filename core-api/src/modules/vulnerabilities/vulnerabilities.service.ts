@@ -464,7 +464,18 @@ export class VulnerabilitiesService {
     );
 
     await this.dismissRepo.save(dismissals);
-    return dismissals;
+    // TypeORM populates nullable columns on save, including private fields.
+    return dismissals.map(
+      ({ id, vulnerabilityId, userId, reason, comment, createdAt, updatedAt }) => ({
+        id,
+        vulnerabilityId,
+        userId,
+        reason,
+        comment,
+        createdAt,
+        updatedAt,
+      }),
+    );
   }
 
   async bulkReopenVulnerabilities(ids: string[], workspaceId: string) {

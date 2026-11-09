@@ -4,8 +4,9 @@ import * as yaml from 'js-yaml';
 import { NotFoundException } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import type { Repository } from 'typeorm';
-import { DataKind, TargetType } from '@/common/enums/enum';
+import { DataKind, DismissReason, TargetType } from '@/common/enums/enum';
 import type { AgentsCompletionsService } from '../agents/agents.completions';
+import type { User } from '../auth/entities/user.entity';
 import type { JobsRegistryService } from '../jobs-registry/jobs-registry.service';
 import type { WorkflowRunnerService } from '../jobs-registry/workflow-runner.service';
 import type { NotificationsService } from '../notifications/notifications.service';
@@ -23,6 +24,8 @@ describe('VulnerabilitiesService', () => {
   let mockToolsService: { getToolByNames: jest.Mock };
   let mockTargetRepository: { find: jest.Mock };
   let mockWorkflowRunnerService: { startRun: jest.Mock };
+  let mockFindings: { find: jest.Mock };
+  let mockDismissals: { find: jest.Mock; create: jest.Mock; save: jest.Mock };
 
   beforeEach(() => {
     mockJobRegistryService = { createNewJob: jest.fn() };
@@ -36,10 +39,12 @@ describe('VulnerabilitiesService', () => {
         ]),
     };
     mockWorkflowRunnerService = { startRun: jest.fn() };
+    mockFindings = { find: jest.fn() };
+    mockDismissals = { find: jest.fn(), create: jest.fn(), save: jest.fn() };
 
     service = new VulnerabilitiesService(
-      {} as Repository<Vulnerability>,
-      {} as Repository<VulnerabilityDismissal>,
+      mockFindings as unknown as Repository<Vulnerability>,
+      mockDismissals as unknown as Repository<VulnerabilityDismissal>,
       {} as Queue,
       mockJobRegistryService as unknown as JobsRegistryService,
       mockToolsService as unknown as ToolsService,
@@ -49,6 +54,36 @@ describe('VulnerabilitiesService', () => {
       mockTargetRepository as unknown as Repository<Target>,
       mockWorkflowRunnerService as unknown as WorkflowRunnerService,
     );
+  });
+
+  it('keeps private expiry storage out of the legacy dismissal response', async () => {
+    const fields = {
+      id: 'dismissal-1',
+      vulnerabilityId: 'finding-1',
+      userId: 'user-1',
+      reason: DismissReason.WONT_FIX,
+      comment: 'Existing response',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const entity = { ...fields };
+    mockFindings.find.mockResolvedValue([{ id: fields.vulnerabilityId }]);
+    mockDismissals.find.mockResolvedValue([]);
+    mockDismissals.create.mockReturnValue(entity);
+    mockDismissals.save.mockImplementationOnce(() => {
+      // TypeORM populates unset nullable columns when saving the entity.
+      Object.assign(entity, { expiresAt: null });
+      return Promise.resolve([entity]);
+    });
+
+    await expect(
+      service.bulkDismissVulnerabilities(
+        [fields.vulnerabilityId],
+        'workspace-1',
+        { id: fields.userId } as User,
+        { reason: fields.reason, comment: fields.comment },
+      ),
+    ).resolves.toEqual([fields]);
   });
 
   it('scan forwards inline config from the workflow first job to createNewJob', async () => {
