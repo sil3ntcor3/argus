@@ -181,6 +181,7 @@ export class JobsRegistryController {
     const response = { ...job };
     delete response.inputs;
     delete response.claimedAt;
+    delete response.scanClaimInstant;
     return response;
   }
 

@@ -190,7 +190,10 @@ describe('JobsRegistryController', () => {
     it.each([null, undefined, { target: 'https://app.example.com:8443' }])(
       'keeps snapshot %j out of the legacy HTTP claim response',
       async (inputs) => {
-        const job = { id: 'job-1', asset: { value: 'app.example.com' }, inputs, claimedAt: new Date() };
+        const job = {
+          id: 'job-1', asset: { value: 'app.example.com' }, inputs,
+          claimedAt: new Date(), scanClaimInstant: new Date(),
+        };
         mockJobsRegistryService.getNextJob.mockResolvedValue(job);
         expect(await controller.getNextJob({ workerId: 'worker-1' })).toEqual({
           id: job.id, asset: job.asset,

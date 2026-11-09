@@ -2855,7 +2855,7 @@ describe('JobsRegistryService', () => {
         addOrderBy: jest.fn().mockReturnThis(),
         setLock: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(jobs),
+        getRawAndEntities: jest.fn().mockResolvedValue({ entities: jobs, raw: [] }),
       };
 
       const queryRunner = {
@@ -2932,10 +2932,11 @@ describe('JobsRegistryService', () => {
         .mockResolvedValueOnce(Buffer.alloc(32, 1))
         .mockResolvedValueOnce(Buffer.alloc(32, 1))
         .mockResolvedValueOnce(Buffer.alloc(32, 2));
-      const claimedAt = new Date('2026-11-09T18:00:00.000Z');
+      const claimedAt = new Date('2026-11-01T07:30:00.123Z');
+      const scanClaimInstant = new Date('2026-11-01T06:30:00.123Z');
       const job = {
         id: 'claimed-job', category: ToolCategory.VULNERABILITIES, workspaceId: 'ws-1',
-        claimedAt, asset: { id: 'asset-1', value: '127.0.0.1' },
+        claimedAt, scanClaimInstant, asset: { id: 'asset-1', value: '127.0.0.1' },
         tool: { id: 'tool-1', name: 'nuclei' },
       } as GetNextJobResult;
       const target = { target: 'http://127.0.0.1:8080/' };
@@ -2953,8 +2954,8 @@ describe('JobsRegistryService', () => {
       expect(firstKey).toMatch(/^[0-9a-f]{64}$/);
       expect(mockJobRepository.query).toHaveBeenNthCalledWith(
         1,
-        expect.stringContaining('FOR UPDATE SKIP LOCKED'),
-        [job.id, 'worker-1', JobStatus.IN_PROGRESS, claimedAt, firstKey],
+        expect.stringMatching(/FOR UPDATE SKIP LOCKED[\s\S]*"findingScanClaimedAt" = \$6::timestamptz/),
+        [job.id, 'worker-1', JobStatus.IN_PROGRESS, claimedAt, firstKey, '2026-11-01T06:30:00.123Z'],
       );
       expect(same).toBe(firstKey);
       expect(differentTarget).not.toBe(firstKey);
@@ -2973,7 +2974,25 @@ describe('JobsRegistryService', () => {
       expect(queryRunner.manager.update.mock.calls[0][2]).toMatchObject({
         pickJobAt: new Date(previous.getTime() + 1),
         findingScanScopeKey: null,
+        findingScanClaimedAt: null,
       });
+    });
+
+    it('keeps a fresh claim instant separate from a future marker in a mixed batch', async () => {
+      const scanClaimInstant = new Date();
+      const future = new Date(scanClaimInstant.getTime() + 60_000);
+      const jobs = [
+        { id: 'fresh-job', asset: { id: 'asset-1' } },
+        { id: 'retried-job', asset: { id: 'asset-2' }, pickJobAt: future },
+      ];
+      const { qb } = givenWorkerAndQueue(buildWorker(), jobs);
+      qb.getRawAndEntities.mockResolvedValue({ entities: jobs, raw: [{ scanClaimInstant }] });
+
+      const [fresh, retry] = await service.getNextJobs('worker-uuid', 2);
+
+      expect(fresh.claimedAt?.getTime()).toBe(future.getTime() + 1);
+      expect(fresh.scanClaimInstant).toEqual(scanClaimInstant);
+      expect(retry.scanClaimInstant).toBeUndefined();
     });
 
     it('caps the claim so a worker cannot drain the whole queue', async () => {
