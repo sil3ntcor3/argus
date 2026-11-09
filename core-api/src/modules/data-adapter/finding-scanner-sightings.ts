@@ -68,29 +68,44 @@ export async function recordFindingScannerSightings(
        ORDER BY "vulnerabilityId"
        ON CONFLICT ("vulnerabilityId", kind, "jobHistoryId") DO NOTHING
        RETURNING "vulnerabilityId"
-     )
-     UPDATE vulnerabilities AS finding
-     SET "timesDetected" = finding."timesDetected" + 1
-     FROM inserted JOIN report USING ("vulnerabilityId")
-     WHERE finding.id = inserted."vulnerabilityId"
-       AND finding."jobHistoryId" IS DISTINCT FROM report."jobHistoryId"
-       AND NOT EXISTS (
-         SELECT 1
-         FROM project_vulnerabilities AS prior
-         JOIN projects AS project ON project.id = prior."projectId"
-         WHERE prior."vulnerabilityId" = finding.id
-           AND prior."projectId" = report."projectId"
-           AND project."workspaceId" = report."workspaceId"
-           AND (
-             prior."firstSeenJobHistoryId" = report."jobHistoryId"
-             OR prior."lastSeenJobHistoryId" = report."jobHistoryId"
-             OR EXISTS (
-               SELECT 1 FROM project_vulnerability_observations AS observation
-               WHERE observation."projectVulnerabilityId" = prior.id
-                 AND observation."jobHistoryId" = report."jobHistoryId"
+     ), countable AS (
+       SELECT report."vulnerabilityId", report."workspaceId", report."jobHistoryId",
+              finding."detectionStatus" AS "fromStatus"
+       FROM inserted JOIN report USING ("vulnerabilityId")
+       JOIN vulnerabilities AS finding ON finding.id = inserted."vulnerabilityId"
+       WHERE report."firstRunId" IS DISTINCT FROM report."jobHistoryId"
+         AND NOT EXISTS (
+           SELECT 1
+           FROM project_vulnerabilities AS prior
+           JOIN projects AS project ON project.id = prior."projectId"
+           WHERE prior."vulnerabilityId" = finding.id
+             AND prior."projectId" = report."projectId"
+             AND project."workspaceId" = report."workspaceId"
+             AND (
+               prior."firstSeenJobHistoryId" = report."jobHistoryId"
+               OR prior."lastSeenJobHistoryId" = report."jobHistoryId"
+               OR EXISTS (
+                 SELECT 1 FROM project_vulnerability_observations AS observation
+                 WHERE observation."projectVulnerabilityId" = prior.id
+                   AND observation."jobHistoryId" = report."jobHistoryId"
+               )
              )
-           )
-       )`,
+         )
+     ), counted AS (
+       UPDATE vulnerabilities AS finding
+       SET "timesDetected" = finding."timesDetected" + 1,
+           "detectionStatus" = CASE
+             WHEN NOT finding."isArchived" AND countable."fromStatus" IN ('new', 'resurfaced')
+             THEN 'active' ELSE countable."fromStatus"
+           END
+       FROM countable WHERE finding.id = countable."vulnerabilityId"
+       RETURNING finding.id, countable."workspaceId", countable."jobHistoryId",
+                 countable."fromStatus", finding."detectionStatus" AS "toStatus"
+     )
+     INSERT INTO vulnerability_events
+       ("vulnerabilityId", "workspaceId", type, "fromStatus", "toStatus", "jobHistoryId", "occurredAt")
+     SELECT id, "workspaceId", 'status_changed', "fromStatus", "toStatus", "jobHistoryId", statement_timestamp()
+     FROM counted WHERE "fromStatus" <> "toStatus"`,
     [jobId, findingIds],
   );
 }
