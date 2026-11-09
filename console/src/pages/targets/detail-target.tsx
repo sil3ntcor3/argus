@@ -227,6 +227,7 @@ export function DetailTarget() {
                 <TargetActivityTab
                   key={`runs-${target.id}`}
                   targetId={target.id}
+                  canReadProjects={canReadProjects}
                   onAccessDenied={permission.refetch}
                 />
               )}

@@ -11,9 +11,11 @@ import { TargetRunRow } from './target-run-row';
 
 export function TargetActivityTab({
   targetId,
+  canReadProjects,
   onAccessDenied,
 }: {
   targetId: string;
+  canReadProjects: boolean;
   onAccessDenied: () => Promise<unknown>;
 }) {
   const {
@@ -44,7 +46,13 @@ export function TargetActivityTab({
     {
       query: {
         enabled: Boolean(selectedWorkspaceId),
-        queryKey: ['target-runs', selectedWorkspaceId, targetId, activeOnly],
+        queryKey: [
+          'target-runs',
+          selectedWorkspaceId,
+          targetId,
+          activeOnly,
+          canReadProjects,
+        ],
         initialPageParam: 1,
         getNextPageParam: (last) =>
           last.hasNextPage ? last.page + 1 : undefined,
@@ -81,7 +89,9 @@ export function TargetActivityTab({
       document.activeElement === button ||
       document.activeElement === document.body
     ) {
-      (list.current?.querySelectorAll('a')[index] ?? list.current)?.focus();
+      (
+        list.current?.children[index]?.querySelector('a') ?? list.current
+      )?.focus();
     }
   }, [isFetchNextPageError, isFetchingNextPage, runCount]);
 
@@ -151,7 +161,11 @@ export function TargetActivityTab({
             className="divide-y rounded-lg border"
           >
             {runs.map((run) => (
-              <TargetRunRow key={run.id} run={run} />
+              <TargetRunRow
+                key={run.id}
+                run={run}
+                canReadProjects={canReadProjects}
+              />
             ))}
           </ul>
           {isFetchNextPageError && (
