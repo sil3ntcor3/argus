@@ -1,4 +1,5 @@
 import AccessDenied from '@/components/common/access-denied';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
@@ -6,6 +7,7 @@ import {
   TargetChangeKind,
   useTargetsControllerGetTargetChanges,
 } from '@/services/apis/gen/queries';
+import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import { useEffect, useRef, useState } from 'react';
 
@@ -13,6 +15,7 @@ const filters = [
   { label: 'All', kind: undefined },
   { label: 'Assets', kind: TargetChangeKind.asset },
   { label: 'Services', kind: TargetChangeKind.service },
+  { label: 'Findings', kind: TargetChangeKind.vulnerability },
 ] as const;
 const changeLabels: Record<TargetChangeKind, string> = {
   [TargetChangeKind.asset]: 'Asset discovered',
@@ -54,6 +57,9 @@ function TargetChangesList({
     page: 1,
   });
   const { page, kind } = view;
+  const visibleFilters = filters.filter(
+    ({ kind }) => canReadFindings || kind !== TargetChangeKind.vulnerability,
+  );
   const title = useRef<HTMLHeadingElement>(null);
   const retryButton = useRef<HTMLButtonElement>(null);
   const changes = useTargetsControllerGetTargetChanges(
@@ -118,7 +124,7 @@ function TargetChangesList({
             aria-label="Discovery type"
             className="flex flex-wrap gap-2"
           >
-            {filters.map((filter) => (
+            {visibleFilters.map((filter) => (
               <Button
                 key={filter.label}
                 size="sm"
@@ -168,9 +174,32 @@ function TargetChangesList({
                   key={`${change.kind}-${change.id}`}
                   className="space-y-1 p-3 sm:px-4"
                 >
-                  <p className="text-sm font-medium break-words">
-                    {change.label}
-                  </p>
+                  {change.kind === TargetChangeKind.vulnerability ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        to="/vulnerabilities/$id"
+                        params={{ id: change.id }}
+                        className="min-w-0 rounded-sm text-sm font-medium break-words underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+                      >
+                        {change.label}
+                        {change.assetValue && (
+                          <span className="sr-only">
+                            {' '}
+                            on {change.assetValue}
+                          </span>
+                        )}
+                      </Link>
+                      {change.severity && (
+                        <Badge variant="outline" className="capitalize">
+                          {change.severity}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium break-words">
+                      {change.label}
+                    </p>
+                  )}
                   {change.assetValue && (
                     <p className="text-xs break-words text-muted-foreground">
                       Asset {change.assetValue}
