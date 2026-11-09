@@ -17,6 +17,7 @@ import {
 } from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { Loader2 } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import AssetProvider from '../assets/context/asset-context';
 import { DiscoverUrlsDialog } from '../assets/components/discover-urls-dialog';
 import { ListAssets } from '../assets/list-assets';
@@ -37,6 +38,17 @@ export function DetailTarget() {
   const { animation, tab: inventoryTab } = routeApi.useSearch();
   const permission = usePermission();
   const navigate = useNavigate({ from: '/targets/$id/$tab' });
+  const sectionNav = useRef<HTMLElement>(null);
+  const keyboardDestination = useRef<string>(null);
+  useEffect(() => {
+    const destination = keyboardDestination.current;
+    keyboardDestination.current = null;
+    if (destination === tab && document.activeElement === document.body) {
+      sectionNav.current
+        ?.querySelector<HTMLAnchorElement>('[aria-current="page"]')
+        ?.focus();
+    }
+  }, [tab]);
 
   const {
     data: target,
@@ -144,7 +156,11 @@ export function DetailTarget() {
       }
     >
       <div className="space-y-4">
-        <nav aria-label="Target sections" className="flex flex-wrap gap-2">
+        <nav
+          ref={sectionNav}
+          aria-label="Target sections"
+          className="flex flex-wrap gap-2"
+        >
           {[
             ...(canReadAssets ? [{ value: 'overview', label: 'Overview' }] : []),
             { value: 'assets', label: 'Assets' },
@@ -180,6 +196,10 @@ export function DetailTarget() {
           canReadAssets ? (
             <TargetOverviewTab
               targetId={target.id}
+              canManageDiscovery={canChangeTarget}
+              onKeyboardNavigate={(destination) => {
+                keyboardDestination.current = destination;
+              }}
               onAccessDenied={permission.refetch}
             />
           ) : (

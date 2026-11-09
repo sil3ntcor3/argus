@@ -19,6 +19,7 @@ dayjs.extend(relativeTime);
 
 const canReadAssets = vi.hoisted(() => vi.fn(() => true));
 const canReadJobs = vi.hoisted(() => vi.fn(() => true));
+const canWriteTarget = vi.hoisted(() => vi.fn(() => false));
 const refetchPermissions = vi.hoisted(() => vi.fn());
 const id = 'd14d1c3f-9752-4b8a-93c8-48ea3c3212ab';
 const path = `/targets/${id}`;
@@ -35,7 +36,8 @@ vi.mock('@/hooks/usePermission', () => ({
     hasPermission: (key: string) =>
       key === 'target.read' ||
       (key === 'asset.read' && canReadAssets()) ||
-      (key === 'job.read' && canReadJobs()),
+      (key === 'job.read' && canReadJobs()) ||
+      (key === 'target.write' && canWriteTarget()),
     isLoading: false,
     error: null,
     refetch: refetchPermissions,
@@ -78,6 +80,7 @@ function show(tab = 'overview') {
 beforeEach(() => {
   canReadAssets.mockReturnValue(true);
   canReadJobs.mockReturnValue(true);
+  canWriteTarget.mockReturnValue(false);
   refetchPermissions.mockClear();
   server.use(
     http.get(`/api${path}`, () =>
@@ -100,6 +103,78 @@ beforeEach(() => {
 });
 
 describe('Target Overview tab', () => {
+  it.each([true, false])(
+    'shows discovery insights with target write access %s',
+    async (canWrite) => {
+      canWriteTarget.mockReturnValue(canWrite);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({
+            ...metrics,
+            insights: [
+              { kind: 'stale_scan', level: 'warning' },
+              { kind: 'new_assets', level: 'info', count: 2, days: 7 },
+              { kind: 'no_schedule', level: 'info' },
+            ],
+          }),
+        ),
+      );
+      const { user } = show();
+      const insights = within(
+        await screen.findByRole('region', { name: 'Discovery insights' }),
+      );
+      expect(insights.getByText('No discovery date recorded.')).toBeVisible();
+      expect(
+        insights.getByText('2 new assets in the last 7 days.'),
+      ).toBeVisible();
+      expect(insights.getByText('No discovery schedule.')).toBeVisible();
+      expect(
+        insights.getByRole('link', { name: 'See assets' }),
+      ).toHaveAttribute('href', `${path}/assets`);
+      if (canWrite) {
+        expect(
+          insights.getByRole('link', { name: 'Open discovery settings' }),
+        ).toHaveAttribute('href', `${path}/settings`);
+        expect(
+          insights.getByRole('link', { name: 'Configure schedule' }),
+        ).toHaveAttribute('href', `${path}/settings`);
+      } else {
+        expect(
+          insights.queryByRole('link', { name: /settings|schedule/ }),
+        ).not.toBeInTheDocument();
+        insights.getByRole('link', { name: 'See assets' }).focus();
+        await user.keyboard('{Enter}');
+        expect(await screen.findByText('Asset inventory')).toBeVisible();
+        const nav = within(
+          screen.getByRole('navigation', { name: 'Target sections' }),
+        );
+        expect(
+          nav.getByRole('link', { name: 'Assets', exact: true }),
+        ).toHaveFocus();
+      }
+    },
+  );
+
+  it('describes discoveries without inventing optional metadata', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({
+          ...metrics,
+          insights: [
+            { kind: 'new_assets', level: 'info' },
+            { kind: 'future_insight', level: 'warning' },
+          ],
+        }),
+      ),
+    );
+    show();
+    expect(await screen.findByText('New assets discovered.')).toBeVisible();
+    const insights = within(
+      screen.getByRole('region', { name: 'Discovery insights' }),
+    );
+    expect(insights.getAllByRole('listitem')).toHaveLength(1);
+  });
+
   it('shows ranked exposure groups and their service counts', async () => {
     server.use(
       http.get(`/api${path}/overview`, () =>
