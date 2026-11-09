@@ -203,6 +203,53 @@ describe('Target Overview runs', () => {
     },
   );
 
+  it.each([true, false])(
+    'shows positive per-run findings only with vulnerability access (%s)',
+    async (allowed) => {
+      canReadFindings.mockReturnValue(allowed);
+      const latest = { ...run, newVulnerabilities: 1 };
+      const pending = {
+        ...activeRuns[0],
+        id: 'pending-run-1',
+        newVulnerabilities: 0,
+      };
+      const running = { ...activeRuns[1], newVulnerabilities: 3 };
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({
+            ...metrics,
+            lastRun: latest,
+            activeRuns: [pending, running],
+          }),
+        ),
+        http.get(`/api${path}/runs`, () =>
+          HttpResponse.json({
+            data: [latest, pending, running],
+            page: 1,
+            hasNextPage: false,
+          }),
+        ),
+      );
+      const { user } = show();
+      await screen.findByRole('region', { name: 'Active runs' });
+      const assertCounts = () => {
+        expect(
+          screen.queryAllByText('1 new finding', { exact: true }),
+        ).toHaveLength(allowed ? 1 : 0);
+        expect(
+          screen.queryAllByText('3 new findings', { exact: true }),
+        ).toHaveLength(allowed ? 1 : 0);
+        expect(
+          screen.queryByText('0 new findings', { exact: true }),
+        ).not.toBeInTheDocument();
+      };
+      assertCounts();
+      await user.click(screen.getByRole('link', { name: 'Activity' }));
+      await screen.findByRole('link', { name: /Running discovery/ });
+      assertCounts();
+    },
+  );
+
   it('shows active runs in API order and links to each run', async () => {
     server.use(
       http.get(`/api${path}/overview`, () =>

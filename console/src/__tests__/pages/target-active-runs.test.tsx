@@ -36,6 +36,7 @@ function show() {
     <TargetActivityTab
       targetId={id}
       canReadProjects={false}
+      canReadFindings={false}
       onAccessDenied={vi.fn()}
     />,
   );
