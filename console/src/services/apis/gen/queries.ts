@@ -592,6 +592,24 @@ export type GetManyTargetRepositoryDtoDto = {
   pageCount: number;
 };
 
+export type TargetExposureCountDto = {
+  name: string;
+  /**
+   * Distinct services in this group
+   * @minimum 1
+   */
+  count: number;
+};
+
+export type TargetExposureDto = {
+  /** @maxItems 6 */
+  ports: TargetExposureCountDto[];
+  /** @maxItems 6 */
+  technologies: TargetExposureCountDto[];
+  /** @maxItems 6 */
+  statusCodes: TargetExposureCountDto[];
+};
+
 export type TargetOverviewDto = {
   /** Enabled assets on the target */
   totalAssets: number;
@@ -603,6 +621,8 @@ export type TargetOverviewDto = {
   newServices: number;
   /** Distinct ports among discovered services */
   openPorts: number;
+  /** Most common service observations */
+  exposure: TargetExposureDto;
 };
 
 export type JobRunType = (typeof JobRunType)[keyof typeof JobRunType];
@@ -12732,7 +12752,7 @@ export function useTargetsControllerGetTargetRepositories<
 }
 
 /**
- * Returns workspace-scoped asset, service, and port counts for a target, including discoveries from the last seven days.
+ * Returns workspace-scoped asset and service counts, recent discoveries, and the most common service ports, technologies, and primary HTTP status codes.
  * @summary Get target overview
  */
 export const targetsControllerGetTargetOverview = (

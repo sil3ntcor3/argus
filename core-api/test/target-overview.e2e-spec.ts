@@ -11,12 +11,27 @@ describe('Target overview API (e2e)', () => {
   let target: string;
   let emptyTarget: string;
   let foreignTarget: string;
+  const emptyExposure = { ports: [], technologies: [], statusCodes: [] };
   const metrics = {
     totalAssets: 2,
     newAssets: 1,
     totalServices: 4,
     newServices: 3,
     openPorts: 2,
+    exposure: {
+      ports: [
+        { name: '80', count: 2 },
+        { name: '443', count: 2 },
+      ],
+      technologies: [
+        { name: 'Nginx', count: 2 },
+        { name: 'Apache', count: 1 },
+      ],
+      statusCodes: [
+        { name: '200', count: 2 },
+        { name: '404', count: 1 },
+      ],
+    },
   };
 
   const overview = (id: string, headers: Record<string, string>) =>
@@ -45,6 +60,31 @@ describe('Target overview API (e2e)', () => {
     );
   }
 
+  async function addService(asset: string, port: number, days = 0) {
+    return insertId(
+      `INSERT INTO asset_services (value, port, "assetId", "createdAt")
+       VALUES ($1, $2, $3, LOCALTIMESTAMP - $4 * INTERVAL '1 day')`,
+      [`https://example.test:${port}`, port, asset, days],
+    );
+  }
+
+  async function observe(service: string, name: string, code: number) {
+    const response = await insertId(
+      'INSERT INTO http_responses ("assetServiceId") VALUES ($1)',
+      [service],
+    );
+    await app.dataSource.query(
+      'INSERT INTO http_response_technologies ("httpResponseId", "assetServiceId", name) VALUES ($1, $2, $3)',
+      [response, service, name],
+    );
+    await app.dataSource.query(
+      `INSERT INTO http_status_codes ("httpResponseId", "assetServiceId", "statusCode", "isPrimary")
+       VALUES ($1, $2, $3, true), ($1, $2, 301, false)`,
+      [response, service, code],
+    );
+    return response;
+  }
+
   beforeAll(async () => {
     app = await createTestApp();
     await app.app.listen(0);
@@ -58,17 +98,22 @@ describe('Target overview API (e2e)', () => {
     const older = await addAsset(target, 8, true);
     const disabled = await addAsset(target, 1, false);
     const foreign = await addAsset(foreignTarget, 1, true);
-    for (const [asset, port, days] of [
-      [recent, 443, 6],
-      [recent, 80, 8],
-      [older, 443, 1],
-      [disabled, 80, 1],
-      [foreign, 22, 1],
-    ] as const) {
+    const https = await addService(recent, 443, 6);
+    await observe(https, 'Nginx', 200);
+    await observe(https, 'Nginx', 200);
+    await observe(await addService(older, 443, 1), 'Nginx', 200);
+    await observe(await addService(recent, 80, 8), 'Apache', 404);
+    await addService(disabled, 80, 1);
+    const foreignService = await addService(foreign, 22, 1);
+    const foreignResponses = [
+      await observe(foreignService, 'Foreign', 503),
+      await observe(foreignService, 'Foreign', 0),
+    ];
+    // The response parent remains authoritative if a denormalized ID disagrees.
+    for (const table of ['http_response_technologies', 'http_status_codes']) {
       await app.dataSource.query(
-        `INSERT INTO asset_services (value, port, "assetId", "createdAt")
-         VALUES ($1, $2, $3, LOCALTIMESTAMP - $4 * INTERVAL '1 day')`,
-        [`https://example.test:${port}`, port, asset, days],
+        `UPDATE ${table} SET "assetServiceId" = $1 WHERE "httpResponseId" = ANY($2::uuid[])`,
+        [https, foreignResponses],
       );
     }
   });
@@ -97,6 +142,7 @@ describe('Target overview API (e2e)', () => {
       totalServices: 0,
       newServices: 0,
       openPorts: 0,
+      exposure: emptyExposure,
     });
     await overview(foreignTarget, other.headers).expect(200, {
       totalAssets: 1,
@@ -104,6 +150,31 @@ describe('Target overview API (e2e)', () => {
       totalServices: 1,
       newServices: 1,
       openPorts: 1,
+      exposure: {
+        ports: [{ name: '22', count: 1 }],
+        technologies: [{ name: 'Foreign', count: 1 }],
+        statusCodes: [{ name: '503', count: 1 }],
+      },
+    });
+  });
+
+  it('limits each exposure list to six rows with stable ties', async () => {
+    const rankedTarget = await makeTarget(owner.workspace.id);
+    const asset = await addAsset(rankedTarget, 1, true);
+    for (let i = 6; i >= 0; i--) {
+      await observe(
+        await addService(asset, 8000 + i),
+        `Technology ${i}`,
+        200 + i,
+      );
+    }
+    const response = await overview(rankedTarget, owner.headers).expect(200);
+    const firstSix = (name: (index: number) => string) =>
+      Array.from({ length: 6 }, (_, i) => ({ name: name(i), count: 1 }));
+    expect(response.body.exposure).toEqual({
+      ports: firstSix((i) => String(8000 + i)),
+      technologies: firstSix((i) => `Technology ${i}`),
+      statusCodes: firstSix((i) => String(200 + i)),
     });
   });
 

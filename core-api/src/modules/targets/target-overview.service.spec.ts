@@ -20,6 +20,7 @@ describe('TargetOverviewService', () => {
       totalServices: 0,
       newServices: 0,
       openPorts: 0,
+      exposure: { ports: [], technologies: [], statusCodes: [] },
     };
     query.mockResolvedValueOnce([counts]);
     await expect(service.getOverview(id, workspaceId)).resolves.toEqual(counts);
