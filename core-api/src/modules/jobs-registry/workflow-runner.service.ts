@@ -2,13 +2,16 @@ import { EventTriggerType, JobRunType, JobStatus } from '@/common/enums/enum';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { isUUID } from 'class-validator';
-import { DataSource, In, type QueryRunner } from 'typeorm';
+import { DataSource, In, type EntityManager, type QueryRunner } from 'typeorm';
+import { AssetGroupAsset } from '../asset-group/entities/asset-groups-assets.entity';
+import { lockProjectScope } from '../projects/project-scope-sync';
 import { Target } from '../targets/entities/target.entity';
 import { Tool } from '../tools/entities/tools.entity';
 import { ToolsService } from '../tools/tools.service';
@@ -87,7 +90,10 @@ export class WorkflowRunnerService {
    * run scope, emits `WORKFLOW_START` (once per run) and dispatches every root
    * step.
    */
-  public async startRun(input: StartRunInput): Promise<StartRunResult> {
+  public async startRun(
+    input: StartRunInput,
+    validateScope?: (manager: EntityManager) => Promise<void>,
+  ): Promise<StartRunResult> {
     const context = await this.buildRunGraph(input.workflow, input.workspaceId);
     if (context.graph.steps.length === 0) {
       this.logger.warn(
@@ -101,6 +107,7 @@ export class WorkflowRunnerService {
     await queryRunner.startTransaction();
     let jobHistory: JobHistory;
     try {
+      if (validateScope) await validateScope(queryRunner.manager);
       jobHistory = queryRunner.manager.create(JobHistory, {
         workflow: input.workflow,
         jobRunType: input.jobRunType,
@@ -136,10 +143,11 @@ export class WorkflowRunnerService {
     return { jobHistory, dispatched };
   }
 
-  /** Starts a fresh run within a closed run's recorded target scope. */
-  public async retryTargetRun(
+  /** Starts a fresh run within a closed run's recorded scope. */
+  public async retryRun(
     workspaceId: string,
     historyId: string,
+    permissions: readonly string[],
   ): Promise<RetryRunResponseDto> {
     const history = await this.dataSource
       .getRepository(JobHistory)
@@ -164,43 +172,124 @@ export class WorkflowRunnerService {
       );
     }
 
-    const scope = history.scope;
-    const recordedTargets = scope?.targetIds;
+    const { projectId, projectWorkflowId, scope } = history;
+    const projectRun = Boolean(projectId || projectWorkflowId);
+    const recordedIds = projectRun ? scope?.assetIds : scope?.targetIds;
     if (
-      history.projectId ||
-      history.projectWorkflowId ||
       !scope ||
       Object.keys(scope).length !== 1 ||
-      !Array.isArray(recordedTargets) ||
-      recordedTargets.length === 0 ||
-      !recordedTargets.every((targetId) => isUUID(targetId))
+      !Array.isArray(recordedIds) ||
+      recordedIds.length === 0 ||
+      !recordedIds.every((id) => isUUID(id))
     ) {
-      throw new BadRequestException(
-        'This run has no eligible recorded target scope',
-      );
+      throw new BadRequestException('This run has no eligible recorded scope');
     }
-    const targetIds = [
-      ...new Set(recordedTargets.map((id) => id.toLowerCase())),
-    ];
-    const targets = await this.dataSource.getRepository(Target).countBy({
-      id: In(targetIds),
-      workspaceId,
-    });
-    if (targets !== targetIds.length) {
-      throw new BadRequestException('One or more recorded targets are unavailable');
-    }
-
-    const { jobHistory } = await this.startRun({
+    const ids = [...new Set(recordedIds.map((id) => id.toLowerCase()))];
+    const input: StartRunInput = {
       workflow: history.workflow,
       workspaceId,
       jobName: `Retry - ${history.jobHistoryName ?? history.workflow.name}`,
       jobRunType: JobRunType.MANUAL,
-      targetIds,
-    });
+    };
+    let validateScope: ((manager: EntityManager) => Promise<void>) | undefined;
+    if (projectRun) {
+      if (!projectId || !projectWorkflowId) {
+        throw new BadRequestException(
+          'This run has incomplete project provenance',
+        );
+      }
+      if (
+        !permissions.includes('*') &&
+        !permissions.includes('workflow.write')
+      ) {
+        throw new ForbiddenException('Project retries require workflow.write');
+      }
+      const projectScope = { projectId, projectWorkflowId, assetIds: ids };
+      Object.assign(input, projectScope);
+      validateScope = (manager) =>
+        this.validateProjectRetryScope(
+          manager,
+          workspaceId,
+          history.workflow.id,
+          projectScope,
+        );
+    } else {
+      const targets = await this.dataSource.getRepository(Target).countBy({
+        id: In(ids),
+        workspaceId,
+      });
+      if (targets !== ids.length) {
+        throw new BadRequestException('One or more recorded targets are unavailable');
+      }
+      input.targetIds = ids;
+    }
+
+    const { jobHistory } = await this.startRun(input, validateScope);
     if (!jobHistory) {
       throw new BadRequestException('This workflow has no runnable steps');
     }
     return { jobHistoryId: jobHistory.id, message: 'Run started' };
+  }
+
+  private async validateProjectRetryScope(
+    manager: EntityManager,
+    workspaceId: string,
+    workflowId: string,
+    {
+      projectId,
+      projectWorkflowId,
+      assetIds,
+    }: {
+      projectId: string;
+      projectWorkflowId: string;
+      assetIds: string[];
+    },
+  ): Promise<void> {
+    const unavailable = 'The recorded project scope is no longer available';
+    // Match deletion's workspace → project → workflow lock order. Acquire the
+    // workflow FK lock before any binding lock so a cascading delete can finish.
+    await manager.query(
+      'SELECT id FROM workspaces WHERE id = $1 FOR KEY SHARE',
+      [workspaceId],
+    );
+    try {
+      await lockProjectScope(manager, projectId, workspaceId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new BadRequestException(unavailable);
+      }
+      throw error;
+    }
+
+    const [workflow] = await manager.query<{ id: string }[]>(
+      'SELECT id FROM workflows WHERE id = $1 AND "workspaceId" = $2 FOR KEY SHARE',
+      [workflowId, workspaceId],
+    );
+    if (!workflow) throw new BadRequestException(unavailable);
+
+    const assets = await manager
+      .getRepository(AssetGroupAsset)
+      .createQueryBuilder('membership')
+      .innerJoin('membership.assetGroup', 'project')
+      .innerJoin('project.assetGroupWorkflows', 'binding')
+      .innerJoin('membership.asset', 'asset')
+      .innerJoin('asset.target', 'target')
+      .where('project.id = :projectId', { projectId })
+      .andWhere('project.archivedAt IS NULL')
+      .andWhere(
+        'binding.id = :projectWorkflowId AND binding.workflowId = :workflowId',
+        { projectWorkflowId, workflowId },
+      )
+      .andWhere('target.workspaceId = :workspaceId AND asset.isEnabled = true', {
+        workspaceId,
+      })
+      .andWhere('asset.id = ANY(:assetIds)', { assetIds })
+      .select('asset.id', 'id')
+      .setLock('pessimistic_read', undefined, ['binding', 'asset'])
+      .getRawMany<{ id: string }>();
+    if (assets.length !== assetIds.length) {
+      throw new BadRequestException(unavailable);
+    }
   }
 
   /**

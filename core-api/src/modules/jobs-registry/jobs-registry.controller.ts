@@ -7,6 +7,7 @@ import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import { Severity, ToolCategory } from '@/common/enums/enum';
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
+import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
   Body,
@@ -18,12 +19,14 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
 } from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
@@ -430,9 +433,9 @@ export class JobsRegistryController {
 
   @WorkspaceAccess('job.write')
   @Doc({
-    summary: 'Retry a closed target run',
+    summary: 'Retry a closed run',
     description:
-      'Starts a new manual run from the current workflow and the original recorded targets.',
+      'Starts a new manual run from the current workflow and recorded target or project asset scope.',
     response: {
       httpStatus: HttpStatus.CREATED,
       serialization: RetryRunResponseDto,
@@ -442,14 +445,22 @@ export class JobsRegistryController {
   @ApiBadRequestResponse({
     description: 'Unsupported scope, unavailable targets, or no runnable steps.',
   })
+  @ApiForbiddenResponse({
+    description: 'Missing job write permission or project workflow launch permission.',
+  })
   @ApiNotFoundResponse({ description: 'Run not found in this workspace.' })
   @ApiConflictResponse({ description: 'The run is open or has active jobs.' })
   @Post('/histories/:id/re-run')
   retryJobHistory(
     @WorkspaceId() workspaceId: string,
     @Param() { id }: IdQueryParamDto,
+    @Req() request: RequestWithMetadata,
   ): Promise<RetryRunResponseDto> {
-    return this.workflowRunnerService.retryTargetRun(workspaceId, id);
+    return this.workflowRunnerService.retryRun(
+      workspaceId,
+      id,
+      request.permissions ?? [],
+    );
   }
 
   @WorkspaceAccess('job.delete')
