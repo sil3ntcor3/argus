@@ -24,6 +24,7 @@ import { FastScanDialog } from '../vulnerabilities/components/fast-scan-dialog';
 import { VulnerabilitiesView } from '../vulnerabilities/vulnerabilities-view';
 import AssetsDiscovering from './assets-discovering';
 import { GitOrgDetail } from './git-org-detail';
+import { TargetActivityTab } from './components/target-activity-tab';
 import { TargetOverviewTab } from './components/target-overview-tab';
 import { TargetSwitcher } from './components/target-switcher';
 import SettingTarget from './setting-target';
@@ -91,10 +92,14 @@ export function DetailTarget() {
   }
 
   const activeTab =
-    tab === 'overview' || tab === 'vulnerabilities' || tab === 'settings'
+    tab === 'overview' ||
+    tab === 'vulnerabilities' ||
+    tab === 'activity' ||
+    tab === 'settings'
       ? tab
       : 'assets';
   const canReadAssets = !permission.error && permission.hasPermission('asset.read');
+  const canReadJobs = !permission.error && permission.hasPermission('job.read');
   const canChangeTarget = permission.hasPermission('target.write');
   const scanning = target.status !== JobStatus.completed;
   const scanTarget = { id: target.id, value: target.value };
@@ -142,6 +147,7 @@ export function DetailTarget() {
             ...(canReadAssets ? [{ value: 'overview', label: 'Overview' }] : []),
             { value: 'assets', label: 'Assets' },
             { value: 'vulnerabilities', label: 'Vulnerabilities' },
+            ...(canReadJobs ? [{ value: 'activity', label: 'Activity' }] : []),
             ...(canChangeTarget
               ? [{ value: 'settings', label: 'Settings' }]
               : []),
@@ -171,6 +177,16 @@ export function DetailTarget() {
         {activeTab === 'overview' ? (
           canReadAssets ? (
             <TargetOverviewTab
+              targetId={target.id}
+              onAccessDenied={permission.refetch}
+            />
+          ) : (
+            <AccessDenied />
+          )
+        ) : activeTab === 'activity' ? (
+          canReadJobs ? (
+            <TargetActivityTab
+              key={target.id}
               targetId={target.id}
               onAccessDenied={permission.refetch}
             />
