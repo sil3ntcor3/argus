@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 import { TargetExposurePanel } from './target-exposure-panel';
 import { TargetFindingsCard } from './target-findings-card';
 import { TargetInsightsPanel } from './target-insights-panel';
+import { TargetProjectsPanel } from './target-projects-panel';
 import { TargetRunRow } from './target-run-row';
 import { TargetTopFindingsPanel } from './target-top-findings-panel';
 
@@ -26,6 +27,7 @@ export function TargetOverviewTab({
   canManageDiscovery,
   canReadJobs,
   canReadFindings,
+  canReadProjects,
   onKeyboardNavigate,
   onAccessDenied,
 }: {
@@ -33,6 +35,7 @@ export function TargetOverviewTab({
   canManageDiscovery: boolean;
   canReadJobs: boolean;
   canReadFindings: boolean;
+  canReadProjects: boolean;
   onKeyboardNavigate: (tab: 'assets' | 'settings' | 'vulnerabilities') => void;
   onAccessDenied: () => Promise<unknown>;
 }) {
@@ -48,6 +51,7 @@ export function TargetOverviewTab({
         targetId,
         canReadFindings,
         canReadJobs,
+        canReadProjects,
       ],
       refetchOnMount: 'always',
       retry: false,
@@ -216,6 +220,9 @@ export function TargetOverviewTab({
         />
       )}
       {data?.exposure && <TargetExposurePanel exposure={data.exposure} />}
+      {canReadProjects && data?.projects != null && (
+        <TargetProjectsPanel projects={data.projects} />
+      )}
     </section>
   );
 }

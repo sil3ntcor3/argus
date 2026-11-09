@@ -115,6 +115,10 @@ export function DetailTarget() {
   const canReadJobs = !permission.error && permission.hasPermission('job.read');
   const canReadFindings =
     !permission.error && permission.hasPermission('vulnerability.read');
+  const canReadProjects =
+    !permission.error &&
+    (permission.hasPermission('project.read') ||
+      permission.hasPermission('group.read'));
   const canReadActivity = canReadAssets || canReadJobs;
   const canChangeTarget = permission.hasPermission('target.write');
   const scanning = target.status !== JobStatus.completed;
@@ -205,6 +209,7 @@ export function DetailTarget() {
               }}
               onAccessDenied={permission.refetch}
               canReadFindings={canReadFindings}
+              canReadProjects={canReadProjects}
             />
           ) : (
             <AccessDenied />

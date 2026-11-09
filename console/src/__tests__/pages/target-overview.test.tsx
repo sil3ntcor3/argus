@@ -22,6 +22,7 @@ dayjs.extend(relativeTime);
 const canReadAssets = vi.hoisted(() => vi.fn(() => true));
 const canReadJobs = vi.hoisted(() => vi.fn(() => true));
 const canReadFindings = vi.hoisted(() => vi.fn(() => true));
+const canReadProjects = vi.hoisted(() => vi.fn(() => true));
 const canWriteTarget = vi.hoisted(() => vi.fn(() => false));
 const refetchPermissions = vi.hoisted(() => vi.fn());
 const id = 'd14d1c3f-9752-4b8a-93c8-48ea3c3212ab';
@@ -41,6 +42,7 @@ vi.mock('@/hooks/usePermission', () => ({
       (key === 'asset.read' && canReadAssets()) ||
       (key === 'job.read' && canReadJobs()) ||
       (key === 'vulnerability.read' && canReadFindings()) ||
+      (key === 'project.read' && canReadProjects()) ||
       (key === 'target.write' && canWriteTarget()),
     isLoading: false,
     error: null,
@@ -88,6 +90,7 @@ beforeEach(() => {
   canReadAssets.mockReturnValue(true);
   canReadJobs.mockReturnValue(true);
   canReadFindings.mockReturnValue(true);
+  canReadProjects.mockReturnValue(true);
   canWriteTarget.mockReturnValue(false);
   refetchPermissions.mockClear();
   server.use(
@@ -810,6 +813,64 @@ describe('Target Activity tab', () => {
     ).toBeVisible();
     expect(refetchPermissions).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('Target Overview projects', () => {
+  const projects = [
+    { id: 'project-1', name: 'Inventory', assets: 2, hexColor: '#123456' },
+    { id: 'project-2', name: 'External', assets: 1, hexColor: null },
+  ];
+  const panelName = 'Projects containing target assets';
+
+  it('links projects in API order and shows target-specific counts', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, projects }),
+      ),
+    );
+    show();
+    const panel = within(
+      await screen.findByRole('region', { name: panelName }),
+    );
+    expect(
+      panel.getAllByRole('link').map((link) => link.getAttribute('href')),
+    ).toEqual(['/projects/project-1', '/projects/project-2']);
+    expect(panel.getByText('2 target assets')).toBeVisible();
+    expect(panel.getByText('1 target asset')).toBeVisible();
+  });
+
+  it('shows an empty state for an authorized target without projects', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, projects: [] }),
+      ),
+    );
+    show();
+    expect(
+      await screen.findByText('No projects contain assets from this target.'),
+    ).toBeVisible();
+  });
+
+  it.each([
+    { allowed: false, response: projects },
+    { allowed: true, response: null },
+    { allowed: true, response: undefined },
+  ])(
+    'hides missing or redacted projects ($allowed, $response)',
+    async ({ allowed, response }) => {
+      canReadProjects.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({ ...metrics, projects: response }),
+        ),
+      );
+      show();
+      expect(await screen.findByText('Enabled assets')).toBeVisible();
+      expect(
+        screen.queryByRole('region', { name: panelName }),
+      ).not.toBeInTheDocument();
+    },
+  );
 });
 
 describe('Target Overview weekly findings', () => {
