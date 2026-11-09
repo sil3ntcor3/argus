@@ -177,4 +177,13 @@ export class JobHistoryDetailResponseDto {
       'Estimated seconds remaining for an active workflow run, or null when unavailable.',
   })
   etaSeconds: number | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    maxLength: 500,
+    description:
+      'Latest nonblank error message from a visible failed job in a closed run, or null when unavailable.',
+  })
+  failureReason: string | null;
 }
