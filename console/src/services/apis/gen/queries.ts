@@ -627,6 +627,11 @@ export type TargetRunDto = {
    * @minimum 0
    */
   jobsRunning: number;
+  /**
+   * Tool on the running target job with the latest claim time. Missing times sort last, and ties use job ID descending.
+   * @nullable
+   */
+  currentTool: string | null;
 };
 
 export type Severity = (typeof Severity)[keyof typeof Severity];

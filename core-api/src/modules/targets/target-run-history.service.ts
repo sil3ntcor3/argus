@@ -11,10 +11,10 @@ import type {
 } from './dto/target-runs.dto';
 import {
   TARGET_ACTIVE_RUN_CONDITION_SQL,
-  TARGET_RUN_COUNTS_SQL,
   TARGET_RUN_CTES,
   TARGET_RUN_FIELDS_SQL,
   TARGET_RUN_ORDER_SQL,
+  TARGET_RUN_PROGRESS_SQL,
   TARGET_RUN_STATUS_SQL,
 } from './target-run-sql';
 
@@ -59,7 +59,7 @@ export class TargetRunHistoryService {
        SELECT totals.total, p.*, stats.*, ${TARGET_RUN_STATUS_SQL} AS status
        FROM owned CROSS JOIN (SELECT COUNT(*)::int AS total FROM matching) totals
        LEFT JOIN page p ON true
-       CROSS JOIN LATERAL (${TARGET_RUN_COUNTS_SQL}) stats
+       CROSS JOIN LATERAL (${TARGET_RUN_PROGRESS_SQL}) stats
        ORDER BY p."createdAt" DESC, p.id DESC`,
       [id, workspaceId, limit, offset, active],
     );

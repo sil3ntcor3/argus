@@ -124,6 +124,7 @@ describe('Target run history API (e2e)', () => {
             jobsDone: 0,
             jobsFailed: 0,
             jobsRunning: 0,
+            currentTool: null,
           },
         ],
       })
@@ -140,6 +141,7 @@ describe('Target run history API (e2e)', () => {
           jobsDone: 2,
           jobsFailed: 0,
           jobsRunning: 1,
+          currentTool: 'nuclei',
         },
       ],
     });
@@ -160,6 +162,58 @@ describe('Target run history API (e2e)', () => {
     const missing = await read(randomUUID(), owner.headers).expect(404);
     const other = await read(foreignTarget, owner.headers).expect(404);
     expect(other.body).toEqual(missing.body);
+  });
+
+  it('shares the latest running tool on this target between Activity and Overview', async () => {
+    const workspace = owner.workspace.id;
+    const id = await makeTarget(workspace);
+    const sibling = await makeTarget(workspace);
+    const [workflow] = await app.dataSource.query<{ id: string }[]>(
+      'SELECT id FROM workflows WHERE "workspaceId" = $1 LIMIT 1',
+      [workspace],
+    );
+    const now = Date.now();
+    const run = await makeRun(workflow.id, [id], new Date(now).toISOString());
+    const assetSql = 'INSERT INTO assets (value, "targetId") VALUES ($1, $2)';
+    const asset = await insertId(assetSql, ['current-tool.example.test', id]);
+    const siblingAsset = await insertId(assetSql, [
+      'current-tool-sibling.example.test',
+      sibling,
+    ]);
+    for (const [jobId, assetId, tool, status, minutes] of [
+      [randomUUID(), asset, 'nuclei', 'in_progress', 3],
+      ['00000000-0000-4000-8000-000000000011', asset, 'httpx', 'in_progress', 2],
+      ['00000000-0000-4000-8000-000000000012', asset, 'naabu', 'in_progress', 2],
+      [randomUUID(), asset, 'nuclei', 'in_progress', null],
+      [randomUUID(), asset, 'nuclei', 'completed', 1],
+      [randomUUID(), siblingAsset, 'httpx', 'in_progress', 1],
+    ] as const) {
+      const pickedAt = minutes === null ? null : new Date(now - minutes * 60_000);
+      await insertId(
+        `INSERT INTO jobs (id, "jobHistoryId", "assetId", "toolId", category, status, "pickJobAt")
+         SELECT $1, $2, $3, id, 'vulnerabilities', $4, $5 FROM tools WHERE name = $6`,
+        [jobId, run, assetId, status, pickedAt, tool],
+      );
+    }
+    const activity = await read(id, owner.headers).expect(200);
+    expect(activity.body.data).toMatchObject([
+      { id: run, currentTool: 'naabu', jobsRunning: 4 },
+    ]);
+    const overview = await request(app.server)
+      .get(`/api/targets/${id}/overview`)
+      .set(owner.headers)
+      .expect(200);
+    expect(overview.body.lastRun).toEqual(activity.body.data[0]);
+    expect(overview.body.activeRuns).toEqual(activity.body.data);
+
+    await app.dataSource.query(
+      `UPDATE jobs SET status = 'completed' WHERE "jobHistoryId" = $1 AND "assetId" = $2`,
+      [run, asset],
+    );
+    const siblingOnly = await read(id, owner.headers).expect(200);
+    expect(siblingOnly.body.data).toMatchObject([
+      { id: run, currentTool: null, jobsRunning: 0, status: 'in_progress' },
+    ]);
   });
 
   it('filters recent unfinished runs by whole-run status before pagination', async () => {

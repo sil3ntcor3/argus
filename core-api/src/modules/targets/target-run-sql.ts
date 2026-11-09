@@ -35,14 +35,21 @@ export const TARGET_ACTIVE_RUN_CONDITION_SQL = `CASE
        IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')
 END`;
 
-/** Whole-run status and target-only counts for a selected run aliased as p. */
+/** Whole-run status for a selected run aliased as p. */
 export const TARGET_RUN_STATUS_SQL = `(SELECT ${JOB_HISTORY_STATUS_SQL}
   FROM jobs job WHERE job."jobHistoryId" = p.id)`;
 
-export const TARGET_RUN_COUNTS_SQL = `
+/** Progress counts and the current tool on the selected target. */
+export const TARGET_RUN_PROGRESS_SQL = `
   SELECT COUNT(*)::int AS "jobsTotal",
          COUNT(*) FILTER (WHERE job.status IN ('${JobStatus.COMPLETED}', '${JobStatus.SKIPPED}'))::int AS "jobsDone",
          COUNT(*) FILTER (WHERE job.status = '${JobStatus.FAILED}')::int AS "jobsFailed",
-         COUNT(*) FILTER (WHERE job.status = '${JobStatus.IN_PROGRESS}')::int AS "jobsRunning"
+         COUNT(*) FILTER (WHERE job.status = '${JobStatus.IN_PROGRESS}')::int AS "jobsRunning",
+         (SELECT tool.name FROM tools tool WHERE tool.id = (
+           SELECT running."toolId"
+           FROM jobs running JOIN target_assets a ON a.id = running."assetId"
+           WHERE running."jobHistoryId" = p.id AND running.status = '${JobStatus.IN_PROGRESS}'
+           ORDER BY running."pickJobAt" DESC NULLS LAST, running.id DESC LIMIT 1
+         )) AS "currentTool"
   FROM jobs job JOIN target_assets a ON a.id = job."assetId"
   WHERE job."jobHistoryId" = p.id`;
