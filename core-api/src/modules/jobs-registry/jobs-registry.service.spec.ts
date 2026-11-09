@@ -9,6 +9,7 @@ import {
   WorkerScope,
   WorkerType,
 } from '@/common/enums/enum';
+import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -25,6 +26,7 @@ import { ToolsService } from '../tools/tools.service';
 import { WorkerStreamRegistry } from '../workers/worker-stream-registry.service';
 import { WorkerInstance } from '../workers/entities/worker.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import type { GetNextJobResult } from './dto/jobs-registry.dto';
 import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
@@ -66,6 +68,7 @@ const HOST = [TargetType.DOMAIN, TargetType.IP, TargetType.CIDR];
 
 describe('JobsRegistryService', () => {
   let service: JobsRegistryService;
+  const getDEK = jest.fn<Promise<Buffer | null>, [string]>();
 
   const mockJobRepository = {
     createQueryBuilder: jest.fn().mockReturnThis(),
@@ -88,6 +91,7 @@ describe('JobsRegistryService', () => {
     findOne: jest.fn(),
     save: jest.fn(),
     update: jest.fn().mockResolvedValue({ affected: 1 }),
+    query: jest.fn().mockResolvedValue([]),
     count: jest.fn(),
     exists: jest.fn(),
   };
@@ -229,6 +233,7 @@ describe('JobsRegistryService', () => {
           provide: ToolConfigProfilesService,
           useValue: mockToolConfigProfilesService,
         },
+        { provide: WorkspaceEncryptionService, useValue: { getDEK } },
         {
           provide: WorkerStreamRegistry,
           useValue: mockWorkerStreamRegistry,
@@ -2898,6 +2903,9 @@ describe('JobsRegistryService', () => {
       expect(mockDataSource.getRepository).toHaveBeenCalledWith(WorkerInstance);
       expect(qb.limit).toHaveBeenCalledWith(3);
       expect(queryRunner.manager.update).toHaveBeenCalledTimes(1);
+      const claim = queryRunner.manager.update.mock.calls[0][2];
+      expect(claim).toMatchObject({ findingScanScopeKey: null });
+      expect(result.every(job => job.claimedAt === claim.pickJobAt)).toBe(true);
       expect(queryRunner.commitTransaction).toHaveBeenCalled();
       expect(queryRunner.rollbackTransaction).not.toHaveBeenCalled();
     });
@@ -2918,6 +2926,55 @@ describe('JobsRegistryService', () => {
         expect(job).toMatchObject({ inputs, tool, workspaceId: 'ws-1' });
       },
     );
+
+    it('keys the dispatched scope with the workspace DEK and only updates its current claim', async () => {
+      getDEK.mockResolvedValueOnce(Buffer.alloc(32, 1))
+        .mockResolvedValueOnce(Buffer.alloc(32, 1))
+        .mockResolvedValueOnce(Buffer.alloc(32, 1))
+        .mockResolvedValueOnce(Buffer.alloc(32, 2));
+      const claimedAt = new Date('2026-11-09T18:00:00.000Z');
+      const job = {
+        id: 'claimed-job', category: ToolCategory.VULNERABILITIES, workspaceId: 'ws-1',
+        claimedAt, asset: { id: 'asset-1', value: '127.0.0.1' },
+        tool: { id: 'tool-1', name: 'nuclei' },
+      } as GetNextJobResult;
+      const target = { target: 'http://127.0.0.1:8080/' };
+      const image = 'nuclei:test';
+      await service.recordFindingScanScope(job, 'worker-1', image, target, { b: 1, a: { y: 2, x: 3 } });
+      await service.recordFindingScanScope(job, 'worker-1', image, target, { a: { x: 3, y: 2 }, b: 1 });
+      await service.recordFindingScanScope(job, 'worker-1', image, { target: 'http://127.0.0.1:8081/' }, { a: { x: 3, y: 2 }, b: 1 });
+      await service.recordFindingScanScope(job, 'worker-1', image, target, { a: { x: 3, y: 2 }, b: 1 });
+
+      expect(getDEK).toHaveBeenCalledWith('ws-1');
+      const keys = mockJobRepository.query.mock.calls.map(([, params]) =>
+        (params as [string, string, string, Date, string])[4],
+      );
+      const [firstKey, same, differentTarget, differentWorkspaceKey] = keys;
+      expect(firstKey).toMatch(/^[0-9a-f]{64}$/);
+      expect(mockJobRepository.query).toHaveBeenNthCalledWith(
+        1,
+        expect.stringContaining('FOR UPDATE SKIP LOCKED'),
+        [job.id, 'worker-1', JobStatus.IN_PROGRESS, claimedAt, firstKey],
+      );
+      expect(same).toBe(firstKey);
+      expect(differentTarget).not.toBe(firstKey);
+      expect(differentWorkspaceKey).not.toBe(firstKey);
+    });
+
+    it('clears coverage on reclaim and advances the claim marker past the prior one', async () => {
+      const previous = new Date(Date.now() + 1_000);
+      const { queryRunner } = givenWorkerAndQueue(buildWorker(), [
+        { id: 'reclaimed-job', asset: { id: 'asset-1' }, pickJobAt: previous },
+      ]);
+
+      const [job] = await service.getNextJobs('worker-uuid', 1);
+
+      expect(job.claimedAt).toBeUndefined();
+      expect(queryRunner.manager.update.mock.calls[0][2]).toMatchObject({
+        pickJobAt: new Date(previous.getTime() + 1),
+        findingScanScopeKey: null,
+      });
+    });
 
     it('caps the claim so a worker cannot drain the whole queue', async () => {
       // Given: a worker asking for far more than the server-side ceiling

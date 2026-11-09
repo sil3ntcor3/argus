@@ -73,6 +73,7 @@ describe('JobsRegistryController', () => {
       mockJobsRegistryService = {
         getNextJob: jest.fn(),
         getNextJobs: jest.fn(),
+        recordFindingScanScope: jest.fn().mockResolvedValue(undefined),
       };
       mockConnectorRegistry = {
         getConnector: jest.fn(),
@@ -189,7 +190,7 @@ describe('JobsRegistryController', () => {
     it.each([null, undefined, { target: 'https://app.example.com:8443' }])(
       'keeps snapshot %j out of the legacy HTTP claim response',
       async (inputs) => {
-        const job = { id: 'job-1', asset: { value: 'app.example.com' }, inputs };
+        const job = { id: 'job-1', asset: { value: 'app.example.com' }, inputs, claimedAt: new Date() };
         mockJobsRegistryService.getNextJob.mockResolvedValue(job);
         expect(await controller.getNextJob({ workerId: 'worker-1' })).toEqual({
           id: job.id, asset: job.asset,
@@ -199,6 +200,50 @@ describe('JobsRegistryController', () => {
         expect(job.inputs).toBe(inputs);
       },
     );
+
+    it('records the resolved target and config for both gRPC claim paths', async () => {
+      const job = {
+        id: 'claimed-job',
+        category: 'vulnerabilities',
+        workspaceId: 'ws-1',
+        asset: { value: '127.0.0.1' },
+        inputs: { target: 'http://127.0.0.1:8081/' },
+        config: { template: 'queued' },
+        tool: { id: 'nuclei-id', name: 'nuclei' },
+      };
+      const image = 'ghcr.io/sil3ntcor3/connector-nuclei:test';
+      const resolvedConfig = { template: 'dispatched' };
+      mockJobsRegistryService.getNextJob.mockResolvedValue(job);
+      mockJobsRegistryService.getNextJobs.mockResolvedValue([job]);
+      mockConnectorRegistry.getConnector.mockReturnValue({ slug: 'nuclei', image });
+      mockToolConfigProfilesService.resolveConfigForJob.mockResolvedValue(resolvedConfig);
+
+      const single = await controller.next({ id: 'worker-1' });
+      const batch = await controller.nextBatch({ id: 'worker-1', limit: 1 });
+
+      expect(mockJobsRegistryService.recordFindingScanScope.mock.calls).toEqual([
+        [job, 'worker-1', image, job.inputs, resolvedConfig],
+        [job, 'worker-1', image, job.inputs, resolvedConfig],
+      ]);
+      expect(batch.values[0]).toEqual(single);
+      expect(single).not.toHaveProperty('findingScanScopeKey');
+      expect(single.config).toEqual({ fields: { template: { stringValue: 'dispatched' } } });
+    });
+
+    it('dispatches without recording a scope when config resolution fails', async () => {
+      mockJobsRegistryService.getNextJob.mockResolvedValue({
+        id: 'claimed-job',
+        category: 'vulnerabilities',
+        workspaceId: 'ws-1',
+        asset: { value: '127.0.0.1' },
+        tool: { id: 'nuclei-id', name: 'nuclei' },
+      });
+      mockConnectorRegistry.getConnector.mockReturnValue({ slug: 'nuclei', image: 'nuclei:test' });
+      mockToolConfigProfilesService.resolveConfigForJob.mockRejectedValueOnce(new Error('unavailable'));
+
+      expect(await controller.next({ id: 'worker-1' })).toMatchObject({ id: 'claimed-job' });
+      expect(mockJobsRegistryService.recordFindingScanScope).not.toHaveBeenCalled();
+    });
 
     it('preserves the empty legacy HTTP claim response', async () => {
       mockJobsRegistryService.getNextJob.mockResolvedValue(null);
