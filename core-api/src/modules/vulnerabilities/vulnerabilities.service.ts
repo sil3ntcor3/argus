@@ -42,7 +42,10 @@ import type {
 } from './dto/vulnerability-timeline.dto';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
-import { openVulnerabilityCondition } from './open-vulnerability';
+import {
+  activeDismissalCondition,
+  openVulnerabilityCondition,
+} from './open-vulnerability';
 import { compileVulnerabilityFilter } from './vulnerability-filter';
 
 @Injectable()
@@ -183,7 +186,11 @@ export class VulnerabilitiesService {
       .leftJoin('targets.workspace', 'workspaces')
       .leftJoinAndSelect('vulnerabilities.tool', 'tools')
       .leftJoin('vulnerabilities.jobHistory', 'jobHistory')
-      .leftJoinAndSelect('vulnerabilities.vulnerabilityDismissal', 'dismissal')
+      .leftJoinAndSelect(
+        'vulnerabilities.vulnerabilityDismissal',
+        'dismissal',
+        activeDismissalCondition('dismissal'),
+      )
       .where('workspaces.id = :workspaceId', { workspaceId })
       .skip((page - 1) * limit)
       .take(limit);
@@ -277,7 +284,11 @@ export class VulnerabilitiesService {
       .leftJoin('targets.workspace', 'workspaces')
       .leftJoinAndSelect('vulnerabilities.tool', 'tools')
       .leftJoin('vulnerabilities.jobHistory', 'jobHistory')
-      .leftJoinAndSelect('vulnerabilities.vulnerabilityDismissal', 'dismissal')
+      .leftJoinAndSelect(
+        'vulnerabilities.vulnerabilityDismissal',
+        'dismissal',
+        activeDismissalCondition('dismissal'),
+      )
       .leftJoinAndSelect('dismissal.user', 'user')
       .where('workspaces.id = :workspaceId', { workspaceId })
       .andWhere('vulnerabilities.id = :id', { id });

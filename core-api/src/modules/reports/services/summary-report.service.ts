@@ -7,7 +7,10 @@ import { AssetService } from '@/modules/assets/entities/asset-services.entity';
 import { AssetTag } from '@/modules/assets/entities/asset-tags.entity';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { StatisticService } from '@/modules/statistic/statistic.service';
-import { openVulnerabilityCondition } from '@/modules/vulnerabilities/open-vulnerability';
+import {
+  activeDismissalCondition,
+  openVulnerabilityCondition,
+} from '@/modules/vulnerabilities/open-vulnerability';
 import { Severity, VulnerabilityAnalyzeStatus, JobStatus } from '@/common/enums/enum';
 import type { TargetType } from '@/modules/targets/entities/target.entity';
 import type { ReportData } from '../types/report-data.type';
@@ -273,7 +276,11 @@ export class SummaryReportService {
       .leftJoin('v.asset', 'asset')
       .leftJoin('asset.target', 'target')
       .leftJoin('target.workspace', 'workspace')
-      .leftJoin('v.vulnerabilityDismissal', 'dismissal')
+      .leftJoin(
+        'v.vulnerabilityDismissal',
+        'dismissal',
+        activeDismissalCondition('dismissal'),
+      )
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere('v.isArchived = :isArchived', { isArchived: false })
       .andWhere('dismissal.id IS NOT NULL')
@@ -334,7 +341,11 @@ export class SummaryReportService {
       .leftJoinAndSelect('v.asset', 'asset')
       .leftJoin('asset.target', 'target')
       .leftJoin('target.workspace', 'workspace')
-      .leftJoinAndSelect('v.vulnerabilityDismissal', 'dismissal')
+      .leftJoinAndSelect(
+        'v.vulnerabilityDismissal',
+        'dismissal',
+        activeDismissalCondition('dismissal'),
+      )
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere('dismissal.id IS NOT NULL')
       .orderBy('dismissal.createdAt', 'DESC')
