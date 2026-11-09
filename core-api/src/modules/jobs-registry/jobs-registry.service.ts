@@ -1216,6 +1216,24 @@ export class JobsRegistryService {
       },
     });
 
+    const settled = steps.filter(({ id: stepId }) => {
+      const status = jobHistory.steps?.[stepId]?.status;
+      return status === 'done' || status === 'failed' || status === 'skipped';
+    }).length;
+    const etaSeconds =
+      jobHistory.isCompleted === false &&
+      activeJobsCount > 0 &&
+      settled > 0 &&
+      settled < steps.length &&
+      workflow?.id
+        ? await this.estimateRunEta(
+            workspaceId,
+            workflow.id,
+            historyId,
+            (steps.length - settled) / steps.length,
+          )
+        : null;
+
     return {
       id: historyId,
       workflowName: workflow?.name,
@@ -1226,7 +1244,46 @@ export class JobsRegistryService {
       tools,
       steps,
       activeJobsCount,
+      etaSeconds,
     };
+  }
+
+  private async estimateRunEta(
+    workspaceId: string,
+    workflowId: string,
+    historyId: string,
+    remainingFraction: number,
+  ): Promise<number | null> {
+    const samples = await this.jobHistoryRepo
+      .createQueryBuilder('history')
+      .innerJoin('history.workflow', 'workflow')
+      .where('workflow.id = :workflowId', { workflowId })
+      .andWhere('workflow.workspaceId = :workspaceId', { workspaceId })
+      .andWhere('history.id <> :historyId', { historyId })
+      .andWhere('history.isCompleted = true')
+      .andWhere("history.updatedAt >= LOCALTIMESTAMP - INTERVAL '90 days'")
+      .andWhere('history.updatedAt <= LOCALTIMESTAMP')
+      .andWhere('history.updatedAt > history.createdAt')
+      .select(
+        'EXTRACT(EPOCH FROM (history.updatedAt - history.createdAt))',
+        'seconds',
+      )
+      .orderBy('history.updatedAt', 'DESC')
+      .addOrderBy('history.id', 'DESC')
+      .limit(20)
+      .getRawMany<{ seconds: string }>();
+
+    const durations = samples
+      .map(({ seconds }) => Number(seconds))
+      .filter((seconds) => Number.isFinite(seconds) && seconds > 0)
+      .sort((a, b) => a - b);
+    if (durations.length < 2) return null;
+
+    const median =
+      (durations[Math.floor((durations.length - 1) / 2)] +
+        durations[Math.floor(durations.length / 2)]) /
+      2;
+    return Math.round(median * remainingFraction);
   }
 
   /** A run step's category: the declared one, else its tool's default. */

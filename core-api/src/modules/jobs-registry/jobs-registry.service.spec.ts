@@ -897,6 +897,7 @@ describe('JobsRegistryService', () => {
         id: mockHistoryId,
         workflowName: 'test-workflow',
         jobHistoryName: 'test-job-history',
+        etaSeconds: null,
         createdAt: mockJobHistory.createdAt,
         updatedAt: mockJobHistory.updatedAt,
         tools: [
@@ -990,6 +991,7 @@ describe('JobsRegistryService', () => {
         id: mockHistoryId,
         workflowName: 'test-workflow',
         jobHistoryName: 'test-job-history',
+        etaSeconds: null,
         createdAt: mockJobHistory.createdAt,
         updatedAt: mockJobHistory.updatedAt,
         tools: [
@@ -1165,6 +1167,91 @@ describe('JobsRegistryService', () => {
       ]);
       expect(result.tools!.map((tool) => tool.name)).toEqual(['nmap', 'httpx']);
     });
+
+    it.each([
+      { label: 'even median', durations: [50, 150], expected: 50 },
+      { label: 'odd median', durations: [999, 150, 50], expected: 75 },
+      {
+        label: 'insufficient valid history',
+        durations: [50, 0, -5],
+        expected: null,
+      },
+      { label: 'closed run', closed: true, expected: null },
+      { label: 'idle run', active: 0, expected: null },
+      { label: 'legacy run', legacy: true, expected: null },
+      { label: 'no settled steps', settled: 'pending', expected: null },
+    ])(
+      'returns the run ETA for $label',
+      async ({
+        durations,
+        expected,
+        closed = false,
+        active = 1,
+        legacy,
+        settled = 'done',
+      }) => {
+        mockJobHistoryRepository.findOne.mockResolvedValue({
+          ...mockJobHistory,
+          isCompleted: closed,
+          workflow: {
+            ...mockJobHistory.workflow,
+            id: 'workflow-uuid',
+            content: {
+              jobs: {
+                ...mockJobHistory.workflow.content.jobs,
+                next_step: { run: 'test-tool' },
+              },
+            },
+          },
+          steps: legacy
+            ? {}
+            : {
+                test_step: { status: settled, jobs: 1 },
+                next_step: { status: 'dispatched', jobs: 2 },
+              },
+        });
+        const authorization = {
+          innerJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getExists: jest.fn().mockResolvedValue(true),
+        };
+        const history = {
+          innerJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockReturnThis(),
+          getRawMany: jest.fn().mockResolvedValue(
+            durations?.map((seconds) => ({ seconds: String(seconds) })),
+          ),
+        };
+        mockJobHistoryRepository.createQueryBuilder.mockImplementation(
+          (alias: string) => (alias === 'history' ? history : authorization),
+        );
+        mockJobRepository.count.mockResolvedValueOnce(active);
+        mockJobRepository.getRawMany.mockResolvedValue([]);
+        mockToolsService.getInstalledTools.mockResolvedValue({ data: [] });
+
+        const result = await service.getJobHistoryDetail(
+          mockWorkspaceId,
+          mockHistoryId,
+        );
+
+        expect(result.etaSeconds).toBe(expected);
+        if (durations) {
+          expect(history.andWhere).toHaveBeenCalledWith(
+            'workflow.workspaceId = :workspaceId',
+            { workspaceId: mockWorkspaceId },
+          );
+          expect(history.limit).toHaveBeenCalledWith(20);
+        } else {
+          expect(history.getRawMany).not.toHaveBeenCalled();
+        }
+      },
+    );
 
     it('should throw NotFoundException when job history not found', async () => {
       mockJobHistoryRepository.findOne.mockResolvedValue(null);
