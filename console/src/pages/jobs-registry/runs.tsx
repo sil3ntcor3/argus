@@ -19,10 +19,12 @@ import {
 import JobStatusBadge from '@/components/ui/job-status';
 import { OpenLink } from '@/components/ui/open-link';
 import ToolLogo from '@/components/ui/tool-logo';
+import { RetryRunDialog } from './components/retry-run-dialog';
 import { RunProgress } from './components/run-progress';
 import RunWorkflowGraph from './components/run-workflow-graph';
 import { useBugReportUrl } from '@/hooks/use-bug-report-url';
 import { usePermission } from '@/hooks/usePermission';
+import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { useRunWorkflow } from '@/hooks/use-run-workflow';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
 import type {
@@ -272,7 +274,11 @@ export default function Runs() {
   const { id: jobHistoryId } = useParams({ strict: false });
   const queryClient = useQueryClient();
 
-  const { hasPermission } = usePermission();
+  const permission = usePermission();
+  const { hasPermission } = permission;
+  const {
+    state: { selectedWorkspaceId },
+  } = useWorkspaceState();
   const { mutate: deleteJobMutate } = useJobsRegistryControllerDeleteJob();
   const { mutate: cancelJobMutate } = useJobsRegistryControllerCancelJob();
   const {
@@ -296,16 +302,20 @@ export default function Runs() {
     { enabled: isCodeOpen },
   );
 
-  const { data: jobHistoryDetail, error: runError } =
-    useJobsRegistryControllerGetJobHistoryDetail(jobHistoryId || '', {
-      query: {
-        refetchInterval: (query) =>
-          !isRunPollingBlocked(query.state.error) &&
-          runHasActiveJobs(query.state.data)
-            ? RUN_REFRESH_MS
-            : false,
-      },
-    });
+  const {
+    data: jobHistoryDetail,
+    error: runError,
+    isFetchedAfterMount,
+  } = useJobsRegistryControllerGetJobHistoryDetail(jobHistoryId || '', {
+    query: {
+      refetchOnMount: 'always',
+      refetchInterval: (query) =>
+        !isRunPollingBlocked(query.state.error) &&
+        runHasActiveJobs(query.state.data)
+          ? RUN_REFRESH_MS
+          : false,
+    },
+  });
 
   const hasActiveJobs = runHasActiveJobs(jobHistoryDetail);
 
@@ -508,8 +518,21 @@ export default function Runs() {
         'Job History Detail'
       }
       action={
-        activeJobsCount > 0 &&
-        hasPermission('job.write') && (
+        jobHistoryId &&
+        selectedWorkspaceId &&
+        isFetchedAfterMount &&
+        jobHistoryDetail?.retryAvailable === true &&
+        activeJobsCount === 0 &&
+        !runError &&
+        !permission.isLoading &&
+        !permission.error &&
+        hasPermission('job.write') ? (
+          <RetryRunDialog
+            key={`${selectedWorkspaceId}:${jobHistoryId}`}
+            runId={jobHistoryId}
+            workspaceId={selectedWorkspaceId}
+          />
+        ) : activeJobsCount > 0 && hasPermission('job.write') && (
           <ConfirmDialog
             title="Cancel this run?"
             description={`Stops the ${activeJobsCount} job(s) still pending or running and prevents the workflow from starting any further step. Jobs that already finished keep their result.`}
