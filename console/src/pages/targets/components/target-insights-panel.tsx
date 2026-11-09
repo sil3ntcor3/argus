@@ -7,9 +7,10 @@ import { Link } from '@tanstack/react-router';
 const actions: Partial<
   Record<
     TargetInsightDto['kind'],
-    { tab: 'assets' | 'settings'; label: string }
+    { tab: 'assets' | 'settings'; label: string; search?: { tab: 'tls' } }
   >
 > = {
+  tls_expiring: { tab: 'assets', label: 'See TLS', search: { tab: 'tls' } },
   stale_scan: { tab: 'settings', label: 'Open discovery settings' },
   new_assets: { tab: 'assets', label: 'See assets' },
   no_schedule: { tab: 'settings', label: 'Configure schedule' },
@@ -19,6 +20,16 @@ const formatCount = new Intl.NumberFormat();
 /** Describes the discovery record without assuming a successful scan. */
 function describeInsight({ kind, count, days }: TargetInsightDto) {
   switch (kind) {
+    case 'tls_expiring': {
+      if (count === undefined || days === undefined) {
+        return 'TLS certificates need attention.';
+      }
+      const certificates = count === 1 ? 'certificate' : 'certificates';
+      const services = `${formatCount.format(count)} ${count === 1 ? 'service' : 'services'}`;
+      const expiry =
+        count === 1 ? 'has expired or expires' : 'have expired or expire';
+      return `The latest recorded TLS ${certificates} for ${services} ${expiry} within ${formatCount.format(days)} days.`;
+    }
     case 'stale_scan':
       return days === undefined
         ? 'No discovery date recorded.'
@@ -77,6 +88,7 @@ export function TargetInsightsPanel({
                   <Link
                     to="/targets/$id/$tab"
                     params={{ id: targetId, tab: action.tab }}
+                    search={action.search}
                     onClick={(event) => {
                       if (
                         event.detail === 0 &&
