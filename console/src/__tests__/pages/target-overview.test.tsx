@@ -103,6 +103,40 @@ beforeEach(() => {
 });
 
 describe('Target Overview tab', () => {
+  it('shows TLS expiry to asset readers and opens the TLS inventory by keyboard', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({
+          ...metrics,
+          insights: [
+            { kind: 'tls_expiring', level: 'warning', count: 2, days: 30 },
+          ],
+        }),
+      ),
+    );
+    const { user, router } = show();
+    const insights = within(
+      await screen.findByRole('region', { name: 'Discovery insights' }),
+    );
+    expect(
+      insights.getByText(
+        'The latest recorded TLS certificates for 2 services have expired or expire within 30 days.',
+      ),
+    ).toBeVisible();
+    const tls = insights.getByRole('link', { name: 'See TLS' });
+    expect(tls).toHaveAttribute('href', `${path}/assets?tab=tls`);
+    tls.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText('Asset inventory')).toBeVisible();
+    expect(router.state.location.searchStr).toBe('?tab=tls');
+    const nav = within(
+      screen.getByRole('navigation', { name: 'Target sections' }),
+    );
+    expect(
+      nav.getByRole('link', { name: 'Assets', exact: true }),
+    ).toHaveFocus();
+  });
+
   it.each([true, false])(
     'shows discovery insights with target write access %s',
     async (canWrite) => {
