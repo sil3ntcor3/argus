@@ -88,6 +88,14 @@ export class TargetOverviewDto {
   lastRun: TargetRunDto | null;
 
   @ApiProperty({
+    type: () => [TargetRunDto],
+    nullable: true,
+    maxItems: 5,
+    description: 'Recent unfinished runs, or null without job read access',
+  })
+  activeRuns: TargetRunDto[] | null;
+
+  @ApiProperty({
     type: () => SeverityCountsDto,
     nullable: true,
     description: 'Open findings by severity, or null without vulnerability read access',

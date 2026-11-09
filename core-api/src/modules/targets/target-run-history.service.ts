@@ -1,4 +1,3 @@
-import { JobStatus } from '@/common/enums/enum';
 import { getManyResponse } from '@/utils/getManyResponse';
 import {
   BadRequestException,
@@ -6,12 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { JOB_HISTORY_STATUS_SQL } from '../jobs-registry/job-history-status';
 import type {
   GetTargetRunsQueryDto,
   TargetRunDto,
 } from './dto/target-runs.dto';
 import {
+  TARGET_ACTIVE_RUN_CONDITION_SQL,
   TARGET_RUN_COUNTS_SQL,
   TARGET_RUN_CTES,
   TARGET_RUN_FIELDS_SQL,
@@ -52,11 +51,7 @@ export class TargetRunHistoryService {
          FROM owned_runs h
          WHERE CASE
            WHEN NOT $5::boolean THEN true
-           WHEN h."isCompleted" IS DISTINCT FROM FALSE
-             OR h."createdAt" <= LOCALTIMESTAMP - INTERVAL '7 days' THEN false
-           ELSE (SELECT ${JOB_HISTORY_STATUS_SQL}
-                   FROM jobs job WHERE job."jobHistoryId" = h.id)
-                IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')
+           ELSE ${TARGET_ACTIVE_RUN_CONDITION_SQL}
          END
        ), page AS MATERIALIZED (
          SELECT * FROM matching ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT $3 OFFSET $4

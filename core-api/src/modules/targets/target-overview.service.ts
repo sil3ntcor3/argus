@@ -13,6 +13,7 @@ import {
 import type { TargetRunDto } from './dto/target-runs.dto';
 import { staleTargetCondition } from './stale-target-condition';
 import {
+  TARGET_ACTIVE_RUN_CONDITION_SQL,
   TARGET_RUN_COUNTS_SQL,
   TARGET_RUN_CTES,
   TARGET_RUN_FIELDS_SQL,
@@ -21,6 +22,7 @@ import {
 } from './target-run-sql';
 
 const EXPOSURE_LIMIT = 6;
+const ACTIVE_RUN_LIMIT = 5;
 const RECENT_DISCOVERY_DAYS = 7;
 const TLS_EXPIRY_DAYS = 30;
 const SCHEDULE_LOOKUP_TIMEOUT_MS = 500;
@@ -34,21 +36,29 @@ type FindingCounts = Pick<
   'openVulnerabilities' | 'newVulnerabilities'
 >;
 
+type TargetRunJson = Omit<TargetRunDto, 'createdAt' | 'updatedAt'> & {
+  createdAt: string;
+  updatedAt: string;
+};
+
+function toTargetRunDto(run: TargetRunJson): TargetRunDto {
+  return {
+    ...run,
+    createdAt: new Date(run.createdAt),
+    updatedAt: new Date(run.updatedAt),
+  };
+}
+
 type TargetOverviewRow = Omit<
   TargetOverviewDto,
-  'insights' | 'nextScanAt' | 'lastRun' | keyof FindingCounts
+  'insights' | 'nextScanAt' | 'lastRun' | 'activeRuns' | keyof FindingCounts
 > & {
   jobId: string | null;
   scanSchedule: CronSchedule | null;
   stale: boolean;
   daysSinceDiscovery: number | null;
   expiringTlsServices: number;
-  lastRun:
-    | (Omit<TargetRunDto, 'createdAt' | 'updatedAt'> & {
-        createdAt: string;
-        updatedAt: string;
-      })
-    | null;
+  runs: { lastRun: TargetRunJson | null; activeRuns: TargetRunJson[] } | null;
   findings: FindingCounts | null;
 };
 
@@ -153,17 +163,29 @@ export class TargetOverviewService {
        )
        SELECT t."scanSchedule", t."jobId", t.stale, t."daysSinceDiscovery",
               CASE WHEN $3::boolean THEN (
-                WITH ${TARGET_RUN_CTES}
-                SELECT row_to_json(run)
-                FROM (
+                WITH ${TARGET_RUN_CTES},
+                latest AS (
+                  SELECT ${TARGET_RUN_FIELDS_SQL}
+                  FROM owned_runs h ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT 1
+                ), active AS (
+                  SELECT ${TARGET_RUN_FIELDS_SQL}
+                  FROM owned_runs h WHERE ${TARGET_ACTIVE_RUN_CONDITION_SQL}
+                  ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT ${ACTIVE_RUN_LIMIT}
+                ), run_rows AS (
                   SELECT p.*, stats.*, ${TARGET_RUN_STATUS_SQL} AS status
-                  FROM (
-                    SELECT ${TARGET_RUN_FIELDS_SQL}
-                    FROM owned_runs h ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT 1
-                  ) p
+                  FROM (SELECT * FROM latest UNION SELECT * FROM active) p
                   CROSS JOIN LATERAL (${TARGET_RUN_COUNTS_SQL}) stats
-                ) run
-              ) END AS "lastRun",
+                )
+                SELECT json_build_object(
+                  'lastRun', (SELECT row_to_json(r) FROM run_rows r
+                              WHERE r.id IN (SELECT id FROM latest)),
+                  'activeRuns', COALESCE(
+                    (SELECT json_agg(r ORDER BY ${TARGET_RUN_ORDER_SQL})
+                     FROM run_rows r WHERE r.id IN (SELECT id FROM active)),
+                    '[]'::json
+                  )
+                )
+              ) END AS runs,
               CASE WHEN $4::boolean THEN (
                 SELECT jsonb_build_object(
                   'openVulnerabilities', jsonb_build_object(
@@ -214,10 +236,11 @@ export class TargetOverviewService {
       stale,
       daysSinceDiscovery,
       expiringTlsServices,
-      lastRun: run,
+      runs,
       findings,
       ...metrics
     } = overview;
+    const run = runs?.lastRun;
     const insights: TargetOverviewDto['insights'] = [];
     const openCritical = findings?.openVulnerabilities?.critical ?? 0;
     if (openCritical > 0) {
@@ -266,13 +289,8 @@ export class TargetOverviewService {
     return {
       ...metrics,
       nextScanAt: await this.getNextScanAt(id, jobId, scanSchedule),
-      lastRun: run
-        ? {
-            ...run,
-            createdAt: new Date(run.createdAt),
-            updatedAt: new Date(run.updatedAt),
-          }
-        : null,
+      lastRun: run ? toTargetRunDto(run) : null,
+      activeRuns: runs?.activeRuns.map(toTargetRunDto) ?? null,
       openVulnerabilities: findings?.openVulnerabilities ?? null,
       newVulnerabilities: findings?.newVulnerabilities ?? null,
       insights,

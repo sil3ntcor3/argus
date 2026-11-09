@@ -231,6 +231,34 @@ describe('Target run history API (e2e)', () => {
     await read(id, owner.headers, '?active=1').expect(400);
     await read(id, owner.headers, '?active=true&active=false').expect(400);
     await read(id, foreign.headers, '?active=true').expect(404);
+
+    for (const days of [3, 4, 5, 6, 6.5]) await makeHistory(days);
+    const [foreignWorkflow] = await app.dataSource.query<{ id: string }[]>(
+      'SELECT id FROM workflows WHERE "workspaceId" = $1 LIMIT 1',
+      [foreign.workspace.id],
+    );
+    await makeRun(foreignWorkflow.id, [id], new Date().toISOString());
+    const active = await read(id, owner.headers, '?active=true&limit=5').expect(
+      200,
+    );
+    expect(active.body).toMatchObject({
+      total: 7,
+      hasNextPage: true,
+    });
+    const { data } = active.body as { data: unknown[] };
+    expect(data).toHaveLength(5);
+    expect(data.slice(0, 2)).toMatchObject([
+      { id: pending, status: 'pending' },
+      { id: running, status: 'in_progress', jobsRunning: 1 },
+    ]);
+    const overview = await request(app.server)
+      .get(`/api/targets/${id}/overview`)
+      .set(owner.headers)
+      .expect(200);
+    expect(overview.body).toMatchObject({
+      lastRun: { id: failed, status: 'failed' },
+      activeRuns: data,
+    });
   });
 
   it('requires target and job read access in the selected workspace', async () => {
