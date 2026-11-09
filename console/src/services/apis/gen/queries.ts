@@ -603,6 +603,8 @@ export type TargetRunDto = {
   id: string;
   createdAt: string;
   updatedAt: string;
+  /** Whether the workflow engine has closed the run */
+  isCompleted: boolean;
   /** Status of the entire run */
   status: JobStatus;
   jobRunType: JobRunType;

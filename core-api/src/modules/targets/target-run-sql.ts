@@ -24,7 +24,7 @@ export const TARGET_RUN_ORDER_SQL = '"createdAt" DESC, id DESC';
 
 /** Public run fields from an owned run aliased as h. */
 export const TARGET_RUN_FIELDS_SQL =
-  'h.id, h."createdAt", h."updatedAt", h."jobRunType", h."workflowName"';
+  'h.id, h."createdAt", h."updatedAt", h."isCompleted", h."jobRunType", h."workflowName"';
 
 /** Skips the whole-run status rollup for old or finished runs aliased as h. */
 export const TARGET_ACTIVE_RUN_CONDITION_SQL = `CASE
