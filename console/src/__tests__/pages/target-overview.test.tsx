@@ -1,7 +1,12 @@
 import { TargetChangesPanel } from '@/pages/targets/components/target-changes-panel';
 import DetailTarget from '@/pages/targets/detail-target';
 import { server } from '@/test/mocks/node';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { setGlobalWorkspaceId } from '@/utils/workspaceState';
+import {
+  onlineManager,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -15,12 +20,13 @@ import userEvent from '@testing-library/user-event';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { delay, http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 dayjs.extend(relativeTime);
 
 const canReadAssets = vi.hoisted(() => vi.fn(() => true));
 const canReadJobs = vi.hoisted(() => vi.fn(() => true));
+const canWriteJobs = vi.hoisted(() => vi.fn(() => false));
 const canReadFindings = vi.hoisted(() => vi.fn(() => true));
 const canReadProjects = vi.hoisted(() => vi.fn(() => true));
 const canWriteTarget = vi.hoisted(() => vi.fn(() => false));
@@ -41,6 +47,7 @@ vi.mock('@/hooks/usePermission', () => ({
       key === 'target.read' ||
       (key === 'asset.read' && canReadAssets()) ||
       (key === 'job.read' && canReadJobs()) ||
+      (key === 'job.write' && canWriteJobs()) ||
       (key === 'vulnerability.read' && canReadFindings()) ||
       (key === 'project.read' && canReadProjects()) ||
       (key === 'target.write' && canWriteTarget()),
@@ -89,6 +96,7 @@ function show(tab = 'overview') {
 beforeEach(() => {
   canReadAssets.mockReturnValue(true);
   canReadJobs.mockReturnValue(true);
+  canWriteJobs.mockReturnValue(false);
   canReadFindings.mockReturnValue(true);
   canReadProjects.mockReturnValue(true);
   canWriteTarget.mockReturnValue(false);
@@ -111,6 +119,11 @@ beforeEach(() => {
       HttpResponse.json({ data: [], page: 1, hasNextPage: false }),
     ),
   );
+});
+
+afterEach(() => {
+  onlineManager.setOnline(true);
+  setGlobalWorkspaceId(null);
 });
 
 describe('Target Overview runs', () => {
@@ -136,6 +149,140 @@ describe('Target Overview runs', () => {
       status: 'in_progress',
     },
   ];
+
+  it.each([true, false])(
+    'offers cancellation only for open runs and job writers (%s)',
+    async (allowed) => {
+      canWriteJobs.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({
+            ...metrics,
+            lastRun: activeRuns[0],
+            activeRuns: [
+              { ...activeRuns[0], id: 'closed-run', isCompleted: true },
+              { ...activeRuns[1], isCompleted: false },
+            ],
+          }),
+        ),
+      );
+      show();
+      await screen.findByRole('region', { name: 'Active runs' });
+      const actions = screen.queryAllByRole('button', { name: /Cancel run/ });
+      expect(actions).toHaveLength(allowed ? 1 : 0);
+      if (allowed) expect(actions[0]).toHaveAccessibleName(/Running discovery/);
+    },
+  );
+
+  it.each([201, 409])(
+    'confirms the whole run and refreshes after cancellation or closure (%s)',
+    async (status) => {
+      setGlobalWorkspaceId('ws-1');
+      canWriteJobs.mockReturnValue(true);
+      let running = { ...activeRuns[1], isCompleted: false };
+      const cancel = vi.fn(() => {
+        running = {
+          ...running,
+          isCompleted: true,
+          status: status === 201 ? 'cancelled' : 'completed',
+        };
+        return HttpResponse.json({ message: 'Run state changed' }, { status });
+      });
+      server.use(
+        http.get(`/api${path}/runs`, ({ request }) =>
+          HttpResponse.json({
+            data:
+              new URL(request.url).searchParams.has('active') &&
+              running.isCompleted
+                ? []
+                : [running],
+            page: 1,
+            hasNextPage: false,
+          }),
+        ),
+        http.post(`/api/jobs-registry/histories/${running.id}/cancel`, cancel),
+      );
+      const { user } = show('activity');
+      await user.click(
+        await screen.findByRole('switch', { name: 'Active runs only' }),
+      );
+      const action = await screen.findByRole('button', { name: /Cancel run/ });
+      const openDialog = async () => {
+        await user.click(action);
+        return within(
+          await screen.findByRole('dialog', { name: 'Cancel this run?' }),
+        );
+      };
+      const dialog = await openDialog();
+      expect(dialog.getByText(/entire run.*other targets/i)).toBeVisible();
+      expect(cancel).not.toHaveBeenCalled();
+      const keepRun = dialog.getByRole('button', { name: 'Keep run' });
+      await waitFor(() => expect(keepRun).toHaveFocus());
+      await user.keyboard('{Enter}');
+      expect(cancel).not.toHaveBeenCalled();
+      const confirmation = await openDialog();
+      await user.click(
+        confirmation.getByRole('button', { name: 'Cancel run', exact: true }),
+      );
+      await waitFor(() => expect(cancel).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(action).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(
+          screen.getByRole('region', { name: 'Target activity' }),
+        ).toHaveFocus(),
+      );
+    },
+  );
+
+  it('dispatches once instead of queueing an offline cancellation', async () => {
+    setGlobalWorkspaceId('ws-1');
+    canWriteJobs.mockReturnValue(true);
+    const running = { ...activeRuns[1], isCompleted: false };
+    const cancel = vi.fn(() => HttpResponse.error());
+    server.use(
+      http.get(`/api${path}/runs`, () =>
+        HttpResponse.json({ data: [running], page: 1, hasNextPage: false }),
+      ),
+      http.post(`/api/jobs-registry/histories/${running.id}/cancel`, cancel),
+    );
+    const { user } = show('activity');
+    const action = await screen.findByRole('button', { name: /Cancel run/ });
+    await user.click(action);
+    const dialog = within(
+      await screen.findByRole('dialog', { name: 'Cancel this run?' }),
+    );
+    onlineManager.setOnline(false);
+    await user.click(
+      dialog.getByRole('button', { name: 'Cancel run', exact: true }),
+    );
+    await waitFor(() => expect(cancel).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(action).toBeEnabled());
+  });
+
+  it('keeps a stale confirmation from cancelling in a different workspace', async () => {
+    setGlobalWorkspaceId('ws-1');
+    canWriteJobs.mockReturnValue(true);
+    const running = { ...activeRuns[1], isCompleted: false };
+    const cancel = vi.fn();
+    server.use(
+      http.get(`/api${path}/runs`, () =>
+        HttpResponse.json({ data: [running], page: 1, hasNextPage: false }),
+      ),
+      http.post(`/api/jobs-registry/histories/${running.id}/cancel`, cancel),
+    );
+    const { user } = show('activity');
+    const action = await screen.findByRole('button', { name: /Cancel run/ });
+    await user.click(action);
+    const dialog = within(
+      await screen.findByRole('dialog', { name: 'Cancel this run?' }),
+    );
+    setGlobalWorkspaceId('ws-2');
+    await user.click(
+      dialog.getByRole('button', { name: 'Cancel run', exact: true }),
+    );
+    await waitFor(() => expect(action).toHaveFocus());
+    expect(cancel).not.toHaveBeenCalled();
+  });
 
   it('shows the current target tool in Overview and Activity', async () => {
     const running = { ...activeRuns[1], jobsRunning: 1, currentTool: 'naabu' };

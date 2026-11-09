@@ -13,11 +13,13 @@ export function TargetActivityTab({
   targetId,
   canReadProjects,
   canReadFindings,
+  canCancelRuns,
   onAccessDenied,
 }: {
   targetId: string;
   canReadProjects: boolean;
   canReadFindings: boolean;
+  canCancelRuns: boolean;
   onAccessDenied: () => Promise<unknown>;
 }) {
   const {
@@ -25,6 +27,7 @@ export function TargetActivityTab({
   } = useWorkspaceState();
   const [activeOnly, setActiveOnly] = useState(false);
   const filterId = useId();
+  const section = useRef<HTMLElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const keyboardLoad = useRef<{ button: HTMLButtonElement; index: number }>(
     null,
@@ -101,7 +104,12 @@ export function TargetActivityTab({
   if (!selectedWorkspaceId) return null;
 
   return (
-    <section aria-label="Target activity" className="space-y-3">
+    <section
+      ref={section}
+      tabIndex={-1}
+      aria-label="Target activity"
+      className="space-y-3"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold">Runs</h2>
         {!denied && (
@@ -169,6 +177,8 @@ export function TargetActivityTab({
                 run={run}
                 canReadProjects={canReadProjects}
                 canReadFindings={canReadFindings}
+                canCancelRuns={canCancelRuns}
+                focusAfterCancel={section}
               />
             ))}
           </ul>

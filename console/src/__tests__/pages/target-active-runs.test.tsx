@@ -37,6 +37,7 @@ function show() {
       targetId={id}
       canReadProjects={false}
       canReadFindings={false}
+      canCancelRuns={false}
       onAccessDenied={vi.fn()}
     />,
   );

@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { useTargetsControllerGetTargetOverview } from '@/services/apis/gen/queries';
 import { isAxiosError } from 'axios';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { TargetExposurePanel } from './target-exposure-panel';
 import { TargetFindingsCard } from './target-findings-card';
 import { TargetInsightsPanel } from './target-insights-panel';
@@ -28,6 +28,7 @@ export function TargetOverviewTab({
   canReadJobs,
   canReadFindings,
   canReadProjects,
+  canCancelRuns,
   onKeyboardNavigate,
   onAccessDenied,
 }: {
@@ -36,12 +37,14 @@ export function TargetOverviewTab({
   canReadJobs: boolean;
   canReadFindings: boolean;
   canReadProjects: boolean;
+  canCancelRuns: boolean;
   onKeyboardNavigate: (tab: 'assets' | 'settings' | 'vulnerabilities') => void;
   onAccessDenied: () => Promise<unknown>;
 }) {
   const {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
+  const section = useRef<HTMLElement>(null);
   const overview = useTargetsControllerGetTargetOverview(targetId, {
     query: {
       enabled: Boolean(selectedWorkspaceId),
@@ -82,7 +85,12 @@ export function TargetOverviewTab({
     typeof data?.nextScanAt === 'string' ? new Date(data.nextScanAt) : null;
 
   return (
-    <section aria-label="Target overview" className="space-y-4">
+    <section
+      ref={section}
+      tabIndex={-1}
+      aria-label="Target overview"
+      className="space-y-4"
+    >
       {denied ? (
         <AccessDenied />
       ) : failed ? (
@@ -172,6 +180,8 @@ export function TargetOverviewTab({
                     run={data.lastRun}
                     canReadProjects={canReadProjects}
                     canReadFindings={canReadFindings}
+                    canCancelRuns={canCancelRuns}
+                    focusAfterCancel={section}
                   />
                 </ul>
               </>
@@ -196,6 +206,8 @@ export function TargetOverviewTab({
                   run={run}
                   canReadProjects={canReadProjects}
                   canReadFindings={canReadFindings}
+                  canCancelRuns={canCancelRuns}
+                  focusAfterCancel={section}
                 />
               ))}
             </ul>
