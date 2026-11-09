@@ -17,15 +17,34 @@ describe('Target overview API (e2e)', () => {
   const emptyExposure = { ports: [], technologies: [], statusCodes: [] };
   const missingSchedule = { kind: 'no_schedule', level: 'info' };
   const newAssets = { kind: 'new_assets', level: 'info', count: 1, days: 7 };
-  const criticalInsight = { kind: 'critical_open', level: 'critical', count: 1 };
+  const criticalInsight = {
+    kind: 'critical_open',
+    level: 'critical',
+    count: 1,
+  };
   const discoveryInsights = [newAssets, missingSchedule];
   const noOpenFindings = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  const dayMs = 24 * 60 * 60 * 1000;
+  const mondayOf = (date: Date) => {
+    const midnight = Date.parse(`${date.toISOString().slice(0, 10)}T00:00:00Z`);
+    return midnight - ((date.getUTCDay() + 6) % 7) * dayMs;
+  };
+  const emptyWeeks = (asOf: Date) =>
+    Array.from({ length: 8 }, (_, index) => ({
+      week: new Date(mondayOf(asOf) - (7 - index) * 7 * dayMs)
+        .toISOString()
+        .slice(0, 10),
+      ...noOpenFindings,
+    }));
+  let emptyWeekly: ReturnType<typeof emptyWeeks>;
+  let foreignWeekly: ReturnType<typeof emptyWeeks>;
   const targetTopFindings: unknown[] = [];
   const foreignTopFindings: unknown[] = [];
   const redactedFindings = {
     openVulnerabilities: null,
     newVulnerabilities: null,
     topVulnerabilities: null,
+    weekly: null,
     insights: discoveryInsights,
   };
   const findingCounts = {
@@ -43,6 +62,7 @@ describe('Target overview API (e2e)', () => {
     activeRuns: [],
     ...findingCounts,
     topVulnerabilities: targetTopFindings,
+    weekly: [] as ReturnType<typeof emptyWeeks>,
     insights: [criticalInsight, ...discoveryInsights],
     exposure: {
       ports: [
@@ -124,6 +144,10 @@ describe('Target overview API (e2e)', () => {
     const older = await addAsset(target, 8, true);
     const disabled = await addAsset(target, 1, false);
     const foreign = await addAsset(foreignTarget, 1, true);
+    const now = new Date();
+    emptyWeekly = emptyWeeks(now);
+    metrics.weekly = emptyWeeks(now);
+    foreignWeekly = emptyWeeks(now);
     for (const [asset, severity, age, archived, dismissed] of [
       [recent, 'critical', 6, false, false],
       [disabled, 'high', 1, false, false],
@@ -133,11 +157,17 @@ describe('Target overview API (e2e)', () => {
       [recent, 'critical', 1, false, true],
       [foreign, 'critical', 1, false, false],
     ] as const) {
+      const created = new Date(now.getTime() - age * dayMs);
       const id = await insertId(
         `INSERT INTO vulnerabilities (name, severity, "assetId", "isArchived", "createdAt")
-         VALUES ($1, $2, $3, $4, LOCALTIMESTAMP - $5 * INTERVAL '1 day')`,
-        [randomUUID(), severity, asset, archived, age],
+         VALUES ($1, $2, $3, $4, $5::timestamp)`,
+        [randomUUID(), severity, asset, archived, created],
       );
+      if (severity !== 'unknown') {
+        const weekly = asset === foreign ? foreignWeekly : metrics.weekly;
+        const ageWeeks = (mondayOf(now) - mondayOf(created)) / (7 * dayMs);
+        weekly[7 - ageWeeks][severity] += 1;
+      }
       if (dismissed) {
         await app.dataSource.query(
           `INSERT INTO vulnerability_dismissals ("vulnerabilityId", "userId", reason)
@@ -207,6 +237,7 @@ describe('Target overview API (e2e)', () => {
       openVulnerabilities: noOpenFindings,
       newVulnerabilities: 0,
       topVulnerabilities: [],
+      weekly: emptyWeekly,
       exposure: emptyExposure,
       insights: [missingSchedule],
     });
@@ -222,6 +253,7 @@ describe('Target overview API (e2e)', () => {
       openVulnerabilities: { ...noOpenFindings, critical: 1 },
       newVulnerabilities: 1,
       topVulnerabilities: foreignTopFindings,
+      weekly: foreignWeekly,
       insights: [criticalInsight, ...discoveryInsights],
       exposure: {
         ports: [{ name: '22', count: 1 }],
@@ -229,6 +261,32 @@ describe('Target overview API (e2e)', () => {
         statusCodes: [{ name: '503', count: 1 }],
       },
     });
+  });
+
+  it('uses UTC Monday boundaries and counts only the current eight weeks', async () => {
+    const targetId = await makeTarget(owner.workspace.id);
+    const asset = await addAsset(targetId, 1, true);
+    const expected = emptyWeeks(new Date());
+    const oldest = Date.parse(`${expected[0].week}T00:00:00Z`);
+    const second = oldest + 7 * dayMs;
+    for (const [severity, instant] of [
+      ['critical', oldest - 1],
+      ['medium', oldest],
+      ['high', second - 1],
+      ['low', second],
+      ['info', Date.now() + dayMs],
+    ] as const) {
+      await insertId(
+        `INSERT INTO vulnerabilities (name, severity, "assetId", "createdAt")
+         VALUES ($1, $2, $3, $4::timestamp)`,
+        [randomUUID(), severity, asset, new Date(instant)],
+      );
+    }
+    expected[0].medium = 1;
+    expected[0].high = 1;
+    expected[1].low = 1;
+    const response = await overview(targetId, owner.headers).expect(200);
+    expect(response.body.weekly).toEqual(expected);
   });
 
   it('ranks at most five open findings by severity, discovery time and ID', async () => {

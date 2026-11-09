@@ -1,5 +1,6 @@
 import { Severity } from '@/common/enums/enum';
 import { SeverityCountsDto } from '@/modules/projects/dto/project-assets-read.dto';
+import { ProjectOverviewWeekDto } from '@/modules/projects/dto/project-overview.dto';
 import { ApiProperty } from '@nestjs/swagger';
 import { TargetRunDto } from './target-runs.dto';
 
@@ -138,6 +139,16 @@ export class TargetOverviewDto {
       'Open findings ranked by severity and discovery time, or null without vulnerability read access',
   })
   topVulnerabilities: TargetTopVulnerabilityDto[] | null;
+
+  @ApiProperty({
+    type: () => [ProjectOverviewWeekDto],
+    nullable: true,
+    minItems: 8,
+    maxItems: 8,
+    description:
+      'Eight UTC Monday buckets of finding discoveries, oldest first, or null without vulnerability read access',
+  })
+  weekly: ProjectOverviewWeekDto[] | null;
 
   @ApiProperty({
     type: TargetExposureDto,
