@@ -3107,6 +3107,19 @@ export type VulnerabilityTimelineEventDtoType =
 export const VulnerabilityTimelineEventDtoType = {
   detected: 'detected',
   status_changed: 'status_changed',
+  dismissed: 'dismissed',
+  reopened: 'reopened',
+  risk_expired: 'risk_expired',
+} as const;
+
+export type VulnerabilityTimelineEventDtoDismissalReason =
+  (typeof VulnerabilityTimelineEventDtoDismissalReason)[keyof typeof VulnerabilityTimelineEventDtoDismissalReason];
+
+export const VulnerabilityTimelineEventDtoDismissalReason = {
+  false_positive: 'false_positive',
+  used_in_test: 'used_in_test',
+  wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
 } as const;
 
 export type VulnerabilityTimelineEventDto = {
@@ -3119,6 +3132,8 @@ export type VulnerabilityTimelineEventDto = {
   toStatus: string | null;
   /** @nullable */
   jobHistoryId: string | null;
+  dismissalReason?: VulnerabilityTimelineEventDtoDismissalReason;
+  expiresAt?: string;
 };
 
 export type VulnerabilityTimelineResponseDto = {
