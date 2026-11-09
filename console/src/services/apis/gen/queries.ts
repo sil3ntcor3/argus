@@ -650,6 +650,16 @@ export type TargetOverviewDto = {
   newServices: number;
   /** Distinct ports among discovered services */
   openPorts: number;
+  /**
+   * Open findings by severity, or null without vulnerability read access
+   * @nullable
+   */
+  openVulnerabilities: SeverityCountsDto | null;
+  /**
+   * Open findings first seen in the last seven days, or null without vulnerability read access
+   * @nullable
+   */
+  newVulnerabilities: number | null;
   /** Most common service observations */
   exposure: TargetExposureDto;
   /** Discovery and schedule insights for the target */

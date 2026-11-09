@@ -7,6 +7,7 @@ import { TargetOverviewService } from './target-overview.service';
 describe('TargetOverviewService', () => {
   const id = randomUUID();
   const workspaceId = randomUUID();
+  const access = { jobs: false, findings: false };
   const query = jest.fn();
   const service = new TargetOverviewService({ query } as unknown as DataSource);
 
@@ -31,22 +32,25 @@ describe('TargetOverviewService', () => {
         daysSinceDiscovery: 1,
         expiringTlsServices: 0,
         failedRunId: null,
+        findings: null,
       },
     ]);
-    await expect(service.getOverview(id, workspaceId)).resolves.toEqual({
+    await expect(service.getOverview(id, workspaceId, access)).resolves.toEqual({
       ...counts,
+      openVulnerabilities: null,
+      newVulnerabilities: null,
       insights: [],
     });
     expect(query).toHaveBeenCalledTimes(1);
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('WHERE t.id = $1 AND t."workspaceId" = $2'),
-      [id, workspaceId, false],
+      [id, workspaceId, false, false],
     );
   });
 
   it('throws 404 when no target matches the selected workspace', async () => {
     query.mockResolvedValueOnce([]);
-    await expect(service.getOverview(id, workspaceId)).rejects.toThrow(
+    await expect(service.getOverview(id, workspaceId, access)).rejects.toThrow(
       NotFoundException,
     );
   });

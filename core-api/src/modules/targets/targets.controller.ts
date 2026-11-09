@@ -253,11 +253,10 @@ export class TargetsController {
     @WorkspaceId() workspaceId: string,
     @Req() request: RequestWithMetadata,
   ) {
-    return this.targetOverviewService.getOverview(
-      id,
-      workspaceId,
-      canReadTargetData(request.permissions, 'job'),
-    );
+    return this.targetOverviewService.getOverview(id, workspaceId, {
+      jobs: canReadTargetData(request.permissions, 'job'),
+      findings: canReadTargetData(request.permissions, 'vulnerability'),
+    });
   }
 
   @Doc({
