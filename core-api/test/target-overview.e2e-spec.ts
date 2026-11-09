@@ -304,5 +304,68 @@ describe('Target overview API (e2e)', () => {
       if (allowed) await overview(target, headers).expect(200, metrics);
       else await overview(target, headers).expect(403);
     }
+
+    const workflows = await app.dataSource.query<
+      { id: string; workspaceId: string }[]
+    >(
+      'SELECT DISTINCT ON ("workspaceId") id, "workspaceId" FROM workflows WHERE "workspaceId" IN ($1, $2)',
+      [workspace, other.workspace.id],
+    );
+    const ownedWorkflow = workflows.find(
+      (workflow) => workflow.workspaceId === workspace,
+    )!;
+    const foreignWorkflow = workflows.find(
+      (workflow) => workflow.workspaceId !== workspace,
+    )!;
+    const makeRun = (workflow: string, age: number, id = randomUUID()) =>
+      insertId(
+        `INSERT INTO job_histories ("workflowId", scope, "createdAt", id)
+         VALUES ($1, $2, LOCALTIMESTAMP - $3 * INTERVAL '1 day', $4)`,
+        [workflow, { targetIds: [target] }, age, id],
+      );
+    const failed = await makeRun(
+      ownedWorkflow.id,
+      2,
+      '00000000-0000-4000-8000-000000000001',
+    );
+    await makeRun(foreignWorkflow.id, 1);
+    const siblingAsset = await addAsset(await makeTarget(workspace), 8, true);
+    const [tool] = await app.dataSource.query<{ id: string }[]>(
+      'SELECT id FROM tools WHERE name = $1',
+      ['nuclei'],
+    );
+    await app.dataSource.query(
+      `INSERT INTO jobs ("jobHistoryId", "assetId", "toolId", category, status)
+       VALUES ($1, $2, $3, 'vulnerabilities', 'failed')`,
+      [failed, siblingAsset, tool.id],
+    );
+
+    // A failure on a sibling asset still sets the whole run's status. Its ID
+    // is visible only with effective job read access.
+    const failedMetrics = {
+      ...metrics,
+      insights: [
+        { kind: 'last_run_failed', level: 'warning', runId: failed },
+        ...metrics.insights,
+      ],
+    };
+    await overview(target, headers).expect(200, metrics);
+    await overview(target, owner.headers).expect(200, failedMetrics);
+    for (const jobPermission of ['job.read', 'job.write']) {
+      await app.dataSource.query(
+        'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
+        [['target.read', 'asset.read', jobPermission], role],
+      );
+      await overview(target, headers).expect(200, failedMetrics);
+    }
+    // For equal timestamps, run history and the insight both prefer the
+    // greater ID. A pending run wins the tie and suppresses the warning.
+    await app.dataSource.query(
+      `INSERT INTO job_histories (id, "workflowId", scope, "createdAt")
+       SELECT 'ffffffff-ffff-4fff-bfff-ffffffffffff', "workflowId", scope, "createdAt"
+       FROM job_histories WHERE id = $1`,
+      [failed],
+    );
+    await overview(target, headers).expect(200, metrics);
   });
 });

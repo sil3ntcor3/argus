@@ -20,6 +20,7 @@ class TargetExposureDto {
 }
 
 export enum TargetInsightKind {
+  LAST_RUN_FAILED = 'last_run_failed',
   TLS_EXPIRING = 'tls_expiring',
   STALE_SCAN = 'stale_scan',
   NEW_ASSETS = 'new_assets',
@@ -43,6 +44,9 @@ class TargetInsightDto {
 
   @ApiProperty({ required: false, minimum: 1 })
   days?: number;
+
+  @ApiProperty({ required: false, type: String, format: 'uuid' })
+  runId?: string;
 }
 
 export class TargetOverviewDto {
