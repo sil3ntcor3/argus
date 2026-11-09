@@ -39,6 +39,13 @@ END`;
 export const TARGET_RUN_STATUS_SQL = `(SELECT ${JOB_HISTORY_STATUS_SQL}
   FROM jobs job WHERE job."jobHistoryId" = p.id)`;
 
+/** Resolves the project only for a selected run and authorized workspace. */
+export const TARGET_RUN_PROJECT_SQL = `
+  SELECT project.id AS "projectId", project.name AS "projectName"
+  FROM owned t JOIN job_histories h ON h.id = p.id
+  JOIN projects project ON project.id = h."projectId" AND project."workspaceId" = t."workspaceId"
+  WHERE t."canReadProjects"`;
+
 /** Progress counts and the current tool on the selected target. */
 export const TARGET_RUN_PROGRESS_SQL = `
   SELECT COUNT(*)::int AS "jobsTotal",

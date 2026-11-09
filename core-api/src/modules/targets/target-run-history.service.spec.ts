@@ -23,7 +23,7 @@ describe('TargetRunHistoryService', () => {
     'rejects unsafe page and limit (%d, %d) before querying',
     async (page, limit) => {
       await expect(
-        service.list(id, workspaceId, { page, limit }),
+        service.list(id, workspaceId, { page, limit }, false),
       ).rejects.toThrow(BadRequestException);
       expect(query).not.toHaveBeenCalled();
     },
