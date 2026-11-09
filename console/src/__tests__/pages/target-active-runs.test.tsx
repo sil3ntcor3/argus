@@ -33,7 +33,11 @@ const pending = {
 
 function show() {
   return renderWithProviders(
-    <TargetActivityTab targetId={id} onAccessDenied={vi.fn()} />,
+    <TargetActivityTab
+      targetId={id}
+      canReadProjects={false}
+      onAccessDenied={vi.fn()}
+    />,
   );
 }
 

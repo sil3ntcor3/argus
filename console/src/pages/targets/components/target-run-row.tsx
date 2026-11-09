@@ -8,7 +8,13 @@ const runDate = new Intl.DateTimeFormat(undefined, {
 });
 
 /** Displays a run and its target-specific progress. */
-export function TargetRunRow({ run }: { run: TargetRunDto }) {
+export function TargetRunRow({
+  run,
+  canReadProjects,
+}: {
+  run: TargetRunDto;
+  canReadProjects: boolean;
+}) {
   const name = run.workflowName.trim() || 'Workflow run';
   const started = runDate.format(new Date(run.createdAt));
   const trigger = run.jobRunType === 'scheduled' ? 'Scheduled' : 'Manual';
@@ -29,6 +35,18 @@ export function TargetRunRow({ run }: { run: TargetRunDto }) {
         <span>{trigger}</span>
         <time dateTime={run.createdAt}>{started}</time>
       </div>
+      {canReadProjects && run.projectId && run.projectName && (
+        <p className="text-xs break-words text-muted-foreground">
+          Project{' '}
+          <Link
+            to="/projects/$id"
+            params={{ id: run.projectId }}
+            className="rounded-sm text-primary underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            {run.projectName}
+          </Link>
+        </p>
+      )}
       <p className="text-xs text-muted-foreground tabular-nums">
         {run.jobsDone} done · {run.jobsFailed} failed · {run.jobsRunning}{' '}
         running · {run.jobsTotal} total

@@ -167,6 +167,42 @@ describe('Target Overview runs', () => {
     expect(screen.getAllByText(/^Running tool/)).toHaveLength(1);
   });
 
+  it.each([true, false])(
+    'links the run project only with effective project access (%s)',
+    async (allowed) => {
+      canReadProjects.mockReturnValue(allowed);
+      const projectName = 'Archived target project';
+      const linked = {
+        ...activeRuns[1],
+        projectId: 'project-1',
+        projectName,
+      };
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({
+            ...metrics,
+            lastRun: linked,
+            activeRuns: [linked],
+          }),
+        ),
+        http.get(`/api${path}/runs`, () =>
+          HttpResponse.json({ data: [linked], page: 1, hasNextPage: false }),
+        ),
+      );
+      const { user } = show();
+      await screen.findByRole('region', { name: 'Active runs' });
+      const projectLinks = () =>
+        screen.queryAllByRole('link', { name: projectName });
+      expect(projectLinks()).toHaveLength(allowed ? 2 : 0);
+      for (const link of projectLinks()) {
+        expect(link).toHaveAttribute('href', '/projects/project-1');
+      }
+      await user.click(screen.getByRole('link', { name: 'Activity' }));
+      await screen.findByRole('link', { name: /Running discovery/ });
+      expect(projectLinks()).toHaveLength(allowed ? 1 : 0);
+    },
+  );
+
   it('shows active runs in API order and links to each run', async () => {
     server.use(
       http.get(`/api${path}/overview`, () =>
@@ -752,6 +788,8 @@ describe('Target Activity tab', () => {
     jobsDone: 1,
     jobsFailed: 0,
     jobsRunning: 1,
+    projectId: 'project-1',
+    projectName: 'Network project',
   };
   const runsPath = `/api${path}/runs`;
   const pageOne = {
@@ -784,6 +822,7 @@ describe('Target Activity tab', () => {
       name: /Network discovery.*Manual.*run-1/,
     });
     expect(first).toHaveAttribute('href', '/jobs/runs/run-1');
+    expect(screen.getByRole('link', { name: 'Network project' })).toBeVisible();
     expect(
       screen.getByText(/1 done.*0 failed.*1 running.*2 total/),
     ).toBeVisible();

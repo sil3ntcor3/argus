@@ -168,7 +168,10 @@ export function TargetOverviewTab({
                   Status covers the whole run. Job counts are for this target.
                 </p>
                 <ul role="list" className="rounded-md border">
-                  <TargetRunRow run={data.lastRun} />
+                  <TargetRunRow
+                    run={data.lastRun}
+                    canReadProjects={canReadProjects}
+                  />
                 </ul>
               </>
             ) : (
@@ -187,7 +190,11 @@ export function TargetOverviewTab({
             </p>
             <ul role="list" className="divide-y rounded-md border">
               {activeRuns.map((run) => (
-                <TargetRunRow key={run.id} run={run} />
+                <TargetRunRow
+                  key={run.id}
+                  run={run}
+                  canReadProjects={canReadProjects}
+                />
               ))}
             </ul>
           </Card>
