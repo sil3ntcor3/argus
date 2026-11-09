@@ -30,6 +30,7 @@ describe('TargetOverviewService', () => {
         stale: false,
         daysSinceDiscovery: 1,
         expiringTlsServices: 0,
+        failedRunId: null,
       },
     ]);
     await expect(service.getOverview(id, workspaceId)).resolves.toEqual({
@@ -39,7 +40,7 @@ describe('TargetOverviewService', () => {
     expect(query).toHaveBeenCalledTimes(1);
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('WHERE t.id = $1 AND t."workspaceId" = $2'),
-      [id, workspaceId],
+      [id, workspaceId, false],
     );
   });
 

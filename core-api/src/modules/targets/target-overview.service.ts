@@ -1,12 +1,14 @@
-import { CronSchedule } from '@/common/enums/enum';
+import { CronSchedule, JobStatus } from '@/common/enums/enum';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { JOB_HISTORY_STATUS_SQL } from '../jobs-registry/job-history-status';
 import {
   TargetInsightKind,
   TargetInsightLevel,
   type TargetOverviewDto,
 } from './dto/target-overview.dto';
 import { staleTargetCondition } from './stale-target-condition';
+import { TARGET_RUN_CTES, TARGET_RUN_ORDER_SQL } from './target-run-sql';
 
 const EXPOSURE_LIMIT = 6;
 const RECENT_DISCOVERY_DAYS = 7;
@@ -17,6 +19,7 @@ type TargetOverviewRow = Omit<TargetOverviewDto, 'insights'> & {
   stale: boolean;
   daysSinceDiscovery: number | null;
   expiringTlsServices: number;
+  failedRunId: string | null;
 };
 
 @Injectable()
@@ -26,12 +29,13 @@ export class TargetOverviewService {
   async getOverview(
     id: string,
     workspaceId: string,
+    canReadJobs = false,
   ): Promise<TargetOverviewDto> {
     // Scope the services once and count them independently from the assets.
     // HTTP observations follow the response's owning service.
     const [overview] = await this.dataSource.query<TargetOverviewRow[]>(
       `WITH owned AS (
-         SELECT t.id, t."scanSchedule", ${staleTargetCondition('t')} AS stale,
+         SELECT t.id, t."workspaceId", t."scanSchedule", ${staleTargetCondition('t')} AS stale,
                 EXTRACT(DAY FROM LOCALTIMESTAMP - t."lastDiscoveredAt")::int AS "daysSinceDiscovery"
          FROM targets t WHERE t.id = $1 AND t."workspaceId" = $2
        ), target_services AS MATERIALIZED (
@@ -60,6 +64,13 @@ export class TargetOverviewService {
          ORDER BY r."serviceId", r."createdAt" DESC, r.id DESC
        )
        SELECT t."scanSchedule", t.stale, t."daysSinceDiscovery",
+              CASE WHEN $3::boolean THEN (
+                WITH ${TARGET_RUN_CTES}
+                SELECT latest.id
+                FROM (SELECT id FROM owned_runs ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT 1) latest
+                WHERE (SELECT ${JOB_HISTORY_STATUS_SQL}
+                       FROM jobs job WHERE job."jobHistoryId" = latest.id) = '${JobStatus.FAILED}'
+              ) END AS "failedRunId",
               (SELECT COUNT(*)::int FROM latest_certificates
                WHERE "notAfter" <= CURRENT_TIMESTAMP + INTERVAL '${TLS_EXPIRY_DAYS} days'
               ) AS "expiringTlsServices",
@@ -85,7 +96,7 @@ export class TargetOverviewService {
                   COUNT(DISTINCT s.port)::int AS "openPorts"
              FROM target_services s
          ) service_counts`,
-      [id, workspaceId],
+      [id, workspaceId, canReadJobs],
     );
     if (!overview) throw new NotFoundException('Target not found');
 
@@ -94,9 +105,17 @@ export class TargetOverviewService {
       stale,
       daysSinceDiscovery,
       expiringTlsServices,
+      failedRunId,
       ...metrics
     } = overview;
     const insights: TargetOverviewDto['insights'] = [];
+    if (failedRunId) {
+      insights.push({
+        kind: TargetInsightKind.LAST_RUN_FAILED,
+        level: TargetInsightLevel.WARNING,
+        runId: failedRunId,
+      });
+    }
     if (expiringTlsServices > 0) {
       insights.push({
         kind: TargetInsightKind.TLS_EXPIRING,

@@ -11,6 +11,7 @@ import type {
   GetTargetRunsQueryDto,
   TargetRunDto,
 } from './dto/target-runs.dto';
+import { TARGET_RUN_CTES, TARGET_RUN_ORDER_SQL } from './target-run-sql';
 
 type CountedRun = Omit<TargetRunDto, 'id'> & {
   id: string | null;
@@ -40,20 +41,9 @@ export class TargetRunHistoryService {
     const rows = await this.dataSource.query<CountedRun[]>(
       `WITH owned AS (
          SELECT id, "workspaceId" FROM targets WHERE id = $1 AND "workspaceId" = $2
-       ), target_assets AS MATERIALIZED (
-         SELECT a.id FROM assets a JOIN owned t ON a."targetId" = t.id
-       ), target_runs AS (
-         SELECT h.id FROM owned t JOIN workflows w ON w."workspaceId" = t."workspaceId"
-         JOIN job_histories h ON h."workflowId" = w.id
-         WHERE h.scope -> 'targetIds' @> jsonb_build_array(t.id::text)
-         UNION
-         SELECT job."jobHistoryId" FROM jobs job JOIN target_assets a ON a.id = job."assetId"
-         WHERE job."jobHistoryId" IS NOT NULL
-       ), matching AS MATERIALIZED (
-         SELECT h.id, h."createdAt", h."updatedAt", h."jobRunType", w.name AS "workflowName"
-         FROM target_runs r JOIN job_histories h ON h.id = r.id
-         JOIN workflows w ON w.id = h."workflowId"
-         JOIN owned t ON w."workspaceId" = t."workspaceId"
+       ), ${TARGET_RUN_CTES}, matching AS MATERIALIZED (
+         SELECT h.id, h."createdAt", h."updatedAt", h."jobRunType", h."workflowName"
+         FROM owned_runs h
          WHERE CASE
            WHEN NOT $5::boolean THEN true
            WHEN h."isCompleted" IS DISTINCT FROM FALSE
@@ -63,7 +53,7 @@ export class TargetRunHistoryService {
                 IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')
          END
        ), page AS MATERIALIZED (
-         SELECT * FROM matching ORDER BY "createdAt" DESC, id DESC LIMIT $3 OFFSET $4
+         SELECT * FROM matching ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT $3 OFFSET $4
        )
        SELECT totals.total, p.*, stats.*,
          (SELECT ${JOB_HISTORY_STATUS_SQL} FROM jobs job WHERE job."jobHistoryId" = p.id) AS status

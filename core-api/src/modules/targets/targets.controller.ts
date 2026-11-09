@@ -49,13 +49,16 @@ import { TargetRunHistoryService } from './target-run-history.service';
 import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
 
-function canReadTargetFindings(permissions: RequestWithMetadata['permissions']) {
+function canReadTargetData(
+  permissions: RequestWithMetadata['permissions'],
+  domain: 'vulnerability' | 'job',
+) {
   return (
     permissions?.some(
       (key) =>
         key === '*' ||
-        key === 'vulnerability.read' ||
-        key === 'vulnerability.write',
+        key === `${domain}.read` ||
+        key === `${domain}.write`,
     ) ?? false
   );
 }
@@ -129,7 +132,7 @@ export class TargetsController {
   ) {
     if (query.hasCritical) {
       response.setHeader('Cache-Control', 'private, no-store');
-      if (!canReadTargetFindings(request.permissions)) {
+      if (!canReadTargetData(request.permissions, 'vulnerability')) {
         throw new ForbiddenException(
           'Filtering by critical findings requires vulnerability read access',
         );
@@ -153,7 +156,7 @@ export class TargetsController {
   ) {
     return this.targetSummaryService.getSummary(
       workspaceId,
-      canReadTargetFindings(request.permissions),
+      canReadTargetData(request.permissions, 'vulnerability'),
     );
   }
 
@@ -248,8 +251,13 @@ export class TargetsController {
   getTargetOverview(
     @Param() { id }: IdQueryParamDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ) {
-    return this.targetOverviewService.getOverview(id, workspaceId);
+    return this.targetOverviewService.getOverview(
+      id,
+      workspaceId,
+      canReadTargetData(request.permissions, 'job'),
+    );
   }
 
   @Doc({

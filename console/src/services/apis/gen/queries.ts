@@ -614,6 +614,7 @@ export type TargetInsightKind =
   (typeof TargetInsightKind)[keyof typeof TargetInsightKind];
 
 export const TargetInsightKind = {
+  last_run_failed: 'last_run_failed',
   tls_expiring: 'tls_expiring',
   stale_scan: 'stale_scan',
   new_assets: 'new_assets',
@@ -635,6 +636,7 @@ export type TargetInsightDto = {
   count?: number;
   /** @minimum 1 */
   days?: number;
+  runId?: string;
 };
 
 export type TargetOverviewDto = {
