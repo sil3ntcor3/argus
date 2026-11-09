@@ -111,6 +111,39 @@ describe('FindingTimeline', () => {
     expect(rows[3]).toHaveTextContent('Finding updated');
   });
 
+  it('shows dismissal reasons and only valid risk acceptance expiries', () => {
+    const expiresAt = '2026-11-10T16:30:00Z';
+    useTimeline.mockReturnValue({
+      data: {
+        data: [
+          { type: 'risk_expired', dismissalReason: 'risk_accepted', expiresAt },
+          { type: 'reopened', dismissalReason: 'wont_fix', expiresAt },
+          {
+            type: 'dismissed',
+            dismissalReason: 'risk_accepted',
+            expiresAt: 'invalid',
+          },
+          { type: 'detected', dismissalReason: 'false_positive' },
+        ].map((event, index) => ({
+          ...events[1],
+          ...event,
+          id: String(index),
+        })),
+      },
+      isFetchedAfterMount: true,
+    });
+    const rows = open().getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Reason: Risk accepted');
+    expect(rows[0]).toHaveTextContent('Expiry:');
+    expect(
+      rows[0].querySelector('time[datetime="' + expiresAt + '"]'),
+    ).toBeInTheDocument();
+    expect(rows[1]).toHaveTextContent("Reason: Won't fix");
+    expect(rows[1]).not.toHaveTextContent('Expiry:');
+    expect(rows[2]).not.toHaveTextContent('Expiry:');
+    expect(rows[3]).not.toHaveTextContent('Reason:');
+  });
+
   it('shows a loading state while awaiting events', () => {
     useTimeline.mockReturnValue({
       data: { data: events },

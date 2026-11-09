@@ -21,6 +21,14 @@ const date = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
+const expiryDate = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZoneName: 'shortOffset',
+});
 
 const statusLabels = new Map([
   ['new', 'New'],
@@ -36,12 +44,45 @@ const eventLabels = new Map([
   ['risk_expired', 'Risk acceptance expired'],
 ]);
 
+const reasonLabels = new Map([
+  ['false_positive', 'False positive'],
+  ['used_in_test', 'Used in tests'],
+  ['wont_fix', "Won't fix"],
+  ['risk_accepted', 'Risk accepted'],
+]);
+
 function eventLabel(event: VulnerabilityTimelineEventDto) {
   if (event.type !== 'status_changed')
     return eventLabels.get(event.type) ?? 'Finding updated';
   const from = statusLabels.get(event.fromStatus ?? '');
   const to = statusLabels.get(event.toStatus ?? '');
   return from && to ? `${from} → ${to}` : 'Status changed';
+}
+
+function DismissalDetails({ event }: { event: VulnerabilityTimelineEventDto }) {
+  if (
+    event.type !== 'dismissed' &&
+    event.type !== 'reopened' &&
+    event.type !== 'risk_expired'
+  )
+    return null;
+  const reason = reasonLabels.get(event.dismissalReason ?? '');
+  if (!reason) return null;
+  const expiry =
+    event.dismissalReason === 'risk_accepted' && event.expiresAt
+      ? new Date(event.expiresAt)
+      : null;
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
+      <span>Reason: {reason}</span>
+      {expiry && Number.isFinite(expiry.getTime()) && (
+        <span>
+          Expiry:{' '}
+          <time dateTime={event.expiresAt}>{expiryDate.format(expiry)}</time>
+        </span>
+      )}
+    </div>
+  );
 }
 
 type TimelineProps = { id: string; name: string; canOpenRuns: boolean };
@@ -111,6 +152,7 @@ function TimelineEvents({
               </Link>
             )}
           </div>
+          <DismissalDetails event={event} />
         </li>
       ))}
     </ol>
