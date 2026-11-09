@@ -3,17 +3,15 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  useTargetsControllerCreateMultipleTargets,
-  type BulkTargetResultDto,
-} from '@/services/apis/gen/queries';
-import { useQueryClient } from '@tanstack/react-query';
+import type { BulkTargetResultDto } from '@/services/apis/gen/queries';
+import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import { Loader2Icon } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { GitOrgPicker } from './components/git-org-picker';
+import { useCreateTargets } from './use-create-targets';
 
 const domainRegex = /^(?!:\/\/)([a-zA-Z0-9-_]+\.)+[a-zA-Z]{2,}$/;
 // /24 (256 IPs) down to /32 — the widest range the API accepts.
@@ -153,8 +151,7 @@ export default function StartDiscovery() {
     setError,
     clearErrors,
   } = useForm<FormValues>();
-  const queryClient = useQueryClient();
-  const { mutate, isPending } = useTargetsControllerCreateMultipleTargets();
+  const { mutate, isPending } = useCreateTargets();
   const navigate = useNavigate();
 
   const validateTargets = (input: string): string | true => {
@@ -186,9 +183,12 @@ export default function StartDiscovery() {
     const uniqueTargets = Array.from(
       new Set(targets.map((t) => t.toLowerCase())),
     );
+    const workspaceId = getGlobalWorkspaceId();
+    if (!workspaceId) return;
 
     mutate(
       {
+        workspaceId,
         data: {
           targets: uniqueTargets.map((value) => ({ value, type: targetType })),
         },
@@ -206,14 +206,12 @@ export default function StartDiscovery() {
           });
         },
         onSuccess: (res: BulkTargetResultDto) => {
+          if (workspaceId !== getGlobalWorkspaceId()) return;
           if (res.totalCreated > 0) {
             toast.success(
               `Successfully created ${res.totalCreated} target${res.totalCreated > 1 ? 's' : ''}.`,
             );
             reset();
-            queryClient.refetchQueries({
-              queryKey: ['targets'],
-            });
             navigate({ to: '/targets', search: { page: 1, pageSize: 100 } });
           }
 

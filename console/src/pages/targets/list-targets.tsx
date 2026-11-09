@@ -14,10 +14,11 @@ import {
   TargetType,
   useTargetsControllerGetTargetsInWorkspace,
 } from '@/services/apis/gen/queries';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import Image from '@/components/ui/image';
 import LogoFrame from '@/components/ui/logo-frame';
 import JobStatusBadge from '@/components/ui/job-status';
@@ -27,6 +28,7 @@ import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useSession } from '@/utils/authClient';
 import type { GetManyTargetResponseDto } from '@/services/apis/gen/queries';
 import { getRouteApi, useNavigate } from '@tanstack/react-router';
+import { isAxiosError } from 'axios';
 import { ScanStatusFilter } from './components/scan-status-filter';
 import { ScopeFilter } from './components/scope-filter';
 import { StartDiscoveryButton } from './components/start-discovery-button';
@@ -193,6 +195,19 @@ const targetColumns: ColumnDef<GetManyTargetResponseDto>[] = [
 ];
 
 const routeApi = getRouteApi('/_authed/targets/');
+const targetViews = [
+  { value: 'all', label: 'All targets' },
+  { value: 'critical', label: 'Open critical findings' },
+  { value: 'stale', label: 'Stale targets' },
+] as const;
+type TargetView = (typeof targetViews)[number]['value'];
+const criticalAccessMessage =
+  'The critical findings view requires vulnerability read access.';
+
+/** A background refresh can reject a view after its rows were cached. */
+function isAccessDenied(error: unknown) {
+  return isAxiosError(error) && [401, 403].includes(error.response?.status ?? 0);
+}
 
 export function ListTargets() {
   const { selectedWorkspace: selectedWorkspaceId, workspaces } = useWorkspaceSelector();
@@ -207,8 +222,30 @@ export function ListTargets() {
     scope: string;
     rows: Record<string, boolean>;
   }>({ scope: '', rows: {} });
-  const navigate = useNavigate({ from: '/targets/' });
+  const navigate = routeApi.useNavigate();
   const search = routeApi.useSearch();
+  const canReadFindings =
+    !permission.error && permission.hasPermission('vulnerability.read');
+  const view: TargetView =
+    search.view === 'stale' || (search.view === 'critical' && canReadFindings)
+      ? search.view
+      : 'all';
+  const deniedLink =
+    search.view === 'critical' && !permission.isLoading && !canReadFindings;
+  const criticalView = view === 'critical';
+  const refreshPermissions = permission.refetch;
+
+  /** Preserve table filters and return to the first page for the new view. */
+  function changeView(next: TargetView) {
+    void navigate({
+      search: (previous) => ({
+        ...previous,
+        view: next === 'all' ? undefined : next,
+        page: 1,
+      }),
+      replace: true,
+    });
+  }
 
   // Initialize type filter from URL params
   const urlType = search.type as TargetType | undefined;
@@ -280,12 +317,9 @@ export function ListTargets() {
     typeFilter,
     statusFilter,
     scopeFilter,
+    view,
   ];
-  const selectionScope = JSON.stringify([listKey, canSchedule]);
-  if (selection.scope !== selectionScope) {
-    setSelection({ scope: selectionScope, rows: {} });
-  }
-  const { data, isLoading, refetch } =
+  const { data, error, isFetchedAfterMount, isLoading, refetch } =
     useTargetsControllerGetTargetsInWorkspace(
       {
         limit: pageSize,
@@ -296,17 +330,36 @@ export function ListTargets() {
         type: typeFilter,
         status: statusFilter,
         scope: scopeFilter,
+        hasCritical: criticalView || undefined,
+        stale: view === 'stale' || undefined,
       },
       {
         query: {
-          refetchInterval: 3000,
+          refetchInterval: ({ state }) =>
+            criticalView && isAccessDenied(state.error) ? false : 3000,
+          refetchOnMount: criticalView ? 'always' : undefined,
           queryKey: listKey,
         },
       },
     );
 
-  const targets = data?.data ?? [];
-  const total = data?.total ?? 0;
+  const deniedResults = criticalView && isAccessDenied(error);
+  useEffect(() => {
+    if (deniedResults) void refreshPermissions();
+  }, [deniedResults, refreshPermissions]);
+
+  // Every critical view entry needs a fresh server authorization, including
+  // returning to a cached page or switching from a different set of filters.
+  const visibleData =
+    criticalView && (!isFetchedAfterMount || error) ? undefined : data;
+  const loading =
+    isLoading || (criticalView && !isFetchedAfterMount && !error);
+  const selectionScope = JSON.stringify([listKey, canSchedule, deniedResults]);
+  if (selection.scope !== selectionScope) {
+    setSelection({ scope: selectionScope, rows: {} });
+  }
+  const targets = visibleData?.data ?? [];
+  const total = visibleData?.total ?? 0;
   const selectedTargets =
     canSchedule && selection.scope === selectionScope
       ? targets.filter(({ id }) => selection.rows[id])
@@ -330,11 +383,6 @@ export function ListTargets() {
     );
   }
 
-  if (!data && !isLoading)
-    return (
-      <DataTableError message="Failed to load targets." onRetry={refetch} />
-    );
-
   const handleRowClick = (target: GetManyTargetResponseDto) => {
     navigate({
       to: '/targets/$id/$tab',
@@ -342,8 +390,15 @@ export function ListTargets() {
     });
   };
 
-  return (
-    <section ref={targetList} tabIndex={-1} aria-label="Target results">
+  const results =
+    !visibleData && !loading ? (
+      <DataTableError
+        message={
+          deniedResults ? criticalAccessMessage : 'Failed to load targets.'
+        }
+        onRetry={refetch}
+      />
+    ) : (
       <DataTable
         data={targets}
         columns={targetColumns}
@@ -362,7 +417,7 @@ export function ListTargets() {
             onClear={() => setSelection({ scope: selectionScope, rows: {} })}
           />
         )}
-        isLoading={isLoading}
+        isLoading={loading}
         page={page}
         pageSize={pageSize}
         sortBy={sortBy}
@@ -397,6 +452,41 @@ export function ListTargets() {
         onRowClick={handleRowClick}
         rowClassName="cursor-pointer hover:bg-muted/50 transition-colors"
       />
+    );
+
+  return (
+    <section
+      ref={targetList}
+      tabIndex={-1}
+      aria-label="Target results"
+      className="space-y-4"
+    >
+      <div
+        role="group"
+        aria-label="Target views"
+        className="flex flex-wrap gap-2"
+      >
+        {targetViews
+          .filter(({ value }) => value !== 'critical' || canReadFindings)
+          .map(({ value, label }) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={value === view ? 'secondary' : 'outline'}
+              aria-pressed={value === view}
+              onClick={() => changeView(value)}
+            >
+              {label}
+            </Button>
+          ))}
+      </div>
+      {deniedLink ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {criticalAccessMessage}
+        </p>
+      ) : null}
+      {results}
     </section>
   );
 }
