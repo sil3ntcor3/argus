@@ -26,6 +26,7 @@ interface ConfirmDialogProps {
   onCloseAutoFocus?: React.ComponentProps<typeof DialogContent>['onCloseAutoFocus'];
   confirmText?: string;
   disabled?: boolean;
+  focusCancel?: boolean;
   cancelText?: string;
   typeToConfirm?: string | boolean;
 }
@@ -41,6 +42,7 @@ export const ConfirmDialog = ({
   onCloseAutoFocus,
   confirmText = 'Confirm',
   disabled = false,
+  focusCancel = false,
   cancelText = 'Cancel',
   typeToConfirm,
 }: ConfirmDialogProps) => {
@@ -132,13 +134,18 @@ export const ConfirmDialog = ({
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={handleCancel} disabled={disabled}>
+          <Button
+            variant="outline"
+            onClick={handleCancel}
+            disabled={disabled}
+            autoFocus={focusCancel && !showInput}
+          >
             {cancelText}
           </Button>
           <Button
             onClick={handleConfirm}
             disabled={!isConfirmEnabled}
-            autoFocus={!showInput}
+            autoFocus={!focusCancel && !showInput}
           >
             {confirmText}
           </Button>

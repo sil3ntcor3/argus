@@ -113,6 +113,7 @@ export function DetailTarget() {
       : 'assets';
   const canReadAssets = !permission.error && permission.hasPermission('asset.read');
   const canReadJobs = !permission.error && permission.hasPermission('job.read');
+  const canCancelRuns = !permission.error && permission.hasPermission('job.write');
   const canReadFindings =
     !permission.error && permission.hasPermission('vulnerability.read');
   const canReadProjects =
@@ -210,6 +211,7 @@ export function DetailTarget() {
               onAccessDenied={permission.refetch}
               canReadFindings={canReadFindings}
               canReadProjects={canReadProjects}
+              canCancelRuns={canCancelRuns}
             />
           ) : (
             <AccessDenied />
@@ -229,6 +231,7 @@ export function DetailTarget() {
                   targetId={target.id}
                   canReadProjects={canReadProjects}
                   canReadFindings={canReadFindings}
+                  canCancelRuns={canCancelRuns}
                   onAccessDenied={permission.refetch}
                 />
               )}

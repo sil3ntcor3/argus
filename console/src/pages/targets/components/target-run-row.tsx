@@ -1,6 +1,8 @@
 import JobStatusBadge from '@/components/ui/job-status';
-import type { TargetRunDto } from '@/services/apis/gen/queries';
+import { JobStatus, type TargetRunDto } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
+import type { RefObject } from 'react';
+import { TargetRunCancel } from './target-run-cancel';
 
 const runDate = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -12,15 +14,23 @@ export function TargetRunRow({
   run,
   canReadProjects,
   canReadFindings,
+  canCancelRuns,
+  focusAfterCancel,
 }: {
   run: TargetRunDto;
   canReadProjects: boolean;
   canReadFindings: boolean;
+  canCancelRuns: boolean;
+  focusAfterCancel: RefObject<HTMLElement | null>;
 }) {
   const name = run.workflowName.trim() || 'Workflow run';
   const started = runDate.format(new Date(run.createdAt));
   const trigger = run.jobRunType === 'scheduled' ? 'Scheduled' : 'Manual';
   const newFindings = canReadFindings ? (run.newVulnerabilities ?? 0) : 0;
+  const canCancel =
+    canCancelRuns &&
+    run.isCompleted === false &&
+    (run.status === JobStatus.pending || run.status === JobStatus.in_progress);
   return (
     <li className="space-y-1 p-3 sm:px-4">
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
@@ -63,6 +73,13 @@ export function TargetRunRow({
         <p className="text-xs font-medium text-primary">
           {newFindings} new {newFindings === 1 ? 'finding' : 'findings'}
         </p>
+      )}
+      {canCancel && (
+        <TargetRunCancel
+          runId={run.id}
+          name={name}
+          focusAfterCancel={focusAfterCancel}
+        />
       )}
     </li>
   );
