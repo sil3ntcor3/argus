@@ -180,6 +180,7 @@ export class JobsRegistryController {
     if (!job) return job;
     const response = { ...job };
     delete response.inputs;
+    delete response.claimedAt;
     return response;
   }
 
@@ -496,7 +497,7 @@ export class JobsRegistryController {
       return { id: '', asset: {}, command: '' };
     }
 
-    return this.mapJobToGrpcJob(job);
+    return this.mapJobToGrpcJob(job, worker.id);
   }
 
   /**
@@ -520,7 +521,7 @@ export class JobsRegistryController {
     );
 
     const values = await Promise.all(
-      jobs.map((job) => this.mapJobToGrpcJob(job)),
+      jobs.map((job) => this.mapJobToGrpcJob(job, request.id)),
     );
 
     return { values };
@@ -578,6 +579,7 @@ export class JobsRegistryController {
 
   private async mapJobToGrpcJob(
     job: GetNextJobResult,
+    workerId: string,
   ): Promise<Record<string, unknown>> {
     // Connector path: tool metadata present → look up registry
     const connectorEntry = job.tool
@@ -586,6 +588,7 @@ export class JobsRegistryController {
 
     if (connectorEntry?.image) {
       let config: Record<string, unknown> | undefined;
+      let configResolved = true;
       try {
         config =
           await this.toolConfigProfilesService.resolveConfigForJob(
@@ -596,6 +599,7 @@ export class JobsRegistryController {
       } catch {
         // Never log decrypted payload — generic message only
         this.logger.warn('profile decrypt failed');
+        configResolved = false;
       }
 
       // Manifest resource limits — scheduling context for the worker runtime.
@@ -604,6 +608,16 @@ export class JobsRegistryController {
         job.tool!.name,
       );
 
+      const inputs = await this.resolveConnectorInputs(job);
+      if (configResolved && job.category === ToolCategory.VULNERABILITIES) {
+        await this.jobsRegistryService.recordFindingScanScope(
+          job,
+          workerId,
+          connectorEntry.image,
+          inputs,
+          config,
+        );
+      }
       const response: Record<string, unknown> = {
         id: job.id,
         asset: job.asset,
@@ -620,7 +634,7 @@ export class JobsRegistryController {
         memory: defaults.memory,
         timeout_seconds: defaults.timeoutSeconds,
         inputs: {
-          fields: packStructFields(await this.resolveConnectorInputs(job)),
+          fields: packStructFields(inputs),
         },
       };
 

@@ -31,7 +31,8 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
+import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
 import {
   DataSource,
   DeepPartial,
@@ -40,6 +41,7 @@ import {
   SelectQueryBuilder,
 } from 'typeorm';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
+import { isRepositoryAsset, type ConnectorInputs } from './connector-inputs';
 import { StorageService } from '../storage/storage.service';
 import { ToolConfigProfilesService } from '../tools/tool-config-profiles.service';
 import {
@@ -157,6 +159,7 @@ export class JobsRegistryService {
     private readonly connectorRegistry: ConnectorRegistryService,
     private readonly toolConfigProfilesService: ToolConfigProfilesService,
     private readonly workerStreamRegistry: WorkerStreamRegistry,
+    private readonly workspaceEncryption: WorkspaceEncryptionService,
   ) {
     this.stepScope = new StepScopeLoader(dataSource);
   }
@@ -632,6 +635,12 @@ export class JobsRegistryService {
         return [];
       }
 
+      // The timestamp also distinguishes this claim from an older one on
+      // the same worker. Make it increase even if a replica's clock lags.
+      const claimedAt = new Date(Math.max(
+        Date.now(),
+        ...jobs.map(job => (job.pickJobAt?.getTime() ?? 0) + 1),
+      ));
       // [OPT-5] One UPDATE for the whole claim instead of one per job —
       // direct SQL, no per-row SELECT.
       await queryRunner.manager.update(
@@ -640,14 +649,15 @@ export class JobsRegistryService {
         {
           workerId,
           status: JobStatus.IN_PROGRESS,
-          pickJobAt: new Date(),
+          pickJobAt: claimedAt,
+          findingScanScopeKey: null,
         },
       );
 
       await queryRunner.commitTransaction();
 
       return jobs.map((job) =>
-        this.toGetNextJobResult(worker, isBuiltInTools, job),
+        this.toGetNextJobResult(worker, isBuiltInTools, job, claimedAt),
       );
     } catch (error) {
       Logger.error(
@@ -661,6 +671,67 @@ export class JobsRegistryService {
     }
   }
 
+  /** Stores a private scope only for the exact claim being handed to a worker. */
+  async recordFindingScanScope(
+    job: GetNextJobResult,
+    workerId: string,
+    image: string,
+    inputs: ConnectorInputs,
+    config: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    if (
+      job.category !== ToolCategory.VULNERABILITIES ||
+      !job.claimedAt ||
+      !job.workspaceId ||
+      !job.asset?.id ||
+      !job.tool?.id ||
+      !inputs.target ||
+      isRepositoryAsset(job.asset)
+    ) {
+      return;
+    }
+
+    try {
+      const key = await this.workspaceEncryption.getDEK(job.workspaceId);
+      if (!key) return;
+      const scope = JSON.stringify(
+        {
+          assetId: job.asset.id,
+          toolId: job.tool.id,
+          image,
+          inputs,
+          config: config ?? {},
+        },
+        (_name, value: unknown) =>
+          value && typeof value === 'object' && !Array.isArray(value)
+            ? Object.fromEntries(
+                Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+                  a < b ? -1 : a > b ? 1 : 0,
+                ),
+              )
+            : value,
+      );
+      const findingScanScopeKey = createHmac('sha256', key)
+        .update('argus-finding-scan-scope:v1\0')
+        .update(scope)
+        .digest('hex');
+      await this.repo.query(
+        `WITH claim AS (
+           SELECT id FROM jobs
+           WHERE id = $1 AND "workerId" = $2 AND status = $3 AND "pickJobAt" = $4
+           FOR UPDATE SKIP LOCKED
+         )
+         UPDATE jobs AS job
+         SET "findingScanScopeKey" = $5
+         FROM claim WHERE job.id = claim.id`,
+        [job.id, workerId, JobStatus.IN_PROGRESS, job.claimedAt, findingScanScopeKey],
+      );
+    } catch {
+      // A scope recording problem must not prevent dispatch or log config.
+      this.logger.warn(`Could not record finding scan scope for job ${job.id}`);
+    }
+  }
+
   /**
    * Shapes a claimed Job row into the payload a worker consumes. Kept separate
    * from the claim so `getNextJobs` stays a pure query/claim concern. Private
@@ -670,9 +741,13 @@ export class JobsRegistryService {
     worker: WorkerInstance,
     isBuiltInTools: boolean,
     job: Job,
+    claimedAt: Date,
   ): GetNextJobResult {
     const base: GetNextJobResult = {
       id: job.id,
+      // Results carry the job ID but no attempt ID. A delayed response from
+      // an older attempt must never inherit a different scope after reclaim.
+      claimedAt: job.pickJobAt ? undefined : claimedAt,
       inputs: job.inputs,
       category: job.category,
       createdAt: job.createdAt,
