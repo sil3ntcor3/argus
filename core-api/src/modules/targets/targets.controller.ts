@@ -51,7 +51,7 @@ import { TargetsService } from './targets.service';
 
 function canReadTargetData(
   permissions: RequestWithMetadata['permissions'],
-  domain: 'vulnerability' | 'job',
+  domain: 'vulnerability' | 'job' | 'project',
 ) {
   return (
     permissions?.some(
@@ -256,6 +256,7 @@ export class TargetsController {
     return this.targetOverviewService.getOverview(id, workspaceId, {
       jobs: canReadTargetData(request.permissions, 'job'),
       findings: canReadTargetData(request.permissions, 'vulnerability'),
+      projects: canReadTargetData(request.permissions, 'project'),
     });
   }
 

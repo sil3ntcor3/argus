@@ -7,7 +7,7 @@ import { TargetOverviewService } from './target-overview.service';
 describe('TargetOverviewService', () => {
   const id = randomUUID();
   const workspaceId = randomUUID();
-  const access = { jobs: false, findings: false };
+  const access = { jobs: false, findings: false, projects: false };
   const query = jest.fn();
   const getJobScheduler = jest.fn();
   const redis = { status: 'ready' };
@@ -42,6 +42,7 @@ describe('TargetOverviewService', () => {
         expiringTlsServices: 0,
         runs: null,
         findings: null,
+        projects: null,
       },
     ]);
     await expect(service.getOverview(id, workspaceId, access)).resolves.toEqual(
@@ -51,6 +52,7 @@ describe('TargetOverviewService', () => {
         newVulnerabilities: null,
         topVulnerabilities: null,
         weekly: null,
+        projects: null,
         nextScanAt: null,
         lastRun: null,
         activeRuns: null,
@@ -68,6 +70,7 @@ describe('TargetOverviewService', () => {
         expect.any(Array),
         expect.any(Date),
         expect.any(Array),
+        false,
       ],
     );
     expect(getJobScheduler).not.toHaveBeenCalled();

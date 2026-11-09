@@ -63,6 +63,7 @@ describe('Target overview API (e2e)', () => {
     ...findingCounts,
     topVulnerabilities: targetTopFindings,
     weekly: [] as ReturnType<typeof emptyWeeks>,
+    projects: [],
     insights: [criticalInsight, ...discoveryInsights],
     exposure: {
       ports: [
@@ -238,6 +239,7 @@ describe('Target overview API (e2e)', () => {
       newVulnerabilities: 0,
       topVulnerabilities: [],
       weekly: emptyWeekly,
+      projects: [],
       exposure: emptyExposure,
       insights: [missingSchedule],
     });
@@ -254,6 +256,7 @@ describe('Target overview API (e2e)', () => {
       newVulnerabilities: 1,
       topVulnerabilities: foreignTopFindings,
       weekly: foreignWeekly,
+      projects: [],
       insights: [criticalInsight, ...discoveryInsights],
       exposure: {
         ports: [{ name: '22', count: 1 }],
@@ -261,6 +264,60 @@ describe('Target overview API (e2e)', () => {
         statusCodes: [{ name: '503', count: 1 }],
       },
     });
+  });
+
+  it('ranks up to six non-archived workspace projects by target asset count', async () => {
+    const workspace = owner.workspace.id;
+    const id = await makeTarget(workspace);
+    const first = await addAsset(id, 1, true);
+    const second = await addAsset(id, 1, false);
+    const sibling = await addAsset(await makeTarget(workspace), 1, true);
+    const projects = [];
+    for (const name of [
+      'Zulu',
+      'Alpha',
+      'Bravo',
+      'Charlie',
+      'Delta',
+      'Echo',
+      'Foxtrot',
+    ]) {
+      const hexColor = name === 'Zulu' ? '#123456' : null;
+      const project = await insertId(
+        'INSERT INTO projects (name, "workspaceId", "hexColor") VALUES ($1, $2, $3)',
+        [name, workspace, hexColor],
+      );
+      const assets = name === 'Zulu' ? [first, second, sibling] : [first];
+      await app.dataSource.query(
+        `INSERT INTO project_assets ("projectId", "assetId")
+         SELECT $1, id FROM unnest($2::uuid[]) AS asset(id)`,
+        [project, assets],
+      );
+      projects.push({
+        id: project,
+        name,
+        hexColor,
+        assets: name === 'Zulu' ? 2 : 1,
+      });
+    }
+    for (const [name, workspaceId, asset, archived] of [
+      ['A archived', workspace, first, true],
+      ['B foreign', other.workspace.id, first, false],
+      ['C sibling', workspace, sibling, false],
+    ] as const) {
+      const project = await insertId(
+        `INSERT INTO projects (name, "workspaceId", "archivedAt")
+         VALUES ($1, $2, CASE WHEN $3 THEN now() END)`,
+        [name, workspaceId, archived],
+      );
+      await app.dataSource.query(
+        'INSERT INTO project_assets ("projectId", "assetId") VALUES ($1, $2)',
+        [project, asset],
+      );
+    }
+    const response = await overview(id, owner.headers).expect(200);
+    expect(response.body.projects).toEqual(projects.slice(0, 6));
+    await overview(id, other.headers).expect(404);
   });
 
   it('uses UTC Monday boundaries and counts only the current eight weeks', async () => {
@@ -520,6 +577,7 @@ describe('Target overview API (e2e)', () => {
           ...metrics,
           ...redactedFindings,
           activeRuns: null,
+          projects: null,
         });
       else await overview(target, headers).expect(403);
     }
@@ -532,12 +590,14 @@ describe('Target overview API (e2e)', () => {
       await overview(target, headers).expect(200, {
         ...metrics,
         activeRuns: null,
+        projects: null,
       });
     }
     const restrictedMetrics = {
       ...metrics,
       ...redactedFindings,
       activeRuns: null,
+      projects: null,
     };
     await app.dataSource.query(
       'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
@@ -617,6 +677,7 @@ describe('Target overview API (e2e)', () => {
     await overview(target, headers).expect(200, {
       ...metrics,
       activeRuns: null,
+      projects: null,
     });
     for (const jobPermission of ['job.read', 'job.write']) {
       await app.dataSource.query(
@@ -627,6 +688,7 @@ describe('Target overview API (e2e)', () => {
         ...failedMetrics,
         ...redactedFindings,
         insights: [failedRun, ...discoveryInsights],
+        projects: null,
       });
     }
     // For equal timestamps, run history and the insight both prefer the
@@ -647,5 +709,32 @@ describe('Target overview API (e2e)', () => {
       lastRun: pendingRun,
       activeRuns: [pendingRun],
     });
+
+    const project = await insertId(
+      'INSERT INTO projects (name, "workspaceId", "hexColor") VALUES ($1, $2, NULL)',
+      ['Project access test', workspace],
+    );
+    await app.dataSource.query(
+      `INSERT INTO project_assets ("projectId", "assetId")
+       SELECT $1, id FROM assets WHERE "targetId" = $2`,
+      [project, target],
+    );
+    const denied = await overview(target, headers).expect(200);
+    expect(denied.body.projects).toBeNull();
+    for (const permission of [
+      'project.read',
+      'project.write',
+      'group.read',
+      'group.write',
+    ]) {
+      await app.dataSource.query(
+        'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
+        [['target.read', 'asset.read', permission], role],
+      );
+      const allowed = await overview(target, headers).expect(200);
+      expect(allowed.body.projects).toEqual([
+        { id: project, name: 'Project access test', hexColor: null, assets: 3 },
+      ]);
+    }
   });
 });

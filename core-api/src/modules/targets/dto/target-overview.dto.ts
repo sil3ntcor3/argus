@@ -75,6 +75,20 @@ export class TargetTopVulnerabilityDto {
   createdAt: Date;
 }
 
+class TargetProjectRefDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  hexColor: string | null;
+
+  @ApiProperty({ type: 'integer', minimum: 1 })
+  assets: number;
+}
+
 export class TargetOverviewDto {
   @ApiProperty({ description: 'Enabled assets on the target' })
   totalAssets: number;
@@ -149,6 +163,15 @@ export class TargetOverviewDto {
       'Eight UTC Monday buckets of finding discoveries, oldest first, or null without vulnerability read access',
   })
   weekly: ProjectOverviewWeekDto[] | null;
+
+  @ApiProperty({
+    type: () => [TargetProjectRefDto],
+    nullable: true,
+    maxItems: 6,
+    description:
+      'Non-archived projects containing target assets, or null without project read access',
+  })
+  projects: TargetProjectRefDto[] | null;
 
   @ApiProperty({
     type: TargetExposureDto,
