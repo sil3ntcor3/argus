@@ -110,6 +110,8 @@ describe('Target run history API (e2e)', () => {
       updatedAt: time,
       jobRunType: 'manual',
       workflowName,
+      projectId: null,
+      projectName: null,
     });
     await read(target, owner.headers, '?limit=1')
       .expect(200, {
@@ -162,6 +164,62 @@ describe('Target run history API (e2e)', () => {
     const missing = await read(randomUUID(), owner.headers).expect(404);
     const other = await read(foreignTarget, owner.headers).expect(404);
     expect(other.body).toEqual(missing.body);
+  });
+
+  it('uses workspace-scoped run project provenance in Activity and Overview', async () => {
+    const workspace = owner.workspace.id;
+    const id = await makeTarget(workspace);
+    const [workflow] = await app.dataSource.query<{ id: string }[]>(
+      'SELECT id FROM workflows WHERE "workspaceId" = $1 LIMIT 1',
+      [workspace],
+    );
+    const projectName = 'Archived target run project';
+    const projectId = await insertId(
+      'INSERT INTO projects (name, "workspaceId", "archivedAt") VALUES ($1, $2, now())',
+      [projectName, workspace],
+    );
+    const foreignProject = await insertId(
+      'INSERT INTO projects (name, "workspaceId") VALUES ($1, $2)',
+      ['Foreign target run project', foreign.workspace.id],
+    );
+    const now = Date.now();
+    const linked = await makeRun(
+      workflow.id,
+      [id],
+      new Date(now).toISOString(),
+    );
+    const foreignLinked = await makeRun(
+      workflow.id,
+      [id],
+      new Date(now - 60_000).toISOString(),
+    );
+    const unlinked = await makeRun(
+      workflow.id,
+      [id],
+      new Date(now - 120_000).toISOString(),
+    );
+    for (const [run, project] of [
+      [linked, projectId],
+      [foreignLinked, foreignProject],
+    ]) {
+      await app.dataSource.query(
+        'UPDATE job_histories SET "projectId" = $1 WHERE id = $2',
+        [project, run],
+      );
+    }
+
+    const activity = await read(id, owner.headers).expect(200);
+    expect(activity.body.data).toMatchObject([
+      { id: linked, projectId, projectName },
+      { id: foreignLinked, projectId: null, projectName: null },
+      { id: unlinked, projectId: null, projectName: null },
+    ]);
+    const overview = await request(app.server)
+      .get(`/api/targets/${id}/overview`)
+      .set(owner.headers)
+      .expect(200);
+    expect(overview.body.lastRun).toEqual(activity.body.data[0]);
+    expect(overview.body.activeRuns).toEqual(activity.body.data);
   });
 
   it('shares the latest running tool on this target between Activity and Overview', async () => {
@@ -343,6 +401,41 @@ describe('Target run history API (e2e)', () => {
         [keys, role],
       );
       await read(target, headers).expect(status);
+    }
+
+    const projectName = 'Run project access test';
+    const projectId = await insertId(
+      'INSERT INTO projects (name, "workspaceId") VALUES ($1, $2)',
+      [projectName, workspace],
+    );
+    await app.dataSource.query(
+      'UPDATE job_histories SET "projectId" = $1 WHERE id = $2',
+      [projectId, queued],
+    );
+    for (const key of [
+      null,
+      'project.read',
+      'project.write',
+      'group.read',
+      'group.write',
+    ]) {
+      const permissions = ['target.read', 'asset.read', 'job.read'];
+      if (key) permissions.push(key);
+      await app.dataSource.query(
+        'UPDATE workspace_permissions SET permissions = $1 WHERE id = $2',
+        [permissions, role],
+      );
+      const activity = await read(target, headers).expect(200);
+      expect(activity.body.data[0]).toMatchObject({
+        id: queued,
+        projectId: key ? projectId : null,
+        projectName: key ? projectName : null,
+      });
+      const overview = await request(app.server)
+        .get(`/api/targets/${target}/overview`)
+        .set(headers)
+        .expect(200);
+      expect(overview.body.lastRun).toEqual(activity.body.data[0]);
     }
   });
 });

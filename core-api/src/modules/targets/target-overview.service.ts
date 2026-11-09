@@ -24,6 +24,7 @@ import {
   TARGET_RUN_FIELDS_SQL,
   TARGET_RUN_ORDER_SQL,
   TARGET_RUN_PROGRESS_SQL,
+  TARGET_RUN_PROJECT_SQL,
   TARGET_RUN_STATUS_SQL,
 } from './target-run-sql';
 
@@ -173,7 +174,8 @@ export class TargetOverviewService {
     // HTTP observations follow the response's owning service.
     const [overview] = await this.dataSource.query<TargetOverviewRow[]>(
       `WITH owned AS (
-         SELECT t.id, t."workspaceId", t."scanSchedule", t."jobId", ${staleTargetCondition('t')} AS stale,
+         SELECT t.id, t."workspaceId", t."scanSchedule", t."jobId", $8::boolean AS "canReadProjects",
+                ${staleTargetCondition('t')} AS stale,
                 EXTRACT(DAY FROM LOCALTIMESTAMP - t."lastDiscoveredAt")::int AS "daysSinceDiscovery"
          FROM targets t WHERE t.id = $1 AND t."workspaceId" = $2
        ), target_services AS MATERIALIZED (
@@ -212,9 +214,10 @@ export class TargetOverviewService {
                   FROM owned_runs h WHERE ${TARGET_ACTIVE_RUN_CONDITION_SQL}
                   ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT ${ACTIVE_RUN_LIMIT}
                 ), run_rows AS (
-                  SELECT p.*, stats.*, ${TARGET_RUN_STATUS_SQL} AS status
+                  SELECT p.*, stats.*, project.*, ${TARGET_RUN_STATUS_SQL} AS status
                   FROM (SELECT * FROM latest UNION SELECT * FROM active) p
                   CROSS JOIN LATERAL (${TARGET_RUN_PROGRESS_SQL}) stats
+                  LEFT JOIN LATERAL (${TARGET_RUN_PROJECT_SQL}) project ON true
                 )
                 SELECT json_build_object(
                   'lastRun', (SELECT row_to_json(r) FROM run_rows r

@@ -54,6 +54,18 @@ export class TargetRunDto {
   @ApiProperty()
   workflowName: string;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Linked workspace project, or null without project read access or a link',
+  })
+  projectId: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  projectName: string | null;
+
   @ApiProperty({ minimum: 0, description: 'Jobs on the target' })
   jobsTotal: number;
 

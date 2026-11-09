@@ -608,6 +608,13 @@ export type TargetRunDto = {
   jobRunType: JobRunType;
   workflowName: string;
   /**
+   * Linked workspace project, or null without project read access or a link
+   * @nullable
+   */
+  projectId: string | null;
+  /** @nullable */
+  projectName: string | null;
+  /**
    * Jobs on the target
    * @minimum 0
    */

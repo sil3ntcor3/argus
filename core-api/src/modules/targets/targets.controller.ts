@@ -274,8 +274,14 @@ export class TargetsController {
     @Param() { id }: IdQueryParamDto,
     @WorkspaceId() workspaceId: string,
     @Query() query: GetTargetRunsQueryDto,
+    @Req() request: RequestWithMetadata,
   ) {
-    return this.targetRunHistoryService.list(id, workspaceId, query);
+    return this.targetRunHistoryService.list(
+      id,
+      workspaceId,
+      query,
+      canReadTargetData(request.permissions, 'project'),
+    );
   }
 
   @Doc({

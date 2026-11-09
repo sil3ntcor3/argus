@@ -15,6 +15,7 @@ import {
   TARGET_RUN_FIELDS_SQL,
   TARGET_RUN_ORDER_SQL,
   TARGET_RUN_PROGRESS_SQL,
+  TARGET_RUN_PROJECT_SQL,
   TARGET_RUN_STATUS_SQL,
 } from './target-run-sql';
 
@@ -28,7 +29,12 @@ export class TargetRunHistoryService {
   constructor(private readonly dataSource: DataSource) {}
 
   /** Pages owned runs before rolling up status and target-specific progress. */
-  async list(id: string, workspaceId: string, query: GetTargetRunsQueryDto) {
+  async list(
+    id: string,
+    workspaceId: string,
+    query: GetTargetRunsQueryDto,
+    canReadProjects: boolean,
+  ) {
     const { page, limit, active = false } = query;
     const offset = (page - 1) * limit;
     if (
@@ -45,7 +51,8 @@ export class TargetRunHistoryService {
     // Ownership, total and page share one snapshot, including an empty page.
     const rows = await this.dataSource.query<CountedRun[]>(
       `WITH owned AS (
-         SELECT id, "workspaceId" FROM targets WHERE id = $1 AND "workspaceId" = $2
+         SELECT id, "workspaceId", $6::boolean AS "canReadProjects"
+         FROM targets WHERE id = $1 AND "workspaceId" = $2
        ), ${TARGET_RUN_CTES}, matching AS MATERIALIZED (
          SELECT ${TARGET_RUN_FIELDS_SQL}
          FROM owned_runs h
@@ -56,12 +63,13 @@ export class TargetRunHistoryService {
        ), page AS MATERIALIZED (
          SELECT * FROM matching ORDER BY ${TARGET_RUN_ORDER_SQL} LIMIT $3 OFFSET $4
        )
-       SELECT totals.total, p.*, stats.*, ${TARGET_RUN_STATUS_SQL} AS status
+       SELECT totals.total, p.*, stats.*, project.*, ${TARGET_RUN_STATUS_SQL} AS status
        FROM owned CROSS JOIN (SELECT COUNT(*)::int AS total FROM matching) totals
        LEFT JOIN page p ON true
        CROSS JOIN LATERAL (${TARGET_RUN_PROGRESS_SQL}) stats
+       LEFT JOIN LATERAL (${TARGET_RUN_PROJECT_SQL}) project ON true
        ORDER BY p."createdAt" DESC, p.id DESC`,
-      [id, workspaceId, limit, offset, active],
+      [id, workspaceId, limit, offset, active, canReadProjects],
     );
     if (!rows.length) throw new NotFoundException('Target not found');
 
