@@ -171,6 +171,7 @@ export function TargetOverviewTab({
                   <TargetRunRow
                     run={data.lastRun}
                     canReadProjects={canReadProjects}
+                    canReadFindings={canReadFindings}
                   />
                 </ul>
               </>
@@ -194,6 +195,7 @@ export function TargetOverviewTab({
                   key={run.id}
                   run={run}
                   canReadProjects={canReadProjects}
+                  canReadFindings={canReadFindings}
                 />
               ))}
             </ul>

@@ -11,13 +11,16 @@ const runDate = new Intl.DateTimeFormat(undefined, {
 export function TargetRunRow({
   run,
   canReadProjects,
+  canReadFindings,
 }: {
   run: TargetRunDto;
   canReadProjects: boolean;
+  canReadFindings: boolean;
 }) {
   const name = run.workflowName.trim() || 'Workflow run';
   const started = runDate.format(new Date(run.createdAt));
   const trigger = run.jobRunType === 'scheduled' ? 'Scheduled' : 'Manual';
+  const newFindings = canReadFindings ? (run.newVulnerabilities ?? 0) : 0;
   return (
     <li className="space-y-1 p-3 sm:px-4">
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
@@ -54,6 +57,11 @@ export function TargetRunRow({
       {run.currentTool && (
         <p className="text-xs break-words text-muted-foreground">
           Running tool {run.currentTool}
+        </p>
+      )}
+      {newFindings > 0 && (
+        <p className="text-xs font-medium text-primary">
+          {newFindings} new {newFindings === 1 ? 'finding' : 'findings'}
         </p>
       )}
     </li>

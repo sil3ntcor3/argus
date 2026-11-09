@@ -12,10 +12,12 @@ import { TargetRunRow } from './target-run-row';
 export function TargetActivityTab({
   targetId,
   canReadProjects,
+  canReadFindings,
   onAccessDenied,
 }: {
   targetId: string;
   canReadProjects: boolean;
+  canReadFindings: boolean;
   onAccessDenied: () => Promise<unknown>;
 }) {
   const {
@@ -52,6 +54,7 @@ export function TargetActivityTab({
           targetId,
           activeOnly,
           canReadProjects,
+          canReadFindings,
         ],
         initialPageParam: 1,
         getNextPageParam: (last) =>
@@ -165,6 +168,7 @@ export function TargetActivityTab({
                 key={run.id}
                 run={run}
                 canReadProjects={canReadProjects}
+                canReadFindings={canReadFindings}
               />
             ))}
           </ul>

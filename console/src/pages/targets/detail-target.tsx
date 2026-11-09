@@ -228,6 +228,7 @@ export function DetailTarget() {
                   key={`runs-${target.id}`}
                   targetId={target.id}
                   canReadProjects={canReadProjects}
+                  canReadFindings={canReadFindings}
                   onAccessDenied={permission.refetch}
                 />
               )}
