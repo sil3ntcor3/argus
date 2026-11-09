@@ -169,4 +169,12 @@ export class JobHistoryDetailResponseDto {
   /** Jobs still pending or in progress — the ones a cancel would stop. */
   @ApiProperty()
   activeJobsCount: number;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'Estimated seconds remaining for an active workflow run, or null when unavailable.',
+  })
+  etaSeconds: number | null;
 }

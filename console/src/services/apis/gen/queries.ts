@@ -2042,6 +2042,11 @@ export type JobHistoryDetailResponseDto = {
   /** How the run was started: by a user (manual) or by a schedule */
   jobRunType?: JobHistoryDetailResponseDtoJobRunType;
   activeJobsCount: number;
+  /**
+   * Estimated seconds remaining for an active workflow run, or null when unavailable.
+   * @nullable
+   */
+  etaSeconds: number | null;
 };
 
 export type JobHistoryWorkflowResponseDto = {
