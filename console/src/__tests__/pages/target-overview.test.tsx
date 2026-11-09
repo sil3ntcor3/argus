@@ -108,6 +108,76 @@ beforeEach(() => {
   );
 });
 
+describe('Target Overview latest run', () => {
+  const run = {
+    id: '96e23195-3829-45b2-b170-2a16eaf57cbc',
+    workflowName: 'Discovery workflow',
+    createdAt: '2026-11-01T14:00:00.000Z',
+    updatedAt: '2026-11-01T14:05:00.000Z',
+    jobRunType: 'scheduled',
+    status: 'failed',
+    jobsTotal: 3,
+    jobsDone: 2,
+    jobsFailed: 1,
+    jobsRunning: 0,
+  };
+
+  it('shows the latest run details and link to the run', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, lastRun: run }),
+      ),
+    );
+    show();
+    const latest = within(
+      await screen.findByRole('region', { name: 'Latest run' }),
+    );
+    expect(
+      latest.getByRole('link', { name: /Discovery workflow/ }),
+    ).toHaveAttribute('href', `/jobs/runs/${run.id}`);
+    expect(latest.getByText('Scheduled')).toBeVisible();
+    expect(latest.getByText('Failed')).toBeVisible();
+    expect(
+      latest.getByText(
+        'Status covers the whole run. Job counts are for this target.',
+      ),
+    ).toBeVisible();
+    expect(
+      latest.getByText('2 done · 1 failed · 0 running · 3 total'),
+    ).toBeVisible();
+  });
+
+  it('shows the empty state when the API returns no run', async () => {
+    server.use(
+      http.get(`/api${path}/overview`, () =>
+        HttpResponse.json({ ...metrics, lastRun: null }),
+      ),
+    );
+    show();
+    expect(await screen.findByText('No runs to show.')).toBeVisible();
+  });
+
+  it.each([
+    { allowed: false, lastRun: run },
+    { allowed: true, lastRun: undefined },
+  ])(
+    'hides the card without access or an API field ($allowed)',
+    async ({ allowed, lastRun }) => {
+      canReadJobs.mockReturnValue(allowed);
+      server.use(
+        http.get(`/api${path}/overview`, () =>
+          HttpResponse.json({ ...metrics, lastRun }),
+        ),
+      );
+      show();
+      expect(await screen.findByText('Enabled assets')).toBeVisible();
+      expect(
+        screen.queryByRole('region', { name: 'Latest run' }),
+      ).not.toBeInTheDocument();
+    },
+  );
+});
+
 describe('Target Overview tab', () => {
   const failedRun = '96e23195-3829-45b2-b170-2a16eaf57cbc';
   it.each([

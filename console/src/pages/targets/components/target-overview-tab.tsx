@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import { TargetExposurePanel } from './target-exposure-panel';
 import { TargetFindingsCard } from './target-findings-card';
 import { TargetInsightsPanel } from './target-insights-panel';
+import { TargetRunRow } from './target-run-row';
 
 const formatCount = new Intl.NumberFormat();
 const formatScanTime = new Intl.DateTimeFormat(undefined, {
@@ -44,6 +45,7 @@ export function TargetOverviewTab({
         selectedWorkspaceId,
         targetId,
         canReadFindings,
+        canReadJobs,
       ],
       refetchOnMount: 'always',
       retry: false,
@@ -148,6 +150,25 @@ export function TargetOverviewTab({
             <Skeleton key={index} className="h-24" />
           ))}
         </div>
+      )}
+      {canReadJobs && data?.lastRun !== undefined && (
+        <section aria-label="Latest run">
+          <Card className="gap-2 p-4">
+            <h2 className="text-base font-semibold">Latest run</h2>
+            {data.lastRun ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Status covers the whole run. Job counts are for this target.
+                </p>
+                <ul role="list" className="rounded-md border">
+                  <TargetRunRow run={data.lastRun} />
+                </ul>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No runs to show.</p>
+            )}
+          </Card>
+        </section>
       )}
       {canReadFindings &&
         data?.openVulnerabilities != null &&
