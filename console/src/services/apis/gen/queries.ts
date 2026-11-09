@@ -5522,6 +5522,14 @@ export type TargetsControllerGetTargetsInWorkspaceParams = {
   limit?: number;
   sortBy?: string;
   sortOrder?: string;
+  /**
+   * When true, only targets with open critical findings. Requires vulnerability read access.
+   */
+  hasCritical?: boolean;
+  /**
+   * When true, only targets never discovered or last discovered more than 30 days ago.
+   */
+  stale?: boolean;
   value?: string;
   /**
    * Filter by target type (DOMAIN, CIDR, or IP)

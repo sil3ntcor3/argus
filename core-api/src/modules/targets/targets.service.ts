@@ -5,6 +5,7 @@ import {
   CronSchedule,
   IntegrationType,
   JobStatus,
+  Severity,
   TargetScopeType,
 } from '@/common/enums/enum';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
@@ -32,6 +33,7 @@ import { AuditService } from '../audit/audit.service';
 import { EventBridgeService } from '../event-bridge/publishing/event-bridge.service';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import type { AssetDiscoveredPayload } from '../event-bridge/contracts/event-payloads';
+import { openVulnerabilityCondition } from '../vulnerabilities/open-vulnerability';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
   BulkTargetResultDto,
@@ -55,6 +57,7 @@ import {
   formatIPv4,
   parseCidr,
 } from './cidr';
+import { staleTargetCondition } from './stale-target-condition';
 import { resolveTargetLogo } from './target-logo';
 import { TargetSourceDto, toTargetSourceDto } from './target-source.dto';
 
@@ -764,8 +767,9 @@ export class TargetsService implements OnModuleInit {
       }
     >
   > {
-    const { limit, page, sortBy, sortOrder, value, type, status, scope } =
-      query;
+    const {
+      limit, page, sortBy, sortOrder, value, type, status, scope, hasCritical, stale,
+    } = query;
 
     const offset = (page - 1) * limit;
 
@@ -835,6 +839,38 @@ export class TargetsService implements OnModuleInit {
       }
     }
 
+    if (hasCritical) {
+      queryBuilder.andWhere(
+        `EXISTS (
+          SELECT 1 FROM vulnerabilities v
+          JOIN assets a ON a.id = v."assetId"
+          WHERE a."targetId" = targets.id AND v.severity = :criticalSeverity
+            AND ${openVulnerabilityCondition('v')}
+        )`,
+        { criticalSeverity: Severity.CRITICAL },
+      );
+    }
+
+    if (stale) {
+      queryBuilder.andWhere(staleTargetCondition('targets'));
+    }
+
+    let total: number;
+    if (status) {
+      // TypeORM's getCount strips GROUP BY, which changes the meaning of the
+      // per-target HAVING clause for status. Count the matching groups instead.
+      const matchingGroups = queryBuilder.clone().select('targets.id');
+      const count = await this.repo.manager
+        .createQueryBuilder()
+        .select('COUNT(*)', 'total')
+        .from(`(${matchingGroups.getQuery()})`, 'matching_targets')
+        .setParameters(matchingGroups.getParameters())
+        .getRawOne<{ total: string }>();
+      total = Number(count?.total ?? 0);
+    } else {
+      total = await queryBuilder.getCount();
+    }
+
     if (sortBy === 'totalAssetServices' || sortBy === 'duration') {
       queryBuilder.orderBy(`"${sortBy}"`, sortOrder);
     } else if (sortBy in Target) {
@@ -842,8 +878,6 @@ export class TargetsService implements OnModuleInit {
     } else {
       queryBuilder.orderBy('targets.createdAt', sortOrder);
     }
-
-    const total = await queryBuilder.getCount();
 
     const targets: (Omit<Target, 'source'> & {
       source: unknown;

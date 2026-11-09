@@ -183,7 +183,33 @@ export class GetManyTargetResponseDto {
   internalNetworkId: string;
 }
 
+function parseBooleanQuery({ value }: { value: unknown }) {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return value;
+}
+
 export class GetManyWorkspaceQueryParamsDto extends GetManyBaseQueryParams {
+  @ApiProperty({
+    required: false,
+    description:
+      'When true, only targets with open critical findings. Requires vulnerability read access.',
+  })
+  @IsOptional()
+  @Transform(parseBooleanQuery)
+  @IsBoolean()
+  hasCritical?: boolean;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'When true, only targets never discovered or last discovered more than 30 days ago.',
+  })
+  @IsOptional()
+  @Transform(parseBooleanQuery)
+  @IsBoolean()
+  stale?: boolean;
+
   @ApiProperty({ required: false })
   @IsString()
   @IsOptional()

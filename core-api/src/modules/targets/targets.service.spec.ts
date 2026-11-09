@@ -1486,7 +1486,7 @@ describe('TargetsService', () => {
     });
   });
 
-  describe('source field in target queries', () => {
+  describe('target list queries', () => {
     const baseBuilder = () => ({
       innerJoin: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
@@ -1500,6 +1500,36 @@ describe('TargetsService', () => {
       offset: jest.fn().mockReturnThis(),
       getCount: jest.fn().mockResolvedValue(0),
       getRawMany: jest.fn().mockResolvedValue([]),
+    });
+
+    it('filters by open critical findings and last discovery before pagination', async () => {
+      const builder = baseBuilder();
+      (mockTargetRepository.createQueryBuilder as jest.Mock).mockReturnValue(
+        builder,
+      );
+      await service.getTargetsInWorkspace(
+        { page: 1, limit: 10, sortBy: 'value', hasCritical: true, stale: true },
+        'ws-1',
+      );
+      expect(builder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('v.severity = :criticalSeverity'),
+        { criticalSeverity: 'critical' },
+      );
+      expect(builder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining("INTERVAL '30 days'"),
+      );
+    });
+
+    it('does not add predicates for false filters', async () => {
+      const builder = baseBuilder();
+      (mockTargetRepository.createQueryBuilder as jest.Mock).mockReturnValue(
+        builder,
+      );
+      await service.getTargetsInWorkspace(
+        { page: 1, limit: 10, sortBy: 'value', hasCritical: false, stale: false },
+        'ws-1',
+      );
+      expect(builder.andWhere).not.toHaveBeenCalled();
     });
 
     it('getTargetsInWorkspace select should include targets.source', async () => {
