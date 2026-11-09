@@ -8,6 +8,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { Target } from '../targets/entities/target.entity';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
+import { FindingRiskExpiryService } from './finding-risk-expiry.service';
 import { VulnerabilityAnalysisProcessor } from './processors/vulnerability-analysis.processor';
 import { VulnerabilitiesController } from './vulnerabilities.controller';
 import { VulnerabilitiesService } from './vulnerabilities.service';
@@ -32,7 +33,11 @@ import { VulnerabilitiesService } from './vulnerabilities.service';
     }),
   ],
   controllers: [VulnerabilitiesController],
-  providers: [VulnerabilitiesService, VulnerabilityAnalysisProcessor],
+  providers: [
+    VulnerabilitiesService,
+    VulnerabilityAnalysisProcessor,
+    FindingRiskExpiryService,
+  ],
   exports: [VulnerabilitiesService],
 })
 export class VulnerabilitiesModule {}
