@@ -123,6 +123,7 @@ export function TargetActivityTab({
 
   return (
     <section aria-label="Target activity" className="space-y-3">
+      <h2 className="text-base font-semibold">Runs</h2>
       {denied ? (
         <AccessDenied />
       ) : failed ? (

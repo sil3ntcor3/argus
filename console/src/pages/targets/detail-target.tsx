@@ -25,6 +25,7 @@ import { VulnerabilitiesView } from '../vulnerabilities/vulnerabilities-view';
 import AssetsDiscovering from './assets-discovering';
 import { GitOrgDetail } from './git-org-detail';
 import { TargetActivityTab } from './components/target-activity-tab';
+import { TargetChangesPanel } from './components/target-changes-panel';
 import { TargetOverviewTab } from './components/target-overview-tab';
 import { TargetSwitcher } from './components/target-switcher';
 import SettingTarget from './setting-target';
@@ -100,6 +101,7 @@ export function DetailTarget() {
       : 'assets';
   const canReadAssets = !permission.error && permission.hasPermission('asset.read');
   const canReadJobs = !permission.error && permission.hasPermission('job.read');
+  const canReadActivity = canReadAssets || canReadJobs;
   const canChangeTarget = permission.hasPermission('target.write');
   const scanning = target.status !== JobStatus.completed;
   const scanTarget = { id: target.id, value: target.value };
@@ -147,7 +149,7 @@ export function DetailTarget() {
             ...(canReadAssets ? [{ value: 'overview', label: 'Overview' }] : []),
             { value: 'assets', label: 'Assets' },
             { value: 'vulnerabilities', label: 'Vulnerabilities' },
-            ...(canReadJobs ? [{ value: 'activity', label: 'Activity' }] : []),
+            ...(canReadActivity ? [{ value: 'activity', label: 'Activity' }] : []),
             ...(canChangeTarget
               ? [{ value: 'settings', label: 'Settings' }]
               : []),
@@ -184,12 +186,29 @@ export function DetailTarget() {
             <AccessDenied />
           )
         ) : activeTab === 'activity' ? (
-          canReadJobs ? (
-            <TargetActivityTab
-              key={target.id}
-              targetId={target.id}
-              onAccessDenied={permission.refetch}
-            />
+          canReadActivity ? (
+            <div
+              className={
+                canReadJobs && canReadAssets
+                  ? 'grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'
+                  : undefined
+              }
+            >
+              {canReadJobs && (
+                <TargetActivityTab
+                  key={`runs-${target.id}`}
+                  targetId={target.id}
+                  onAccessDenied={permission.refetch}
+                />
+              )}
+              {canReadAssets && (
+                <TargetChangesPanel
+                  key={`changes-${target.id}`}
+                  targetId={target.id}
+                  onAccessDenied={permission.refetch}
+                />
+              )}
+            </div>
           ) : (
             <AccessDenied />
           )
