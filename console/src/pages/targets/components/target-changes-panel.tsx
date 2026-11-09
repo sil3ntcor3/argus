@@ -14,20 +14,29 @@ const filters = [
   { label: 'Assets', kind: TargetChangeKind.asset },
   { label: 'Services', kind: TargetChangeKind.service },
 ] as const;
+const changeLabels: Record<TargetChangeKind, string> = {
+  [TargetChangeKind.asset]: 'Asset discovered',
+  [TargetChangeKind.service]: 'Service discovered',
+  [TargetChangeKind.vulnerability]: 'Finding discovered',
+};
 const dateFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
-type PanelProps = { targetId: string; onAccessDenied: () => Promise<unknown> };
+type PanelProps = {
+  targetId: string;
+  canReadFindings: boolean;
+  onAccessDenied: () => Promise<unknown>;
+};
 
-/** Resets the feed when the selected workspace changes. */
+/** Resets the feed when the selected workspace or finding access changes. */
 export function TargetChangesPanel(props: PanelProps) {
   const {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
   return selectedWorkspaceId ? (
     <TargetChangesList
-      key={selectedWorkspaceId}
+      key={`${selectedWorkspaceId}:${props.canReadFindings}`}
       workspaceId={selectedWorkspaceId}
       {...props}
     />
@@ -38,6 +47,7 @@ export function TargetChangesPanel(props: PanelProps) {
 function TargetChangesList({
   workspaceId,
   targetId,
+  canReadFindings,
   onAccessDenied,
 }: PanelProps & { workspaceId: string }) {
   const [view, setView] = useState<{ page: number; kind?: TargetChangeKind }>({
@@ -51,7 +61,14 @@ function TargetChangesList({
     { page, limit: 10, kind },
     {
       query: {
-        queryKey: ['target-changes', workspaceId, targetId, page, kind],
+        queryKey: [
+          'target-changes',
+          workspaceId,
+          targetId,
+          canReadFindings,
+          page,
+          kind,
+        ],
         gcTime: 0,
         refetchOnMount: 'always',
         retry: false,
@@ -70,6 +87,10 @@ function TargetChangesList({
     changes.isError || changes.errorUpdatedAt > changes.dataUpdatedAt;
   const data =
     !failed && changes.isFetchedAfterMount ? changes.data : undefined;
+  const rows =
+    data?.data.filter(
+      ({ kind }) => canReadFindings || kind !== TargetChangeKind.vulnerability,
+    ) ?? [];
   useEffect(() => {
     if (changes.isFetching || !retryButton.current) return;
     const button = retryButton.current;
@@ -133,7 +154,7 @@ function TargetChangesList({
             <div role="status" aria-label="Loading discoveries">
               <Skeleton className="h-24" />
             </div>
-          ) : data.data.length === 0 ? (
+          ) : rows.length === 0 ? (
             <p className="rounded-lg border p-4 text-sm text-muted-foreground">
               No discoveries on this page.
             </p>
@@ -142,7 +163,7 @@ function TargetChangesList({
               aria-label="Discovery changes"
               className="divide-y rounded-lg border"
             >
-              {data.data.map((change) => (
+              {rows.map((change) => (
                 <li
                   key={`${change.kind}-${change.id}`}
                   className="space-y-1 p-3 sm:px-4"
@@ -156,11 +177,7 @@ function TargetChangesList({
                     </p>
                   )}
                   <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-                    <span>
-                      {change.kind === TargetChangeKind.asset
-                        ? 'Asset discovered'
-                        : 'Service discovered'}
-                    </span>
+                    <span>{changeLabels[change.kind]}</span>
                     <time dateTime={change.at}>
                       {dateFormat.format(new Date(change.at))}
                     </time>
@@ -191,7 +208,7 @@ function TargetChangesList({
               <span>Page {page}</span>
               {data && (
                 <span className="sr-only">
-                  , {data.data.length} discoveries shown
+                  , {rows.length} discoveries shown
                 </span>
               )}
             </span>

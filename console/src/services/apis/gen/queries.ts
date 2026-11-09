@@ -762,6 +762,7 @@ export type TargetChangeKind =
 export const TargetChangeKind = {
   asset: 'asset',
   service: 'service',
+  vulnerability: 'vulnerability',
 } as const;
 
 export type TargetChangeDto = {
@@ -770,10 +771,11 @@ export type TargetChangeDto = {
   id: string;
   label: string;
   /**
-   * Parent asset value for a service
+   * Parent asset value for a service or finding
    * @nullable
    */
   assetValue: string | null;
+  severity?: Severity;
 };
 
 export type GetManyTargetChangeDtoDto = {
@@ -13402,7 +13404,7 @@ export function useTargetsControllerGetTargetRuns<
 }
 
 /**
- * Lists discovered assets and services for a target, newest first.
+ * Lists discovered assets and services, and findings with vulnerability read access, newest first.
  * @summary Get target discovery changes
  */
 export const targetsControllerGetTargetChanges = (

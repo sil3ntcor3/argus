@@ -279,7 +279,8 @@ export class TargetsController {
 
   @Doc({
     summary: 'Get target discovery changes',
-    description: 'Lists discovered assets and services for a target, newest first.',
+    description:
+      'Lists discovered assets and services, and findings with vulnerability read access, newest first.',
     response: { serialization: GetManyResponseDto(TargetChangeDto) },
     request: { getWorkspaceId: true },
   })
@@ -290,8 +291,14 @@ export class TargetsController {
     @Param() { id }: IdQueryParamDto,
     @WorkspaceId() workspaceId: string,
     @Query() query: GetTargetChangesQueryDto,
+    @Req() request: RequestWithMetadata,
   ) {
-    return this.targetChangesService.list(id, workspaceId, query);
+    return this.targetChangesService.list(
+      id,
+      workspaceId,
+      query,
+      canReadTargetData(request.permissions, 'vulnerability'),
+    );
   }
 
   @Doc({
