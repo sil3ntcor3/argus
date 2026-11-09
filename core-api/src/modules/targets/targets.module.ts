@@ -10,6 +10,7 @@ import { Target } from './entities/target.entity';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { TargetsController } from './targets.controller';
 import { TargetOverviewService } from './target-overview.service';
+import { TargetRunHistoryService } from './target-run-history.service';
 import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
 
@@ -27,6 +28,7 @@ import { TargetsService } from './targets.service';
     TargetsService,
     TargetSummaryService,
     TargetOverviewService,
+    TargetRunHistoryService,
     TriggerWorkflowService,
   ],
   exports: [TargetsService],

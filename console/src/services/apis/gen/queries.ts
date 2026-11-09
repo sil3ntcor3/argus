@@ -605,6 +605,52 @@ export type TargetOverviewDto = {
   openPorts: number;
 };
 
+export type JobRunType = (typeof JobRunType)[keyof typeof JobRunType];
+
+export const JobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type TargetRunDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Status of the entire run */
+  status: JobStatus;
+  jobRunType: JobRunType;
+  workflowName: string;
+  /**
+   * Jobs on the target
+   * @minimum 0
+   */
+  jobsTotal: number;
+  /**
+   * Completed or skipped jobs on the target
+   * @minimum 0
+   */
+  jobsDone: number;
+  /**
+   * Failed jobs on the target
+   * @minimum 0
+   */
+  jobsFailed: number;
+  /**
+   * Running jobs on the target
+   * @minimum 0
+   */
+  jobsRunning: number;
+};
+
+export type GetManyTargetRunDtoDto = {
+  data: TargetRunDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
 export type UpdateTargetDtoScanSchedule =
   (typeof UpdateTargetDtoScanSchedule)[keyof typeof UpdateTargetDtoScanSchedule];
 
@@ -5568,6 +5614,18 @@ export type TargetsControllerGetTargetRepositoriesParams = {
    * true → only scanned repositories, false → only skipped ones
    */
   isEnabled?: boolean;
+};
+
+export type TargetsControllerGetTargetRunsParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
 };
 
 export type WorkspacesControllerGetWorkspacesParams = {
@@ -12791,6 +12849,396 @@ export function useTargetsControllerGetTargetOverview<
 } {
   const queryOptions = getTargetsControllerGetTargetOverviewQueryOptions(
     id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Lists runs scoped to or scanning the target, newest first, with job counts for that target.
+ * @summary Get target run history
+ */
+export const targetsControllerGetTargetRuns = (
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyTargetRunDtoDto>(
+    { url: `/api/targets/${id}/runs`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getTargetsControllerGetTargetRunsInfiniteQueryKey = (
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+) => {
+  return [
+    'infinite',
+    `/api/targets/${id}/runs`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getTargetsControllerGetTargetRunsQueryKey = (
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+) => {
+  return [`/api/targets/${id}/runs`, ...(params ? [params] : [])] as const;
+};
+
+export const getTargetsControllerGetTargetRunsInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getTargetsControllerGetTargetRunsInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    QueryKey,
+    TargetsControllerGetTargetRunsParams['page']
+  > = ({ signal, pageParam }) =>
+    targetsControllerGetTargetRuns(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TError,
+    TData,
+    QueryKey,
+    TargetsControllerGetTargetRunsParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetRunsInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+>;
+export type TargetsControllerGetTargetRunsInfiniteQueryError = unknown;
+
+export function useTargetsControllerGetTargetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | TargetsControllerGetTargetRunsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target run history
+ */
+
+export function useTargetsControllerGetTargetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetRunsInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getTargetsControllerGetTargetRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getTargetsControllerGetTargetRunsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+  > = ({ signal }) =>
+    targetsControllerGetTargetRuns(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+>;
+export type TargetsControllerGetTargetRunsQueryError = unknown;
+
+export function useTargetsControllerGetTargetRuns<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | TargetsControllerGetTargetRunsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetRuns<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetRuns<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target run history
+ */
+
+export function useTargetsControllerGetTargetRuns<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetRunsQueryOptions(
+    id,
+    params,
     options,
   );
 
