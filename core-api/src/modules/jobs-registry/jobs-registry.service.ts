@@ -21,6 +21,7 @@ import { getManyResponse } from '@/utils/getManyResponse';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -1571,9 +1572,8 @@ export class JobsRegistryService {
   }
 
   /**
-   * Cancels a whole run: every job of the history becomes CANCELLED, so the run
-   * and the tools it spans all report the same thing the user just did. The run
-   * status itself is derived from its jobs (see getManyJobHistories).
+   * Cancels an open run under the workflow engine's run lock. Every job in an
+   * accepted cancellation is marked cancelled so the derived run status agrees.
    */
   public async cancelJobHistory(
     workspaceId: string,
@@ -1600,8 +1600,18 @@ export class JobsRegistryService {
         )
         .getExists();
 
-      if (!belongsToWorkspace) {
+      // Serialize cancellation with the workflow engine's dispatch and closure.
+      const history = belongsToWorkspace
+        ? await queryRunner.manager.findOne(JobHistory, {
+            where: { id: jobHistoryId },
+            lock: { mode: 'for_no_key_update' },
+          })
+        : null;
+      if (!history) {
         throw new NotFoundException('Job history not found in workspace');
+      }
+      if (history.isCompleted) {
+        throw new ConflictException('Run has already closed');
       }
 
       // Capture which jobs are executing right now BEFORE the bulk update: only
@@ -1634,25 +1644,17 @@ export class JobsRegistryService {
       // straggler job result could dispatch another step of a run the user just
       // cancelled. Steps that never ran get an explicit reason so the run detail
       // view does not show them as still pending.
-      const history = await queryRunner.manager.findOne(JobHistory, {
-        where: { id: jobHistoryId },
-      });
-      if (history) {
-        let steps = history.steps ?? {};
-        for (const [stepName, stepState] of Object.entries(steps)) {
-          if (
-            stepState.status === 'pending' ||
-            stepState.status === 'dispatched'
-          ) {
-            steps = withStepSkipped(steps, stepName, 'run-cancelled');
-          }
+      let steps = history.steps ?? {};
+      for (const [stepName, stepState] of Object.entries(steps)) {
+        if (stepState.status === 'pending' || stepState.status === 'dispatched') {
+          steps = withStepSkipped(steps, stepName, 'run-cancelled');
         }
-        await queryRunner.manager.update(
-          JobHistory,
-          { id: jobHistoryId },
-          { steps, isCompleted: true },
-        );
       }
+      await queryRunner.manager.update(
+        JobHistory,
+        { id: jobHistoryId },
+        { steps, isCompleted: true },
+      );
 
       await queryRunner.commitTransaction();
 

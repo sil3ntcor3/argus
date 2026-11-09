@@ -10,7 +10,7 @@ import {
   WorkerType,
 } from '@/common/enums/enum';
 import { getQueueToken } from '@nestjs/bullmq';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
@@ -551,6 +551,7 @@ describe('JobsRegistryService', () => {
       affected = 3,
       running = [] as { jobId: string; workerId: string }[],
       steps = {},
+      isCompleted = false,
     } = {}) => {
       const ownershipBuilder = {
         leftJoin: jest.fn().mockReturnThis(),
@@ -575,7 +576,7 @@ describe('JobsRegistryService', () => {
       const findOne = jest.fn().mockResolvedValue({
         id: mockHistoryId,
         steps,
-        isCompleted: false,
+        isCompleted,
       });
       const update = jest.fn().mockResolvedValue({ affected: 1 });
       const manager = {
@@ -680,6 +681,27 @@ describe('JobsRegistryService', () => {
         'HTTP Probe': { status: 'skipped', reason: 'run-cancelled' },
         'Vuln Scan': { status: 'done' },
       });
+    });
+
+    it('rejects a closed run under the workflow lock before touching jobs', async () => {
+      const qr = buildQueryRunner({ isCompleted: true });
+      mockDataSource.createQueryRunner.mockReturnValue(qr);
+
+      await expect(
+        service.cancelJobHistory(mockWorkspaceId, mockHistoryId),
+      ).rejects.toThrow(ConflictException);
+
+      expect(qr.findOne).toHaveBeenCalledWith(JobHistory, {
+        where: { id: mockHistoryId },
+        lock: { mode: 'for_no_key_update' },
+      });
+      expect(qr.runningBuilder.getRawMany).not.toHaveBeenCalled();
+      expect(qr.updateBuilder.execute).not.toHaveBeenCalled();
+      expect(qr.update).not.toHaveBeenCalled();
+      expect(qr.commitTransaction).not.toHaveBeenCalled();
+      expect(qr.rollbackTransaction).toHaveBeenCalledTimes(1);
+      expect(qr.release).toHaveBeenCalledTimes(1);
+      expect(mockWorkerStreamRegistry.publishCancel).not.toHaveBeenCalled();
     });
 
     it('throws NotFoundException and rolls back for a history outside the workspace', async () => {

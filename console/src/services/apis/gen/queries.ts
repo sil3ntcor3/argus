@@ -22107,7 +22107,7 @@ export const useJobsRegistryControllerCancelJob = <
 };
 
 /**
- * Cancels every job of a run that has not reached a terminal state and stops the workflow from spawning further steps
+ * Cancels an open run and stops the workflow from spawning further steps.
  * @summary Cancel a job history
  */
 export const jobsRegistryControllerCancelJobHistory = (
@@ -22126,7 +22126,7 @@ export const jobsRegistryControllerCancelJobHistory = (
 };
 
 export const getJobsRegistryControllerCancelJobHistoryMutationOptions = <
-  TError = unknown,
+  TError = void,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -22167,13 +22167,13 @@ export type JobsRegistryControllerCancelJobHistoryMutationResult = NonNullable<
   Awaited<ReturnType<typeof jobsRegistryControllerCancelJobHistory>>
 >;
 
-export type JobsRegistryControllerCancelJobHistoryMutationError = unknown;
+export type JobsRegistryControllerCancelJobHistoryMutationError = void;
 
 /**
  * @summary Cancel a job history
  */
 export const useJobsRegistryControllerCancelJobHistory = <
-  TError = unknown,
+  TError = void,
   TContext = unknown,
 >(
   options?: {
