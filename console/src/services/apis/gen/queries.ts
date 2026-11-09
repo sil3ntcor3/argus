@@ -1950,6 +1950,14 @@ export type JobHistoryResponseDto = {
   createdAt: string;
   updatedAt: string;
   totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  /**
+   * Percentage of jobs completed, failed, or cancelled. 100 means all jobs have settled.
+   * @minimum 0
+   * @maximum 100
+   */
+  progress: number;
   status: JobHistoryResponseDtoStatus;
   workflowName: string;
   jobHistoryName: string;

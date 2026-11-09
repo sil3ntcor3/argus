@@ -1757,6 +1757,9 @@ describe('JobsRegistryService', () => {
           createdAt: new Date('2024-01-01T00:00:00Z'),
           updatedAt: new Date('2024-01-02T00:00:00Z'),
           totalJobs: '4',
+          completedJobs: '1',
+          failedJobs: '1',
+          cancelledJobs: '0',
           status: JobStatus.IN_PROGRESS,
           workflowName: 'workflow-1',
           jobHistoryName: 'run-1',
@@ -1786,6 +1789,15 @@ describe('JobsRegistryService', () => {
       expect(statusExpr).toContain(`job.status = '${JobStatus.FAILED}'`);
       expect(statusExpr).toContain(`job.status = '${JobStatus.IN_PROGRESS}'`);
       expect(selectArgs[0]).toContain('COUNT(*) OVER () as "total"');
+      for (const [status, alias] of [
+        [JobStatus.COMPLETED, 'completedJobs'],
+        [JobStatus.FAILED, 'failedJobs'],
+        [JobStatus.CANCELLED, 'cancelledJobs'],
+      ]) {
+        expect(selectArgs[0]).toContain(
+          `COUNT(*) FILTER (WHERE job.status = '${status}') as "${alias}"`,
+        );
+      }
       // One query serves both the page and its total
       expect(mockJobHistoryRepository.createQueryBuilder).toHaveBeenCalledTimes(
         1,
@@ -1906,7 +1918,10 @@ describe('JobsRegistryService', () => {
           createdAt: new Date('2024-01-01T00:00:00Z'),
           updatedAt: new Date('2024-01-02T00:00:00Z'),
           totalJobs: '5',
-          status: JobStatus.COMPLETED,
+          completedJobs: '2',
+          failedJobs: '1',
+          cancelledJobs: '1',
+          status: JobStatus.IN_PROGRESS,
           workflowName: 'workflow-1',
           jobHistoryName: 'name-1',
           jobRunType: 'manual',
@@ -1925,12 +1940,65 @@ describe('JobsRegistryService', () => {
         createdAt: expect.any(Date),
         updatedAt: expect.any(Date),
         totalJobs: 5,
-        status: JobStatus.COMPLETED,
+        completedJobs: 2,
+        failedJobs: 1,
+        progress: 80,
+        status: JobStatus.IN_PROGRESS,
         workflowName: 'workflow-1',
         jobHistoryName: 'name-1',
         jobRunType: 'manual',
       });
     });
+
+    it.each([
+      {
+        totalJobs: 3,
+        completedJobs: 0,
+        failedJobs: 0,
+        cancelledJobs: 3,
+        progress: 100,
+      },
+      {
+        totalJobs: 1000,
+        completedJobs: 999,
+        failedJobs: 0,
+        cancelledJobs: 0,
+        progress: 99,
+      },
+      {
+        totalJobs: 3,
+        completedJobs: 0,
+        failedJobs: 0,
+        cancelledJobs: 0,
+        progress: 0,
+      },
+    ])(
+      'keeps the run-list completion boundary at $progress%',
+      async ({ totalJobs, completedJobs, failedJobs, cancelledJobs, progress }) => {
+        const { paged } = stubHistoryQueryBuilder();
+        paged.qb.getRawMany.mockResolvedValue([
+          {
+            id: 'history-1',
+            totalJobs: String(totalJobs),
+            completedJobs: String(completedJobs),
+            failedJobs: String(failedJobs),
+            cancelledJobs: String(cancelledJobs),
+            total: '1',
+          },
+        ]);
+
+        const result = await service.getManyJobHistories(mockWorkspaceId, {
+          page: 1,
+          limit: 10,
+        });
+
+        expect(result.data[0]).toMatchObject({
+          completedJobs,
+          failedJobs,
+          progress,
+        });
+      },
+    );
 
     it('should apply the search predicate to the page query', async () => {
       const { paged } = stubHistoryQueryBuilder();
