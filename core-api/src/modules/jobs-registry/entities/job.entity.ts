@@ -159,6 +159,11 @@ export class Job extends BaseEntity {
   @Column({ type: 'varchar', nullable: true, select: false })
   findingScanScopeKey?: string | null;
 
+  /** Private instant associated with the recorded finding scan claim. */
+  @ApiHideProperty()
+  @Column({ type: 'timestamptz', nullable: true, select: false })
+  findingScanClaimedAt?: Date | null;
+
   /**
    * The asset service this job belongs to.
    */
