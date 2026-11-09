@@ -343,8 +343,13 @@ export class JobsRegistryController {
   getJobHistoryDetail(
     @WorkspaceId() workspaceId: string,
     @Param('id') id: string,
+    @Req() request: RequestWithMetadata,
   ): Promise<JobHistoryDetailResponseDto> {
-    return this.jobsRegistryService.getJobHistoryDetail(workspaceId, id);
+    return this.jobsRegistryService.getJobHistoryDetail(
+      workspaceId,
+      id,
+      request.permissions ?? [],
+    );
   }
 
   @WorkspaceAccess('job.read')

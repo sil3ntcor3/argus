@@ -1,4 +1,5 @@
 import { JOB_HISTORY_STATUS_SQL } from './job-history-status';
+import { canRetryRunScope, getRecordedRunRetryScope } from './run-retry-scope';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
 import {
@@ -1198,24 +1199,29 @@ export class JobsRegistryService {
       throw new NotFoundException('Job history not found');
     }
 
-    const belongsToWorkspace = await this.jobHistoryRepo
+    const provenance = await this.jobHistoryRepo
       .createQueryBuilder('jobHistory')
       .innerJoin('jobHistory.workflow', 'workflow')
       .innerJoin('workflow.workspace', 'workspace')
       .where('jobHistory.id = :id', { id })
       .andWhere('workspace.id = :workspaceId', { workspaceId })
-      .getExists();
+      .select([
+        'jobHistory.projectId AS "projectId"',
+        'jobHistory.projectWorkflowId AS "projectWorkflowId"',
+      ])
+      .getRawOne<Pick<JobHistory, 'projectId' | 'projectWorkflowId'>>();
 
-    if (!belongsToWorkspace) {
+    if (!provenance) {
       throw new NotFoundException('Job history not found in workspace');
     }
 
-    return jobHistory;
+    return Object.assign(jobHistory, provenance);
   }
 
   public async getJobHistoryDetail(
     workspaceId: string,
     id: string,
+    permissions: readonly string[] = [],
   ): Promise<JobHistoryDetailResponseDto> {
     const jobHistory = await this.loadJobHistoryInWorkspace(workspaceId, id);
 
@@ -1261,6 +1267,13 @@ export class JobsRegistryService {
         ? await this.findRunFailureReason(workspaceId, historyId)
         : null;
 
+    const retryScope =
+      jobHistory.isCompleted && activeJobsCount === 0
+        ? getRecordedRunRetryScope(jobHistory)
+        : null;
+    const retryAvailable =
+      retryScope !== null && canRetryRunScope(retryScope, permissions);
+
     return {
       id: historyId,
       workflowName: workflow?.name,
@@ -1273,6 +1286,7 @@ export class JobsRegistryService {
       activeJobsCount,
       etaSeconds,
       failureReason,
+      retryAvailable,
     };
   }
 

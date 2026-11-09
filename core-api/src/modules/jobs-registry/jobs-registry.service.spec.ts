@@ -873,7 +873,11 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(true),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({
+          projectId: null,
+          projectWorkflowId: null,
+        }),
       });
       mockJobRepository.getRawMany.mockResolvedValue([
         { toolId: 'tool-uuid', status: JobStatus.COMPLETED },
@@ -899,6 +903,7 @@ describe('JobsRegistryService', () => {
         jobHistoryName: 'test-job-history',
         etaSeconds: null,
         failureReason: null,
+        retryAvailable: false,
         createdAt: mockJobHistory.createdAt,
         updatedAt: mockJobHistory.updatedAt,
         tools: [
@@ -939,7 +944,11 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(true),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({
+          projectId: null,
+          projectWorkflowId: null,
+        }),
       });
       mockJobRepository.getRawMany.mockResolvedValue([]);
       mockToolsService.getInstalledTools.mockResolvedValue({ data: [] });
@@ -975,7 +984,11 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(true),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({
+          projectId: null,
+          projectWorkflowId: null,
+        }),
       });
       // No job rows: the deleted-jobs scenario
       mockJobRepository.getRawMany.mockResolvedValue([]);
@@ -994,6 +1007,7 @@ describe('JobsRegistryService', () => {
         jobHistoryName: 'test-job-history',
         etaSeconds: null,
         failureReason: null,
+        retryAvailable: false,
         createdAt: mockJobHistory.createdAt,
         updatedAt: mockJobHistory.updatedAt,
         tools: [
@@ -1070,7 +1084,11 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(true),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({
+          projectId: null,
+          projectWorkflowId: null,
+        }),
       });
       mockJobRepository.getRawMany.mockResolvedValue([]);
       mockToolsService.getInstalledTools.mockResolvedValue({ data: [] });
@@ -1139,7 +1157,11 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(true),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({
+          projectId: null,
+          projectWorkflowId: null,
+        }),
       });
       mockJobRepository.getRawMany.mockResolvedValue([]);
       mockToolsService.getInstalledTools.mockResolvedValue({
@@ -1216,7 +1238,11 @@ describe('JobsRegistryService', () => {
           innerJoin: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
-          getExists: jest.fn().mockResolvedValue(true),
+          select: jest.fn().mockReturnThis(),
+          getRawOne: jest.fn().mockResolvedValue({
+            projectId: null,
+            projectWorkflowId: null,
+          }),
         };
         const history = {
           innerJoin: jest.fn().mockReturnThis(),
@@ -1255,28 +1281,100 @@ describe('JobsRegistryService', () => {
       },
     );
 
+    const retryAssetId = '178e4123-e64b-4f81-ad3c-8c76eaa83b03';
+    const targetScope = { targetIds: [retryAssetId] };
+    const projectScope = { assetIds: [retryAssetId] };
+    const projectProvenance = {
+      projectId: '278e4123-e64b-4f81-ad3c-8c76eaa83b03',
+      projectWorkflowId: '378e4123-e64b-4f81-ad3c-8c76eaa83b03',
+    };
+
     it.each([
       {
-        label: 'closed failed run',
-        closed: true,
-        active: 0,
+        label: 'closed target run for a job writer',
         message: 'Tool exited with code 1',
+        scope: targetScope,
+        permissions: ['job.write'],
+        retryAvailable: true,
       },
-      { label: 'no visible failed job log', closed: true, active: 0 },
-      { label: 'open run without active jobs', closed: false, active: 0 },
-      { label: 'closed run with active jobs', closed: true, active: 1 },
+      {
+        label: 'closed run without a recorded scope',
+        permissions: ['job.write'],
+      },
+      {
+        label: 'open target run',
+        closed: false,
+        scope: targetScope,
+        permissions: ['job.write'],
+      },
+      {
+        label: 'closed run with active jobs',
+        active: 1,
+        scope: targetScope,
+        permissions: ['job.write'],
+      },
+      {
+        label: 'target run for a read-only viewer',
+        scope: targetScope,
+        permissions: ['job.read'],
+      },
+      {
+        label: 'project run for a workflow and job writer',
+        scope: projectScope,
+        provenance: projectProvenance,
+        permissions: ['job.write', 'workflow.write'],
+        retryAvailable: true,
+      },
+      {
+        label: 'project run for an owner',
+        scope: projectScope,
+        provenance: projectProvenance,
+        permissions: ['*'],
+        retryAvailable: true,
+      },
+      {
+        label: 'project run without launch permission',
+        scope: projectScope,
+        provenance: projectProvenance,
+        permissions: ['job.write'],
+      },
+      {
+        label: 'project run with incomplete provenance',
+        scope: projectScope,
+        provenance: { projectId: projectProvenance.projectId },
+        permissions: ['job.write', 'workflow.write'],
+      },
+      {
+        label: 'target run with mixed scope',
+        scope: { ...targetScope, ...projectScope },
+        permissions: ['job.write'],
+      },
     ])(
-      'returns the appropriate failure summary for $label',
-      async ({ closed, active, message }) => {
+      'returns failure and retry state for $label',
+      async ({
+        closed = true,
+        active = 0,
+        message,
+        scope,
+        provenance,
+        permissions = [],
+        retryAvailable = false,
+      }) => {
         mockJobHistoryRepository.findOne.mockResolvedValue({
           ...mockJobHistory,
           isCompleted: closed,
+          scope,
         });
         mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
           innerJoin: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
-          getExists: jest.fn().mockResolvedValue(true),
+          select: jest.fn().mockReturnThis(),
+          getRawOne: jest.fn().mockResolvedValue({
+            projectId: null,
+            projectWorkflowId: null,
+            ...provenance,
+          }),
         });
         mockJobRepository.count.mockResolvedValueOnce(active);
         mockJobRepository.getRawMany.mockResolvedValue([]);
@@ -1298,9 +1396,13 @@ describe('JobsRegistryService', () => {
         const result = await service.getJobHistoryDetail(
           mockWorkspaceId,
           mockHistoryId,
+          permissions,
         );
 
         expect(result.failureReason).toBe(message ?? null);
+        expect(result.retryAvailable).toBe(retryAvailable);
+        expect(result).not.toHaveProperty('projectId');
+        expect(result).not.toHaveProperty('scope');
         if (closed && active === 0) {
           expect(logs.andWhere).toHaveBeenCalledWith(
             'target.workspaceId = :workspaceId',
@@ -1330,7 +1432,8 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(false),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue(undefined),
       });
 
       await expect(
@@ -1347,7 +1450,11 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(true),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({
+          projectId: null,
+          projectWorkflowId: null,
+        }),
       });
       mockJobRepository.getRawMany.mockResolvedValue([]);
       mockToolsService.getInstalledTools.mockResolvedValue({ data: [] });
@@ -1389,7 +1496,11 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(true),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue({
+          projectId: null,
+          projectWorkflowId: null,
+        }),
       });
       mockJobRepository.getRawMany.mockResolvedValue([]);
       mockToolsService.getInstalledTools.mockResolvedValue({ data: [] });
@@ -1505,7 +1616,8 @@ describe('JobsRegistryService', () => {
         innerJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
-        getExists: jest.fn().mockResolvedValue(false),
+        select: jest.fn().mockReturnThis(),
+        getRawOne: jest.fn().mockResolvedValue(undefined),
       });
 
       await expect(
