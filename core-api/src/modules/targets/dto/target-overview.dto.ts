@@ -20,6 +20,7 @@ class TargetExposureDto {
 }
 
 export enum TargetInsightKind {
+  TLS_EXPIRING = 'tls_expiring',
   STALE_SCAN = 'stale_scan',
   NEW_ASSETS = 'new_assets',
   NO_SCHEDULE = 'no_schedule',
