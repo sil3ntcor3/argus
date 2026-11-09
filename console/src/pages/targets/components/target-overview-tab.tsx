@@ -145,6 +145,7 @@ export function TargetOverviewTab({
           targetId={targetId}
           canManageDiscovery={canManageDiscovery}
           canReadJobs={canReadJobs}
+          canReadFindings={canReadFindings}
           onKeyboardNavigate={onKeyboardNavigate}
         />
       )}

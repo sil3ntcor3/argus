@@ -4,13 +4,16 @@ import { Card } from '@/components/ui/card';
 import type { TargetInsightDto } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 
+type InsightTargetTab = 'assets' | 'settings' | 'vulnerabilities';
+
 const actions: Partial<
   Record<
     TargetInsightDto['kind'],
-    | { tab: 'assets' | 'settings'; label: string; search?: { tab: 'tls' } }
+    | { tab: InsightTargetTab; label: string; search?: { tab: 'tls' } }
     | { tab: 'run'; label: string }
   >
 > = {
+  critical_open: { tab: 'vulnerabilities', label: 'Review vulnerabilities' },
   last_run_failed: { tab: 'run', label: 'Open run' },
   tls_expiring: { tab: 'assets', label: 'See TLS', search: { tab: 'tls' } },
   stale_scan: { tab: 'settings', label: 'Open discovery settings' },
@@ -24,6 +27,10 @@ const runIdPattern =
 /** Describes the discovery record without assuming a successful scan. */
 function describeInsight({ kind, count, days }: TargetInsightDto) {
   switch (kind) {
+    case 'critical_open':
+      return count !== undefined && count > 0
+        ? `${formatCount.format(count)} open critical ${count === 1 ? 'vulnerability' : 'vulnerabilities'}.`
+        : undefined;
     case 'last_run_failed':
       return 'The latest target run failed.';
     case 'tls_expiring': {
@@ -60,16 +67,19 @@ export function TargetInsightsPanel({
   targetId,
   canManageDiscovery,
   canReadJobs,
+  canReadFindings,
   onKeyboardNavigate,
 }: {
   insights: TargetInsightDto[];
   targetId: string;
   canManageDiscovery: boolean;
   canReadJobs: boolean;
-  onKeyboardNavigate: (tab: 'assets' | 'settings') => void;
+  canReadFindings: boolean;
+  onKeyboardNavigate: (tab: InsightTargetTab) => void;
 }) {
   const rows = insights.flatMap((insight) => {
     if (insight.kind === 'last_run_failed' && !canReadJobs) return [];
+    if (insight.kind === 'critical_open' && !canReadFindings) return [];
     const description = describeInsight(insight);
     const action = actions[insight.kind];
     return description && action ? [{ insight, description, action }] : [];
@@ -87,6 +97,9 @@ export function TargetInsightsPanel({
               className="flex flex-wrap items-center justify-between gap-2 py-2"
             >
               <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+                {insight.level === 'critical' && (
+                  <Badge variant="destructive">Critical</Badge>
+                )}
                 {insight.level === 'warning' && (
                   <Badge variant="outline">Warning</Badge>
                 )}
@@ -101,30 +114,30 @@ export function TargetInsightsPanel({
                     </Link>
                   </Button>
                 )}
-              {(action.tab === 'assets' ||
-                (action.tab === 'settings' && canManageDiscovery)) && (
-                <Button variant="outline" size="sm" asChild>
-                  <Link
-                    to="/targets/$id/$tab"
-                    params={{ id: targetId, tab: action.tab }}
-                    search={action.search}
-                    onClick={(event) => {
-                      if (
-                        event.detail === 0 &&
-                        !event.defaultPrevented &&
-                        !event.altKey &&
-                        !event.ctrlKey &&
-                        !event.metaKey &&
-                        !event.shiftKey
-                      ) {
-                        onKeyboardNavigate(action.tab);
-                      }
-                    }}
-                  >
-                    {action.label}
-                  </Link>
-                </Button>
-              )}
+              {action.tab !== 'run' &&
+                (action.tab !== 'settings' || canManageDiscovery) && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link
+                      to="/targets/$id/$tab"
+                      params={{ id: targetId, tab: action.tab }}
+                      search={action.search}
+                      onClick={(event) => {
+                        if (
+                          event.detail === 0 &&
+                          !event.defaultPrevented &&
+                          !event.altKey &&
+                          !event.ctrlKey &&
+                          !event.metaKey &&
+                          !event.shiftKey
+                        ) {
+                          onKeyboardNavigate(action.tab);
+                        }
+                      }}
+                    >
+                      {action.label}
+                    </Link>
+                  </Button>
+                )}
             </li>
           ))}
         </ul>
