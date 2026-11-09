@@ -651,6 +651,35 @@ export type GetManyTargetRunDtoDto = {
   pageCount: number;
 };
 
+export type TargetChangeKind =
+  (typeof TargetChangeKind)[keyof typeof TargetChangeKind];
+
+export const TargetChangeKind = {
+  asset: 'asset',
+  service: 'service',
+} as const;
+
+export type TargetChangeDto = {
+  kind: TargetChangeKind;
+  at: string;
+  id: string;
+  label: string;
+  /**
+   * Parent asset value for a service
+   * @nullable
+   */
+  assetValue: string | null;
+};
+
+export type GetManyTargetChangeDtoDto = {
+  data: TargetChangeDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
 export type UpdateTargetDtoScanSchedule =
   (typeof UpdateTargetDtoScanSchedule)[keyof typeof UpdateTargetDtoScanSchedule];
 
@@ -5626,6 +5655,19 @@ export type TargetsControllerGetTargetRunsParams = {
    * @maximum 100
    */
   limit?: number;
+};
+
+export type TargetsControllerGetTargetChangesParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  kind?: TargetChangeKind;
 };
 
 export type WorkspacesControllerGetWorkspacesParams = {
@@ -13237,6 +13279,396 @@ export function useTargetsControllerGetTargetRuns<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getTargetsControllerGetTargetRunsQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Lists discovered assets and services for a target, newest first.
+ * @summary Get target discovery changes
+ */
+export const targetsControllerGetTargetChanges = (
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyTargetChangeDtoDto>(
+    { url: `/api/targets/${id}/changes`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getTargetsControllerGetTargetChangesInfiniteQueryKey = (
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+) => {
+  return [
+    'infinite',
+    `/api/targets/${id}/changes`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getTargetsControllerGetTargetChangesQueryKey = (
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+) => {
+  return [`/api/targets/${id}/changes`, ...(params ? [params] : [])] as const;
+};
+
+export const getTargetsControllerGetTargetChangesInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getTargetsControllerGetTargetChangesInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    QueryKey,
+    TargetsControllerGetTargetChangesParams['page']
+  > = ({ signal, pageParam }) =>
+    targetsControllerGetTargetChanges(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TError,
+    TData,
+    QueryKey,
+    TargetsControllerGetTargetChangesParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetChangesInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+>;
+export type TargetsControllerGetTargetChangesInfiniteQueryError = unknown;
+
+export function useTargetsControllerGetTargetChangesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | TargetsControllerGetTargetChangesParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetChangesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetChangesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target discovery changes
+ */
+
+export function useTargetsControllerGetTargetChangesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetChangesInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getTargetsControllerGetTargetChangesQueryOptions = <
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getTargetsControllerGetTargetChangesQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+  > = ({ signal }) =>
+    targetsControllerGetTargetChanges(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetChangesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+>;
+export type TargetsControllerGetTargetChangesQueryError = unknown;
+
+export function useTargetsControllerGetTargetChanges<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | TargetsControllerGetTargetChangesParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetChanges<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetChanges<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target discovery changes
+ */
+
+export function useTargetsControllerGetTargetChanges<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetChangesQueryOptions(
     id,
     params,
     options,
