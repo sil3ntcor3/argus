@@ -40,7 +40,9 @@ export async function recordFindingScannerSightings(
     `WITH report AS (
        SELECT finding.id AS "vulnerabilityId", job."toolId",
               history.id AS "jobHistoryId", history."projectId", target."workspaceId",
-              finding."jobHistoryId" AS "firstRunId", finding."firstDetectedDate"
+              finding."jobHistoryId" AS "firstRunId", finding."firstDetectedDate",
+              CASE WHEN job."findingScanScopeKey" IS NOT NULL AND job.status = 'in_progress'
+                   THEN job."findingScanClaimedAt" END AS "scanClaimedAt"
        FROM jobs AS job
        JOIN job_histories AS history ON history.id = job."jobHistoryId"
        JOIN workflows AS workflow ON workflow.id = history."workflowId"
@@ -70,7 +72,9 @@ export async function recordFindingScannerSightings(
        RETURNING "vulnerabilityId"
      ), countable AS (
        SELECT report."vulnerabilityId", report."workspaceId", report."jobHistoryId",
-              finding."detectionStatus" AS "fromStatus"
+              finding."detectionStatus" AS "fromStatus",
+              NOT finding."isArchived" AND finding."detectionStatus" = 'fixed'
+                AND report."scanClaimedAt" > finding."fixedAt" AS resurfaces
        FROM inserted JOIN report USING ("vulnerabilityId")
        JOIN vulnerabilities AS finding ON finding.id = inserted."vulnerabilityId"
        WHERE report."firstRunId" IS DISTINCT FROM report."jobHistoryId"
@@ -95,9 +99,13 @@ export async function recordFindingScannerSightings(
        UPDATE vulnerabilities AS finding
        SET "timesDetected" = finding."timesDetected" + 1,
            "detectionStatus" = CASE
+             WHEN countable.resurfaces THEN 'resurfaced'
              WHEN NOT finding."isArchived" AND countable."fromStatus" IN ('new', 'resurfaced')
              THEN 'active' ELSE countable."fromStatus"
-           END
+           END,
+           "fixedAt" = CASE WHEN countable.resurfaces THEN NULL ELSE finding."fixedAt" END,
+           "resurfacedCount" = finding."resurfacedCount" + CASE WHEN countable.resurfaces THEN 1 ELSE 0 END,
+           "missedScans" = CASE WHEN countable.resurfaces THEN 0 ELSE finding."missedScans" END
        FROM countable WHERE finding.id = countable."vulnerabilityId"
        RETURNING finding.id, countable."workspaceId", countable."jobHistoryId",
                  countable."fromStatus", finding."detectionStatus" AS "toStatus"
