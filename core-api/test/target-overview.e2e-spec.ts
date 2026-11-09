@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { BullMQName, CronSchedule } from '@/common/enums/enum';
+import { getQueueToken } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { wsHeaders } from './helpers/auth';
@@ -32,6 +35,7 @@ describe('Target overview API (e2e)', () => {
     totalServices: 4,
     newServices: 3,
     openPorts: 2,
+    nextScanAt: null,
     ...findingCounts,
     insights: [criticalInsight, ...discoveryInsights],
     exposure: {
@@ -179,6 +183,7 @@ describe('Target overview API (e2e)', () => {
       totalServices: 0,
       newServices: 0,
       openPorts: 0,
+      nextScanAt: null,
       openVulnerabilities: noOpenFindings,
       newVulnerabilities: 0,
       exposure: emptyExposure,
@@ -190,6 +195,7 @@ describe('Target overview API (e2e)', () => {
       totalServices: 1,
       newServices: 1,
       openPorts: 1,
+      nextScanAt: null,
       openVulnerabilities: { ...noOpenFindings, critical: 1 },
       newVulnerabilities: 1,
       insights: [criticalInsight, ...discoveryInsights],
@@ -199,6 +205,41 @@ describe('Target overview API (e2e)', () => {
         statusCodes: [{ name: '503', count: 1 }],
       },
     });
+  });
+
+  it('returns the saved BullMQ firing time and handles missing or disabled schedules', async () => {
+    const id = await makeTarget(owner.workspace.id);
+    const patch = (scanSchedule: CronSchedule) =>
+      request(app.server)
+        .patch(`/api/targets/${id}`)
+        .set(owner.headers)
+        .send({ scanSchedule });
+    const queue = app.app.get<Queue>(
+      getQueueToken(BullMQName.ASSETS_DISCOVERY_SCHEDULE),
+    );
+    await patch(CronSchedule.MONTHLY).expect(200);
+    const [{ jobId }] = await app.dataSource.query<{ jobId: string }[]>(
+      'SELECT "jobId" FROM targets WHERE id = $1',
+      [id],
+    );
+    try {
+      const result = await overview(id, owner.headers).expect(200);
+      const schedule = await queue.getJobScheduler(jobId);
+      expect(schedule?.next).toBeGreaterThan(Date.now());
+      expect(Date.parse(result.body.nextScanAt as string)).toBe(schedule?.next);
+      const uppercase = await overview(id.toUpperCase(), owner.headers).expect(
+        200,
+      );
+      expect(uppercase.body.nextScanAt).toBe(result.body.nextScanAt);
+      await queue.removeRepeatableByKey(jobId);
+      const missing = await overview(id, owner.headers).expect(200);
+      expect(missing.body.nextScanAt).toBeNull();
+      await patch(CronSchedule.DISABLED).expect(200);
+      const disabled = await overview(id, owner.headers).expect(200);
+      expect(disabled.body.nextScanAt).toBeNull();
+    } finally {
+      await queue.removeRepeatableByKey(jobId);
+    }
   });
 
   it('limits each exposure list to six rows with stable ties', async () => {
