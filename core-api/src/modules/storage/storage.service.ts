@@ -48,19 +48,25 @@ import {
   StorageConfig,
 } from './storage.config';
 
-interface ArtifactUploadInput {
+interface ArtifactLocation {
   workspaceId: string;
   artifactId: string;
+}
+
+interface ArtifactUploadInput extends ArtifactLocation {
   contentType: string;
   sizeBytes: number;
 }
 
-function validateArtifactUpload({
-  workspaceId, artifactId, contentType, sizeBytes,
-}: ArtifactUploadInput): void {
+function validateArtifactLocation({ workspaceId, artifactId }: ArtifactLocation): void {
   if (workspaceId.length !== 36 || artifactId.length !== 36 || !isUUID(workspaceId) || !isUUID(artifactId)) {
     throw new BadRequestException('Invalid artifact location');
   }
+}
+
+function validateArtifactUpload(input: ArtifactUploadInput): void {
+  validateArtifactLocation(input);
+  const { contentType, sizeBytes } = input;
   if (contentType.length > 255 || contentType.trim() !== contentType || !/^[a-z0-9_.+-]+\/[a-z0-9_.+-]+$/i.test(contentType)) {
     throw new BadRequestException('Invalid artifact content type');
   }
@@ -655,6 +661,17 @@ export class StorageService implements OnModuleInit {
       if (!(await alreadyPublished())) {
         throw new ConflictException('Artifact upload changed before completion');
       }
+    }
+  }
+
+  /** Remove the two canonical keys of a pending upload after its policy expires. */
+  public async deleteArtifactUploadObjects(location: ArtifactLocation): Promise<void> {
+    validateArtifactLocation(location);
+    const { workspaceId, artifactId } = location;
+    const client = this.rustFsClient.getClient();
+    const abortSignal = AbortSignal.timeout(15_000);
+    for (const Key of [workspaceArtifactUploadKey(workspaceId, artifactId), workspaceArtifactKey(workspaceId, artifactId)]) {
+      await client.send(new DeleteObjectCommand({ Bucket: ARTIFACT_BUCKET, Key }), { abortSignal });
     }
   }
 
