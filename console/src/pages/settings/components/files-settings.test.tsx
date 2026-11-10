@@ -12,6 +12,9 @@ import FilesSettings from './files-settings';
 
 const mocks = vi.hoisted(() => ({
   permission: vi.fn(),
+  files: vi.fn(),
+  folders: vi.fn(),
+  folderDetail: vi.fn(),
   download: vi.fn(),
   remove: vi.fn(),
 }));
@@ -26,18 +29,9 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 vi.mock('@/services/apis/gen/queries', async (original) => ({
   ...(await original<typeof import('@/services/apis/gen/queries')>()),
   useArtifactsControllerGetUsage: () => ({}),
-  useArtifactsControllerGetMany: (params: { scope: string }) => ({
-    isFetchedAfterMount: true,
-    data: {
-      data: (params.scope === 'all' ? [owned, peer] : [owned]).map((file) => ({
-        ...file,
-        mimeType: 'text/plain',
-        sizeBytes: 4,
-        source: 'upload',
-        createdAt: '2026-01-02T00:00:00Z',
-      })),
-    },
-  }),
+  useArtifactsControllerGetMany: mocks.files,
+  useArtifactFoldersControllerGetMany: mocks.folders,
+  useArtifactFoldersControllerGetById: mocks.folderDetail,
   artifactsControllerDownload: mocks.download,
   artifactsControllerRemove: mocks.remove,
 }));
@@ -55,7 +49,99 @@ describe('Files settings actions', () => {
     vi.clearAllMocks();
     mocks.download.mockReset();
     mocks.remove.mockReset();
+    mocks.folders.mockReturnValue({ isFetchedAfterMount: true, data: [] });
+    mocks.folderDetail.mockReturnValue({});
+    mocks.files.mockImplementation((params: { scope: string }) => ({
+      isFetchedAfterMount: true,
+      data: {
+        data: (params.scope === 'all' ? [owned, peer] : [owned]).map(
+          (file) => ({
+            ...file,
+            mimeType: 'text/plain',
+            sizeBytes: 4,
+            source: 'upload',
+            createdAt: '2026-01-02T00:00:00Z',
+          }),
+        ),
+      },
+    }));
     setGlobalWorkspaceId('workspace');
+  });
+
+  it('browses personal folders with breadcrumbs and searches across folders', async () => {
+    const reports = { id: 'reports', name: 'Reports' };
+    const archive = { id: 'archive', name: 'Archive' };
+    mocks.folders.mockImplementation((params?: { parentFolderId: string }) => ({
+      isFetchedAfterMount: true,
+      data: !params
+        ? [reports]
+        : params.parentFolderId === reports.id
+          ? [archive]
+          : [],
+    }));
+    mocks.folderDetail.mockImplementation((id: string) => ({
+      isFetchedAfterMount: true,
+      data: { path: id === archive.id ? [reports, archive] : [reports] },
+    }));
+    show(['artifact.read', 'artifact.manage']);
+    const lastFileFilter = () => mocks.files.mock.lastCall?.[0];
+    await waitFor(() =>
+      expect(lastFileFilter()).toMatchObject({
+        parentFolderId: 'root',
+        page: 1,
+      }),
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Reports' }));
+    expect(
+      screen.getByRole('region', { name: 'Folder navigation' }),
+    ).toHaveFocus();
+    expect(lastFileFilter()).toMatchObject({
+      parentFolderId: reports.id,
+      page: 1,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
+    expect(lastFileFilter()).toMatchObject({
+      parentFolderId: archive.id,
+      page: 1,
+    });
+    const path = screen.getByRole('navigation', { name: 'Folder path' });
+    expect(within(path).getByText('Archive')).toHaveAttribute(
+      'aria-current',
+      'location',
+    );
+    fireEvent.click(within(path).getByRole('button', { name: 'Reports' }));
+    expect(lastFileFilter()).toMatchObject({ parentFolderId: reports.id });
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search files' }), {
+      target: { value: 'report' },
+    });
+    await waitFor(() =>
+      expect(lastFileFilter()).toMatchObject({
+        search: 'report',
+        parentFolderId: undefined,
+      }),
+    );
+    expect(
+      screen.queryByRole('navigation', { name: 'Folder path' }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'All files' }));
+    expect(lastFileFilter()).toMatchObject({
+      scope: 'all',
+      parentFolderId: undefined,
+    });
+  });
+
+  it('hides file rows when a folder request denies the shared read permission', async () => {
+    mocks.folders.mockReturnValue({
+      isError: true,
+      error: { isAxiosError: true, response: { status: 403 } },
+    });
+    show(['artifact.read']);
+    expect(
+      await screen.findByText('Could not verify access to Files.'),
+    ).toBeVisible();
+    expect(screen.queryByText('My report.txt')).toBeNull();
   });
 
   it('offers a download for an owned file and no delete to a read-only viewer', async () => {
