@@ -15,6 +15,7 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 | `GET /api/artifact-folders/:id` | `artifact.read` and ownership of the folder and its breadcrumb. |
 
 - `ArtifactReadService` scopes queries to the selected workspace and ready files. Foreign, pending, deleted, or otherwise invisible records return 404. Download signs a short-lived attachment URL with `application/octet-stream`.
+- In `scope=mine`, `parentFolderId=root` lists only files outside folders. An explicit folder UUID must have an owned breadcrumb in the selected workspace. Omitting the filter leaves listing and search across folders.
 - `ArtifactUsageService` reads the meter without creating a row. A missing row has zero usage and the default 1 GiB quota. `ARTIFACT_MAX_FILE_BYTES` is 50 MiB.
 - `ArtifactUploadReservationService` and `ArtifactUploadCompletionService` are internal. A future caller must authorize the workspace and actor before calling them.
 

@@ -2,11 +2,12 @@ import { ARTIFACT_BUCKET } from '@/common/constants/artifact-storage';
 import { SortOrder, type GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
 import { StorageService } from '@/modules/storage/storage.service';
 import { getManyResponse } from '@/utils/getManyResponse';
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
+import { ArtifactFoldersService } from './artifact-folders.service';
 import type { ArtifactDownloadDto } from './dto/artifact-download.dto';
-import { ARTIFACT_SORT_FIELDS, ArtifactListScope, type ArtifactListItemDto, type ArtifactListQueryDto } from './dto/artifact-list.dto';
+import { ARTIFACT_ROOT_FOLDER, ARTIFACT_SORT_FIELDS, ArtifactListScope, type ArtifactListItemDto, type ArtifactListQueryDto } from './dto/artifact-list.dto';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 
 const DOWNLOAD_TTL_SECONDS = 5 * 60;
@@ -17,6 +18,7 @@ export class ArtifactReadService {
     @InjectRepository(WorkspaceArtifact)
     private readonly artifacts: Repository<WorkspaceArtifact>,
     private readonly storage: StorageService,
+    private readonly folders: ArtifactFoldersService,
   ) {}
 
   async getMany(
@@ -29,9 +31,19 @@ export class ArtifactReadService {
     if (all && !this.canManage(permissions)) {
       throw new ForbiddenException('Requires artifact.manage');
     }
+    const parentFolderId = query.parentFolderId;
+    if (all && parentFolderId !== undefined) {
+      throw new BadRequestException('Folder filtering requires mine scope');
+    }
 
     const builder = this.readyFiles(workspaceId);
     if (!all) builder.andWhere('artifact.createdByUserId = :userId', { userId });
+    if (parentFolderId === ARTIFACT_ROOT_FOLDER) {
+      builder.andWhere('artifact.parentFolderId IS NULL');
+    } else if (parentFolderId !== undefined) {
+      await this.folders.getById(workspaceId, userId, parentFolderId);
+      builder.andWhere('artifact.parentFolderId = :parentFolderId', { parentFolderId });
+    }
     const search = query.search.trim();
     if (search) {
       const literal = search.replace(/[\\%_]/g, '\\$&');

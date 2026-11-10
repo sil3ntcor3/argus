@@ -1,4 +1,5 @@
 import { ARTIFACT_BUCKET, workspaceArtifactKey } from '@/common/constants/artifact-storage';
+import { ArtifactFolder } from '@/modules/artifacts/entities/artifact-folder.entity';
 import { WorkspaceArtifact } from '@/modules/artifacts/entities/workspace-artifact.entity';
 import { StorageService } from '@/modules/storage/storage.service';
 import { randomUUID } from 'node:crypto';
@@ -188,5 +189,45 @@ describe('Workspace file metadata (e2e)', () => {
     ]) {
       await list(owner.headers).query(query).expect(400);
     }
+  });
+
+  it('filters owned root and folder files while retaining unfiltered search', async () => {
+    const workspaceId = owner.workspace.id;
+    const createdByUserId = owner.user.userId;
+    const folderId = randomUUID();
+    const nestedId = randomUUID();
+    const peerFolderId = randomUUID();
+    const outsideFolderId = randomUUID();
+    await app.dataSource.getRepository(ArtifactFolder).insert([
+      { id: folderId, name: 'Reports', workspaceId, createdByUserId },
+      { id: nestedId, name: 'Nested', workspaceId, createdByUserId, parentFolderId: folderId },
+      { id: peerFolderId, name: 'Peer', workspaceId, createdByUserId: reader.user.userId },
+      { id: outsideFolderId, name: 'Outside', workspaceId: reader.workspace.id, createdByUserId },
+    ]);
+    const files = app.dataSource.getRepository(WorkspaceArtifact);
+    await files.update([own[1], peer], { parentFolderId: folderId });
+    const second = randomUUID();
+    await files.insert({
+      id: second, workspaceId, createdByUserId, parentFolderId: folderId, name: 'Another file',
+      mimeType: 'text/plain', sizeBytes: '1', objectKey: workspaceArtifactKey(workspaceId, second),
+      source: 'upload', status: 'ready',
+    });
+
+    const root = await list(owner.headers).query({ parentFolderId: 'root' }).expect(200);
+    expect(root.body).toMatchObject({ total: 1, data: [{ id: own[0] }] });
+    const folder = await list(owner.headers).query({ parentFolderId: folderId, limit: 1 }).expect(200);
+    expect(folder.body).toMatchObject({ total: 2, data: [{ id: own[1] }], hasNextPage: true });
+    const secondPage = await list(owner.headers).query({ parentFolderId: folderId, limit: 1, page: 2 }).expect(200);
+    expect(secondPage.body).toMatchObject({ total: 2, data: [{ id: second }], hasNextPage: false });
+    const empty = await list(owner.headers).query({ parentFolderId: nestedId }).expect(200);
+    expect(empty.body).toMatchObject({ total: 0, data: [] });
+    const search = await list(owner.headers).query({ search: 'report' }).expect(200);
+    expect(search.body).toMatchObject({ total: 2, data: [{ id: own[0] }, { id: own[1] }] });
+
+    for (const id of [peerFolderId, outsideFolderId, randomUUID()]) {
+      await list(owner.headers).query({ parentFolderId: id }).expect(404);
+    }
+    await list(owner.headers).query({ parentFolderId: 'invalid' }).expect(400);
+    await list(owner.headers).query({ parentFolderId: 'root', scope: 'all' }).expect(400);
   });
 });

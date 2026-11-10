@@ -1,9 +1,10 @@
 import { GetManyBaseQueryParams, SortOrder } from '@/common/dtos/get-many-base.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, NotContains } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, NotContains, ValidateIf } from 'class-validator';
 import type { WorkspaceArtifact } from '../entities/workspace-artifact.entity';
 
 export const ARTIFACT_SORT_FIELDS = ['createdAt', 'updatedAt', 'name', 'sizeBytes'] as const;
+export const ARTIFACT_ROOT_FOLDER = 'root';
 export enum ArtifactListScope {
   MINE = 'mine',
   ALL = 'all',
@@ -14,6 +15,14 @@ export class ArtifactListQueryDto extends GetManyBaseQueryParams {
   @IsOptional()
   @IsIn(Object.values(ArtifactListScope))
   scope: ArtifactListScope = ArtifactListScope.MINE;
+
+  @ApiPropertyOptional({
+    description: 'In mine scope, an owned folder UUID or root for files outside folders. Omit to list across folders.',
+  })
+  @IsOptional()
+  @ValidateIf((_query: unknown, value: unknown) => value !== ARTIFACT_ROOT_FOLDER)
+  @IsUUID()
+  parentFolderId?: string;
 
   @ApiPropertyOptional({ type: 'integer', default: 1, minimum: 1, maximum: 1_000_000 })
   @IsInt()

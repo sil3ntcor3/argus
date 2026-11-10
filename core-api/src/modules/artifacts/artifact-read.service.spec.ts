@@ -1,8 +1,9 @@
 import { ARTIFACT_BUCKET, workspaceArtifactKey } from '@/common/constants/artifact-storage';
 import type { StorageService } from '@/modules/storage/storage.service';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Repository } from 'typeorm';
+import type { ArtifactFoldersService } from './artifact-folders.service';
 import { ArtifactReadService } from './artifact-read.service';
 import { ArtifactListQueryDto, ArtifactListScope } from './dto/artifact-list.dto';
 import type { WorkspaceArtifact } from './entities/workspace-artifact.entity';
@@ -25,16 +26,43 @@ describe('ArtifactReadService', () => {
   const createQueryBuilder = jest.fn(() => builder);
   const findOne = jest.fn();
   const getPresignedDownloadUrl = jest.fn();
+  const getFolder = jest.fn();
   const service = new ArtifactReadService(
     { createQueryBuilder, findOne } as unknown as Repository<WorkspaceArtifact>,
     { getPresignedDownloadUrl } as unknown as StorageService,
+    { getById: getFolder } as unknown as ArtifactFoldersService,
   );
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    builder.getManyAndCount.mockResolvedValue([[], 0]);
+  });
 
   it('rejects all scope before querying without manage permission', async () => {
     const query = Object.assign(new ArtifactListQueryDto(), { scope: ArtifactListScope.ALL });
     await expect(service.getMany(workspaceId, userId, query, ['artifact.read'])).rejects.toThrow(ForbiddenException);
+    expect(createQueryBuilder).not.toHaveBeenCalled();
+  });
+
+  it('filters owned root files before pagination without looking up a folder', async () => {
+    const query = Object.assign(new ArtifactListQueryDto(), { parentFolderId: 'root' });
+    await service.getMany(workspaceId, userId, query, ['artifact.read']);
+    expect(builder.andWhere).toHaveBeenCalledWith('artifact.parentFolderId IS NULL');
+    expect(getFolder).not.toHaveBeenCalled();
+  });
+
+  it('validates folder ownership before returning files', async () => {
+    const parentFolderId = randomUUID();
+    getFolder.mockRejectedValueOnce(new NotFoundException());
+    const query = Object.assign(new ArtifactListQueryDto(), { parentFolderId });
+    await expect(service.getMany(workspaceId, userId, query, ['artifact.read'])).rejects.toThrow(NotFoundException);
+    expect(getFolder).toHaveBeenCalledWith(workspaceId, userId, parentFolderId);
+    expect(builder.getManyAndCount).not.toHaveBeenCalled();
+  });
+
+  it('rejects a folder filter in the all scope even for a manager', async () => {
+    const query = Object.assign(new ArtifactListQueryDto(), { scope: ArtifactListScope.ALL, parentFolderId: 'root' });
+    await expect(service.getMany(workspaceId, userId, query, ['artifact.manage'])).rejects.toThrow(BadRequestException);
     expect(createQueryBuilder).not.toHaveBeenCalled();
   });
 
