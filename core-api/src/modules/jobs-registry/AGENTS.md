@@ -18,8 +18,9 @@ the same run lock. A step with no input can complete without creating jobs.
 - Interrupted scans can send real findings with `error=false`. Only a clean
   connector Done can set `coverage_complete`; the gRPC handler accepts it as
   evidence only from the worker identified by the token. Old worker and HTTP
-  reports still ingest findings. The marker lives in the private queue, not in
-  the scan payload or REST responses, and is not used to close findings.
+  reports still ingest findings. After ingesting a clean result, Core records
+  coverage privately when the saved scope and claim still match. The evidence
+  does not appear in REST or close any findings.
 - Keep job terminal writes conditional: cancellation or a retry can change the
   state while a result is processing.
 
