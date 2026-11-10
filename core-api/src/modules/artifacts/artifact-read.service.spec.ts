@@ -1,11 +1,11 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Repository } from 'typeorm';
-import { ArtifactListService } from './artifact-list.service';
+import { ArtifactReadService } from './artifact-read.service';
 import { ArtifactListQueryDto, ArtifactListScope } from './dto/artifact-list.dto';
 import type { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 
-describe('ArtifactListService', () => {
+describe('ArtifactReadService', () => {
   const workspaceId = randomUUID();
   const userId = randomUUID();
   const builder = {
@@ -18,9 +18,10 @@ describe('ArtifactListService', () => {
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
     getManyAndCount: jest.fn(),
+    getOne: jest.fn(),
   };
   const createQueryBuilder = jest.fn(() => builder);
-  const service = new ArtifactListService({ createQueryBuilder } as unknown as Repository<WorkspaceArtifact>);
+  const service = new ArtifactReadService({ createQueryBuilder } as unknown as Repository<WorkspaceArtifact>);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -28,6 +29,16 @@ describe('ArtifactListService', () => {
     const query = Object.assign(new ArtifactListQueryDto(), { scope: ArtifactListScope.ALL });
     await expect(service.getMany(workspaceId, userId, query, ['artifact.read'])).rejects.toThrow(ForbiddenException);
     expect(createQueryBuilder).not.toHaveBeenCalled();
+  });
+
+  it('returns not found when the ready, workspace-scoped lookup yields no owned file', async () => {
+    const id = randomUUID();
+    builder.getOne.mockResolvedValueOnce(null);
+    await expect(service.getById(workspaceId, userId, id, ['artifact.read'])).rejects.toThrow(NotFoundException);
+    expect(builder.where).toHaveBeenCalledWith('artifact.workspaceId = :workspaceId', { workspaceId });
+    expect(builder.andWhere).toHaveBeenCalledWith('artifact.status = :status', { status: 'ready' });
+    expect(builder.andWhere).toHaveBeenCalledWith('artifact.id = :id', { id });
+    expect(builder.andWhere).toHaveBeenCalledWith('artifact.createdByUserId = :userId', { userId });
   });
 
   it('maps a legacy row without a creator and preserves the largest supported byte count', async () => {
