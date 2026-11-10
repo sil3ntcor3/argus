@@ -152,7 +152,32 @@ describe('Timed finding risk acceptance (e2e)', () => {
     const report = await app.app
       .get(VulnerabilityReportService)
       .getVulnerabilityReportData(scope.workspace.id, { targetIds: [target] });
-    expect(report.summary.dismissedCount).toBe(3);
+    expect(report.summary).toMatchObject({
+      totalVulnerabilities: 4, activeCount: 1, dismissedCount: 3, criticalCount: 1,
+    });
+    expect(report.recentVulnerabilities.map((row) => row.id)).toEqual([expired]);
+    expect(report.allVulnerabilities.map((row) => row.id)).toEqual([expired]);
+  });
+
+  it('keeps report counts and details inside the explicit finding selection', async () => {
+    const reports = app.app.get(VulnerabilityReportService);
+    const selected = await reports.getVulnerabilityReportData(scope.workspace.id, {
+      targetIds: [target], vulnIds: [future], minSeverity: 'HIGH',
+    });
+    expect(selected.summary).toMatchObject({
+      totalVulnerabilities: 1, activeCount: 0, dismissedCount: 1, criticalCount: 0,
+    });
+    expect(selected.recentVulnerabilities).toEqual([]);
+    expect(selected.allVulnerabilities).toEqual([]);
+    expect(selected.topAssets).toEqual([]);
+    expect(selected.targetStats).toEqual([]);
+    expect(selected.vulnerabilityTrends.last30Days.every((count) => count === 0)).toBe(true);
+
+    const outsideDateRange = await reports.getVulnerabilityReportData(scope.workspace.id, {
+      targetIds: [target], startDate: time(-2), endDate: time(-1),
+    });
+    expect(outsideDateRange.summary.activeCount).toBe(0);
+    expect(outsideDateRange.vulnerabilityTrends.last30Days.every((count) => count === 0)).toBe(true);
   });
 
   it('requires a bounded future timestamp with timezone only for risk acceptance', async () => {
@@ -225,12 +250,18 @@ describe('Timed finding risk acceptance (e2e)', () => {
       `SELECT "workspaceId", type, data FROM vulnerability_events WHERE "vulnerabilityId"=$1`,
       [expired],
     );
-    expect(events).toEqual([
+    expect(events).toHaveLength(2);
+    expect(events).toEqual(expect.arrayContaining([
       {
         workspaceId: scope.workspace.id,
         type: 'risk_expired',
         data: expect.objectContaining({ acceptedById: scope.user.userId }),
       },
-    ]);
+      {
+        workspaceId: scope.workspace.id,
+        type: 'dismissed',
+        data: expect.objectContaining({ reason: 'risk_accepted', expiresAt }),
+      },
+    ]));
   });
 });
