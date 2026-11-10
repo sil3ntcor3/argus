@@ -55,6 +55,7 @@ type RuntimeOpts struct {
 
 type Handle struct {
 	ID        string
+	ImageID   string
 	Name      string
 	CreatedAt time.Time
 	Labels    map[string]string

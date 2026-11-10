@@ -26,10 +26,11 @@ import (
 // Stored in bridge map; accessed by processConnectorJob (Submit time) and
 // handleConnectorResult (completion time).
 type bridgeEntry struct {
-	jobID    string
-	category string
-	release  func() // semaphore release callback — called only by completion handler
-	image    string // image the execution ran (backoff bookkeeping)
+	jobID            string
+	category         string
+	release          func() // semaphore release callback — called only by completion handler
+	image            string // image the execution ran (backoff bookkeeping)
+	connectorImageID string
 }
 
 var (
@@ -438,7 +439,7 @@ func submitCategoryResult(ctx context.Context, grpcClient *grpcclient.Client, jo
 	case "ports_scanner":
 		return grpcClient.SubmitPortsResult(ctx, jobID, isError, raw, nil)
 	case "vulnerabilities":
-		return grpcClient.SubmitVulnerabilitiesResult(ctx, jobID, isError, raw, nil, false)
+		return grpcClient.SubmitVulnerabilitiesResult(ctx, jobID, isError, raw, nil, false, "")
 	case "screenshot":
 		return grpcClient.SubmitScreenshotResult(ctx, jobID, isError, raw)
 	case "url_discovery":
@@ -778,13 +779,16 @@ func processConnectorJob(ctx context.Context, job *pb.Job, grpcClient *grpcclien
 		activeJobs[job.Id] = struct{}{}
 		activeJobsMu.Unlock()
 
+		// Keep the image identity before the execution can release its handle.
+		connectorImageID := mgr.ImageID(execID)
 		// Register bridge entry: links executionID → job for result routing.
 		bridgeMu.Lock()
 		bridge[execID] = &bridgeEntry{
-			jobID:    job.Id,
-			category: category,
-			release:  releaseSem,
-			image:    spec.Image,
+			jobID:            job.Id,
+			category:         category,
+			release:          releaseSem,
+			image:            spec.Image,
+			connectorImageID: connectorImageID,
 		}
 		bridgeMu.Unlock()
 
@@ -1156,7 +1160,7 @@ drain:
 				log.Warning("[%s] Connector stopped early (%s): submitted %d port(s) collected so far", entry.jobID, reason, len(ports))
 			}
 		} else {
-			if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns, false); err != nil {
+			if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns, false, entry.connectorImageID); err != nil {
 				log.ErrorE(fmt.Sprintf("[%s] Failed to submit partial vulnerabilities", entry.jobID), err)
 			} else {
 				log.Warning("[%s] Connector stopped early (%s): submitted %d finding(s) collected so far", entry.jobID, reason, len(vulns))
@@ -1183,7 +1187,7 @@ drain:
 	case entry.category == "vulnerabilities":
 		// Clean Done: submit the aggregated findings exactly once (raw is ""
 		// per contract — findings travel in the structured payload).
-		if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns, hadDone && !hasError); err != nil {
+		if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns, hadDone && !hasError, entry.connectorImageID); err != nil {
 			log.ErrorE(fmt.Sprintf("[%s] Failed to submit connector vulnerabilities", entry.jobID), err)
 		} else {
 			log.Info("[%s] connector vulnerabilities result submitted: exec=%s findings=%d", entry.jobID, execID, len(vulns))

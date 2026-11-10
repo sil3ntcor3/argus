@@ -786,6 +786,7 @@ export class JobsRegistryController {
     raw,
     vulnerabilities,
     coverageComplete,
+    connectorImageId,
   }: {
     workerId: string;
     jobId: string;
@@ -793,10 +794,10 @@ export class JobsRegistryController {
     raw?: string;
     vulnerabilities?: { values: Vulnerability[] };
     coverageComplete?: boolean;
+    connectorImageId?: string;
   }, metadata?: Metadata): Promise<{ success: boolean }> {
     const token = metadata?.get(WORKER_TOKEN_HEADER)[0];
-    const trustedCoverageComplete =
-      coverageComplete === true &&
+    const trustedConnectorResult =
       error === false &&
       Array.isArray(vulnerabilities?.values) &&
       typeof token === 'string' &&
@@ -814,7 +815,8 @@ export class JobsRegistryController {
       workerId,
       dto,
       ToolCategory.VULNERABILITIES,
-      trustedCoverageComplete ? true : undefined,
+      trustedConnectorResult && coverageComplete === true ? true : undefined,
+      trustedConnectorResult ? connectorImageId : undefined,
     );
     return { success: !!result.jobId };
   }

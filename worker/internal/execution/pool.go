@@ -50,6 +50,7 @@ type poolEntry struct {
 	ID             string    // docker container ID (runtime Handle.ID)
 	Name           string    // human-readable Argus container name
 	Image          string    // container image
+	ImageID        string    // actual image configuration ID, if known
 	ImageVersion   string    // resolved connector version
 	Tool           string    // connector/tool slug
 	PoolKey        string    // normalized image (lowercase) — the acquire key
@@ -243,7 +244,7 @@ func (p *PoolManager) AcquireHandle(execID, image string) (runtime.Handle, bool)
 		p.purgeOwnerByContainer(cid)
 		p.owner[execID] = cid
 		p.unindexIdle(cid, key)
-		return runtime.Handle{ID: e.ID, Name: e.Name}, true
+		return runtime.Handle{ID: e.ID, Name: e.Name, ImageID: e.ImageID}, true
 	}
 	return runtime.Handle{}, false
 }

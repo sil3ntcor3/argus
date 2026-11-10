@@ -432,6 +432,7 @@ func (m *Manager) Submit(ctx context.Context, spec JobSpec) (string, error) {
 				ID:               h.ID,
 				Name:             h.Name,
 				Image:            spec.Image,
+				ImageID:          h.ImageID,
 				ImageVersion:     spec.Version,
 				Tool:             spec.Tool,
 				PoolKey:          poolKey,
@@ -622,6 +623,16 @@ func (m *Manager) Cancel(ctx context.Context, id string) error {
 		m.logError("container cleanup failed", err)
 	}
 	return nil
+}
+
+// ImageID returns the actual connector image identity for this execution.
+func (m *Manager) ImageID(execID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if e := m.execs[execID]; e != nil {
+		return e.Handle.ImageID
+	}
+	return ""
 }
 
 // Release retires an execution's claim on its container. With a pool wired the

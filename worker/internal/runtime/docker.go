@@ -695,6 +695,27 @@ func applyDefaultIsolation(hc *container.HostConfig) {
 	}
 }
 
+// containerImageID reads the actual container configuration, not the current
+// tag mapping in the daemon's image cache. This evidence is best effort.
+func (d *DockerRuntime) containerImageID(ctx context.Context, containerID string) string {
+	inspectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	actual, err := d.cli.ContainerInspect(inspectCtx, containerID)
+	if err != nil || actual.ContainerJSONBase == nil {
+		return ""
+	}
+	id := actual.Image
+	if len(id) != 71 || !strings.HasPrefix(id, "sha256:") {
+		return ""
+	}
+	for _, ch := range id[len("sha256:"):] {
+		if !(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f') {
+			return ""
+		}
+	}
+	return id
+}
+
 func (d *DockerRuntime) Create(ctx context.Context, spec JobSpec, opts RuntimeOpts) (Handle, error) {
 	if spec.Image == "" {
 		return Handle{}, fmt.Errorf("image required")
@@ -819,6 +840,7 @@ func (d *DockerRuntime) Create(ctx context.Context, spec JobSpec, opts RuntimeOp
 	}
 
 	containerID := resp.ID
+	imageID := d.containerImageID(ctx, containerID)
 	d.logInfo("docker: container created: %s exec=%s job=%s tool=%s grpc=%s", containerID, execID, spec.JobID, spec.Tool, d.connectorAddr)
 
 	// Start the container. Clean up on failure so we don't leak containers.
@@ -830,6 +852,7 @@ func (d *DockerRuntime) Create(ctx context.Context, spec JobSpec, opts RuntimeOp
 
 	handle := Handle{
 		ID:        containerID,
+		ImageID:   imageID,
 		Name:      name,
 		CreatedAt: time.Now().UTC(),
 		Labels: map[string]string{

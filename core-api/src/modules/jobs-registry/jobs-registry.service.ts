@@ -918,6 +918,7 @@ export class JobsRegistryService {
     dto: BaseResultDto,
     category: ToolCategory,
     trustedCoverageComplete?: boolean,
+    trustedConnectorImageId?: string,
   ): Promise<{ jobId: string; queueId: string }> {
     const fileName = `${dto.jobId}-${randomUUID()}.json`;
     const { path: resultRef } = await this.storageService.uploadFile(
@@ -933,12 +934,18 @@ export class JobsRegistryService {
         jobId: dto.jobId,
         resultRef,
         category,
-        // The wire marker comes from the authenticated gRPC handler, not the
-        // HTTP DTO or stored scanner payload. Nothing consumes it yet.
+        // Coverage evidence comes from the authenticated gRPC handler,
+        // never from the HTTP DTO or stored scanner payload.
         ...(trustedCoverageComplete === true &&
           dto.error === false &&
           category === ToolCategory.VULNERABILITIES
           ? { coverageComplete: true }
+          : {}),
+        ...(dto.error === false &&
+          category === ToolCategory.VULNERABILITIES &&
+          trustedConnectorImageId?.length === 71 &&
+          /^sha256:[0-9a-f]{64}$/.test(trustedConnectorImageId)
+          ? { connectorImageId: trustedConnectorImageId }
           : {}),
       },
       {

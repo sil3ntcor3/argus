@@ -635,34 +635,35 @@ func (c *captureLogger) find(substr string) (string, bool) {
 // endpoints DockerRuntime.Create/Stop/Cleanup touch. It uses a fixed API
 // version on the client side, so no version negotiation or /_ping is needed.
 type fakeDockerEngine struct {
-	mu             sync.Mutex
-	containerID    string
-	pulled         int
-	created        int
-	started        int
-	stopped        int
-	removed        int
-	removeErr      error
-	running        bool // container state as the engine sees it
-	createBody     string
-	createName     string              // name of the most recent create attempt
-	createNames    []string            // every create attempt name, in order
-	createConflict bool                // fail the next create with HTTP 409, then clear
-	health         string              // State.Health.Status, "" = no healthcheck
-	status         string              // State.Status
-	exitCode       int                 // State.ExitCode
-	oomKilled      bool                // State.OOMKilled
-	startedAt      string              // State.StartedAt (RFC3339)
-	finishedAt     string              // State.FinishedAt (RFC3339)
-	logOutput      string              // payload for the container logs stream
-	logRaw         []byte              // verbatim bytes for the logs stream (raw/TTY); when set, served without a multiplex header
-	labels         map[string]string   // Config.Labels of the created container
-	exists         bool                // a container currently exists in the engine (inspect/list 404 when false)
-	imageLabels    map[string]string   // Config.Labels returned by ImageInspect; nil = 404 (image absent)
-	list           []container.Summary // seeded GET /containers/json response (orphan reconcile)
-	listCalls      int                 // ContainerList requests served
-	listFilters    string              // filters query param of the last list request
-	removeIDs      []string            // container IDs from DELETE requests, in order
+	mu               sync.Mutex
+	containerID      string
+	containerImageID string
+	pulled           int
+	created          int
+	started          int
+	stopped          int
+	removed          int
+	removeErr        error
+	running          bool // container state as the engine sees it
+	createBody       string
+	createName       string              // name of the most recent create attempt
+	createNames      []string            // every create attempt name, in order
+	createConflict   bool                // fail the next create with HTTP 409, then clear
+	health           string              // State.Health.Status, "" = no healthcheck
+	status           string              // State.Status
+	exitCode         int                 // State.ExitCode
+	oomKilled        bool                // State.OOMKilled
+	startedAt        string              // State.StartedAt (RFC3339)
+	finishedAt       string              // State.FinishedAt (RFC3339)
+	logOutput        string              // payload for the container logs stream
+	logRaw           []byte              // verbatim bytes for the logs stream (raw/TTY); when set, served without a multiplex header
+	labels           map[string]string   // Config.Labels of the created container
+	exists           bool                // a container currently exists in the engine (inspect/list 404 when false)
+	imageLabels      map[string]string   // Config.Labels returned by ImageInspect; nil = 404 (image absent)
+	list             []container.Summary // seeded GET /containers/json response (orphan reconcile)
+	listCalls        int                 // ContainerList requests served
+	listFilters      string              // filters query param of the last list request
+	removeIDs        []string            // container IDs from DELETE requests, in order
 }
 
 func newFakeDockerEngine() *fakeDockerEngine {
@@ -755,6 +756,7 @@ func (f *fakeDockerEngine) handler() http.HandlerFunc {
 			startedAt := f.startedAt
 			finishedAt := f.finishedAt
 			labels := f.labels
+			imageID := f.containerImageID
 			f.mu.Unlock()
 			healthJSON := ""
 			if health != "" {
@@ -766,7 +768,7 @@ func (f *fakeDockerEngine) handler() http.HandlerFunc {
 				labelsJSON = string(b)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"Id":%q,"State":{"Running":%t,"Status":%q,"ExitCode":%d,"OOMKilled":%t,"StartedAt":%q,"FinishedAt":%q%s},"Config":{"Labels":%s}}`, id, running, status, exitCode, oomKilled, startedAt, finishedAt, healthJSON, labelsJSON)
+			fmt.Fprintf(w, `{"Id":%q,"Image":%q,"State":{"Running":%t,"Status":%q,"ExitCode":%d,"OOMKilled":%t,"StartedAt":%q,"FinishedAt":%q%s},"Config":{"Labels":%s}}`, id, imageID, running, status, exitCode, oomKilled, startedAt, finishedAt, healthJSON, labelsJSON)
 		case r.Method == http.MethodGet && strings.HasPrefix(path, "/containers/") && strings.HasSuffix(path, "/logs"):
 			// ContainerLogs with ShowStdout+ShowStderr returns a multiplexed
 			// stream (8-byte header: stream byte + uint32 BE length, then
@@ -844,6 +846,30 @@ func newFakeDockerRuntime(t *testing.T, engine *fakeDockerEngine, log *captureLo
 	r := NewDockerRuntimeWithClient(cli, "172.18.0.3:50051", "tok")
 	r.SetLogger(log)
 	return r
+}
+
+func TestCreateCapturesActualContainerImageID(t *testing.T) {
+	valid := "sha256:" + strings.Repeat("a", 64)
+	for _, tc := range []struct{ name, inspect, want string }{
+		{"actual image", valid, valid},
+		{"malformed", "sha256:invalid", ""},
+		{"unavailable", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := newFakeDockerEngine()
+			engine.containerImageID = tc.inspect
+			r := newFakeDockerRuntime(t, engine, &captureLogger{})
+			handle, err := r.Create(context.Background(), JobSpec{
+				Tool: "nuclei", Image: "registry.example.test/connector:fixture", JobID: "image-id-test",
+			}, RuntimeOpts{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if handle.ImageID != tc.want {
+				t.Fatalf("image ID from container inspect = %q, want %q", handle.ImageID, tc.want)
+			}
+		})
+	}
 }
 
 func TestCreateLogsLifecycleSteps(t *testing.T) {

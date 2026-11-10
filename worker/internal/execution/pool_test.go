@@ -32,6 +32,7 @@ func TestPoolAcquireHandlePreservesContainerName(t *testing.T) {
 	p.Add(poolEntry{
 		ID:         "c1",
 		Name:       "oasm-nuclei-abc123",
+		ImageID:    "sha256:container-image",
 		Image:      "nuclei",
 		PoolKey:    "nuclei",
 		State:      PoolStateIdle,
@@ -41,6 +42,9 @@ func TestPoolAcquireHandlePreservesContainerName(t *testing.T) {
 	handle, ok := p.AcquireHandle("exec-1", "nuclei")
 	if !ok {
 		t.Fatal("AcquireHandle must hit an idle container with a matching pool key")
+	}
+	if handle.ImageID != "sha256:container-image" {
+		t.Fatalf("AcquireHandle discarded image ID: %q", handle.ImageID)
 	}
 	if handle.Name != "oasm-nuclei-abc123" {
 		t.Fatalf("AcquireHandle returned name %q, want %q", handle.Name, "oasm-nuclei-abc123")
