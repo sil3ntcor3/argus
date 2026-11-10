@@ -16,6 +16,11 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 - `ArtifactUsageService` reads the meter without creating a row. A missing row has zero usage and the default 1 GiB quota. `ARTIFACT_MAX_FILE_BYTES` is 50 MiB.
 - `ArtifactUploadReservationService` and `ArtifactUploadCompletionService` are internal. A future caller must authorize the workspace and actor before calling them.
 
+## Folder persistence
+
+- `ArtifactFolder` stores a private workspace folder. A null `parentFolderId` places a folder or file at the workspace root. Existing files remain at the root after migration.
+- Composite parent foreign keys include `workspaceId`. They reject references across workspaces and prevent deleting a folder while it contains files or child folders. Workspace deletion cascades through the whole tree. Folder operations need their own authorization and cycle checks before exposing writes.
+
 ## File lifecycle
 
 - Reservation allocates a UUID and signs a 15-minute POST for `workspaces/<workspaceId>/<artifactId>/upload`. It returns the form only after the pending row and quota reservation commit. The display name never contributes to an object key.

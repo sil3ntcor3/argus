@@ -5,6 +5,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  ForeignKey,
   Index,
   JoinColumn,
   ManyToOne,
@@ -13,11 +14,13 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { Relation } from 'typeorm';
+import { ArtifactFolder } from './artifact-folder.entity';
 
 /** Private record for a file in the artifacts bucket. */
 @Entity('artifacts')
 @Unique('UQ_artifacts_object_key', ['objectKey'])
 @Index('IDX_artifacts_workspace_created', ['workspaceId', 'createdAt'])
+@Index('IDX_artifacts_workspace_folder', ['workspaceId', 'parentFolderId'])
 @Index('IDX_artifacts_creator', ['createdByUserId'])
 @Index('IDX_artifacts_status_expires', ['status', 'expiresAt'])
 @Check('CHK_artifacts_size_bytes', '"sizeBytes" BETWEEN 0 AND 9007199254740991')
@@ -29,6 +32,10 @@ import type { Relation } from 'typeorm';
   'CHK_artifacts_object_key',
   `"objectKey" = ('workspaces/' || "workspaceId"::text || '/' || "id"::text || '/file')`,
 )
+@ForeignKey(() => ArtifactFolder, ['workspaceId', 'parentFolderId'], ['workspaceId', 'id'], {
+  name: 'FK_artifacts_parent_folder',
+  onDelete: 'NO ACTION',
+})
 export class WorkspaceArtifact {
   @PrimaryGeneratedColumn('uuid', { primaryKeyConstraintName: 'PK_artifacts_id' })
   id: string;
@@ -39,6 +46,10 @@ export class WorkspaceArtifact {
   @ManyToOne(() => Workspace, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'workspaceId', foreignKeyConstraintName: 'FK_artifacts_workspace' })
   workspace: Relation<Workspace>;
+
+  /** Null places the file at the workspace root. */
+  @Column({ type: 'uuid', nullable: true })
+  parentFolderId: string | null;
 
   @Column({ type: 'uuid', nullable: true })
   createdByUserId: string | null;
