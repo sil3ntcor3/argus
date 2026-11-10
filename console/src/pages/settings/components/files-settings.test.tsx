@@ -244,6 +244,66 @@ describe('Files settings actions', () => {
     );
   });
 
+  it('sends the selected sort to the server and resets pagination', async () => {
+    const updatedAt = '2026-02-03T00:00:00Z';
+    mocks.files.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: {
+        data: [
+          {
+            ...owned,
+            mimeType: 'text/plain',
+            sizeBytes: 4,
+            source: 'upload',
+            createdAt: '2026-01-02T00:00:00Z',
+            updatedAt,
+          },
+        ],
+        hasNextPage: true,
+      },
+    });
+    show(['artifact.read']);
+    const sortField = await screen.findByRole('combobox', { name: 'Sort by' });
+    const lastQuery = () => mocks.files.mock.lastCall?.[0];
+    expect(lastQuery()).toMatchObject({
+      sortBy: 'createdAt',
+      sortOrder: 'DESC',
+      page: 1,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(lastQuery()).toMatchObject({ page: 2 });
+    fireEvent.keyDown(sortField, { key: 'ArrowDown' });
+    const name = await screen.findByRole('option', { name: 'Name' });
+    fireEvent.keyDown(name, { key: 'Enter' });
+    expect(lastQuery()).toMatchObject({
+      sortBy: 'name',
+      sortOrder: 'DESC',
+      page: 1,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sort ascending' }));
+    expect(lastQuery()).toMatchObject({
+      sortBy: 'name',
+      sortOrder: 'ASC',
+      page: 1,
+    });
+    fireEvent.keyDown(sortField, { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: 'Modified' }), {
+      key: 'Enter',
+    });
+    expect(
+      screen.getByRole('columnheader', { name: 'Modified' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(
+          new Date(updatedAt),
+        ),
+      ),
+    ).toBeVisible();
+  });
+
   it('hides file rows when a folder request denies the shared read permission', async () => {
     mocks.folders.mockReturnValue({
       isError: true,

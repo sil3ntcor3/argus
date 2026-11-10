@@ -2,6 +2,13 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -26,6 +33,8 @@ import {
   type ArtifactListItemDto,
   type ArtifactUsageDto,
   type ArtifactsControllerGetManyScope,
+  type ArtifactsControllerGetManySortBy,
+  type ArtifactsControllerGetManySortOrder,
 } from '@/services/apis/gen/queries';
 import {
   getGlobalWorkspaceId,
@@ -34,7 +43,14 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
-import { Download, LayoutGrid, List, Trash2 } from 'lucide-react';
+import {
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  Download,
+  LayoutGrid,
+  List,
+  Trash2,
+} from 'lucide-react';
 import {
   type ReactNode,
   type RefObject,
@@ -56,6 +72,15 @@ const FILE_VIEWS = [
   { id: 'grid', label: 'Grid view', Icon: LayoutGrid },
 ] as const;
 type FileView = (typeof FILE_VIEWS)[number]['id'];
+const FILE_SORT_FIELDS = [
+  { value: 'name', label: 'Name' },
+  { value: 'updatedAt', label: 'Modified' },
+  { value: 'createdAt', label: 'Created' },
+  { value: 'sizeBytes', label: 'Size' },
+] as const satisfies ReadonlyArray<{
+  value: ArtifactsControllerGetManySortBy;
+  label: string;
+}>;
 const FOLDER_UUID =
   /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|0{8}-0{4}-0{4}-0{4}-0{12}|f{8}-f{4}-f{4}-f{4}-f{12})$/i;
 
@@ -223,9 +248,11 @@ function FileActions({
 /** Render the same page of files and actions in a responsive card layout. */
 function FileGrid({
   rows,
+  dateField,
   renderActions,
 }: {
   rows: ArtifactListItemDto[];
+  dateField: 'createdAt' | 'updatedAt';
   renderActions: (file: ArtifactListItemDto) => ReactNode;
 }) {
   return (
@@ -250,7 +277,8 @@ function FileGrid({
             <p className="break-all text-sm font-medium">{file.name}</p>
             <p className="text-xs text-muted-foreground">
               {formatBytes(file.sizeBytes)} ·{' '}
-              {dateFormat.format(new Date(file.createdAt))}
+              {dateField === 'updatedAt' ? 'Modified ' : ''}
+              {dateFormat.format(new Date(file[dateField]))}
             </p>
             <p className="break-all text-xs text-muted-foreground">
               {file.source === 'agent' ? 'Agent' : 'Upload'}
@@ -289,6 +317,11 @@ function WorkspaceFiles({
   });
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] =
+    useState<ArtifactsControllerGetManySortBy>('createdAt');
+  const [sortOrder, setSortOrder] =
+    useState<ArtifactsControllerGetManySortOrder>('DESC');
+  const dateField = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
   const [pagination, setPagination] = useState({ folderId, page: 1 });
   const page = pagination.folderId === folderId ? pagination.page : 1;
   if (pagination.folderId !== folderId) {
@@ -326,8 +359,8 @@ function WorkspaceFiles({
     {
       page,
       limit: PAGE_SIZE,
-      sortBy: 'createdAt',
-      sortOrder: 'DESC',
+      sortBy,
+      sortOrder,
       search: query,
       scope,
       parentFolderId: browsingFolders ? (folderId ?? 'root') : undefined,
@@ -550,13 +583,56 @@ function WorkspaceFiles({
           aria-label="Search files"
           placeholder="Search files"
           maxLength={255}
-          className="min-w-0 flex-1 sm:max-w-xs"
+          className="min-w-36 flex-1 sm:max-w-xs"
           value={search}
           onChange={(event) => {
             setSearch(event.target.value);
             setPage(1);
           }}
         />
+        <div role="group" aria-label="File sorting" className="flex gap-1">
+          <Select
+            value={sortBy}
+            onValueChange={(value) => {
+              const field = FILE_SORT_FIELDS.find(
+                (option) => option.value === value,
+              );
+              if (!field) return;
+              setSortBy(field.value);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger aria-label="Sort by" className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FILE_SORT_FIELDS.map(({ value, label }) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label={
+              sortOrder === 'ASC' ? 'Sort descending' : 'Sort ascending'
+            }
+            title={sortOrder === 'ASC' ? 'Ascending' : 'Descending'}
+            onClick={() => {
+              setSortOrder((order) => (order === 'ASC' ? 'DESC' : 'ASC'));
+              setPage(1);
+            }}
+          >
+            {sortOrder === 'ASC' ? (
+              <ArrowUpNarrowWide aria-hidden="true" className="size-4" />
+            ) : (
+              <ArrowDownWideNarrow aria-hidden="true" className="size-4" />
+            )}
+          </Button>
+        </div>
         <div role="group" aria-label="File view" className="flex gap-1">
           {FILE_VIEWS.map(({ id, label, Icon }) => (
             <Button
@@ -634,7 +710,11 @@ function WorkspaceFiles({
             {query ? 'No files match your search.' : 'No files to display.'}
           </p>
         ) : view === 'grid' ? (
-          <FileGrid rows={rows} renderActions={renderFileActions} />
+          <FileGrid
+            rows={rows}
+            dateField={dateField}
+            renderActions={renderFileActions}
+          />
         ) : (
           <div className="rounded-md border">
             <Table aria-label="Workspace files">
@@ -642,7 +722,9 @@ function WorkspaceFiles({
                 <TableRow>
                   <TableHead scope="col">File</TableHead>
                   <TableHead scope="col">Size</TableHead>
-                  <TableHead scope="col">Created</TableHead>
+                  <TableHead scope="col">
+                    {dateField === 'updatedAt' ? 'Modified' : 'Created'}
+                  </TableHead>
                   <TableHead scope="col" className="text-right">
                     Actions
                   </TableHead>
@@ -665,7 +747,7 @@ function WorkspaceFiles({
                     </TableCell>
                     <TableCell>{formatBytes(file.sizeBytes)}</TableCell>
                     <TableCell>
-                      {dateFormat.format(new Date(file.createdAt))}
+                      {dateFormat.format(new Date(file[dateField]))}
                     </TableCell>
                     <TableCell>{renderFileActions(file)}</TableCell>
                   </TableRow>
