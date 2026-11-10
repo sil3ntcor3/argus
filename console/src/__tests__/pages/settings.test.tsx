@@ -1,7 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
-import Settings from '@/pages/settings/settings';
+import Settings, { filterTabGroups, settingsTabGroups } from '@/pages/settings/settings';
 import { useParams } from '@tanstack/react-router';
+
+const files = vi.hoisted(() => ({
+  list: vi.fn(),
+  usage: vi.fn(),
+}));
+
+vi.mock('@/services/apis/gen/queries', async (original) => ({
+  ...(await original<typeof import('@/services/apis/gen/queries')>()),
+  useArtifactsControllerGetMany: files.list,
+  useArtifactsControllerGetUsage: files.usage,
+}));
+
+vi.mock('@/hooks/useWorkspaceSelector', async (original) => ({
+  ...(await original<typeof import('@/hooks/useWorkspaceSelector')>()),
+  useWorkspaceState: () => ({ state: { selectedWorkspaceId: 'workspace-fixture' } }),
+}));
 
 vi.mock('@tanstack/react-router', async () => {
   const actual = await vi.importActual('@tanstack/react-router');
@@ -81,6 +97,52 @@ describe('Settings Page', () => {
       expect(screen.getByRole('heading', { name: 'Preferences' })).toBeInTheDocument();
       expect(screen.getByTestId('preferences')).toBeInTheDocument();
     });
+  });
+
+  it('offers Files only with artifact read access', () => {
+    const tabsFor = (keys: string[]) =>
+      filterTabGroups(settingsTabGroups, { hasPermission: (key) => keys.includes(key) })
+        .flatMap((group) => group.tabs.map((tab) => tab.id));
+    expect(tabsFor(['workspace.read'])).not.toContain('files');
+    expect(tabsFor(['artifact.read'])).toContain('files');
+  });
+
+  it('lists owned files and storage totals, and resets pagination for the manager view', async () => {
+    vi.mocked(useParams).mockReturnValue({ tab: 'files' });
+    files.list.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: {
+        data: [{ id: 'file-1', name: 'scan.txt', sizeBytes: 64, source: 'agent', createdAt: '2026-01-02T00:00:00Z' }],
+        hasNextPage: true,
+        pageCount: 2,
+      },
+    });
+    files.usage.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { usedBytes: 64, quotaBytes: 1024, reservedBytes: 0, maxFileBytes: 128 },
+    });
+    const { user } = renderWithProviders(<Settings />);
+    expect(await screen.findByRole('heading', { name: 'Files' })).toBeInTheDocument();
+    expect(screen.getByText('scan.txt')).toBeInTheDocument();
+    expect(screen.getByText('1.0 KiB')).toBeInTheDocument();
+    expect(files.list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, scope: 'mine' }), expect.anything());
+    await user.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(files.list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, scope: 'mine' }), expect.anything());
+    await user.click(screen.getByRole('button', { name: 'All files' }));
+    expect(files.list).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, scope: 'all' }), expect.anything());
+  });
+
+  it('withholds cached peer files until the current view is authorized', async () => {
+    vi.mocked(useParams).mockReturnValue({ tab: 'files' });
+    files.list.mockImplementation(({ scope }: { scope: string }) => ({
+      isFetchedAfterMount: scope === 'mine',
+      data: { data: scope === 'mine' ? [] : [{ id: 'peer', name: 'cached-peer.txt' }] },
+    }));
+    files.usage.mockReturnValue({});
+    const { user } = renderWithProviders(<Settings />);
+    await user.click(await screen.findByRole('button', { name: 'All files' }));
+    expect(screen.getByText('Loading files…')).toBeInTheDocument();
+    expect(screen.queryByText('cached-peer.txt')).toBeNull();
   });
 
   it('filters tabs based on user role', async () => {
