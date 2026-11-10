@@ -5699,6 +5699,44 @@ export type GenerateVulReportBodyDto = {
   minSeverity?: GenerateVulReportBodyDtoMinSeverity;
 };
 
+export type ArtifactListCreatorDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  image: string | null;
+};
+
+export type ArtifactListItemDtoSource =
+  (typeof ArtifactListItemDtoSource)[keyof typeof ArtifactListItemDtoSource];
+
+export const ArtifactListItemDtoSource = {
+  upload: 'upload',
+  agent: 'agent',
+} as const;
+
+export type ArtifactListItemDto = {
+  id: string;
+  name: string;
+  mimeType: string;
+  /** @minimum 0 */
+  sizeBytes: number;
+  source: ArtifactListItemDtoSource;
+  /** @nullable */
+  createdBy: ArtifactListCreatorDto | null;
+  isOwner: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GetManyArtifactListItemDtoDto = {
+  data: ArtifactListItemDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
 export type ArtifactUsageDto = {
   /**
    * Effective workspace quota in bytes
@@ -6822,6 +6860,53 @@ export const ReportsControllerPreviewVulReportMinSeverity = {
   MEDIUM: 'MEDIUM',
   LOW: 'LOW',
   INFO: 'INFO',
+} as const;
+
+export type ArtifactsControllerGetManyParams = {
+  /**
+   * Case-insensitive literal substring of the file name.
+   * @maxLength 255
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 1000000
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  sortBy?: ArtifactsControllerGetManySortBy;
+  sortOrder?: ArtifactsControllerGetManySortOrder;
+  scope?: ArtifactsControllerGetManyScope;
+};
+
+export type ArtifactsControllerGetManySortBy =
+  (typeof ArtifactsControllerGetManySortBy)[keyof typeof ArtifactsControllerGetManySortBy];
+
+export const ArtifactsControllerGetManySortBy = {
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  name: 'name',
+  sizeBytes: 'sizeBytes',
+} as const;
+
+export type ArtifactsControllerGetManySortOrder =
+  (typeof ArtifactsControllerGetManySortOrder)[keyof typeof ArtifactsControllerGetManySortOrder];
+
+export const ArtifactsControllerGetManySortOrder = {
+  ASC: 'ASC',
+  DESC: 'DESC',
+} as const;
+
+export type ArtifactsControllerGetManyScope =
+  (typeof ArtifactsControllerGetManyScope)[keyof typeof ArtifactsControllerGetManyScope];
+
+export const ArtifactsControllerGetManyScope = {
+  mine: 'mine',
+  all: 'all',
 } as const;
 
 export type StorageControllerPresignDownloadParams = {
@@ -52727,6 +52812,365 @@ export const useReportsControllerDeleteReport = <
     queryClient,
   );
 };
+
+/**
+ * Lists ready files in the selected workspace. Scope mine lists files created by the caller. Scope all also requires artifact.manage.
+ * @summary List workspace files
+ */
+export const artifactsControllerGetMany = (
+  params?: ArtifactsControllerGetManyParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyArtifactListItemDtoDto>(
+    { url: `/api/artifacts`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerGetManyInfiniteQueryKey = (
+  params?: ArtifactsControllerGetManyParams,
+) => {
+  return ['infinite', `/api/artifacts`, ...(params ? [params] : [])] as const;
+};
+
+export const getArtifactsControllerGetManyQueryKey = (
+  params?: ArtifactsControllerGetManyParams,
+) => {
+  return [`/api/artifacts`, ...(params ? [params] : [])] as const;
+};
+
+export const getArtifactsControllerGetManyInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getArtifactsControllerGetManyInfiniteQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    QueryKey,
+    ArtifactsControllerGetManyParams['page']
+  > = ({ signal, pageParam }) =>
+    artifactsControllerGetMany(
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return { queryKey, queryFn, ...queryOptions } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    TError,
+    TData,
+    QueryKey,
+    ArtifactsControllerGetManyParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetManyInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetMany>>
+>;
+export type ArtifactsControllerGetManyInfiniteQueryError = unknown;
+
+export function useArtifactsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params: undefined | ArtifactsControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List workspace files
+ */
+
+export function useArtifactsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetManyInfiniteQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getArtifactsControllerGetManyQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerGetManyQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>
+  > = ({ signal }) =>
+    artifactsControllerGetMany(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetManyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetMany>>
+>;
+export type ArtifactsControllerGetManyQueryError = unknown;
+
+export function useArtifactsControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params: undefined | ArtifactsControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List workspace files
+ */
+
+export function useArtifactsControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetManyQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 /**
  * Returns quota, used and reserved bytes, and the per-file limit. Requires artifact.read.
