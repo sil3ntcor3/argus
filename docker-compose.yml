@@ -44,7 +44,7 @@ services:
       - POSTGRES_HOST=postgres
       - REDIS_URL=redis://:password@redis:6379/0
       - GEO_IP_URL=geo-ip:4360
-      - OASM_CLOUD_APIKEY=change_me
+      - ARGUS_CLOUD_APIKEY=${ARGUS_CLOUD_APIKEY:-change_me}
       - RUSTFS_ENDPOINT=http://rustfs:9000
     restart: 'always'
     logging:
@@ -77,7 +77,7 @@ services:
     env_file:
       - ./worker/.env
     environment:
-      - WORKER_API_KEY=change_me
+      - WORKER_API_KEY=${ARGUS_CLOUD_APIKEY:-change_me}
       - WORKER_MODE=node
       - WORKER_GRPC_HOST=core-api
       - WORKER_GRPC_PORT=16276

@@ -8,12 +8,12 @@ import (
 )
 
 // Commands the worker runs on its host must never see the worker's secrets
-// (API key, connector token, platform OASM_* keys), whatever their case.
+// (API key, connector token, platform keys), whatever their case.
 func TestSetupCmdEnv_DropsSecretEnv(t *testing.T) {
 	t.Setenv("WORKER_API_KEY", "platform-cloud-key")
 	t.Setenv("WORKER_CONNECTOR_TOKEN", "connector-secret")
 	t.Setenv("Worker_Token_File", "/app/state/.worker-token")
-	t.Setenv("OASM_CLOUD_APIKEY", "cloud-key")
+	t.Setenv("Argus_Cloud_ApiKey", "cloud-key")
 	t.Setenv("oasm_lower", "x")
 	t.Setenv("SANDBOX_KEEP_ME", "kept")
 	t.Setenv("MYWORKER_API", "kept-too") // prefix match only, not substring
@@ -22,7 +22,7 @@ func TestSetupCmdEnv_DropsSecretEnv(t *testing.T) {
 
 	for _, e := range env {
 		u := strings.ToUpper(e)
-		if strings.HasPrefix(u, "WORKER_") || strings.HasPrefix(u, "OASM_") {
+		if strings.HasPrefix(u, "WORKER_") || strings.HasPrefix(u, "OASM_") || strings.HasPrefix(u, "ARGUS_CLOUD_APIKEY=") {
 			t.Errorf("secret env leaked to command: %q", e)
 		}
 	}
