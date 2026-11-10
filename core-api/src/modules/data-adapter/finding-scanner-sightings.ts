@@ -110,7 +110,10 @@ export async function recordFindingScannerSightings(
            END,
            "fixedAt" = CASE WHEN countable.resurfaces THEN NULL ELSE finding."fixedAt" END,
            "resurfacedCount" = finding."resurfacedCount" + CASE WHEN countable.resurfaces THEN 1 ELSE 0 END,
-           "missedScans" = CASE WHEN countable.resurfaces THEN 0 ELSE finding."missedScans" END
+           "missedScans" = CASE
+             WHEN countable.resurfaces OR (NOT finding."isArchived"
+               AND finding."detectionStatus" IN ('new', 'active', 'resurfaced'))
+             THEN 0 ELSE finding."missedScans" END
        FROM unnest($2::uuid[]) AS observed("vulnerabilityId")
        LEFT JOIN countable USING ("vulnerabilityId")
        WHERE finding.id = observed."vulnerabilityId"
