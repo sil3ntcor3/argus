@@ -1,5 +1,6 @@
-import { workspaceArtifactKey } from '@/common/constants/artifact-storage';
+import { ARTIFACT_BUCKET, workspaceArtifactKey } from '@/common/constants/artifact-storage';
 import { WorkspaceArtifact } from '@/modules/artifacts/entities/workspace-artifact.entity';
+import { StorageService } from '@/modules/storage/storage.service';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
@@ -19,9 +20,13 @@ describe('Workspace file metadata (e2e)', () => {
   const deleted = randomUUID();
   const unknown = randomUUID();
   const timestamp = new Date('2026-01-01T00:00:00Z');
+  const downloadName = 'ReportX100Y Résumé "x".html';
+  const downloadBytes = '<b>abc</b>';
   const list = (headers: Record<string, string>) => request(app.server).get('/api/artifacts').set(headers);
   const detail = (id: string, headers: Record<string, string>) =>
     request(app.server).get(`/api/artifacts/${encodeURIComponent(id)}`).set(headers);
+  const download = (id: string, headers: Record<string, string>) =>
+    request(app.server).get(`/api/artifacts/${encodeURIComponent(id)}/download`).set(headers);
   const readerHeaders = () => wsHeaders(reader.user.cookie, owner.workspace.id);
   const permissions = (keys: string[]) => app.dataSource.query(
     'UPDATE workspace_permissions SET permissions=$1 WHERE id=$2', [keys, groupId],
@@ -41,7 +46,7 @@ describe('Workspace file metadata (e2e)', () => {
     const outside = artifact(foreign, 'outside.txt', '8', owner.user.userId);
     await app.dataSource.getRepository(WorkspaceArtifact).insert([
       artifact(own[0], 'Report_100%.txt', '2', owner.user.userId),
-      artifact(own[1], 'ReportX100Y.txt', '10', owner.user.userId),
+      { ...artifact(own[1], downloadName, String(Buffer.byteLength(downloadBytes)), owner.user.userId), mimeType: 'text/html' },
       { ...artifact(peer, 'peer.txt', '3', reader.user.userId), source: 'agent' },
       artifact(orphan, 'removed-creator.txt', '4', null),
       { ...artifact(pending, 'pending.txt', '1', owner.user.userId), status: 'pending', expiresAt: new Date() },
@@ -81,8 +86,10 @@ describe('Workspace file metadata (e2e)', () => {
   it('requires workspace read and adds artifact.manage for the all scope', async () => {
     await list({}).expect(401);
     await detail(own[0], {}).expect(401);
+    await download(own[0], {}).expect(401);
     await list(readerHeaders()).expect(403);
     await detail(own[0], readerHeaders()).expect(403);
+    await download(own[0], readerHeaders()).expect(403);
     const workspaceId = owner.workspace.id;
     const [{ id: member }] = await app.dataSource.query<{ id: string }[]>(
       'INSERT INTO workspace_members ("workspaceId","userId") VALUES ($1,$2) RETURNING id', [workspaceId, reader.user.userId],
@@ -94,18 +101,25 @@ describe('Workspace file metadata (e2e)', () => {
     await app.dataSource.query('INSERT INTO workspace_member_permissions ("memberId","permissionId") VALUES ($1,$2)', [member, groupId]);
     await list(readerHeaders()).query({ scope: 'all' }).expect(403);
     await detail(peer, readerHeaders()).expect(403);
+    await download(peer, readerHeaders()).expect(403);
     for (const access of ['artifact.read', 'artifact.write']) {
       await permissions([access]);
       const mine = await list(readerHeaders()).expect(200);
       expect(mine.body).toMatchObject({ total: 1, data: [{ id: peer, isOwner: true }] });
       const owned = await detail(peer, readerHeaders()).expect(200);
       expect(owned.body).toEqual(mine.body.data[0]);
+      await download(peer, readerHeaders()).expect(200);
+      await download(own[0], readerHeaders()).expect(404);
       const hidden = await detail(own[0], readerHeaders()).expect(404);
       const missing = await detail(unknown, readerHeaders()).expect(404);
       expect(hidden.body.message).toBe(missing.body.message);
       await list(readerHeaders()).query({ scope: 'all' }).expect(403);
     }
     await permissions(['artifact.read', 'artifact.manage']);
+    await detail(own[0], readerHeaders()).expect(200);
+    await download(own[0], readerHeaders()).expect(404);
+    await download(peer, owner.headers).expect(404);
+    await download(orphan, owner.headers).expect(404);
     for (const headers of [readerHeaders(), owner.headers]) {
       const all = await list(headers).query({ scope: 'all' }).expect(200);
       const ids = (all.body as { data: { id: string }[] }).data.map(item => item.id);
@@ -130,6 +144,41 @@ describe('Workspace file metadata (e2e)', () => {
     }
     await detail('invalid-id', owner.headers).expect(400);
     await request(app.server).get('/api/artifacts/usage').set(owner.headers).expect(200);
+  });
+
+  it('signs only ready owned files for five-minute attachment downloads', async () => {
+    for (const id of [pending, deleted, foreign, unknown]) {
+      await download(id, owner.headers).expect(404);
+    }
+    await download('invalid-id', owner.headers).expect(400);
+
+    const key = workspaceArtifactKey(owner.workspace.id, own[1]);
+    const storage = app.app.get(StorageService);
+    await storage.uploadFile(key, Buffer.from(downloadBytes), ARTIFACT_BUCKET, 'text/html');
+    try {
+      const response = await download(own[1], owner.headers).expect(200);
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.body).toEqual({ url: expect.any(String), expiresIn: 300 });
+      const url = new URL((response.body as { url: string }).url);
+      expect(url.pathname).toBe(`/${ARTIFACT_BUCKET}/${key}`);
+      expect(url.searchParams.get('X-Amz-Expires')).toBe('300');
+      const file = await fetch(url);
+      expect(file.status).toBe(200);
+      expect(file.headers.get('content-type')).toBe('application/octet-stream');
+      expect(file.headers.get('content-disposition')).toContain(`attachment; filename="ReportX100Y R_sum_ _x_.html"; filename*=UTF-8''ReportX100Y%20R%C3%A9sum%C3%A9%20%22x%22.html`);
+      expect(await file.text()).toBe(downloadBytes);
+
+      url.searchParams.set('response-content-type', 'text/html');
+      const tampered = await fetch(url);
+      expect(tampered.status).toBe(403);
+      await tampered.body?.cancel();
+      url.search = '';
+      const unsigned = await fetch(url);
+      expect(unsigned.status).toBe(403);
+      await unsigned.body?.cancel();
+    } finally {
+      await storage.deleteFile(key, ARTIFACT_BUCKET);
+    }
   });
 
   it('rejects unsupported scope, sort fields, and invalid pagination', async () => {

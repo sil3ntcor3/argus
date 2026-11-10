@@ -6,9 +6,10 @@ import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import type { RequestWithMetadata, UserContextPayload } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import { Controller, Get, Header, Param, Query, Req } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
 import { ArtifactReadService } from './artifact-read.service';
 import { ArtifactUsageService } from './artifact-usage.service';
+import { ArtifactDownloadDto } from './dto/artifact-download.dto';
 import { ArtifactListItemDto, ArtifactListQueryDto } from './dto/artifact-list.dto';
 import { ArtifactUsageDto } from './dto/artifact-usage.dto';
 
@@ -72,5 +73,28 @@ export class ArtifactsController {
     @Req() request: RequestWithMetadata,
   ): Promise<ArtifactListItemDto> {
     return this.files.getById(workspaceId, user.id, id, request.permissions ?? []);
+  }
+
+  @Doc({
+    summary: 'Get a workspace file download URL',
+    description: 'Returns a five-minute attachment URL for a ready file created by the caller in the selected workspace.',
+    response: { serialization: ArtifactDownloadDto },
+    request: {
+      getWorkspaceId: true,
+      params: [{ name: 'id', schema: { type: 'string', format: 'uuid' } }],
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid file ID or workspace selection.' })
+  @ApiForbiddenResponse({ description: 'Missing file read access in the selected workspace.' })
+  @ApiNotFoundResponse({ description: 'File not found in the selected workspace.' })
+  @WorkspaceAccess('artifact.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/download')
+  download(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @UserContext() user: UserContextPayload,
+  ): Promise<ArtifactDownloadDto> {
+    return this.files.getDownloadUrl(workspaceId, user.id, id);
   }
 }

@@ -5760,6 +5760,13 @@ export type ArtifactUsageDto = {
   maxFileBytes: number;
 };
 
+export type ArtifactDownloadDto = {
+  /** Signed URL for the attachment */
+  url: string;
+  /** Lifetime of the signed URL in seconds */
+  expiresIn: number;
+};
+
 export type PresignUploadRequestDto = {
   /** Original file name of the object */
   fileName: string;
@@ -53484,6 +53491,173 @@ export function useArtifactsControllerGetById<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getArtifactsControllerGetByIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Returns a five-minute attachment URL for a ready file created by the caller in the selected workspace.
+ * @summary Get a workspace file download URL
+ */
+export const artifactsControllerDownload = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactDownloadDto>(
+    { url: `/api/artifacts/${id}/download`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerDownloadQueryKey = (id: string) => {
+  return [`/api/artifacts/${id}/download`] as const;
+};
+
+export const getArtifactsControllerDownloadQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerDownloadQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerDownload>>
+  > = ({ signal }) => artifactsControllerDownload(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerDownload>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerDownloadQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerDownload>>
+>;
+export type ArtifactsControllerDownloadQueryError = void;
+
+export function useArtifactsControllerDownload<
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerDownload>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerDownload>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerDownload<
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerDownload>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerDownload>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerDownload<
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get a workspace file download URL
+ */
+
+export function useArtifactsControllerDownload<
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerDownloadQueryOptions(id, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,
