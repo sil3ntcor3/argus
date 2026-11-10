@@ -20,7 +20,9 @@ the same run lock. A step with no input can complete without creating jobs.
   evidence only from the worker identified by the token. Old worker and HTTP
   reports still ingest findings. After ingesting a clean result, Core records
   coverage privately when the saved scope and claim still match. The evidence
-  does not appear in REST or close any findings.
+  does not appear in REST. Closed workflows recompute a private count of
+  comparable missed runs. A retry or retention can make the cache stale until
+  the next recompute, so the count alone cannot close a finding.
 - Keep job terminal writes conditional: cancellation or a retry can change the
   state while a result is processing.
 

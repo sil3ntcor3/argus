@@ -165,7 +165,7 @@ describe('Scanner resurfacing (e2e)', () => {
     const next = await jobAfter(40 * 60_000);
     await report(next, finding.name);
     expect(await state(finding.id)).toMatchObject({
-      detectionStatus: 'active', missedScans: 2, resurfacedCount: 1,
+      detectionStatus: 'active', missedScans: 0, resurfacedCount: 1,
     });
     const events = await app.dataSource.getRepository(VulnerabilityEvent).find({
       where: { vulnerabilityId: finding.id, type: 'status_changed' },
@@ -184,9 +184,9 @@ describe('Scanner resurfacing (e2e)', () => {
     const name = 'Observation fixture ' + randomUUID();
     const observation = async () => {
       const [row] = await app.dataSource.query<{
-        id: string; lastScannerObservedAt: Date | null; timesDetected: number;
+        id: string; lastScannerObservedAt: Date | null; timesDetected: number; missedScans: number;
       }[]>(
-        'SELECT id,"lastScannerObservedAt","timesDetected" FROM vulnerabilities WHERE name=$1',
+        'SELECT id,"lastScannerObservedAt","timesDetected","missedScans" FROM vulnerabilities WHERE name=$1',
         [name],
       );
       return row;
@@ -206,6 +206,7 @@ describe('Scanner resurfacing (e2e)', () => {
     expect(first.lastScannerObservedAt!.getTime()).toBeLessThanOrEqual(after.getTime());
     expect(first.timesDetected).toBe(1);
 
+    await app.dataSource.query('UPDATE vulnerabilities SET "missedScans"=2 WHERE id=$1', [first.id]);
     // Give the two database instants distinct milliseconds on fast hosts.
     await app.dataSource.query('SELECT pg_sleep(0.01)');
     await report(job, name);
@@ -213,6 +214,7 @@ describe('Scanner resurfacing (e2e)', () => {
     const repeated = await observation();
     expect(repeated.lastScannerObservedAt!.getTime()).toBeGreaterThan(first.lastScannerObservedAt!.getTime());
     expect(repeated.timesDetected).toBe(1);
+    expect(repeated.missedScans).toBe(0);
 
     const removed = await jobAfter(null);
     // The processor already read this claim; its job row disappears before sync.
