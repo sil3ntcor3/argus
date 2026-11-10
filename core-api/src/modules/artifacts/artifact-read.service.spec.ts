@@ -1,3 +1,5 @@
+import { ARTIFACT_BUCKET, workspaceArtifactKey } from '@/common/constants/artifact-storage';
+import type { StorageService } from '@/modules/storage/storage.service';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { Repository } from 'typeorm';
@@ -21,7 +23,12 @@ describe('ArtifactReadService', () => {
     getOne: jest.fn(),
   };
   const createQueryBuilder = jest.fn(() => builder);
-  const service = new ArtifactReadService({ createQueryBuilder } as unknown as Repository<WorkspaceArtifact>);
+  const findOne = jest.fn();
+  const getPresignedDownloadUrl = jest.fn();
+  const service = new ArtifactReadService(
+    { createQueryBuilder, findOne } as unknown as Repository<WorkspaceArtifact>,
+    { getPresignedDownloadUrl } as unknown as StorageService,
+  );
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -39,6 +46,30 @@ describe('ArtifactReadService', () => {
     expect(builder.andWhere).toHaveBeenCalledWith('artifact.status = :status', { status: 'ready' });
     expect(builder.andWhere).toHaveBeenCalledWith('artifact.id = :id', { id });
     expect(builder.andWhere).toHaveBeenCalledWith('artifact.createdByUserId = :userId', { userId });
+  });
+
+  it('does not sign a URL when the owned ready file is absent', async () => {
+    const id = randomUUID();
+    findOne.mockResolvedValueOnce(null);
+    await expect(service.getDownloadUrl(workspaceId, userId, id)).rejects.toThrow(NotFoundException);
+    expect(findOne).toHaveBeenCalledWith({
+      where: { id, workspaceId, createdByUserId: userId, status: 'ready' },
+      select: { id: true, name: true, objectKey: true },
+    });
+    expect(getPresignedDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it.each(['report.html', ''])('signs the canonical object for download with display name %j', async name => {
+    const id = randomUUID();
+    const key = workspaceArtifactKey(workspaceId, id);
+    findOne.mockResolvedValueOnce({ id, name, objectKey: key });
+    const signed = { url: '/api/storage/artifacts/signed-fixture', expiresIn: 300 };
+    getPresignedDownloadUrl.mockResolvedValueOnce(signed);
+    await expect(service.getDownloadUrl(workspaceId, userId, id)).resolves.toEqual(signed);
+    expect(getPresignedDownloadUrl).toHaveBeenCalledWith({
+      bucket: ARTIFACT_BUCKET, key, fileName: name || 'file',
+      contentType: 'application/octet-stream', expiresIn: 300,
+    });
   });
 
   it('maps a legacy row without a creator and preserves the largest supported byte count', async () => {

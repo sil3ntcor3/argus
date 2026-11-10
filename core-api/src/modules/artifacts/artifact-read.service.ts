@@ -1,16 +1,22 @@
+import { ARTIFACT_BUCKET } from '@/common/constants/artifact-storage';
 import { SortOrder, type GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
+import { StorageService } from '@/modules/storage/storage.service';
 import { getManyResponse } from '@/utils/getManyResponse';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
+import type { ArtifactDownloadDto } from './dto/artifact-download.dto';
 import { ARTIFACT_SORT_FIELDS, ArtifactListScope, type ArtifactListItemDto, type ArtifactListQueryDto } from './dto/artifact-list.dto';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
+
+const DOWNLOAD_TTL_SECONDS = 5 * 60;
 
 @Injectable()
 export class ArtifactReadService {
   constructor(
     @InjectRepository(WorkspaceArtifact)
     private readonly artifacts: Repository<WorkspaceArtifact>,
+    private readonly storage: StorageService,
   ) {}
 
   async getMany(
@@ -58,6 +64,24 @@ export class ArtifactReadService {
     const row = await builder.getOne();
     if (!row) throw new NotFoundException('File not found');
     return this.toMetadata(row, userId);
+  }
+
+  async getDownloadUrl(workspaceId: string, userId: string, id: string): Promise<ArtifactDownloadDto> {
+    // Workspace management grants metadata access only.
+    const file = await this.artifacts.findOne({
+      where: { id, workspaceId, createdByUserId: userId, status: 'ready' },
+      select: { id: true, name: true, objectKey: true },
+    });
+    if (!file) throw new NotFoundException('File not found');
+
+    return this.storage.getPresignedDownloadUrl({
+      bucket: ARTIFACT_BUCKET,
+      key: file.objectKey,
+      fileName: file.name || 'file',
+      // The storage proxy can share the console's origin. Serve bytes as an attachment.
+      contentType: 'application/octet-stream',
+      expiresIn: DOWNLOAD_TTL_SECONDS,
+    });
   }
 
   private readyFiles(workspaceId: string) {
