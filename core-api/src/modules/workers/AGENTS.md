@@ -14,7 +14,7 @@ This module owns worker identity, liveness, inventory, the worker gRPC channels,
 
 - `POST /api/workers/alive` and `POST /api/workers/join` accept the credentials in their request bodies. Issuing, rotating, and revoking join keys requires `workspace.apikey`.
 - `GET /api/workers` and `GET /api/workers/:id` require `worker.read`. Non-admins see only workers in the selected workspace and receive 403 if they explicitly request the cloud list. Preserve list and detail DTOs that omit worker tokens.
-- A live workspace join key is consumed atomically with Redis `GETDEL` and expires after five minutes. It resumes the supplied token only when the token already belongs to a worker in that workspace. Without a live workspace key, a known token can resume its worker. `OASM_CLOUD_APIKEY` remains the compatibility name for cloud joins.
+- A live workspace join key is consumed atomically with Redis `GETDEL` and expires after five minutes. It resumes the supplied token only when the token already belongs to a worker in that workspace. Without a live workspace key, a known token can resume its worker. `ARGUS_CLOUD_APIKEY` authenticates global workers.
 - gRPC `Join`, `Alive`, and `GetManifest` do not use `GrpcWorkerTokenGuard`. The RPCs that read archives, report telemetry, connect an internal network, or handle remote execution do. `Connect` checks the `worker-token` metadata itself.
 - Tool archive reads accept regular files inside an approved platform directory and reject symlinks. Keep the checks in `openToolArchive` and `toolArchivePlatform` when changing the archive format.
 
