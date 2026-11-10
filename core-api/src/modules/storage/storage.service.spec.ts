@@ -172,7 +172,9 @@ describe('StorageService', () => {
     })).rejects.toBeInstanceOf(ConflictException);
     expect(sendMock).toHaveBeenNthCalledWith(3, expect.objectContaining({
       input: expect.objectContaining({ CopySourceIfMatch: '"validated"', IfNoneMatch: '*' }),
-    }));
+    }), expect.objectContaining({ abortSignal: expect.any(AbortSignal) }));
+    const requests = sendMock.mock.calls as Array<[unknown, { abortSignal: AbortSignal }]>;
+    expect(new Set(requests.map(([, options]) => options.abortSignal)).size).toBe(1);
   });
 
   it('recognizes the other successful copy after a documented conditional 409', async () => {
