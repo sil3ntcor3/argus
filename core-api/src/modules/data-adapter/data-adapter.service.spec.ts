@@ -1688,6 +1688,7 @@ describe('DataAdapterService', () => {
         missedScans: 5,
         scanScopeKey: 'untrusted',
         fixedAt: new Date(),
+        lastScannerObservedAt: new Date('2099-01-01T00:00:00Z'),
       };
       await service.vulnerabilities({
         data: [{ ...mockVulnerabilities[0], ...scannerLifecycle }],

@@ -985,6 +985,7 @@ export class DataAdapterService {
         delete vulnValues.resurfacedCount;
         delete vulnValues.missedScans;
         delete vulnValues.fixedAt;
+        delete vulnValues.lastScannerObservedAt;
         return {
           ...vulnValues,
           ...normalizeCodeFields(vulnValues),

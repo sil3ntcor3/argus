@@ -11,8 +11,9 @@ payload. Integration connectors can call `upsertAssetsByTargetId` directly.
   and tool. Repository findings also use the connector fingerprint when
   present. Changing the host formula would split existing findings.
 - The adapter removes supplied `detectionStatus`, `timesDetected`,
-  `resurfacedCount`, `missedScans`, and `fixedAt` and takes scope only from the
-  claimed job. Do not clear stored enrichment when a repeat scan omits it.
+  `resurfacedCount`, `missedScans`, `fixedAt`, and `lastScannerObservedAt`.
+  It takes scope only from the claimed job. Preserve stored enrichment when a
+  repeat scan omits it.
 - `finding-scanner-sightings.ts` locks provenance parents before findings, and
   the upsert takes finding locks in fingerprint order. The unique scanner
   source per finding and run prevents repeat deliveries from inflating counts.
