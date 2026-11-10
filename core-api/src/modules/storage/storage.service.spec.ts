@@ -196,6 +196,52 @@ describe('StorageService', () => {
     expect(sendMock).toHaveBeenCalledTimes(4);
   });
 
+  describe('deleteWorkspaceArtifacts', () => {
+    const workspace = '72646c96-c731-48e6-a376-38274982f6d7';
+    const prefix = `workspaces/${workspace}/`;
+
+    it.each(['', ' ', '../', workspace + 'a', workspace + '/sibling', workspace + '\n'])(
+      'refuses a malformed workspace without contacting storage (%s)',
+      async (id) => {
+        await expect(service.deleteWorkspaceArtifacts(id)).rejects.toBeInstanceOf(BadRequestException);
+        expect(sendMock).not.toHaveBeenCalled();
+      },
+    );
+
+    it('scopes every page and delete, and continues after one object fails', async () => {
+      const first = prefix + 'first';
+      const broken = prefix + 'broken';
+      const last = prefix + 'last';
+      const foreign = `workspaces/${workspace}f/other`;
+      sendMock
+        .mockResolvedValueOnce({
+          Contents: [{ Key: first }, { Key: broken }, { Key: foreign }],
+          IsTruncated: true,
+          NextContinuationToken: 'page-2',
+        })
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error('deny'))
+        .mockResolvedValueOnce({ Contents: [{ Key: last }] })
+        .mockResolvedValueOnce({});
+
+      await expect(service.deleteWorkspaceArtifacts(workspace)).resolves.toEqual({ deleted: 2, failed: 2 });
+      const calls = sendMock.mock.calls as Array<[{ input: object }]>;
+      expect(calls.map(([command]) => command.input)).toEqual([
+        expect.objectContaining({ Bucket: 'artifacts', Prefix: prefix }),
+        { Bucket: 'artifacts', Key: first },
+        { Bucket: 'artifacts', Key: broken },
+        { Bucket: 'artifacts', Prefix: prefix, ContinuationToken: 'page-2' },
+        { Bucket: 'artifacts', Key: last },
+      ]);
+    });
+
+    it('rejects a truncated listing that cannot advance', async () => {
+      sendMock.mockResolvedValue({ IsTruncated: true, NextContinuationToken: 'same' });
+      await expect(service.deleteWorkspaceArtifacts(workspace)).rejects.toThrow('did not advance');
+      expect(sendMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('listFiles', () => {
     it('should return keys and lastModified from the bucket', async () => {
       sendMock.mockResolvedValue({
