@@ -11,6 +11,8 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 | `GET /api/artifacts/:id` | `artifact.read` for the owner, or `artifact.manage` in addition for other ready files. |
 | `GET /api/artifacts/:id/download` | `artifact.read` and ownership of the ready file. |
 | `DELETE /api/artifacts/:id` | `artifact.read` plus either `artifact.write` and ownership, or `artifact.manage`. |
+| `GET /api/artifact-folders` | `artifact.read` for the caller's root folders or direct children of an owned `parentFolderId`. |
+| `GET /api/artifact-folders/:id` | `artifact.read` and ownership of the folder and its breadcrumb. |
 
 - `ArtifactReadService` scopes queries to the selected workspace and ready files. Foreign, pending, deleted, or otherwise invisible records return 404. Download signs a short-lived attachment URL with `application/octet-stream`.
 - `ArtifactUsageService` reads the meter without creating a row. A missing row has zero usage and the default 1 GiB quota. `ARTIFACT_MAX_FILE_BYTES` is 50 MiB.
@@ -20,6 +22,7 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 
 - `ArtifactFolder` stores a private workspace folder. A null `parentFolderId` places a folder or file at the workspace root. Existing files remain at the root after migration.
 - Composite parent foreign keys include `workspaceId`. They reject references across workspaces and prevent deleting a folder while it contains files or child folders. Workspace deletion cascades through the whole tree. Folder operations need their own authorization and cycle checks before exposing writes.
+- `ArtifactFoldersService` scopes folder reads by workspace and creator, including each ancestor in a breadcrumb. Inaccessible parents and invalid ancestry return 404. Reads allow at most 100 ancestor links, so a folder at that depth lists no children. Lists sort by name and use ID to break ties.
 
 ## File lifecycle
 

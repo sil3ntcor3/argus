@@ -5767,6 +5767,31 @@ export type ArtifactDownloadDto = {
   expiresIn: number;
 };
 
+export type ArtifactFolderDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  parentFolderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ArtifactFolderPathItemDto = {
+  id: string;
+  name: string;
+};
+
+export type ArtifactFolderDetailDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  parentFolderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Breadcrumb from the root folder to this folder. */
+  path: ArtifactFolderPathItemDto[];
+};
+
 export type PresignUploadRequestDto = {
   /** Original file name of the object */
   fileName: string;
@@ -6915,6 +6940,13 @@ export const ArtifactsControllerGetManyScope = {
   mine: 'mine',
   all: 'all',
 } as const;
+
+export type ArtifactFoldersControllerGetManyParams = {
+  /**
+   * Parent folder ID. Omit for the workspace root.
+   */
+  parentFolderId?: string;
+};
 
 export type StorageControllerPresignDownloadParams = {
   bucket: string;
@@ -53743,6 +53775,346 @@ export function useArtifactsControllerDownload<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getArtifactsControllerDownloadQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Lists folders owned by the caller directly under the selected parent or at the workspace root.
+ * @summary List personal artifact folders
+ */
+export const artifactFoldersControllerGetMany = (
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactFolderDto[]>(
+    { url: `/api/artifact-folders`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getArtifactFoldersControllerGetManyQueryKey = (
+  params?: ArtifactFoldersControllerGetManyParams,
+) => {
+  return [`/api/artifact-folders`, ...(params ? [params] : [])] as const;
+};
+
+export const getArtifactFoldersControllerGetManyQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getArtifactFoldersControllerGetManyQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>
+  > = ({ signal }) =>
+    artifactFoldersControllerGetMany(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactFoldersControllerGetManyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>
+>;
+export type ArtifactFoldersControllerGetManyQueryError = void;
+
+export function useArtifactFoldersControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params: undefined | ArtifactFoldersControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactFoldersControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactFoldersControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List personal artifact folders
+ */
+
+export function useArtifactFoldersControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactFoldersControllerGetManyQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Returns an owned folder and its breadcrumb in the selected workspace.
+ * @summary Get a personal artifact folder
+ */
+export const artifactFoldersControllerGetById = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactFolderDetailDto>(
+    { url: `/api/artifact-folders/${id}`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactFoldersControllerGetByIdQueryKey = (id: string) => {
+  return [`/api/artifact-folders/${id}`] as const;
+};
+
+export const getArtifactFoldersControllerGetByIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactFoldersControllerGetByIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactFoldersControllerGetById>>
+  > = ({ signal }) =>
+    artifactFoldersControllerGetById(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactFoldersControllerGetByIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactFoldersControllerGetById>>
+>;
+export type ArtifactFoldersControllerGetByIdQueryError = void;
+
+export function useArtifactFoldersControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof artifactFoldersControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactFoldersControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof artifactFoldersControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactFoldersControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get a personal artifact folder
+ */
+
+export function useArtifactFoldersControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactFoldersControllerGetByIdQueryOptions(
+    id,
+    options,
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,
