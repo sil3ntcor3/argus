@@ -12,7 +12,8 @@ describe('Private comparable scan misses (e2e)', () => {
   let foreignWorkflow: string;
   let tool: string;
   let asset: string;
-  const scope = 'a'.repeat(64);
+  const legacyScope = 'a'.repeat(64);
+  const scope = 'image-v1:' + legacyScope;
   const observedAt = new Date('2026-11-09T12:00:00.000Z');
   const after = new Date('2026-11-09T13:00:00.000Z');
 
@@ -40,10 +41,10 @@ describe('Private comparable scan misses (e2e)', () => {
     );
   }
 
-  const finding = (seen: Date | null, archived = false) => insert(
+  const finding = (seen: Date | null, archived = false, key = scope) => insert(
     `INSERT INTO vulnerabilities (name, severity, "assetId", "toolId", "scanScopeKey",
         "lastScannerObservedAt","isArchived") VALUES ($1,'high',$2,$3,$4,$5,$6)`,
-    [randomUUID(), asset, tool, scope, seen, archived],
+    [randomUUID(), asset, tool, key, seen, archived],
   );
 
   const completed = async (id: string) => {
@@ -96,6 +97,16 @@ describe('Private comparable scan misses (e2e)', () => {
     }
   });
 
+  it('does not count tag-only coverage from a worker without immutable image evidence', async () => {
+    const legacy = await finding(observedAt, false, legacyScope);
+    const history = await run();
+    await scan(history, { key: legacyScope });
+
+    await completed(history);
+
+    expect(await state(legacy)).toEqual({ missedScans: 0, detectionStatus: 'new' });
+  });
+
   it('counts only distinct comparable completed runs and does not close findings', async () => {
     const current = await finding(observedAt);
     const unknown = await finding(null);
@@ -116,7 +127,7 @@ describe('Private comparable scan misses (e2e)', () => {
        VALUES ($1,'tool',$2,$3)`,
       [current, tool, positive],
     );
-    await scan(await run(), { key: 'b'.repeat(64) });
+    await scan(await run(), { key: 'image-v1:' + 'b'.repeat(64) });
     await scan(await run(), { covered: null });
     await scan(await run(), { at: observedAt });
     await scan(await run(false));

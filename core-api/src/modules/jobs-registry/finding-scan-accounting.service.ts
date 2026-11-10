@@ -16,7 +16,7 @@ const COMPLETED_SCANS = `
     AND scan.category = 'vulnerabilities'
     AND scan.status = 'completed'
     AND scan."findingScanCoverageComplete" IS TRUE
-    AND scan."findingScanScopeKey" IS NOT NULL
+    AND scan."findingScanScopeKey" ~ '^image-v1:[0-9a-f]{64}$'
     AND scan."findingScanClaimedAt" IS NOT NULL
     AND NOT EXISTS (
       SELECT 1 FROM jobs AS unfinished
@@ -38,6 +38,7 @@ export class FindingScanAccountingService {
   /**
    * Recompute the private count after a workflow commits. This is a cache,
    * not authority for closure: jobs can later be retried or removed.
+   * Older tag-only evidence cannot prove a comparable miss.
    */
   @OnEvent(EventTriggerType.WORKFLOW_END)
   async onWorkflowEnd(job: Job): Promise<void> {
