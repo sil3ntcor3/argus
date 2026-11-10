@@ -340,6 +340,7 @@ describe('JobsRegistryService', () => {
         status: JobStatus.PENDING,
         workerId: undefined,
         retryCount: 1,
+        findingScanCoverageComplete: null,
       });
     });
 
@@ -3011,6 +3012,7 @@ describe('JobsRegistryService', () => {
         pickJobAt: new Date(previous.getTime() + 1),
         findingScanScopeKey: null,
         findingScanClaimedAt: null,
+        findingScanCoverageComplete: null,
       });
     });
 

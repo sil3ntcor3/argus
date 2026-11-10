@@ -124,6 +124,104 @@ describe('JobResultProcessor', () => {
     );
   });
 
+  describe('private finding scan coverage', () => {
+    const scopeKey = 'a'.repeat(64);
+    const scanClaimedAt = new Date('2026-11-09T12:00:00Z');
+    const scanJob = {
+      ...baseJob,
+      tool: { ...baseJob.tool, name: 'nuclei' },
+      category: ToolCategory.VULNERABILITIES,
+      findingScanScopeKey: scopeKey,
+      findingScanClaimedAt: scanClaimedAt,
+      isPublishEvent: true,
+    };
+    const completeResult = {
+      ...baseBullJob,
+      data: {
+        ...baseBullJob.data,
+        category: ToolCategory.VULNERABILITIES,
+        coverageComplete: true as const,
+      },
+    };
+
+    it.each([{ findings: [] }, { findings: [{ name: 'finding' }] }])(
+      'records completion evidence after ingesting a clean structured result ($findings)',
+      async ({ findings }) => {
+        mockJobsRegistryService.findJobForUpdate.mockResolvedValue(scanJob);
+        mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: findings });
+
+        await processor.process(completeResult);
+
+        expect(mockJobRepository.update).toHaveBeenCalledWith(
+          {
+            id: scanJob.id, status: JobStatus.IN_PROGRESS, workerId: 'worker-1',
+            findingScanScopeKey: scopeKey, findingScanClaimedAt: scanClaimedAt,
+          },
+          {
+            status: JobStatus.COMPLETED, completedAt: expect.any(Date),
+            findingScanCoverageComplete: true,
+          },
+        );
+        expect(mockDataAdapterService.syncData.mock.invocationCallOrder[0])
+          .toBeLessThan(mockJobRepository.update.mock.invocationCallOrder[0]);
+        expect(mockWorkflowRunnerService.onJobTerminal).toHaveBeenCalledWith(
+          expect.not.objectContaining({ findingScanClaimedAt: scanClaimedAt }),
+        );
+        expect(mockRedisService.publish).toHaveBeenCalledWith(
+          'jobs:job-1', expect.not.stringMatching(/findingScan/),
+        );
+      },
+    );
+
+    it.each(['legacy', 'retried', 'no-save', 'missing payload'] as const)(
+      'leaves coverage unknown for %s results',
+      async (kind) => {
+        const job = {
+          ...scanJob,
+          ...(kind === 'retried' ? { findingScanClaimedAt: null } : {}),
+          ...(kind === 'no-save' ? { isSaveData: false } : {}),
+        };
+        mockJobsRegistryService.findJobForUpdate.mockResolvedValue(job);
+        mockStorageService.readJsonFile.mockResolvedValue({
+          error: false, payload: kind === 'missing payload' ? undefined : [],
+        });
+
+        await processor.process(kind === 'legacy' ? baseBullJob : completeResult);
+
+        expect(mockJobRepository.update).toHaveBeenCalledWith(
+          { id: scanJob.id, status: JobStatus.IN_PROGRESS },
+          { status: JobStatus.COMPLETED, completedAt: expect.any(Date) },
+        );
+      },
+    );
+
+    it('does not record coverage if ingestion fails', async () => {
+      mockJobsRegistryService.findJobForUpdate.mockResolvedValue(scanJob);
+      mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: [] });
+      mockDataAdapterService.syncData.mockRejectedValueOnce(new Error('ingest failed'));
+
+      await expect(processor.process(completeResult)).rejects.toThrow('ingest failed');
+
+      expect(mockJobRepository.update).not.toHaveBeenCalled();
+      expect(mockWorkflowRunnerService.onJobTerminal).not.toHaveBeenCalled();
+    });
+
+    it('does not advance a run when the claimed job changed before recording coverage', async () => {
+      mockJobsRegistryService.findJobForUpdate.mockResolvedValue(scanJob);
+      mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: [] });
+      mockJobRepository.update.mockResolvedValueOnce({ affected: 0 });
+
+      await processor.process(completeResult);
+
+      expect(mockJobRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ findingScanClaimedAt: scanClaimedAt }),
+        expect.objectContaining({ findingScanCoverageComplete: true }),
+      );
+      expect(mockWorkflowRunnerService.onJobTerminal).not.toHaveBeenCalled();
+      expect(mockRedisService.publish).not.toHaveBeenCalled();
+    });
+  });
+
   describe('when the job is not found', () => {
     it('should delete the orphaned result file instead of leaking it', async () => {
       mockJobsRegistryService.findJobForUpdate.mockResolvedValue(null);

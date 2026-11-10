@@ -659,6 +659,7 @@ export class JobsRegistryService {
           pickJobAt: claimedAt,
           findingScanScopeKey: null,
           findingScanClaimedAt: null,
+          findingScanCoverageComplete: null,
         },
       );
 
@@ -1108,7 +1109,7 @@ export class JobsRegistryService {
           assetService: true,
         },
       })
-      .addSelect('job.findingScanScopeKey')
+      .addSelect(['job.findingScanScopeKey', 'job.findingScanClaimedAt'])
       .getOne();
   }
 
@@ -1702,6 +1703,7 @@ export class JobsRegistryService {
       job.status = JobStatus.PENDING;
       job.workerId = undefined;
       job.retryCount = job.retryCount + 1;
+      job.findingScanCoverageComplete = null;
 
       await queryRunner.manager.save(job);
 

@@ -1,4 +1,4 @@
-import { BullMQName, JobStatus, WorkerType } from '@/common/enums/enum';
+import { BullMQName, JobStatus, ToolCategory, WorkerType } from '@/common/enums/enum';
 import { JobDataResultType } from '@/common/types/app.types';
 import { DataAdapterService } from '@/modules/data-adapter/data-adapter.service';
 import { StorageService } from '@/modules/storage/storage.service';
@@ -114,7 +114,7 @@ export class JobResultProcessor extends WorkerHost {
       coverageComplete?: true;
     }>,
   ): Promise<void> {
-    const { workerId, jobId, resultRef, category } = bullJob.data;
+    const { workerId, jobId, resultRef, category, coverageComplete } = bullJob.data;
 
     // resultRef is in format "bucket/filename"
     const [bucket, ...rest] = resultRef.split('/');
@@ -143,8 +143,8 @@ export class JobResultProcessor extends WorkerHost {
       return;
     }
 
-    // Only ingestion needs the private scope. The terminal job is published.
-    const { findingScanScopeKey, ...job } = claimedJob;
+    // Keep private scan evidence out of the terminal job sent to subscribers.
+    const { findingScanScopeKey, findingScanClaimedAt, ...job } = claimedJob;
     try {
       // A result is shaped by the endpoint it was posted to; syncing it through
       // a different category's handler would write the wrong data. Retrying
@@ -244,14 +244,33 @@ export class JobResultProcessor extends WorkerHost {
         });
       }
 
+      // A trusted clean result can prove coverage only after its payload was
+      // ingested, and only for the exact dispatch whose scope we recorded.
+      const coverageClaim =
+        coverageComplete === true &&
+        category === ToolCategory.VULNERABILITIES &&
+        rawResult.error === false &&
+        !benignReason &&
+        !isBuiltInTools &&
+        job.isSaveData &&
+        Array.isArray(dataForSync) &&
+        findingScanScopeKey &&
+        findingScanClaimedAt
+          ? { workerId, findingScanScopeKey, findingScanClaimedAt }
+          : undefined;
+
       const completedAt = new Date();
       // Conditional write: the run may have been cancelled (or the job
       // re-run) while this result was being processed. Only the transition
       // IN_PROGRESS → COMPLETED is ours to make — an unconditional save would
       // overwrite the CANCELLED status and let the workflow keep spawning.
       const completion = await this.jobRepo.update(
-        { id: job.id, status: JobStatus.IN_PROGRESS },
-        { status: JobStatus.COMPLETED, completedAt },
+        { id: job.id, status: JobStatus.IN_PROGRESS, ...coverageClaim },
+        {
+          status: JobStatus.COMPLETED,
+          completedAt,
+          ...(coverageClaim ? { findingScanCoverageComplete: true } : {}),
+        },
       );
 
       if (!completion.affected) {
