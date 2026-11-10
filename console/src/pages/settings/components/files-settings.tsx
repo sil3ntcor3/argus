@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import {
   Table,
@@ -11,14 +12,28 @@ import {
 import useDebounce from '@/hooks/use-debounce';
 import { usePermission } from '@/hooks/usePermission';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
+import { handleServerError } from '@/lib/handle-server-error';
 import {
+  artifactsControllerDownload,
+  artifactsControllerRemove,
+  getArtifactsControllerGetManyQueryKey,
+  getArtifactsControllerGetUsageQueryKey,
   useArtifactsControllerGetMany,
   useArtifactsControllerGetUsage,
+  useArtifactsControllerRemove,
+  type ArtifactListItemDto,
   type ArtifactUsageDto,
   type ArtifactsControllerGetManyScope,
 } from '@/services/apis/gen/queries';
+import {
+  getGlobalWorkspaceId,
+  subscribeGlobalWorkspaceId,
+} from '@/utils/workspaceState';
+import { useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
-import { useEffect, useRef, useState } from 'react';
+import { Download, Trash2 } from 'lucide-react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 const PAGE_SIZE = 20;
 const BYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
@@ -109,17 +124,95 @@ function FileAccessError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+function FileActions({
+  file,
+  canDelete,
+  downloading,
+  deleting,
+  focusAfterDelete,
+  onDownload,
+  onDelete,
+}: {
+  file: ArtifactListItemDto;
+  canDelete: boolean;
+  downloading: boolean;
+  deleting: boolean;
+  focusAfterDelete: RefObject<HTMLElement | null>;
+  onDownload: () => void;
+  onDelete: () => void;
+}) {
+  const confirmed = useRef(false);
+  return (
+    <div className="flex justify-end gap-1">
+      {file.isOwner ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label={`Download ${file.name}`}
+          title="Download"
+          aria-disabled={downloading || deleting}
+          onClick={onDownload}
+        >
+          <Download aria-hidden="true" className="size-4" />
+        </Button>
+      ) : null}
+      {canDelete ? (
+        <ConfirmDialog
+          title="Delete file"
+          description={`Permanently delete ${file.name}?`}
+          confirmText="Delete file"
+          focusCancel
+          disabled={deleting}
+          onConfirm={() => {
+            confirmed.current = true;
+            onDelete();
+          }}
+          onCloseAutoFocus={(event) => {
+            if (confirmed.current && focusAfterDelete.current) {
+              event.preventDefault();
+              focusAfterDelete.current.focus();
+            }
+            confirmed.current = false;
+          }}
+          trigger={
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label={`Delete ${file.name}`}
+              title="Delete"
+              disabled={deleting}
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+            </Button>
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function WorkspaceFiles({
+  workspaceId,
   canManage,
+  canWrite,
   onAccessDenied,
 }: {
+  workspaceId: string;
   canManage: boolean;
+  canWrite: boolean;
   onAccessDenied: () => void;
 }) {
   const [scope, setScope] = useState<ArtifactsControllerGetManyScope>('mine');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [downloading, setDownloading] = useState(false);
+  const queryClient = useQueryClient();
   const listRegion = useRef<HTMLDivElement>(null);
+  const downloadRequest = useRef<AbortController | null>(null);
+  const pendingDelete = useRef(false);
+  const queryOptions = { ...freshRead, meta: { workspaceId } };
   const query = useDebounce(search.trim(), 250);
   const files = useArtifactsControllerGetMany(
     {
@@ -130,13 +223,67 @@ function WorkspaceFiles({
       search: query,
       scope,
     },
-    { query: freshRead },
+    { query: queryOptions },
   );
-  const usage = useArtifactsControllerGetUsage({ query: freshRead });
+  const usage = useArtifactsControllerGetUsage({ query: queryOptions });
+  const currentFiles =
+    files.isFetchedAfterMount && !files.isError ? files.data : undefined;
+  const rows = currentFiles?.data ?? [];
+  const removeFile = useArtifactsControllerRemove({
+    mutation: {
+      networkMode: 'always',
+      retry: false,
+      mutationFn: async ({ id }) => {
+        if (!listRegion.current || getGlobalWorkspaceId() !== workspaceId) {
+          throw new Error('The selected workspace changed');
+        }
+        return artifactsControllerRemove(id);
+      },
+      onSuccess: async (_response, { id }) => {
+        const current =
+          !!listRegion.current && getGlobalWorkspaceId() === workspaceId;
+        if (current) {
+          if (rows.length === 1 && rows[0].id === id) {
+            setPage((previous) => Math.max(previous - 1, 1));
+          }
+          toast.success('File deleted');
+        }
+        await Promise.all(
+          [
+            getArtifactsControllerGetManyQueryKey(),
+            getArtifactsControllerGetUsageQueryKey(),
+          ].map((queryKey) =>
+            queryClient.invalidateQueries({
+              queryKey,
+              predicate: (cached) => cached.meta?.workspaceId === workspaceId,
+              refetchType: current ? 'active' : 'none',
+            }),
+          ),
+        );
+      },
+      onError: (error) => {
+        if (!listRegion.current || getGlobalWorkspaceId() !== workspaceId)
+          return;
+        if (isAccessDenied(error)) onAccessDenied();
+        handleServerError(error);
+      },
+      onSettled: () => {
+        pendingDelete.current = false;
+      },
+    },
+  });
   const denied = isAccessDenied(files.error) || isAccessDenied(usage.error);
   useEffect(() => {
     if (denied) onAccessDenied();
   }, [denied, onAccessDenied]);
+  useEffect(() => {
+    const abortDownload = () => downloadRequest.current?.abort();
+    const unsubscribe = subscribeGlobalWorkspaceId(abortDownload);
+    return () => {
+      unsubscribe();
+      abortDownload();
+    };
+  }, []);
   if (denied) {
     return (
       <FileAccessError
@@ -149,13 +296,56 @@ function WorkspaceFiles({
     );
   }
   // A cached result cannot confirm that the caller still has access.
-  const data =
-    files.isFetchedAfterMount && !files.isError ? files.data : undefined;
   const usageData =
     usage.isFetchedAfterMount && !usage.isError ? usage.data : undefined;
-  const rows = data?.data ?? [];
   const nextDisabled =
-    !data?.hasNextPage || search.trim() !== query || files.isFetching;
+    !currentFiles?.hasNextPage || search.trim() !== query || files.isFetching;
+
+  async function downloadFile(file: ArtifactListItemDto) {
+    if (
+      getGlobalWorkspaceId() !== workspaceId ||
+      downloadRequest.current ||
+      pendingDelete.current
+    )
+      return;
+    const request = new AbortController();
+    downloadRequest.current = request;
+    setDownloading(true);
+    try {
+      const { url } = await artifactsControllerDownload(
+        file.id,
+        undefined,
+        request.signal,
+      );
+      if (
+        !listRegion.current ||
+        request.signal.aborted ||
+        getGlobalWorkspaceId() !== workspaceId
+      )
+        return;
+      const target = new URL(url, window.location.origin);
+      if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+        throw new Error('Invalid file download URL');
+      }
+      const link = document.createElement('a');
+      link.href = target.href;
+      link.rel = 'noreferrer';
+      link.download = '';
+      link.click();
+    } catch (error) {
+      if (
+        listRegion.current &&
+        !request.signal.aborted &&
+        getGlobalWorkspaceId() === workspaceId
+      ) {
+        if (isAccessDenied(error)) onAccessDenied();
+        handleServerError(error);
+      }
+    } finally {
+      downloadRequest.current = null;
+      setDownloading(false);
+    }
+  }
 
   return (
     <div className="min-w-0 space-y-4">
@@ -218,7 +408,7 @@ function WorkspaceFiles({
               Retry files
             </Button>
           </div>
-        ) : !data ? (
+        ) : !currentFiles ? (
           <p
             role="status"
             className="rounded-md border p-4 text-sm text-muted-foreground"
@@ -237,6 +427,9 @@ function WorkspaceFiles({
                   <TableHead scope="col">File</TableHead>
                   <TableHead scope="col">Size</TableHead>
                   <TableHead scope="col">Created</TableHead>
+                  <TableHead scope="col" className="text-right">
+                    Actions
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -252,6 +445,25 @@ function WorkspaceFiles({
                     <TableCell>{formatBytes(file.sizeBytes)}</TableCell>
                     <TableCell>
                       {dateFormat.format(new Date(file.createdAt))}
+                    </TableCell>
+                    <TableCell>
+                      <FileActions
+                        file={file}
+                        canDelete={canManage || (canWrite && file.isOwner)}
+                        downloading={downloading}
+                        deleting={removeFile.isPending}
+                        focusAfterDelete={listRegion}
+                        onDownload={() => void downloadFile(file)}
+                        onDelete={() => {
+                          if (
+                            pendingDelete.current ||
+                            getGlobalWorkspaceId() !== workspaceId
+                          )
+                            return;
+                          pendingDelete.current = true;
+                          removeFile.mutate({ id: file.id });
+                        }}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -305,7 +517,9 @@ export default function FilesSettings() {
   return (
     <WorkspaceFiles
       key={`${selectedWorkspaceId}:${canManage}`}
+      workspaceId={selectedWorkspaceId}
       canManage={canManage}
+      canWrite={hasPermission('artifact.write')}
       onAccessDenied={refetch}
     />
   );
