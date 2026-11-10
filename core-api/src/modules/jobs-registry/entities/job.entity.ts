@@ -164,6 +164,11 @@ export class Job extends BaseEntity {
   @Column({ type: 'timestamptz', nullable: true, select: false })
   findingScanClaimedAt?: Date | null;
 
+  /** Private evidence of a completed finding scan; null means unknown. */
+  @ApiHideProperty()
+  @Column({ type: 'boolean', nullable: true, select: false })
+  findingScanCoverageComplete?: boolean | null;
+
   /**
    * The asset service this job belongs to.
    */
