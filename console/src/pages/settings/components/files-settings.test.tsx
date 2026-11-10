@@ -51,6 +51,7 @@ describe('Files settings actions', () => {
     mocks.remove.mockReset();
     mocks.folders.mockReturnValue({ isFetchedAfterMount: true, data: [] });
     mocks.folderDetail.mockReturnValue({});
+    localStorage.removeItem('argus.files.view');
     mocks.files.mockImplementation((params: { scope: string }) => ({
       isFetchedAfterMount: true,
       data: {
@@ -142,6 +143,32 @@ describe('Files settings actions', () => {
       await screen.findByText('Could not verify access to Files.'),
     ).toBeVisible();
     expect(screen.queryByText('My report.txt')).toBeNull();
+  });
+
+  it('switches views without expanding a manager’s access to file content', async () => {
+    show(['artifact.read', 'artifact.manage']);
+    expect(
+      await screen.findByRole('table', { name: 'Workspace files' }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'All files' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Grid view' }));
+    const grid = screen.getByRole('list', { name: 'Workspace file grid' });
+    expect(localStorage.getItem('argus.files.view')).toBe('grid');
+    expect(
+      within(grid).getByRole('button', { name: 'Download My report.txt' }),
+    ).toBeVisible();
+    expect(
+      within(grid).getByRole('button', { name: 'Delete Peer report.txt' }),
+    ).toBeVisible();
+    expect(
+      within(grid).queryByRole('button', { name: 'Download Peer report.txt' }),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }));
+    expect(
+      screen.getByRole('table', { name: 'Workspace files' }),
+    ).toBeVisible();
+    expect(localStorage.getItem('argus.files.view')).toBe('list');
   });
 
   it('offers a download for an owned file and no delete to a read-only viewer', async () => {
