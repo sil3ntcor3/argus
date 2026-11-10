@@ -33,6 +33,10 @@ Reviewers can't review large AI-generated diffs properly, so size is a hard cons
 4. **Check the diff size before declaring done:** `git diff --shortstat origin/main...HEAD` (this count includes generated files; CI excludes them). If you are over budget, tell the user and suggest where to cut. Don't quietly hand over an oversized change.
 5. **Never apply the `size/override` label yourself.** Only a maintainer decides that a large PR is acceptable.
 
+## Module Guides
+
+Read `core-api/src/modules/<name>/AGENTS.md` when it exists before changing a module. Add a guide for a new module. Update affected guides when changing routes, permissions, entities, queues, exports, cross-module wiring, or other invariants. Describe the behavior in the current Argus code and use exact file and symbol names.
+
 ## Repository Layout
 
 pnpm workspace (`pnpm-workspace.yaml`, `packageManager: pnpm@10.33.2`) with 2 Node packages + 1 Go service:
@@ -193,6 +197,12 @@ Migration location: `core-api/src/database/migrations/` (58 files, newest last).
 - CI (`.github/workflows/`, all path-filtered; the required checks `check-lint` / `check-test` filter inside the job so they always report on PRs): `check-lint` (core-api + console matrix), `check-test` (core-api only), `check-build`, `frontend-tests` (console, `main` only), `worker-ci` (go fmt check + vet + build cli/app), `build-release` / `build-nightly`. `pr-size` is the exception: it runs on every PR via `pull_request_target`, posts a sticky bot comment and fails above 1,000 lines / 40 files. It must never check out PR code. Toolchain: Node **22** (`.nvmrc`), pnpm **10.33.2** (`packageManager` in root `package.json` — the only place to bump it), Go **1.26**. Dependabot PRs for patch/minor get auto-merged by `dependabot-auto-merge.yml` once required checks pass.
 - Since pre-commit is inert, **you** must run `task lint` and `task test` before declaring a change done.
 - Local CI rehearsal: `bash .github/scripts/test-local.sh <workflow>` (needs Docker + `act`).
+
+## Releases
+
+Run a real `task release` only when the user explicitly requests an Argus release. Preview the chosen version with `task release -- patch --dry-run` or `task release -- v0.13.0 --dry-run`. The preview fetches refs, can run checks, and prints the planned manifest edits, tag, and push.
+
+The task checks the release branch against origin and requires a clean checkout. A real run stamps the version in `core-api/package.json` and `console/package.json`, commits changed manifests as `chore(release): stamp v…`, and pushes the branch and annotated tag atomically with an exact branch lease. The tag starts the image and binary workflow and creates a draft GitHub release. See `task release -- --help` and `task release:test`.
 
 ## Docker
 
