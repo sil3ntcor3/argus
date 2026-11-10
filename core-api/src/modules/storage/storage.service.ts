@@ -664,7 +664,7 @@ export class StorageService implements OnModuleInit {
     }
   }
 
-  /** Remove the two canonical keys of a pending upload after its policy expires. */
+  /** Remove the two canonical keys of an expired upload or deleted file. */
   public async deleteArtifactUploadObjects(location: ArtifactLocation): Promise<void> {
     validateArtifactLocation(location);
     const { workspaceId, artifactId } = location;

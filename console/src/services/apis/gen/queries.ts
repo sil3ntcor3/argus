@@ -53501,6 +53501,91 @@ export function useArtifactsControllerGetById<
 }
 
 /**
+ * Hides a ready file immediately and releases its quota after storage cleanup. Requires file read access and either ownership with artifact.write or artifact.manage.
+ * @summary Delete a workspace file
+ */
+export const artifactsControllerRemove = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/artifacts/${id}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerRemoveMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof artifactsControllerRemove>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof artifactsControllerRemove>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['artifactsControllerRemove'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof artifactsControllerRemove>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return artifactsControllerRemove(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArtifactsControllerRemoveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerRemove>>
+>;
+
+export type ArtifactsControllerRemoveMutationError = void;
+
+/**
+ * @summary Delete a workspace file
+ */
+export const useArtifactsControllerRemove = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof artifactsControllerRemove>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof artifactsControllerRemove>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getArtifactsControllerRemoveMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * Returns a five-minute attachment URL for a ready file created by the caller in the selected workspace.
  * @summary Get a workspace file download URL
  */

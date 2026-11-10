@@ -2,11 +2,13 @@ import { UserContext } from '@/common/decorators/app.decorator';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
+import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import type { RequestWithMetadata, UserContextPayload } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { Controller, Get, Header, Param, Query, Req } from '@nestjs/common';
+import { Controller, Delete, Get, Header, Param, Query, Req } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
+import { ArtifactCleanupService } from './artifact-cleanup.service';
 import { ArtifactReadService } from './artifact-read.service';
 import { ArtifactUsageService } from './artifact-usage.service';
 import { ArtifactDownloadDto } from './dto/artifact-download.dto';
@@ -19,6 +21,7 @@ export class ArtifactsController {
   constructor(
     private readonly usage: ArtifactUsageService,
     private readonly files: ArtifactReadService,
+    private readonly cleanup: ArtifactCleanupService,
   ) {}
 
   @Doc({
@@ -96,5 +99,28 @@ export class ArtifactsController {
     @UserContext() user: UserContextPayload,
   ): Promise<ArtifactDownloadDto> {
     return this.files.getDownloadUrl(workspaceId, user.id, id);
+  }
+
+  @Doc({
+    summary: 'Delete a workspace file',
+    description: 'Hides a ready file immediately and releases its quota after storage cleanup. Requires file read access and either ownership with artifact.write or artifact.manage.',
+    response: { serialization: DefaultMessageResponseDto },
+    request: {
+      getWorkspaceId: true,
+      params: [{ name: 'id', schema: { type: 'string', format: 'uuid' } }],
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid file ID or workspace selection.' })
+  @ApiForbiddenResponse({ description: 'Missing workspace file permissions.' })
+  @ApiNotFoundResponse({ description: 'File not found in the selected workspace.' })
+  @WorkspaceAccess('artifact.read')
+  @Delete(':id')
+  remove(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @UserContext() user: UserContextPayload,
+    @Req() request: RequestWithMetadata,
+  ): Promise<DefaultMessageResponseDto> {
+    return this.cleanup.remove({ workspaceId, artifactId: id }, user.id, request.permissions ?? []);
   }
 }

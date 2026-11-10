@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ArtifactExpiredUploadService } from './artifact-expired-upload.service';
+import { ArtifactCleanupService } from './artifact-cleanup.service';
 import { ArtifactExpirySweepService } from './artifact-expiry-sweep.service';
 import { ArtifactQuotaService } from './artifact-quota.service';
 import { ArtifactReadService } from './artifact-read.service';
@@ -17,7 +17,7 @@ import { WorkspaceStorageUsage } from './entities/workspace-storage-usage.entity
     ArtifactUsageService,
     ArtifactReadService,
     ArtifactQuotaService,
-    ArtifactExpiredUploadService,
+    ArtifactCleanupService,
     ArtifactExpirySweepService,
     ArtifactStagingSweepService,
   ],
