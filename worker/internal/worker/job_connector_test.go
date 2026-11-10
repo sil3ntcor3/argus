@@ -27,7 +27,7 @@ func TestHandleConnectorResultAggregatesVulnerabilityChunks(t *testing.T) {
 
 	execID := "exec-vuln-1"
 	bridgeMu.Lock()
-	bridge[execID] = &bridgeEntry{jobID: "job-vuln-1", category: "vulnerabilities", release: func() {}}
+	bridge[execID] = &bridgeEntry{jobID: "job-vuln-1", category: "vulnerabilities", release: func() {}, connectorImageID: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
 	bridgeMu.Unlock()
 	resultCh := make(chan connector.ResultMsg, 8)
 	proxy.Register(execID, resultCh)
@@ -70,6 +70,9 @@ func TestHandleConnectorResultAggregatesVulnerabilityChunks(t *testing.T) {
 	}
 	if got.isError || got.coverageComplete == nil || !*got.coverageComplete {
 		t.Fatal("expected explicit complete coverage for a clean Done")
+	}
+	if got.connectorImageID != "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("expected actual connector image, got %q", got.connectorImageID)
 	}
 	if got.raw != "" {
 		t.Fatalf("expected raw \"\" for the aggregated submission, got %q", got.raw)
@@ -357,7 +360,7 @@ func TestHandleConnectorResultErrorWithFindingsDeliversPartialSuccess(t *testing
 
 	execID := "exec-partial-1"
 	bridgeMu.Lock()
-	bridge[execID] = &bridgeEntry{jobID: "job-partial-1", category: "vulnerabilities", release: func() {}}
+	bridge[execID] = &bridgeEntry{jobID: "job-partial-1", category: "vulnerabilities", release: func() {}, connectorImageID: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
 	bridgeMu.Unlock()
 	resultCh := make(chan connector.ResultMsg, 4)
 	proxy.Register(execID, resultCh)
@@ -389,6 +392,9 @@ func TestHandleConnectorResultErrorWithFindingsDeliversPartialSuccess(t *testing
 	got := results[0]
 	if got.isError || got.coverageComplete != nil {
 		t.Fatal("partial findings must be delivered as success without complete coverage")
+	}
+	if got.connectorImageID != "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("expected actual connector image, got %q", got.connectorImageID)
 	}
 	if got.raw != "" {
 		t.Fatalf("expected raw \"\" for the partial submission, got %q", got.raw)

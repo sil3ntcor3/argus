@@ -93,6 +93,7 @@ type capturedResult struct {
 	raw              string
 	isError          bool
 	coverageComplete *bool
+	connectorImageID string
 	vulns            []*pb.Vulnerability
 	urls             []*pb.DiscoveredUrl
 	ports            []int32
@@ -158,7 +159,7 @@ func (s *testJobsServer) ResultVulnerabilities(_ context.Context, req *pb.Vulner
 	if req.Raw != nil {
 		raw = *req.Raw
 	}
-	s.results = append(s.results, capturedResult{jobID: req.JobId, raw: raw, isError: req.Error, coverageComplete: req.CoverageComplete, vulns: req.GetVulnerabilities().GetValues()})
+	s.results = append(s.results, capturedResult{jobID: req.JobId, raw: raw, isError: req.Error, coverageComplete: req.CoverageComplete, connectorImageID: req.GetConnectorImageId(), vulns: req.GetVulnerabilities().GetValues()})
 	return &pb.JobResponse{Success: true}, nil
 }
 

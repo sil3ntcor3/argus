@@ -268,6 +268,22 @@ describe('JobsRegistryService', () => {
     expect(result.coverageComplete).toBe(expected);
   });
 
+  it.each([
+    ['sha256:' + 'a'.repeat(64), false, ToolCategory.VULNERABILITIES, true],
+    ['sha256:invalid', false, ToolCategory.VULNERABILITIES, false],
+    ['sha256:' + 'A'.repeat(64), false, ToolCategory.VULNERABILITIES, false],
+    ['sha256:' + 'a'.repeat(64), true, ToolCategory.VULNERABILITIES, false],
+    ['sha256:' + 'a'.repeat(64), false, ToolCategory.PORTS_SCANNER, false],
+    [undefined, false, ToolCategory.VULNERABILITIES, false],
+  ])('only queues a canonical trusted connector image (%s)', async (image, error, category, expected) => {
+    mockJobResultQueue.add.mockClear();
+    const dto = { jobId: 'job-id', error, connectorImageId: 'sha256:' + 'b'.repeat(64) };
+    await service.updateResultByCategory('worker-id', dto, category, undefined, image);
+
+    const [, result] = mockJobResultQueue.add.mock.calls[0] as [string, { connectorImageId?: string }];
+    expect(result.connectorImageId).toBe(expected ? image : undefined);
+  });
+
   it('stages separate objects for same-millisecond coverage and legacy results', async () => {
     mockStorageService.uploadFile.mockClear();
     const clock = jest.spyOn(Date, 'now').mockReturnValue(1700000000000);

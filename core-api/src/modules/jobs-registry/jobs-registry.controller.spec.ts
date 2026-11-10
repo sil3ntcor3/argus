@@ -548,9 +548,30 @@ describe('JobsRegistryController', () => {
       }, metadata);
       expect(workerContext.getWorker).toHaveBeenCalledWith('different-worker-token');
       expect(mockJobsRegistryService.updateResultByCategory).toHaveBeenCalledWith(
-        'worker-uuid', expect.objectContaining({ payload: [] }), ToolCategory.VULNERABILITIES, undefined,
+        'worker-uuid', expect.objectContaining({ payload: [] }), ToolCategory.VULNERABILITIES, undefined, undefined,
       );
     });
+
+    it.each(['worker-uuid', 'different-worker'])(
+      'trusts a partial result image only from its authenticated worker (%s)',
+      async (authenticatedWorker) => {
+        workerContext.getWorker.mockReturnValue({ id: authenticatedWorker });
+        const metadata = new Metadata();
+        metadata.set(WORKER_TOKEN_HEADER, 'worker-token');
+        const image = 'sha256:' + 'a'.repeat(64);
+        const result = {
+          workerId: 'worker-uuid', jobId: 'job-uuid', error: false,
+          vulnerabilities: { values: [] }, connectorImageId: image,
+        };
+
+        await controller.resultVulnerabilities(result, metadata);
+
+        const [, dto, , coverage, imageId] = mockJobsRegistryService.updateResultByCategory.mock.calls[0];
+        expect(dto).not.toHaveProperty('connectorImageId');
+        expect(coverage).toBeUndefined();
+        expect(imageId).toBe(authenticatedWorker === 'worker-uuid' ? image : undefined);
+      },
+    );
 
     it('falls back to info for unrecognized severity', async () => {
       const vulnerabilities = {

@@ -122,7 +122,7 @@ func (c *Client) SubmitPortsResult(ctx context.Context, jobID string, isError bo
 }
 
 // SubmitVulnerabilitiesResult submits vulnerability scan results for a job.
-func (c *Client) SubmitVulnerabilitiesResult(ctx context.Context, jobID string, isError bool, raw string, vulns []*jobsRegistry.Vulnerability, coverageComplete bool) error {
+func (c *Client) SubmitVulnerabilitiesResult(ctx context.Context, jobID string, isError bool, raw string, vulns []*jobsRegistry.Vulnerability, coverageComplete bool, connectorImageID string) error {
 	req := &jobsRegistry.VulnerabilitiesResultRequest{
 		WorkerId:        c.WorkerID(),
 		JobId:           jobID,
@@ -131,6 +131,9 @@ func (c *Client) SubmitVulnerabilitiesResult(ctx context.Context, jobID string, 
 	}
 	if coverageComplete && !isError {
 		req.CoverageComplete = &coverageComplete
+	}
+	if connectorImageID != "" && !isError {
+		req.ConnectorImageId = &connectorImageID
 	}
 	if raw != "" {
 		req.Raw = &raw
