@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import { ArtifactQuotaService } from './artifact-quota.service';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 
-const UPLOAD_EXPIRY_GRACE_MS = 15 * 60_000;
+export const UPLOAD_EXPIRY_GRACE_MS = 15 * 60_000;
 
 @Injectable()
 export class ArtifactExpiredUploadService {
@@ -22,6 +22,8 @@ export class ArtifactExpiredUploadService {
       return false;
     }
     return this.dataSource.transaction(async manager => {
+      // Let the scheduler move on when another transaction holds a lock.
+      await manager.query("SET LOCAL lock_timeout = '2s'");
       const workspace = await manager.findOne(Workspace, {
         where: { id: workspaceId },
         select: { id: true },
@@ -36,7 +38,7 @@ export class ArtifactExpiredUploadService {
       });
       // Recheck under the same row lock as completion. Allow time for requests
       // that started while the signed form was still valid to finish.
-      // A future sweeper also needs an upload deadline or orphan cleanup.
+      // The orphan staging sweep removes objects written after reclamation.
       if (!artifact?.expiresAt || artifact.expiresAt.getTime() + UPLOAD_EXPIRY_GRACE_MS > Date.now()) {
         return false;
       }
