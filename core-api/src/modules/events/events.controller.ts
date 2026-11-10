@@ -1,33 +1,20 @@
-import { UserContext } from '@/common/decorators/app.decorator';
-import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
 import { Doc } from '@/common/doc/doc.decorator';
 import { AuthGuard } from '@/common/guards/auth.guard';
-import { UserContextPayload } from '@/common/interfaces/app.interface';
-import { WorkspacesService } from '@/modules/workspaces/workspaces.service';
 import type { MessageEvent } from '@nestjs/common';
-import {
-  BadRequestException,
-  Controller,
-  ForbiddenException,
-  NotFoundException,
-  Req,
-  Sse,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Req, Sse, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { isUUID } from 'class-validator';
-import type { NodeRequest } from '@nestjs/platform-node';
 import type { Observable } from 'rxjs';
+import {
+  EventsWorkspaceGuard,
+  type EventsStreamRequest,
+} from './events-workspace.guard';
 import { EventsService } from './events.service';
 
 @ApiTags('Events')
 @Controller('events')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, EventsWorkspaceGuard)
 export class EventsController {
-  constructor(
-    private readonly eventsService: EventsService,
-    private readonly workspacesService: WorkspacesService,
-  ) {}
+  constructor(private readonly eventsService: EventsService) {}
 
   @Sse('stream')
   @Doc({
@@ -41,45 +28,10 @@ export class EventsController {
       'sent periodically as a heartbeat.',
     request: { getWorkspaceId: true },
   })
-  async stream(
-    @Req() req: NodeRequest,
-    @UserContext() user: UserContextPayload,
-  ): Promise<Observable<MessageEvent>> {
-    const workspaceId = await this.resolveWorkspace(req, user.id);
-    return this.eventsService.stream(workspaceId, user.id);
-  }
-
-  /**
-   * The header only — deliberately NOT the `wid` cookie fallback other routes
-   * use: the cookie is shared by every tab, so a reconnecting stream would
-   * follow whichever workspace another tab selected last. No header means a
-   * notifications-only stream (a user with no workspace yet).
-   */
-  private async resolveWorkspace(
-    req: NodeRequest,
-    userId: string,
-  ): Promise<string | undefined> {
-    const header = req.headers[WORKSPACE_HEADER_NAME.toLowerCase()];
-    const workspaceId = Array.isArray(header) ? header[0] : header;
-    if (!workspaceId) return undefined;
-    if (!isUUID(workspaceId)) {
-      throw new BadRequestException('Workspace id null or invalid');
-    }
-
-    try {
-      await this.workspacesService.getMembershipWithPermissions(
-        workspaceId,
-        userId,
-      );
-    } catch (error) {
-      // Non-members get 403, never revealing whether the workspace exists.
-      if (error instanceof NotFoundException) {
-        throw new ForbiddenException(
-          'You do not have permission to perform this action',
-        );
-      }
-      throw error;
-    }
-    return workspaceId;
+  stream(@Req() request: EventsStreamRequest): Observable<MessageEvent> {
+    return this.eventsService.stream(
+      request.eventsWorkspaceId,
+      request.user.id,
+    );
   }
 }
