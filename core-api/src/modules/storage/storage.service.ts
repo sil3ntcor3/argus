@@ -2,15 +2,18 @@ import {
   ARTIFACT_BUCKET,
   ARTIFACT_MAX_FILE_BYTES,
   ARTIFACT_UPLOAD_TTL_SECONDS,
+  workspaceArtifactKey,
   workspaceArtifactUploadKey,
 } from '@/common/constants/artifact-storage';
 import {
+  CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
   GetBucketPolicyStatusCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  type HeadObjectCommandOutput,
   ListObjectsV2Command,
   PutBucketCorsCommand,
   PutBucketPolicyCommand,
@@ -22,6 +25,7 @@ import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -42,6 +46,27 @@ import {
   parseStorageConfig,
   StorageConfig,
 } from './storage.config';
+
+interface ArtifactUploadInput {
+  workspaceId: string;
+  artifactId: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+function validateArtifactUpload({
+  workspaceId, artifactId, contentType, sizeBytes,
+}: ArtifactUploadInput): void {
+  if (workspaceId.length !== 36 || artifactId.length !== 36 || !isUUID(workspaceId) || !isUUID(artifactId)) {
+    throw new BadRequestException('Invalid artifact location');
+  }
+  if (contentType.length > 255 || contentType.trim() !== contentType || !/^[a-z0-9_.+-]+\/[a-z0-9_.+-]+$/i.test(contentType)) {
+    throw new BadRequestException('Invalid artifact content type');
+  }
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > ARTIFACT_MAX_FILE_BYTES) {
+    throw new BadRequestException('Invalid artifact size');
+  }
+}
 
 type BucketAccess =
   'public' | 'authenticated' | 'tenant' | 'private' | 'blocked';
@@ -546,20 +571,11 @@ export class StorageService implements OnModuleInit {
    * overwrite that object until expiry, so it must never name the final key.
    * Callers authorize the workspace and reserve quota before returning it.
    */
-  public async getPresignedArtifactUpload({
-    workspaceId, artifactId, contentType, sizeBytes,
-  }: {
-    workspaceId: string; artifactId: string; contentType: string; sizeBytes: number;
-  }): Promise<{ url: string; fields: Record<string, string>; expiresAt: Date }> {
-    if (workspaceId.length !== 36 || artifactId.length !== 36 || !isUUID(workspaceId) || !isUUID(artifactId)) {
-      throw new BadRequestException('Invalid artifact location');
-    }
-    if (contentType.length > 255 || contentType.trim() !== contentType || !/^[a-z0-9_.+-]+\/[a-z0-9_.+-]+$/i.test(contentType)) {
-      throw new BadRequestException('Invalid artifact content type');
-    }
-    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > ARTIFACT_MAX_FILE_BYTES) {
-      throw new BadRequestException('Invalid artifact size');
-    }
+  public async getPresignedArtifactUpload(
+    input: ArtifactUploadInput,
+  ): Promise<{ url: string; fields: Record<string, string>; expiresAt: Date }> {
+    validateArtifactUpload(input);
+    const { workspaceId, artifactId, contentType, sizeBytes } = input;
 
     // The SDK also pins Bucket, Key, and each field (including Content-Type)
     // as exact conditions. This key never ends with its filename wildcard.
@@ -580,6 +596,76 @@ export class StorageService implements OnModuleInit {
       throw new InternalServerErrorException('Invalid artifact upload deadline');
     }
     return { url: this.toBrowserUrl(url), fields, expiresAt };
+  }
+
+  /**
+   * Copy verified staging bytes into the server-owned key exactly once.
+   * A retry after the database transaction fails can recognize its prior
+   * copy without trusting or overwriting the now-replayable staging object.
+   */
+  public async publishArtifactUpload(input: ArtifactUploadInput): Promise<void> {
+    validateArtifactUpload(input);
+    const { workspaceId, artifactId, contentType, sizeBytes } = input;
+    const stagingKey = workspaceArtifactUploadKey(workspaceId, artifactId);
+    const finalKey = workspaceArtifactKey(workspaceId, artifactId);
+    const marker = artifactId.toLowerCase();
+
+    const alreadyPublished = async () => {
+      const final = await this.headArtifactObject(finalKey);
+      if (!final) return false;
+      if (final.Metadata?.['argus-artifact-id'] !== marker ||
+          final.ContentLength !== sizeBytes || final.ContentType !== contentType) {
+        throw new ConflictException('Unexpected file at the final artifact key');
+      }
+      return true;
+    };
+    if (await alreadyPublished()) return;
+
+    const staged = await this.headArtifactObject(stagingKey);
+    if (!staged) {
+      throw new NotFoundException('Artifact upload has not arrived');
+    }
+    if (staged.ContentLength !== sizeBytes || staged.ContentType !== contentType || !staged.ETag) {
+      throw new ConflictException('Artifact upload does not match the reservation');
+    }
+
+    try {
+      await this.rustFsClient.getClient().send(new CopyObjectCommand({
+        Bucket: ARTIFACT_BUCKET,
+        Key: finalKey,
+        CopySource: `${ARTIFACT_BUCKET}/${stagingKey}`,
+        CopySourceIfMatch: staged.ETag,
+        IfNoneMatch: '*',
+        MetadataDirective: 'REPLACE',
+        Metadata: { 'argus-artifact-id': marker },
+        ContentType: contentType,
+        CacheControl: 'private, no-store',
+      }));
+    } catch (error: unknown) {
+      if (!(error instanceof S3ServiceException)) throw error;
+      const status = error.$metadata.httpStatusCode;
+      if (status !== 412 && !(status === 409 && error.name === 'ConditionalRequestConflict')) {
+        throw error;
+      }
+      // Another completion may have won the destination precondition.
+      // Otherwise the source changed; do not publish bytes we did not check.
+      if (!(await alreadyPublished())) {
+        throw new ConflictException('Artifact upload changed before completion');
+      }
+    }
+  }
+
+  private async headArtifactObject(key: string): Promise<HeadObjectCommandOutput | undefined> {
+    try {
+      return await this.rustFsClient.getClient().send(new HeadObjectCommand({
+        Bucket: ARTIFACT_BUCKET, Key: key,
+      }));
+    } catch (error: unknown) {
+      if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 404) {
+        return undefined;
+      }
+      throw error;
+    }
   }
 
   public async getPresignedDownloadUrl(opts: {
