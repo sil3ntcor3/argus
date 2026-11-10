@@ -15,6 +15,7 @@ import { WorkspaceEncryptionService } from '@/services/workspace-encryption/work
 import { ApiKeysService } from '../apikeys/apikeys.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../storage/storage.service';
 import { WorkflowTemplateService } from '../workflows/workflow-template.service';
 import { WorkspaceInvitation } from './entities/workspace-invitation.entity';
 import { WorkspaceMemberPermission } from './entities/workspace-member-permission.entity';
@@ -38,6 +39,7 @@ describe('WorkspacesService', () => {
     pseudonymizeActor: jest.Mock;
     buildActorContext: jest.Mock;
   };
+  let deleteWorkspaceArtifacts: jest.Mock;
   let mockDataSource: Partial<DataSource>;
   let mockManager: any;
   let fixedTransactionalRepository: {
@@ -226,6 +228,7 @@ describe('WorkspacesService', () => {
       pseudonymizeActor: jest.fn().mockResolvedValue(undefined),
       buildActorContext: jest.fn(),
     };
+    deleteWorkspaceArtifacts = jest.fn().mockResolvedValue({ deleted: 1, failed: 0 });
 
     const mockWorkspaceEncryptionService = {
       generateWrappedDEK: jest.fn().mockReturnValue('wrapped-dek'),
@@ -273,6 +276,10 @@ describe('WorkspacesService', () => {
         {
           provide: AuditService,
           useValue: mockAuditService,
+        },
+        {
+          provide: StorageService,
+          useValue: { deleteWorkspaceArtifacts },
         },
         {
           provide: DataSource,
@@ -1138,6 +1145,10 @@ describe('WorkspacesService', () => {
           execute: jest.fn().mockResolvedValue({ raw: [] }),
         }),
       });
+      mockAuditService.recordInTx.mockImplementationOnce(() => {
+        expect(deleteWorkspaceArtifacts).not.toHaveBeenCalled();
+        return Promise.resolve({ id: randomUUID() });
+      });
 
       const result = await service.deleteWorkspace(
         testWorkspaceId,
@@ -1146,6 +1157,7 @@ describe('WorkspacesService', () => {
       );
 
       expect(result).toEqual({ message: 'Workspace deleted successfully' });
+      expect(deleteWorkspaceArtifacts).toHaveBeenCalledWith(testWorkspaceId);
       expect(mockManager.delete).toHaveBeenCalledWith(Workspace, {
         id: testWorkspaceId,
       });
@@ -1184,6 +1196,7 @@ describe('WorkspacesService', () => {
       await expect(
         service.deleteWorkspace(testWorkspaceId, testUserContext, auditContext),
       ).rejects.toThrow('audit write failed');
+      expect(deleteWorkspaceArtifacts).not.toHaveBeenCalled();
 
       // The transaction callback rejected → in production the tx rolls back
       // the workspace delete. Here we verify the failure propagates (the
