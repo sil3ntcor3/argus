@@ -4,6 +4,7 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { useEffect, useMemo, type JSX } from 'react';
 import {
   Building2,
+  FolderOpen,
   KeyRound,
   Loader2,
   Plug,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 import ApiKeysSettings from './components/api-keys-settings';
 import AuditLogSettings from './components/audit-log-settings';
+import FilesSettings from './components/files-settings';
 import McpConnect from './components/mcp-connect';
 import MembersSettings from './components/members-settings';
 import Preferences from './components/preferences';
@@ -101,6 +103,18 @@ export const settingsTabGroups: SettingsTabGroup[] = [
         },
         component: <AuditLogSettings />,
         permission: 'audit.read',
+      },
+      {
+        id: 'files',
+        label: 'Files',
+        path: '/settings/files',
+        icon: <FolderOpen />,
+        content: {
+          title: 'Files',
+          description: 'Browse workspace files and view storage usage.',
+        },
+        component: <FilesSettings />,
+        permission: 'artifact.read',
       },
     ],
   },
@@ -223,7 +237,7 @@ const Settings = ({ defaultTab = 'general' }: SettingsProps) => {
   return (
     <div
       className={
-        activeTab?.id === 'audit'
+        activeTab?.id === 'audit' || activeTab?.id === 'files'
           ? 'mx-auto w-full sm:w-5/6 xl:w-2/3'
           : 'mx-auto w-full sm:w-3/4 xl:w-1/2'
       }
