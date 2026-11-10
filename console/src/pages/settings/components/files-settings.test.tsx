@@ -36,12 +36,19 @@ vi.mock('@/services/apis/gen/queries', async (original) => ({
   artifactsControllerRemove: mocks.remove,
 }));
 
-function show(permissions: string[]) {
+function show(
+  permissions: string[],
+  url: string | string[] = '/settings/files',
+  routePath = '/settings/$tab',
+) {
   mocks.permission.mockReturnValue({
     hasPermission: (key: string) => permissions.includes(key),
     refetch: vi.fn(),
   });
-  return renderWithProviders(<FilesSettings />);
+  return renderWithProviders(<FilesSettings />, {
+    routePath,
+    initialEntries: typeof url === 'string' ? [url] : url,
+  });
 }
 
 describe('Files settings actions', () => {
@@ -70,8 +77,14 @@ describe('Files settings actions', () => {
   });
 
   it('browses personal folders with breadcrumbs and searches across folders', async () => {
-    const reports = { id: 'reports', name: 'Reports' };
-    const archive = { id: 'archive', name: 'Archive' };
+    const reports = {
+      id: '9045f7b1-483e-4515-84f2-d6ef87259218',
+      name: 'Reports',
+    };
+    const archive = {
+      id: 'c34d5c35-3663-433a-ae2e-089f02011c2d',
+      name: 'Archive',
+    };
     mocks.folders.mockImplementation((params?: { parentFolderId: string }) => ({
       isFetchedAfterMount: true,
       data: !params
@@ -97,22 +110,28 @@ describe('Files settings actions', () => {
     expect(
       screen.getByRole('region', { name: 'Folder navigation' }),
     ).toHaveFocus();
-    expect(lastFileFilter()).toMatchObject({
-      parentFolderId: reports.id,
-      page: 1,
-    });
+    await waitFor(() =>
+      expect(lastFileFilter()).toMatchObject({
+        parentFolderId: reports.id,
+        page: 1,
+      }),
+    );
     fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
-    expect(lastFileFilter()).toMatchObject({
-      parentFolderId: archive.id,
-      page: 1,
-    });
+    await waitFor(() =>
+      expect(lastFileFilter()).toMatchObject({
+        parentFolderId: archive.id,
+        page: 1,
+      }),
+    );
     const path = screen.getByRole('navigation', { name: 'Folder path' });
     expect(within(path).getByText('Archive')).toHaveAttribute(
       'aria-current',
       'location',
     );
     fireEvent.click(within(path).getByRole('button', { name: 'Reports' }));
-    expect(lastFileFilter()).toMatchObject({ parentFolderId: reports.id });
+    await waitFor(() =>
+      expect(lastFileFilter()).toMatchObject({ parentFolderId: reports.id }),
+    );
 
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search files' }), {
       target: { value: 'report' },
@@ -131,6 +150,98 @@ describe('Files settings actions', () => {
       scope: 'all',
       parentFolderId: undefined,
     });
+  });
+
+  it('opens a folder link and restores it from browser history', async () => {
+    const folder = {
+      id: '8e27a9a4-3a94-45f2-b9fc-dc5e1c817629',
+      name: 'Reports',
+    };
+    mocks.folderDetail.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { path: [folder] },
+    });
+    mocks.files.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: {
+        data: [
+          {
+            ...owned,
+            mimeType: 'text/plain',
+            sizeBytes: 4,
+            source: 'upload',
+            createdAt: '2026-01-02T00:00:00Z',
+          },
+        ],
+        hasNextPage: true,
+      },
+    });
+    const { router } = show(
+      ['artifact.read'],
+      [
+        '/settings/files?context=fixture',
+        `/settings/files?folder=${folder.id.toUpperCase()}&context=fixture`,
+      ],
+    );
+    const path = await screen.findByRole('navigation', { name: 'Folder path' });
+    expect(within(path).getByText('Reports')).toHaveAttribute(
+      'aria-current',
+      'location',
+    );
+    expect(mocks.files.mock.lastCall?.[0]).toMatchObject({
+      parentFolderId: folder.id,
+      page: 1,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(mocks.files.mock.lastCall?.[0]).toMatchObject({
+      parentFolderId: folder.id,
+      page: 2,
+    });
+    await act(async () => {
+      router.history.back();
+    });
+    await waitFor(() =>
+      expect(mocks.files.mock.lastCall?.[0]).toMatchObject({
+        parentFolderId: 'root',
+        page: 1,
+      }),
+    );
+    await act(async () => {
+      router.history.forward();
+    });
+    await waitFor(() =>
+      expect(mocks.files.mock.lastCall?.[0]).toMatchObject({
+        parentFolderId: folder.id,
+        page: 1,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Root folder' }));
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ context: 'fixture' }),
+    );
+    await act(async () => {
+      router.history.back();
+    });
+    await waitFor(() =>
+      expect(mocks.files.mock.lastCall?.[0]).toMatchObject({
+        parentFolderId: folder.id,
+        page: 1,
+      }),
+    );
+  });
+
+  it('can render at the settings index and ignores an invalid folder value', async () => {
+    show(['artifact.read'], '/settings?folder=invalid', '/settings');
+    await waitFor(() =>
+      expect(mocks.files.mock.lastCall?.[0]).toMatchObject({
+        parentFolderId: 'root',
+      }),
+    );
+    expect(mocks.folderDetail).not.toHaveBeenCalledWith(
+      'invalid',
+      expect.anything(),
+    );
   });
 
   it('hides file rows when a folder request denies the shared read permission', async () => {
