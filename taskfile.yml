@@ -196,7 +196,7 @@ tasks:
     cmds:
       - node scripts/sync-tool-manifest.mjs
 
-  # Cut a release: validate, run the checks, tag, push — CI does the rest
+  # Cut a release: validate, check, stamp package versions, tag, and push
   #
   #   task release -- v0.9.0            # the `--` is required, see below
   #   task release version=v0.9.0       # VERSION= still works
@@ -214,7 +214,7 @@ tasks:
   # images and the draft release. The draft is published by hand afterwards —
   # the workflow deliberately does not publish it.
   release:
-    desc: Tag a release and push it, kicking off build-release.yml
+    desc: Stamp package versions and atomically push the release commit and tag
     env:
       RELEASE_VERSION: '{{.version | default .VERSION}}'
       RELEASE_MESSAGE: '{{.MESSAGE}}'
@@ -225,6 +225,6 @@ tasks:
       - node scripts/release.mjs {{.CLI_ARGS}}
 
   release:test:
-    desc: Check release argument handling against disposable local Git repositories
+    desc: Check release behavior against disposable local Git repositories
     cmds:
       - node --test scripts/release.test.mjs
