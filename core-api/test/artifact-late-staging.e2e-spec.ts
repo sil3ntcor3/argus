@@ -6,7 +6,10 @@ import { StorageService } from '@/modules/storage/storage.service';
 import { RedisService } from '@/services/redis/redis.service';
 import type { DeleteObjectsCommandInput, ListObjectsV2CommandInput, S3Client } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
+import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
+import { wsHeaders } from './helpers/auth';
+import { cleanupE2eData, createUser, createWorkspace, type TestUser } from './helpers/workspace';
 
 describe('Orphaned artifact staging cleanup (e2e)', () => {
   let app: TestApp;
@@ -17,6 +20,7 @@ describe('Orphaned artifact staging cleanup (e2e)', () => {
   let keys: string[];
   let s3: S3Client;
   let cursorKey: string;
+  let owner: TestUser;
   const middlewareName = 'scopeLateStagingE2e';
 
   beforeAll(async () => {
@@ -26,13 +30,11 @@ describe('Orphaned artifact staging cleanup (e2e)', () => {
     redis = app.app.get(RedisService);
     sweep = app.app.get(ArtifactStagingSweepService);
     s3 = app.app.get(RustFsClient).getClient();
+    owner = await createUser(app.server);
   });
 
   beforeEach(async () => {
-    const [workspace] = await app.dataSource.query<{ id: string }[]>(
-      'INSERT INTO workspaces (name) VALUES ($1) RETURNING id', ['Late staging fixture ' + randomUUID()],
-    );
-    workspaceId = workspace.id;
+    workspaceId = (await createWorkspace(app.server, owner)).id;
     keys = [];
     cursorKey = `${ARTIFACT_STAGING_CURSOR}:test:${workspaceId}`;
     const mapKey = (key: string) => key === ARTIFACT_STAGING_CURSOR ? cursorKey : key;
@@ -70,7 +72,14 @@ describe('Orphaned artifact staging cleanup (e2e)', () => {
     }
   });
 
-  afterAll(async () => closeTestApp(app?.app));
+  afterAll(async () => {
+    if (!app) return;
+    try {
+      if (owner) await cleanupE2eData(app.dataSource, { userIds: [owner.userId] });
+    } finally {
+      await closeTestApp(app.app);
+    }
+  });
 
   const put = async (key: string) => {
     keys.push(key);
@@ -108,6 +117,42 @@ describe('Orphaned artifact staging cleanup (e2e)', () => {
     await put(orphan); // A later finishing request is found on a new pass too.
     await sweep.sweepPage(aged());
     await removed(orphan);
+
+    // An absent workspace alone is insufficient evidence for deleting final bytes.
+    await app.dataSource.query('DELETE FROM workspaces WHERE id=$1', [workspaceId]);
+    await sweep.sweepPage(aged());
+    await keep(final);
+  });
+
+  it('retries final and staging cleanup after the workspace and file rows are deleted', async () => {
+    const id = randomUUID();
+    const final = await put(workspaceArtifactKey(workspaceId, id));
+    const staging = await put(workspaceArtifactUploadKey(workspaceId, id));
+    await app.dataSource.getRepository(WorkspaceArtifact).insert({
+      id, workspaceId, name: 'ready.txt', mimeType: 'text/plain', sizeBytes: '4',
+      objectKey: final, source: 'upload', status: 'ready', createdByUserId: owner.userId,
+    });
+    const unavailable = jest.spyOn(storage, 'deleteWorkspaceArtifacts').mockRejectedValueOnce(new Error('fixture outage'));
+    await request(app.server).delete(`/api/workspaces/${workspaceId}`)
+      .set(wsHeaders(owner.cookie, workspaceId)).expect(200);
+    expect(unavailable).toHaveBeenCalledWith(workspaceId);
+    unavailable.mockRestore();
+    await keep(final);
+    await keep(staging);
+    await sweep.sweepPage(aged());
+    await removed(final);
+    await removed(staging);
+  });
+
+  it('preserves a live workspace even when its ID appears in the deletion audit log', async () => {
+    const final = await put(workspaceArtifactKey(workspaceId, randomUUID()));
+    await app.dataSource.query(
+      `INSERT INTO audit_events ("eventId","workspaceId","resourceId","resourceType",action,outcome)
+       VALUES ($1,$2,$2,'workspace','workspace.deleted','success')`,
+      [randomUUID(), workspaceId],
+    );
+    await sweep.sweepPage(aged());
+    await keep(final);
   });
 
   it('saves the last key of a full page and wraps to catch late writes behind it', async () => {

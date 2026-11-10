@@ -12,9 +12,11 @@ for server operations and URL signing. This module does not own database tables.
   bucket denies anonymous access before enabling writers. Startup does not
   replace operator-managed private bucket policies.
 - Use a dedicated `artifacts` bucket for each Argus database. API replicas
-  sharing that database also share its bucket. The staging sweep uses its
-  artifact rows to identify orphaned uploads. Do not point an independent
-  test, restored, or other deployment database at a live artifacts bucket.
+  sharing that database also share its bucket. The artifact sweep uses its
+  file rows to identify orphaned uploads and committed workspace deletion
+  audit records to authorize retrying prefix cleanup within the audit retention
+  window. Do not point an independent test, restored, or other deployment
+  database at a live artifacts bucket.
 - Tenant reads resolve workspace ownership by object key. Screenshots resolve
   through asset services and targets; the `nuclei-templates` bucket
   resolves through the template row. Screenshots with the same asset value

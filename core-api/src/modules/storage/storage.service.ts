@@ -1026,12 +1026,12 @@ export class StorageService implements OnModuleInit {
     return { objects, nextKey };
   }
 
-  /** Delete staging only, never the final file at the same artifact ID. */
-  public async deleteOrphanArtifactStaging(locations: { workspaceId: string; artifactId: string }[]): Promise<number> {
+  /** Delete exact keys already authorized by the bounded artifact sweep. */
+  public async deleteArtifactSweepObjects(keys: string[]): Promise<number> {
     const result = await this.rustFsClient.getClient().send(new DeleteObjectsCommand({
       Bucket: ARTIFACT_BUCKET,
       Delete: {
-        Objects: locations.map(({ workspaceId, artifactId }) => ({ Key: workspaceArtifactUploadKey(workspaceId, artifactId) })),
+        Objects: keys.map(Key => ({ Key })),
         Quiet: true,
       },
     }), { abortSignal: AbortSignal.timeout(15_000) });
@@ -1052,6 +1052,7 @@ export class StorageService implements OnModuleInit {
     const bucket = ARTIFACT_BUCKET;
     const prefix = `workspaces/${workspaceId.toLowerCase()}/`;
     const client = this.rustFsClient.getClient();
+    const abortSignal = AbortSignal.timeout(30_000);
     const seenTokens = new Set<string>();
     let continuationToken: string | undefined;
     let deleted = 0;
@@ -1060,7 +1061,7 @@ export class StorageService implements OnModuleInit {
     do {
       const page = await client.send(new ListObjectsV2Command({
         Bucket: bucket, Prefix: prefix, ContinuationToken: continuationToken,
-      }));
+      }), { abortSignal });
       const next = page.IsTruncated ? page.NextContinuationToken : undefined;
       if (page.IsTruncated && (!next || seenTokens.has(next))) {
         throw new Error('Workspace artifact listing did not advance');
@@ -1068,6 +1069,7 @@ export class StorageService implements OnModuleInit {
       if (next) seenTokens.add(next);
 
       for (const { Key } of page.Contents ?? []) {
+        abortSignal.throwIfAborted();
         // Do not send a delete for a key outside the requested workspace,
         // even if an S3-compatible provider returns it for this prefix.
         if (!Key?.startsWith(prefix)) {
@@ -1075,7 +1077,7 @@ export class StorageService implements OnModuleInit {
           continue;
         }
         try {
-          await client.send(new DeleteObjectCommand({ Bucket: bucket, Key }));
+          await client.send(new DeleteObjectCommand({ Bucket: bucket, Key }), { abortSignal });
           deleted++;
         } catch {
           failed++;
