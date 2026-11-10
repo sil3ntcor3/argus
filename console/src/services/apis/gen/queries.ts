@@ -53327,6 +53327,173 @@ export function useArtifactsControllerGetUsage<
 }
 
 /**
+ * Returns metadata for a ready file in the selected workspace. Reading another creator’s file also requires artifact.manage.
+ * @summary Get workspace file metadata
+ */
+export const artifactsControllerGetById = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactListItemDto>(
+    { url: `/api/artifacts/${id}`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerGetByIdQueryKey = (id: string) => {
+  return [`/api/artifacts/${id}`] as const;
+};
+
+export const getArtifactsControllerGetByIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerGetByIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetById>>
+  > = ({ signal }) => artifactsControllerGetById(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetById>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetByIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetById>>
+>;
+export type ArtifactsControllerGetByIdQueryError = void;
+
+export function useArtifactsControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get workspace file metadata
+ */
+
+export function useArtifactsControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetByIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
  * Server-Sent Events stream of the current user's notification pushes plus, when the X-Workspace-Id header is sent, the allowlisted events of that workspace. Each message is a JSON ClientEvent `{ id, type, time, resourceType, resourceId, joinKeyId? }` (`joinKeyId` only on `worker.joined` from a one-time join key); a `ping` event is sent periodically as a heartbeat.
  * @summary Subscribe to live events
  */
