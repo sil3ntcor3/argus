@@ -32,6 +32,7 @@ import {
   subscribeGlobalWorkspaceId,
 } from '@/utils/workspaceState';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import { Download, LayoutGrid, List, Trash2 } from 'lucide-react';
 import {
@@ -55,6 +56,8 @@ const FILE_VIEWS = [
   { id: 'grid', label: 'Grid view', Icon: LayoutGrid },
 ] as const;
 type FileView = (typeof FILE_VIEWS)[number]['id'];
+const FOLDER_UUID =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|0{8}-0{4}-0{4}-0{4}-0{12}|f{8}-f{4}-f{4}-f{4}-f{12})$/i;
 
 function readFileView(): FileView {
   try {
@@ -273,9 +276,24 @@ function WorkspaceFiles({
   onAccessDenied: () => void;
 }) {
   const [scope, setScope] = useState<ArtifactsControllerGetManyScope>('mine');
-  const [folderId, setFolderId] = useState<string>();
+  const folderId = useSearch({
+    strict: false,
+    select: (search) => {
+      const folder = (search as Record<string, unknown>).folder;
+      return typeof folder === 'string' &&
+        folder.length === 36 &&
+        FOLDER_UUID.test(folder)
+        ? folder.toLowerCase()
+        : undefined;
+    },
+  });
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ folderId, page: 1 });
+  const page = pagination.folderId === folderId ? pagination.page : 1;
+  if (pagination.folderId !== folderId) {
+    setPagination({ folderId, page: 1 });
+  }
   const [view, setView] = useState(readFileView);
   const [downloading, setDownloading] = useState(false);
   const queryClient = useQueryClient();
@@ -335,7 +353,7 @@ function WorkspaceFiles({
           !!listRegion.current && getGlobalWorkspaceId() === workspaceId;
         if (current) {
           if (rows.length === 1 && rows[0].id === id) {
-            setPage((previous) => Math.max(previous - 1, 1));
+            setPage(Math.max(page - 1, 1));
           }
           toast.success('File deleted');
         }
@@ -404,9 +422,22 @@ function WorkspaceFiles({
     if (folderId) void folderDetail.refetch();
   }
 
+  function setPage(next: number) {
+    setPagination({ folderId, page: next });
+  }
+
+  function setFolderLocation(id?: string, replace = false) {
+    void navigate({
+      to: '/settings/$tab',
+      params: { tab: 'files' },
+      search: (previous) => ({ ...previous, folder: id }),
+      replace,
+      resetScroll: false,
+    });
+  }
+
   function openFolder(id?: string) {
-    setFolderId(id);
-    setPage(1);
+    setFolderLocation(id);
     folderRegion.current?.focus();
   }
 
@@ -502,7 +533,9 @@ function WorkspaceFiles({
                 size="sm"
                 aria-pressed={scope === option}
                 onClick={() => {
-                  if (option !== scope) setFolderId(undefined);
+                  if (option !== scope && folderId) {
+                    setFolderLocation(undefined, true);
+                  }
                   setScope(option);
                   setPage(1);
                 }}
