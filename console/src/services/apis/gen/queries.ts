@@ -6913,6 +6913,10 @@ export type ArtifactsControllerGetManyParams = {
   sortBy?: ArtifactsControllerGetManySortBy;
   sortOrder?: ArtifactsControllerGetManySortOrder;
   scope?: ArtifactsControllerGetManyScope;
+  /**
+   * In mine scope, an owned folder UUID or root for files outside folders. Omit to list across folders.
+   */
+  parentFolderId?: string;
 };
 
 export type ArtifactsControllerGetManySortBy =
