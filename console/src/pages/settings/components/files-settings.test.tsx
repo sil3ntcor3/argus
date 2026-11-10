@@ -31,6 +31,7 @@ vi.mock('@/services/apis/gen/queries', async (original) => ({
     data: {
       data: (params.scope === 'all' ? [owned, peer] : [owned]).map((file) => ({
         ...file,
+        mimeType: 'text/plain',
         sizeBytes: 4,
         source: 'upload',
         createdAt: '2026-01-02T00:00:00Z',

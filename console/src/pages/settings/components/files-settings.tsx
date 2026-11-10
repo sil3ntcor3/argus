@@ -34,6 +34,7 @@ import { isAxiosError } from 'axios';
 import { Download, Trash2 } from 'lucide-react';
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { FileIcon } from './file-icon';
 
 const PAGE_SIZE = 20;
 const BYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
@@ -436,11 +437,16 @@ function WorkspaceFiles({
                 {rows.map((file) => (
                   <TableRow key={file.id}>
                     <TableCell className="max-w-48 break-all whitespace-normal sm:max-w-96">
-                      <span className="font-medium">{file.name}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {file.source === 'agent' ? 'Agent' : 'Upload'}
-                        {file.createdBy ? ` · ${file.createdBy.name}` : ''}
-                      </span>
+                      <div className="flex items-start gap-2">
+                        <FileIcon name={file.name} mimeType={file.mimeType} />
+                        <div className="min-w-0">
+                          <span className="font-medium">{file.name}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {file.source === 'agent' ? 'Agent' : 'Upload'}
+                            {file.createdBy ? ` · ${file.createdBy.name}` : ''}
+                          </span>
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell>{formatBytes(file.sizeBytes)}</TableCell>
                     <TableCell>
