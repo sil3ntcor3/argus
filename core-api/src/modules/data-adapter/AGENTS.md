@@ -17,7 +17,8 @@ payload. Integration connectors can call `upsertAssetsByTargetId` directly.
 - `finding-scanner-sightings.ts` locks provenance parents before findings, and
   the upsert takes finding locks in fingerprint order. The unique scanner
   source per finding and run prevents repeat deliveries from inflating counts.
-  Preserve that lock order and the insert chunk limit.
+  Every positive still updates the private database observation time under
+  those locks. Preserve the lock order and the insert chunk limit.
 - A fixed finding resurfaces only with a recorded in-progress scan claim later
   than its fix timestamp. Archive status is preserved. This path records
   observed findings; an omitted finding does not close anything.

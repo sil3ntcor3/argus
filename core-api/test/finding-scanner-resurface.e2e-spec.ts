@@ -179,6 +179,56 @@ describe('Scanner resurfacing (e2e)', () => {
     ]);
   });
 
+  it('records first and repeat positive sightings with the database clock', async () => {
+    const job = await jobAfter(null);
+    const name = 'Observation fixture ' + randomUUID();
+    const observation = async () => {
+      const [row] = await app.dataSource.query<{
+        id: string; lastScannerObservedAt: Date | null; timesDetected: number;
+      }[]>(
+        'SELECT id,"lastScannerObservedAt","timesDetected" FROM vulnerabilities WHERE name=$1',
+        [name],
+      );
+      return row;
+    };
+    const [{ now: before }] = await app.dataSource.query<{ now: Date }[]>(
+      'SELECT statement_timestamp() AS now',
+    );
+
+    await report(job, name);
+
+    const first = await observation();
+    const [{ now: after }] = await app.dataSource.query<{ now: Date }[]>(
+      'SELECT statement_timestamp() AS now',
+    );
+    expect(first.lastScannerObservedAt).toBeInstanceOf(Date);
+    expect(first.lastScannerObservedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(first.lastScannerObservedAt!.getTime()).toBeLessThanOrEqual(after.getTime());
+    expect(first.timesDetected).toBe(1);
+
+    // Give the two database instants distinct milliseconds on fast hosts.
+    await app.dataSource.query('SELECT pg_sleep(0.01)');
+    await report(job, name);
+
+    const repeated = await observation();
+    expect(repeated.lastScannerObservedAt!.getTime()).toBeGreaterThan(first.lastScannerObservedAt!.getTime());
+    expect(repeated.timesDetected).toBe(1);
+
+    const removed = await jobAfter(null);
+    // The processor already read this claim; its job row disappears before sync.
+    await app.dataSource.query('DELETE FROM jobs WHERE id=$1', [removed.id]);
+    await app.dataSource.query('SELECT pg_sleep(0.01)');
+    await report(removed, name);
+    const unattributed = await observation();
+    expect(unattributed.lastScannerObservedAt!.getTime()).toBeGreaterThan(repeated.lastScannerObservedAt!.getTime());
+    expect(unattributed.timesDetected).toBe(1);
+    const [source] = await app.dataSource.query<{ count: number }[]>(
+      'SELECT COUNT(*)::int AS count FROM vulnerability_sources WHERE "vulnerabilityId"=$1',
+      [first.id],
+    );
+    expect(source.count).toBe(1);
+  });
+
   it('preserves the fork’s archive on a later positive scan', async () => {
     const finding = await fixedFinding(await jobAfter(-120_000), true);
     await report(await jobAfter(10_000), finding.name);
