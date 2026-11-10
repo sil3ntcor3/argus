@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
@@ -41,6 +41,7 @@ function fixture(t, tags = []) {
   const files = [
     'taskfile.yml', 'core-api/taskfile.yml', 'console/taskfile.yml',
     'worker/taskfile.yml', 'scripts/release.mjs',
+    'core-api/package.json', 'console/package.json',
   ]
   for (const file of files) {
     const path = join(checkout, file)
@@ -165,4 +166,117 @@ test('rejects a moved changelog base even when the newest tag name is unchanged'
   ])
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /release tags changed during checks/i)
+})
+
+
+const releasePaths = ['console/package.json', 'core-api/package.json']
+const packageBytes = (checkout) => releasePaths.map((path) => readFileSync(join(checkout, path), 'utf8'))
+const publish = (checkout, version) => run(checkout, 'task', ['release', 'SKIP_CHECKS=1', 'version=' + version])
+
+test('stamps only package versions and atomically publishes the branch and tag', (t) => {
+  const { checkout, origin, dryRun } = fixture(t)
+  const consoleFile = join(checkout, 'console/package.json')
+  writeFileSync(join(checkout, '.gitattributes'), 'console/package.json text eol=crlf\n')
+  git(checkout, 'add', '.gitattributes')
+  git(checkout, 'commit', '-m', 'test(release): require CRLF in the worktree')
+  git(checkout, 'push', 'origin', 'main')
+  rmSync(consoleFile)
+  git(checkout, 'checkout', '--', 'console/package.json')
+  assert.match(packageBytes(checkout)[0], /\r\n/)
+  assert.doesNotMatch(git(checkout, 'show', 'HEAD:console/package.json'), /\r\n/)
+  git(checkout, 'config', 'push.followTags', 'true')
+  git(checkout, 'config', '--add', 'remote.origin.fetch', 'refs/tags/*:refs/tags/*')
+  git(checkout, 'tag', '-a', 'v99.0.0', '-m', 'unpublished local tag')
+  const original = packageBytes(checkout)
+  const head = git(checkout, 'rev-parse', 'HEAD')
+  const planned = dryRun('version=v1.2.3')
+  assert.equal(planned.status, 0, planned.stderr)
+  assert.deepEqual(packageBytes(checkout), original)
+  assert.equal(git(checkout, 'rev-parse', 'HEAD'), head)
+
+  const result = publish(checkout, 'v1.2.3')
+  assert.equal(result.status, 0, result.stderr)
+  const stamped = git(origin, 'rev-parse', 'refs/heads/main')
+  assert.equal(git(origin, 'rev-parse', 'refs/tags/v1.2.3^{commit}'), stamped)
+  assert.equal(git(checkout, 'rev-parse', 'HEAD^'), head)
+  assert.deepEqual(git(checkout, 'diff', '--name-only', 'HEAD^', 'HEAD').split('\n'), releasePaths)
+  assert.deepEqual(packageBytes(checkout), original.map((text) =>
+    text.replace(/("version": )"[^"]+"/, '$1"1.2.3"')))
+  assert.equal(git(checkout, 'status', '--porcelain'), '')
+  assert.equal(git(origin, 'tag', '--list'), 'v1.2.3')
+  assert.equal(git(checkout, 'tag', '--list', 'v99.0.0'), 'v99.0.0')
+})
+
+test('restores both manifests if the release commit is rejected', (t) => {
+  const { checkout, origin } = fixture(t)
+  const original = packageBytes(checkout)
+  const head = git(checkout, 'rev-parse', 'HEAD')
+  writeFileSync(join(checkout, '.git', 'hooks', 'commit-msg'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+  const result = publish(checkout, 'v1.2.3')
+  assert.notEqual(result.status, 0)
+  assert.deepEqual(packageBytes(checkout), original)
+  assert.equal(git(checkout, 'status', '--porcelain'), '')
+  assert.equal(git(checkout, 'rev-parse', 'HEAD'), head)
+  assert.equal(git(origin, 'tag', '--list'), '')
+})
+
+test('a rejected release tag leaves the remote branch unchanged and local release recoverable', (t) => {
+  const { checkout, origin } = fixture(t)
+  const head = git(origin, 'rev-parse', 'refs/heads/main')
+  writeFileSync(join(origin, 'hooks', 'update'),
+    '#!/bin/sh\ncase "$1" in refs/tags/*) exit 1;; esac\n', { mode: 0o755 })
+  const result = publish(checkout, 'v1.2.3')
+  assert.notEqual(result.status, 0)
+  assert.equal(git(origin, 'rev-parse', 'refs/heads/main'), head)
+  assert.equal(git(origin, 'tag', '--list'), '')
+  assert.notEqual(git(checkout, 'rev-parse', 'HEAD'), head)
+  assert.equal(git(checkout, 'rev-parse', 'refs/tags/v1.2.3^{commit}'), git(checkout, 'rev-parse', 'HEAD'))
+  const retry = run(checkout, 'task', ['release', 'DRY_RUN=1', 'SKIP_CHECKS=1', 'version=v1.2.3'])
+  assert.notEqual(retry.status, 0)
+  assert.equal(git(checkout, 'tag', '--list'), 'v1.2.3')
+})
+
+
+test('does not resurrect a remote branch reset after release preflight', (t) => {
+  const { checkout, origin } = fixture(t)
+  const earlier = git(origin, 'rev-parse', 'refs/heads/main')
+  git(checkout, 'commit', '--allow-empty', '-m', 'feat(release): newer branch tip')
+  git(checkout, 'push', 'origin', 'main')
+  writeFileSync(join(checkout, '.git', 'hooks', 'commit-msg'),
+    '#!/bin/sh\ngit --git-dir="$(git rev-parse --show-toplevel)/../remote.git" update-ref refs/heads/main ' + earlier + '\n',
+    { mode: 0o755 })
+  const result = publish(checkout, 'v1.2.3')
+  assert.notEqual(result.status, 0)
+  assert.equal(git(origin, 'rev-parse', 'refs/heads/main'), earlier)
+  assert.equal(git(origin, 'tag', '--list'), '')
+  assert.equal(git(checkout, 'rev-parse', 'refs/tags/v1.2.3^{commit}'), git(checkout, 'rev-parse', 'HEAD'))
+})
+
+
+test('refuses tags the release workflow cannot build before changing packages', (t) => {
+  const { checkout, origin } = fixture(t)
+  const before = packageBytes(checkout)
+  const refs = git(origin, 'show-ref')
+  for (const tag of ['v1.2.3+build', 'v01.2.3', 'v1.2.3-a..b', 'v1.2.3-rc.lock', 'v1.2.3-' + 'x'.repeat(122)]) {
+    const result = publish(checkout, tag)
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /expected a release tag/)
+  }
+  assert.deepEqual(packageBytes(checkout), before)
+  assert.equal(git(origin, 'show-ref'), refs)
+})
+
+
+test('does not publish an older release if a newer tag arrives during a hook', (t) => {
+  const { checkout, origin } = fixture(t)
+  const head = git(origin, 'rev-parse', 'refs/heads/main')
+  writeFileSync(join(checkout, '.git', 'hooks', 'commit-msg'),
+    '#!/bin/sh\ngit --git-dir="$(git rev-parse --show-toplevel)/../remote.git" tag v1.3.0\n',
+    { mode: 0o755 })
+  const result = publish(checkout, 'v1.2.3')
+  assert.notEqual(result.status, 0)
+  assert.match(result.stderr, /release tags changed before publication/)
+  assert.equal(git(origin, 'rev-parse', 'refs/heads/main'), head)
+  assert.equal(git(origin, 'tag', '--list'), 'v1.3.0')
+  assert.equal(git(checkout, 'tag', '--list'), 'v1.2.3')
 })

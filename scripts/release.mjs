@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //
-// Tag a release and hand it to CI.
+// Stamp package versions, tag the release commit and hand it to CI.
 //
 //   node scripts/release.mjs v0.9.0
 //   node scripts/release.mjs 0.9.0            # the `v` prefix is added for you
@@ -9,17 +9,15 @@
 //
 // Everything CI needs is derived from the tag: build-release.yml triggers on
 // `push: tags: ['v*']`, and the changelog action resolves its own from-tag from
-// the semver sequence. So publishing a release here is exactly "create the tag
-// and push it" — the binaries, the images and the draft release are all built by
-// the workflow. The draft stays a draft: publishing it is a deliberate human
+// the semver sequence. The release commit and tag are pushed together. The
+// workflow builds the binaries, images and draft release from that tag. The draft stays a draft: publishing it is a deliberate human
 // click in the UI, because `release: types: [published]` is not wired up.
 //
 // The pre-flight exists because nothing else guards the tag: pre-commit is
-// inert in this repo, and a tag is the one thing that cannot be undone
-// gracefully once CI has pushed :latest.
+// inert in this repo, and a published tag is already a release input.
 
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -96,7 +94,7 @@ ${bold('Usage')}  task release -- v0.9.0 [options]
   v0.9.0               Release version. \`v\` is added when missing: 0.9.0 -> v0.9.0
   patch|minor|major    Bump the newest semver tag fetched from origin
                        (increments its numeric version; name a version to promote a prerelease)
-  --dry-run            Run every check, print the commands, push nothing
+  --dry-run            Run every check and show the release plan without writing it
   --skip-checks        Do not run \`task lint\` / \`task test\` first
   --branch NAME        Branch the release must be cut from (default: remote HEAD)
   --all                Include bot bumps and the ci/style types
@@ -159,10 +157,82 @@ function bumpVersion(from, kind) {
   return `v${major}.${minor}.${patch + 1}`
 }
 
+// Keep publication tags compatible with build-release.yml.
+function validReleaseTag(tag) {
+  return tag.length <= 128 &&
+    /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$/.test(tag) &&
+    [parseVersion(tag).major, parseVersion(tag).minor, parseVersion(tag).patch].every(Number.isSafeInteger)
+}
+
 function newestSemver(tags) {
-  return tags.filter((t) => parseVersion(t)).sort((a, b) =>
+  return tags.filter(validReleaseTag).sort((a, b) =>
     compareVersions(parseVersion(b), parseVersion(a)),
   )[0] || null
+}
+
+// --- package metadata -------------------------------------------------------
+
+function planPackages(version) {
+  return ['console/package.json', 'core-api/package.json'].flatMap((path) => {
+    try {
+      const file = resolve(ROOT, path)
+      const before = readFileSync(file, 'utf8')
+      const { version: originalVersion, ...fields } = JSON.parse(before)
+      const pattern = /(^[ \t]*"version"[ \t]*:[ \t]*)"(?:[^"\\\r\n]|\\.)*"/gm
+      if (typeof originalVersion !== 'string' || [...before.matchAll(pattern)].length !== 1) {
+        throw new Error('expected one version field on its own line')
+      }
+      const after = before.replace(pattern, (_line, prefix) => prefix + JSON.stringify(version))
+      const { version: stampedVersion, ...stampedFields } = JSON.parse(after)
+      if (stampedVersion !== version || JSON.stringify(stampedFields) !== JSON.stringify(fields)) {
+        throw new Error('could not update only the package version')
+      }
+      return before === after ? [] : [{ path, file, before, after }]
+    } catch (error) {
+      fail('cannot stamp ' + path + ': ' + error.message)
+    }
+  })
+}
+
+function commitPackages(packages, head, tag) {
+  if (!packages.length) return head
+  const paths = packages.map(({ path }) => path)
+  const written = []
+  try {
+    // Git filters can normalize the working copy (for example CRLF to LF).
+    // Compute all planned blobs before touching either manifest.
+    const planned = packages.map((item) => ({
+      ...item,
+      blob: execFileSync('git', ['hash-object', '--path=' + item.path, '--stdin'],
+        { cwd: ROOT, encoding: 'utf8', input: item.after }).trim(),
+    }))
+    for (const item of planned) {
+      if (readFileSync(item.file, 'utf8') !== item.before) {
+        throw new Error(item.path + ' changed since planning')
+      }
+      writeFileSync(item.file, item.after)
+      written.push(item)
+    }
+    execFileSync('git', ['commit', '--only', '-m', 'chore(release): stamp ' + tag, '--', ...paths],
+      { cwd: ROOT, stdio: 'inherit' })
+  } catch (error) {
+    // Don't overwrite a concurrent edit or unwind a commit made by a hook.
+    if (git(['rev-parse', 'HEAD']) === head) {
+      for (const item of written) {
+        if (existsSync(item.file) && readFileSync(item.file, 'utf8') === item.after) writeFileSync(item.file, item.before)
+      }
+    }
+    fail('package version commit failed; no release tag was created: ' + error.message)
+  }
+  const commit = git(['rev-parse', 'HEAD'])
+  if (git(['rev-parse', commit + '^']) !== head ||
+      git(['diff', '--name-only', head, commit]).split('\n').sort().join('\n') !== paths.join('\n') ||
+      written.some(({ path, file, after, blob }) =>
+        git(['rev-parse', commit + ':' + path]) !== blob || readFileSync(file, 'utf8') !== after) ||
+      git(['status', '--porcelain'])) {
+    fail('release commit did not match the package plan; inspect it before tagging')
+  }
+  return commit
 }
 
 // --- release notes ----------------------------------------------------------
@@ -236,7 +306,7 @@ function renderNotes(from, to, { includeBots = false } = {}) {
       hidden.bots++
       continue
     }
-    if (!includeBots && type && HIDDEN_TYPES.has(type)) {
+    if (!includeBots && (HIDDEN_TYPES.has(type) || commit.subject.startsWith('chore(release): stamp v'))) {
       hidden.types++
       continue
     }
@@ -348,7 +418,7 @@ if (notesOnly) {
   if (from && !revParse(from)) fail("--from '" + from + "' does not resolve to a commit")
   const { text, shown, hidden } = renderNotes(from, to, { includeBots })
   if (hidden.bots || hidden.types) {
-    console.error(dim(`hidden ${hidden.bots} bot commit(s), ${hidden.types} ci/style commit(s) — pass --all to include`))
+    console.error(dim(`hidden ${hidden.bots} bot commit(s), ${hidden.types} maintenance commit(s) — pass --all to include`))
   }
   process.stdout.write(text)
   if (notesFile) {
@@ -371,8 +441,8 @@ if (tag && tag !== requested) {
   console.log(`${dim(`normalising ${requested} -> ${tag}`)}`)
 }
 
-if (tag && !parseVersion(tag)) {
-  fail(`'${tag}' is not a version. Expected MAJOR.MINOR.PATCH, optionally with a prerelease suffix: task release -- v0.9.0, task release -- v0.9.0-rc.1`)
+if (tag && !validReleaseTag(tag)) {
+  fail('expected a release tag vMAJOR.MINOR.PATCH[-PRERELEASE] up to 128 characters, without build metadata or leading zeros')
 }
 
 // --- pre-flight -------------------------------------------------------------
@@ -382,23 +452,16 @@ heading('Pre-flight')
 if (!existsSync(resolve(ROOT, '.git'))) fail('not a git repository')
 if (!git(['remote', 'get-url', 'origin'], { allowFail: true })) fail('no `origin` remote configured')
 
-// Fetch first: the latest-tag and upstream-HEAD answers are only trustworthy
-// against a fresh remote view, and a stale clone is how "tag already exists on
-// the remote" slips through.
-//
-// `--prune-tags` is the load-bearing part. Plain `--prune` only prunes
-// remote-tracking branches, so a tag deleted on the remote survives locally
-// forever and every later attempt to release that version is refused with
-// "tag already exists locally" — verified in a scratch repo, where
-// `--tags --prune` left the deleted tag in place and `--prune --prune-tags`
-// removed it. Anything dropped is announced rather than removed silently.
-const tagsBeforeFetch = currentTags()
-git(['fetch', 'origin', '--prune', '--prune-tags', '--quiet'])
+// Fetch release history without deleting local recovery tags. Select the
+// version from origin's refs so local-only tags cannot change a version bump.
+git(['fetch', 'origin', '--tags', '--no-prune', '--no-prune-tags', '--quiet'])
 const existingTags = new Set(currentTags())
-const prunedTags = tagsBeforeFetch.filter((t) => !existingTags.has(t))
-if (prunedTags.length > 0) {
-  ok('dropped ' + prunedTags.length + ' stale local tag(s) no longer on origin: ' + prunedTags.join(', '))
-}
+const remoteTags = new Map(
+  git(['ls-remote', '--refs', 'origin', 'refs/tags/*']).split('\n').filter(Boolean).map((line) => {
+    const [oid, ref] = line.split('\t')
+    return [ref.slice('refs/tags/'.length), oid]
+  }),
+)
 
 const branch = branchOverride || remoteDefaultBranch()
 if (!branch) fail('origin did not advertise its default branch; use --branch NAME')
@@ -435,24 +498,30 @@ if (upstream === null) {
   ok(`HEAD matches \`origin/${branch}\``)
 }
 
-const newest = newestSemver([...existingTags])
+const newest = newestSemver([...remoteTags.keys()])
 if (bump) {
   if (!newest) fail('no semver tag on origin; specify the first release version explicitly')
   tag = bumpVersion(newest, requested)
   ok(`${requested} bump: ${newest} -> ${tag}`)
 }
+if (!validReleaseTag(tag)) fail('the version bump cannot produce a valid release tag')
+if (git(['check-ref-format', 'refs/tags/' + tag], { allowFail: true }) === null) {
+  fail('expected a release tag usable as a Git reference')
+}
 const target = parseVersion(tag)
 if (existingTags.has(tag)) problems.push(`tag \`${tag}\` already exists locally`)
-const remoteTag = git(['ls-remote', '--tags', 'origin', `refs/tags/${tag}`])
-if (remoteTag) problems.push(`tag \`${tag}\` already exists on the remote`)
+if (remoteTags.has(tag)) problems.push(`tag \`${tag}\` already exists on the remote`)
 
 // `--from` overrides which tag the notes start at, for a re-release of an
 // older range. Otherwise the range is "everything since the newest tag".
 const latest = fromRef || newest
 const latestTagRef = latest ? `refs/tags/${latest}` : null
-const latestTagOid = latestTagRef ? git(['rev-parse', '--verify', latestTagRef], { allowFail: true }) : null
+const latestTagOid = latest ? remoteTags.get(latest) : null
+if (latestTagOid && git(['rev-parse', '--verify', latestTagRef], { allowFail: true }) !== latestTagOid) {
+  fail('release tags changed after fetch; retry from current origin tags')
+}
 if (fromRef) {
-  if (!existingTags.has(fromRef)) problems.push(`--from \`${fromRef}\` is not a tag in this clone`)
+  if (!remoteTags.has(fromRef)) problems.push(`--from \`${fromRef}\` is not a tag on origin`)
   else ok(`notes start at ${fromRef}`)
 } else if (newest) {
   if (compareVersions(target, parseVersion(newest)) <= 0) {
@@ -499,35 +568,33 @@ if (!skipChecks) {
   warn('skipped via --skip-checks — the release is unverified')
 }
 
-// Checks may take long enough for a new commit or release to reach origin.
-const currentOriginRefs = new Map(
-  git(['ls-remote', '--refs', 'origin', releaseBranchRef, 'refs/tags/*'])
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [sha, ref] = line.split('\t')
-      return [ref, sha]
-    }),
-)
-if (
-  git(['rev-parse', 'HEAD']) !== head ||
-  git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch ||
-  currentOriginRefs.get(releaseBranchRef) !== head ||
-  (!branchOverride && remoteDefaultBranch() !== branch)
-) fail('release branch changed during checks; sync with origin and retry')
-const currentOriginTags = [...currentOriginRefs.keys()]
-  .filter((ref) => ref.startsWith('refs/tags/'))
-  .map((ref) => ref.slice('refs/tags/'.length))
-if (
-  currentOriginTags.includes(tag) ||
-  newestSemver(currentOriginTags) !== newest ||
-  (latestTagRef && (
-    currentOriginRefs.get(latestTagRef) !== latestTagOid ||
-    git(['rev-parse', '--verify', latestTagRef], { allowFail: true }) !== latestTagOid
-  ))
-) {
-  fail('release tags changed during checks; fetch and retry')
+// Checks and commit hooks may take long enough for origin to change.
+function assertReleaseRefsUnchanged(when) {
+  const refs = new Map(
+    git(['ls-remote', '--refs', 'origin', releaseBranchRef, 'refs/tags/*'])
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [sha, ref] = line.split('\t')
+        return [ref, sha]
+      }),
+  )
+  if (refs.get(releaseBranchRef) !== head || (!branchOverride && remoteDefaultBranch() !== branch)) {
+    fail('release branch changed ' + when + '; inspect origin before retrying')
+  }
+  const originTags = [...refs.keys()].filter((ref) => ref.startsWith('refs/tags/'))
+    .map((ref) => ref.slice('refs/tags/'.length))
+  if (originTags.includes(tag) || newestSemver(originTags) !== newest ||
+      (latestTagRef && (refs.get(latestTagRef) !== latestTagOid ||
+        git(['rev-parse', '--verify', latestTagRef], { allowFail: true }) !== latestTagOid))) {
+    fail('release tags changed ' + when + '; inspect origin before retrying')
+  }
 }
+
+if (git(['rev-parse', 'HEAD']) !== head || git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch) {
+  fail('release branch changed during checks; sync with origin and retry')
+}
+assertReleaseRefsUnchanged('during checks')
 
 // --- the notes --------------------------------------------------------------
 
@@ -554,41 +621,67 @@ console.log(`\n${dim(changelog.text)}`)
 const slug = (git(['config', '--get', 'remote.origin.url'], { allowFail: true }) || '').match(/github\.com[:/]+([^/]+)\/([^/]+?)(?:\.git)?$/)
 const runUrl = slug ? `https://github.com/${slug[1]}/${slug[2]}/actions/workflows/build-release.yml` : null
 
+const packages = planPackages(tag.slice(1))
+const tagRef = 'refs/tags/' + tag
+// The commit is verified as a direct child of head (or head itself). The
+// exact lease rejects a branch reset or deletion after the last read.
+const branchLease = '--force-with-lease=' + releaseBranchRef + ':' + head
 if (dryRun) {
   heading('Dry run')
-  detail(`git tag -a ${tag} --cleanup=whitespace -F <msg> ${head.slice(0, 7)}`)
-  detail(`git push origin ${tag}`)
+  if (packages.length) {
+    detail('stamp ' + packages.map(({ path }) => path).join(' and '))
+    detail('commit only the stamped manifests')
+  }
+  detail('git tag -a ' + tag + ' --cleanup=whitespace -F <msg> ' +
+    (packages.length ? '<release-commit>' : head.slice(0, 7)))
+  detail('git push --atomic --no-follow-tags ' + branchLease + ' origin <release-commit>:' + releaseBranchRef + ' <tag-object>:' + tagRef)
   console.log(`\n${yellow('nothing was tagged or pushed')}`)
   if (runUrl) console.log(`${dim('CI will run at')} ${runUrl}\n`)
   process.exit(0)
 }
 
 heading('Publish')
+if (git(['status', '--porcelain']) || git(['rev-parse', 'HEAD']) !== head ||
+    git(['rev-parse', '--abbrev-ref', 'HEAD']) !== branch) {
+  fail('worktree changed before stamping packages; inspect it and retry')
+}
+const releaseCommit = commitPackages(packages, head, tag)
+if (packages.length) ok('committed package versions at ' + releaseCommit.slice(0, 7))
+
 // `--cleanup=whitespace` is load-bearing. `git tag -m/-F` defaults to
 // `--cleanup=strip`, which deletes every line starting with `#` — that silently
 // eats the `## Changelog` and `### Features` headings and leaves a tag message
 // of bare bullets. The message also goes through a file rather than `-m`: a
 // long release would otherwise run into the OS argument-length limit, and
 // execFileSync has no shell to expand or quote through.
-const msgFile = resolve(tmpdir(), `argus-release-${process.pid}.md`)
-writeFileSync(msgFile, tagMessage)
-detail(`git tag -a ${tag} --cleanup=whitespace -F <msg> ${head.slice(0, 7)}`)
+const msgDir = mkdtempSync(resolve(tmpdir(), 'argus-release-'))
+const msgFile = resolve(msgDir, 'message.md')
+detail('git tag -a ' + tag + ' --cleanup=whitespace -F <msg> ' + releaseCommit.slice(0, 7))
+let tagResult
 try {
-  git(['tag', '-a', tag, '--cleanup=whitespace', '-F', msgFile, head])
+  writeFileSync(msgFile, tagMessage)
+  tagResult = spawnSync('git', ['tag', '-a', tag, '--cleanup=whitespace', '-F', msgFile, releaseCommit],
+    { cwd: ROOT, stdio: 'inherit' })
 } finally {
-  rmSync(msgFile, { force: true })
+  rmSync(msgDir, { recursive: true, force: true })
 }
-ok(`tagged ${tag} at ${head.slice(0, 7)}`)
+if (tagResult.status !== 0) fail('could not tag the local release commit ' + releaseCommit)
+ok('tagged ' + tag + ' at ' + releaseCommit.slice(0, 7))
 
-detail(`git push origin ${tag}`)
-try {
-  execFileSync('git', ['push', 'origin', tag], { cwd: ROOT, stdio: 'inherit' })
-} catch {
-  // Leave the local tag in place: it is valid, and re-pushing it is the fix.
-  // Deleting it here would throw away the annotated message for no gain.
-  fail(`failed to push ${tag}. The local tag is intact — re-run \`git push origin ${tag}\` once the cause is fixed`)
+const tagObject = git(['rev-parse', '--verify', tagRef + '^{tag}'])
+if (git(['rev-parse', tagObject + '^{commit}']) !== releaseCommit) {
+  fail('local release tag does not point at the verified release commit')
 }
-ok(`pushed ${tag}`)
+assertReleaseRefsUnchanged('before publication')
+const pushArgs = ['push', '--atomic', '--no-follow-tags', branchLease, 'origin',
+  releaseCommit + ':' + releaseBranchRef, tagObject + ':' + tagRef]
+detail('git ' + pushArgs.join(' '))
+try {
+  execFileSync('git', pushArgs, { cwd: ROOT, stdio: 'inherit' })
+} catch {
+  fail('atomic release push failed; the local commit and tag are intact. To retry: git ' + pushArgs.join(' '))
+}
+ok('pushed ' + branch + ' and ' + tag + ' together')
 
 console.log(`\n${bold('Next')}`)
 console.log(`  1. CI is building now ${runUrl ? dim('(' + runUrl + ')') : ''}`)
