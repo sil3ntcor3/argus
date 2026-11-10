@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
@@ -149,6 +150,50 @@ describe('StorageService', () => {
         .rejects.toBeInstanceOf(BadRequestException);
       expect(mockCreatePresignedPost).not.toHaveBeenCalled();
     });
+  });
+
+  it('rejects a changed staging object when no competing final copy exists', async () => {
+    const workspaceId = '72646c96-c731-48e6-a376-38274982f6d7';
+    const artifactId = '7afe5e65-0e29-4886-b10d-ec9496e35eca';
+    const missing = new S3ServiceException({
+      name: 'NotFound', $fault: 'client', $metadata: { httpStatusCode: 404 },
+    });
+    const changed = new S3ServiceException({
+      name: 'PreconditionFailed', $fault: 'client', $metadata: { httpStatusCode: 412 },
+    });
+    sendMock
+      .mockRejectedValueOnce(missing)
+      .mockResolvedValueOnce({ ContentType: 'text/plain', ContentLength: 3, ETag: '"validated"' })
+      .mockRejectedValueOnce(changed)
+      .mockRejectedValueOnce(missing);
+
+    await expect(service.publishArtifactUpload({
+      workspaceId, artifactId, contentType: 'text/plain', sizeBytes: 3,
+    })).rejects.toBeInstanceOf(ConflictException);
+    expect(sendMock).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      input: expect.objectContaining({ CopySourceIfMatch: '"validated"', IfNoneMatch: '*' }),
+    }));
+  });
+
+  it('recognizes the other successful copy after a documented conditional 409', async () => {
+    const workspaceId = '72646c96-c731-48e6-a376-38274982f6d7';
+    const artifactId = '7afe5e65-0e29-4886-b10d-ec9496e35eca';
+    sendMock
+      .mockRejectedValueOnce(new S3ServiceException({
+        name: 'NotFound', $fault: 'client', $metadata: { httpStatusCode: 404 },
+      }))
+      .mockResolvedValueOnce({ ContentType: 'text/plain', ContentLength: 3, ETag: '"validated"' })
+      .mockRejectedValueOnce(new S3ServiceException({
+        name: 'ConditionalRequestConflict', $fault: 'client', $metadata: { httpStatusCode: 409 },
+      }))
+      .mockResolvedValueOnce({
+        ContentType: 'text/plain', ContentLength: 3, Metadata: { 'argus-artifact-id': artifactId },
+      });
+
+    await expect(service.publishArtifactUpload({
+      workspaceId, artifactId, contentType: 'text/plain', sizeBytes: 3,
+    })).resolves.toBeUndefined();
+    expect(sendMock).toHaveBeenCalledTimes(4);
   });
 
   describe('listFiles', () => {
