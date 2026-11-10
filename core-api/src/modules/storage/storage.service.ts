@@ -9,6 +9,7 @@ import {
   CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetBucketPolicyStatusCommand,
   GetObjectCommand,
   HeadBucketCommand,
@@ -991,6 +992,33 @@ export class StorageService implements OnModuleInit {
     }
 
     return files;
+  }
+
+  /** Fetch a bounded page without relying on a provider continuation token surviving deletions. */
+  public async listArtifactSweepPage(startAfter?: string) {
+    const prefix = 'workspaces/';
+    const page = await this.rustFsClient.getClient().send(new ListObjectsV2Command({
+      Bucket: ARTIFACT_BUCKET, Prefix: prefix, MaxKeys: 500, StartAfter: startAfter,
+    }), { abortSignal: AbortSignal.timeout(15_000) });
+    const objects = page.Contents ?? [];
+    const nextKey = page.IsTruncated ? objects.at(-1)?.Key : undefined;
+    if (page.IsTruncated && (!nextKey?.startsWith(prefix) ||
+        (startAfter && Buffer.compare(Buffer.from(nextKey), Buffer.from(startAfter)) <= 0))) {
+      throw new Error('Artifact staging listing did not advance');
+    }
+    return { objects, nextKey };
+  }
+
+  /** Delete staging only, never the final file at the same artifact ID. */
+  public async deleteOrphanArtifactStaging(locations: { workspaceId: string; artifactId: string }[]): Promise<number> {
+    const result = await this.rustFsClient.getClient().send(new DeleteObjectsCommand({
+      Bucket: ARTIFACT_BUCKET,
+      Delete: {
+        Objects: locations.map(({ workspaceId, artifactId }) => ({ Key: workspaceArtifactUploadKey(workspaceId, artifactId) })),
+        Quiet: true,
+      },
+    }), { abortSignal: AbortSignal.timeout(15_000) });
+    return result.Errors?.length ?? 0;
   }
 
   /**
