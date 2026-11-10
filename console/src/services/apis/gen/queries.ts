@@ -5699,6 +5699,29 @@ export type GenerateVulReportBodyDto = {
   minSeverity?: GenerateVulReportBodyDtoMinSeverity;
 };
 
+export type ArtifactUsageDto = {
+  /**
+   * Effective workspace quota in bytes
+   * @minimum 0
+   */
+  quotaBytes: number;
+  /**
+   * Bytes used by ready files
+   * @minimum 0
+   */
+  usedBytes: number;
+  /**
+   * Bytes reserved for pending uploads
+   * @minimum 0
+   */
+  reservedBytes: number;
+  /**
+   * Maximum size of one file in bytes
+   * @minimum 0
+   */
+  maxFileBytes: number;
+};
+
 export type PresignUploadRequestDto = {
   /** Original file name of the object */
   fileName: string;
@@ -52704,6 +52727,160 @@ export const useReportsControllerDeleteReport = <
     queryClient,
   );
 };
+
+/**
+ * Returns quota, used and reserved bytes, and the per-file limit. Requires artifact.read.
+ * @summary Get workspace storage usage
+ */
+export const artifactsControllerGetUsage = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactUsageDto>(
+    { url: `/api/artifacts/usage`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerGetUsageQueryKey = () => {
+  return [`/api/artifacts/usage`] as const;
+};
+
+export const getArtifactsControllerGetUsageQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerGetUsageQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetUsage>>
+  > = ({ signal }) => artifactsControllerGetUsage(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetUsageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetUsage>>
+>;
+export type ArtifactsControllerGetUsageQueryError = unknown;
+
+export function useArtifactsControllerGetUsage<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetUsage>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetUsage<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetUsage>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetUsage<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get workspace storage usage
+ */
+
+export function useArtifactsControllerGetUsage<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetUsageQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 /**
  * Server-Sent Events stream of the current user's notification pushes plus, when the X-Workspace-Id header is sent, the allowlisted events of that workspace. Each message is a JSON ClientEvent `{ id, type, time, resourceType, resourceId, joinKeyId? }` (`joinKeyId` only on `worker.joined` from a one-time join key); a `ping` event is sent periodically as a heartbeat.
