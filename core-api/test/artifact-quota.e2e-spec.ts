@@ -1,5 +1,5 @@
+import { ARTIFACT_MAX_FILE_BYTES } from '@/common/constants/artifact-storage';
 import {
-  ARTIFACT_MAX_FILE_BYTES,
   ARTIFACT_WORKSPACE_QUOTA_BYTES,
   ArtifactQuotaService,
 } from '@/modules/artifacts/artifact-quota.service';

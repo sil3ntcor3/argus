@@ -19,6 +19,7 @@ import {
   PutPublicAccessBlockCommand,
   S3ServiceException,
 } from '@aws-sdk/client-s3';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type * as S3Module from '@aws-sdk/client-s3';
 import { DataSource } from 'typeorm';
@@ -44,6 +45,11 @@ jest.mock('@aws-sdk/client-s3', () => {
   };
 });
 
+jest.mock('@aws-sdk/s3-presigned-post', () => ({
+  createPresignedPost: jest.fn(),
+}));
+
+const mockCreatePresignedPost = jest.mocked(createPresignedPost);
 const mockGetSignedUrl = getSignedUrl as jest.Mock;
 
 describe('StorageService', () => {
@@ -98,6 +104,51 @@ describe('StorageService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('getPresignedArtifactUpload', () => {
+    const workspaceId = '72646c96-c731-48e6-a376-38274982f6d7';
+    const artifactId = '7afe5e65-0e29-4886-b10d-ec9496e35eca';
+    const opts = { workspaceId, artifactId, contentType: 'text/plain', sizeBytes: 12 };
+
+    it('pins the workspace key, MIME type, byte size and signed deadline', async () => {
+      const expiration = '2030-01-01T00:00:00Z';
+      const fields = {
+        Policy: Buffer.from(JSON.stringify({ expiration })).toString('base64'),
+      };
+      mockCreatePresignedPost.mockResolvedValue({ url: 'https://public-example/artifacts/', fields });
+
+      await expect(service.getPresignedArtifactUpload(opts)).resolves.toEqual({
+        url: 'https://public-example/artifacts/',
+        fields,
+        expiresAt: new Date(expiration),
+      });
+      expect(mockCreatePresignedPost).toHaveBeenCalledWith(
+        mockRustFsClient.getPresignClient(),
+        {
+          Bucket: 'artifacts',
+          Key: `workspaces/${workspaceId}/${artifactId}/upload`,
+          Conditions: [['content-length-range', 12, 12]],
+          Fields: { 'Content-Type': 'text/plain' },
+          Expires: 900,
+        },
+      );
+    });
+
+    it.each([
+      { workspaceId: '../outside' },
+      { workspaceId: workspaceId + '\n' },
+      { artifactId: '123/${filename}' },
+      { contentType: 'text/plain\n' },
+      { contentType: 'text/html\r\nX-Test: invalid' },
+      { sizeBytes: 50 * 1024 * 1024 + 1 },
+      { sizeBytes: -1 },
+      { sizeBytes: 0.25 },
+    ])('rejects invalid upload inputs before signing (%j)', async (invalid) => {
+      await expect(service.getPresignedArtifactUpload({ ...opts, ...invalid }))
+        .rejects.toBeInstanceOf(BadRequestException);
+      expect(mockCreatePresignedPost).not.toHaveBeenCalled();
+    });
   });
 
   describe('listFiles', () => {

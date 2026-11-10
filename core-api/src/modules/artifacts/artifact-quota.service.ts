@@ -1,8 +1,8 @@
+import { ARTIFACT_MAX_FILE_BYTES } from '@/common/constants/artifact-storage';
 import { Injectable } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { WorkspaceStorageUsage } from './entities/workspace-storage-usage.entity';
 
-export const ARTIFACT_MAX_FILE_BYTES = 50 * 1024 * 1024;
 export const ARTIFACT_WORKSPACE_QUOTA_BYTES = 1024 * 1024 * 1024;
 
 type BalanceChange = Partial<Record<'usedBytes' | 'reservedBytes', () => string>>;

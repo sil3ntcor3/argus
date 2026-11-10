@@ -1,4 +1,10 @@
 import {
+  ARTIFACT_BUCKET,
+  ARTIFACT_MAX_FILE_BYTES,
+  ARTIFACT_UPLOAD_TTL_SECONDS,
+  workspaceArtifactUploadKey,
+} from '@/common/constants/artifact-storage';
+import {
   CreateBucketCommand,
   DeleteObjectCommand,
   GetBucketPolicyStatusCommand,
@@ -12,6 +18,7 @@ import {
   PutPublicAccessBlockCommand,
   S3ServiceException,
 } from '@aws-sdk/client-s3';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   BadRequestException,
@@ -24,6 +31,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isUUID } from 'class-validator';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
 import { DataSource } from 'typeorm';
@@ -45,7 +53,7 @@ const BUCKET_ACCESS = {
   'job-results': 'private',
   'cached-static': 'authenticated',
   reports: 'private',
-  artifacts: 'private',
+  [ARTIFACT_BUCKET]: 'private',
   default: 'blocked',
 } as const satisfies Record<string, BucketAccess>;
 
@@ -531,6 +539,47 @@ export class StorageService implements OnModuleInit {
       path: `${bucket}/${key}`,
       expiresIn: clampedTtl,
     };
+  }
+
+  /**
+   * Private form for one allocated artifact's staging object. The form can
+   * overwrite that object until expiry, so it must never name the final key.
+   * Callers authorize the workspace and reserve quota before returning it.
+   */
+  public async getPresignedArtifactUpload({
+    workspaceId, artifactId, contentType, sizeBytes,
+  }: {
+    workspaceId: string; artifactId: string; contentType: string; sizeBytes: number;
+  }): Promise<{ url: string; fields: Record<string, string>; expiresAt: Date }> {
+    if (workspaceId.length !== 36 || artifactId.length !== 36 || !isUUID(workspaceId) || !isUUID(artifactId)) {
+      throw new BadRequestException('Invalid artifact location');
+    }
+    if (contentType.length > 255 || contentType.trim() !== contentType || !/^[a-z0-9_.+-]+\/[a-z0-9_.+-]+$/i.test(contentType)) {
+      throw new BadRequestException('Invalid artifact content type');
+    }
+    if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > ARTIFACT_MAX_FILE_BYTES) {
+      throw new BadRequestException('Invalid artifact size');
+    }
+
+    // The SDK also pins Bucket, Key, and each field (including Content-Type)
+    // as exact conditions. This key never ends with its filename wildcard.
+    const { url, fields } = await createPresignedPost(this.rustFsClient.getPresignClient(), {
+      Bucket: ARTIFACT_BUCKET,
+      Key: workspaceArtifactUploadKey(workspaceId, artifactId),
+      Conditions: [['content-length-range', sizeBytes, sizeBytes]],
+      Fields: { 'Content-Type': contentType },
+      Expires: ARTIFACT_UPLOAD_TTL_SECONDS,
+    });
+    // Use the signed deadline, including the SDK's clock offset and rounding.
+    // Cleanup must not delete a pending record while its form is still valid.
+    const policy = JSON.parse(Buffer.from(fields.Policy, 'base64').toString('utf8')) as {
+      expiration?: unknown;
+    };
+    const expiresAt = new Date(typeof policy.expiration === 'string' ? policy.expiration : NaN);
+    if (!Number.isFinite(expiresAt.getTime())) {
+      throw new InternalServerErrorException('Invalid artifact upload deadline');
+    }
+    return { url: this.toBrowserUrl(url), fields, expiresAt };
   }
 
   public async getPresignedDownloadUrl(opts: {
