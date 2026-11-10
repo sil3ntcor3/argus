@@ -9,7 +9,7 @@ import {
 import { useAgentChat } from '@/hooks/use-agent-chat';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useParams } from '@tanstack/react-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ChatConversation } from './components/chat-conversation';
 import { ChatHeader } from './components/chat-header';
 import {
@@ -18,6 +18,7 @@ import {
   sidePanelContent,
   type SidePanelTab,
 } from './components/chat-side-panel';
+import { ResizableSidePanel } from './components/side-panel-resizer';
 import { isSubagentActive } from './components/subagents-panel';
 import { useMediaQuery } from './components/use-media-query';
 
@@ -31,6 +32,7 @@ export default function AgentsChatPage() {
   const { conversationId } = useParams({ strict: false });
   const isMobile = useIsMobile();
   const isLargeScreen = useMediaQuery('(min-width: 1024px)');
+  const splitRowRef = useRef<HTMLDivElement>(null);
 
   const {
     messages,
@@ -141,7 +143,10 @@ export default function AgentsChatPage() {
     // Fills the layout's main area edge to edge (the negative margins undo
     // its padding)
     <div className="relative -m-4 md:-m-6 flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row overflow-hidden">
+      <div
+        ref={splitRowRef}
+        className="flex min-h-0 flex-1 flex-col lg:flex-row overflow-hidden"
+      >
         {/* Chat conversation. Its header floats over the top: the chat
             scrolls under it */}
         <div className="relative flex-1 min-w-0 flex flex-col overflow-hidden">
@@ -201,9 +206,9 @@ export default function AgentsChatPage() {
             (2/5 until xl, then half) and shows the plan, subagents, browser,
             tool calls or turn stats one tab at a time */}
         {panelOpen && (
-          <aside className="hidden lg:flex w-2/5 xl:w-1/2 2xl:max-w-3xl shrink-0 flex-col border-l animate-in fade-in-0 slide-in-from-right-4 duration-300">
+          <ResizableSidePanel rowRef={splitRowRef}>
             {renderSidePanel(() => setPanel(false))}
-          </aside>
+          </ResizableSidePanel>
         )}
       </div>
 
