@@ -989,6 +989,55 @@ export class StorageService implements OnModuleInit {
     return files;
   }
 
+  /**
+   * Sweep one workspace's private artifact keys after its writers are stopped.
+   * Run this outside the database transaction; failed object deletes can be retried.
+   */
+  public async deleteWorkspaceArtifacts(
+    workspaceId: string,
+  ): Promise<{ deleted: number; failed: number }> {
+    if (workspaceId.length !== 36 || !isUUID(workspaceId)) {
+      throw new BadRequestException('Invalid workspace ID');
+    }
+
+    const bucket = ARTIFACT_BUCKET;
+    const prefix = `workspaces/${workspaceId.toLowerCase()}/`;
+    const client = this.rustFsClient.getClient();
+    const seenTokens = new Set<string>();
+    let continuationToken: string | undefined;
+    let deleted = 0;
+    let failed = 0;
+
+    do {
+      const page = await client.send(new ListObjectsV2Command({
+        Bucket: bucket, Prefix: prefix, ContinuationToken: continuationToken,
+      }));
+      const next = page.IsTruncated ? page.NextContinuationToken : undefined;
+      if (page.IsTruncated && (!next || seenTokens.has(next))) {
+        throw new Error('Workspace artifact listing did not advance');
+      }
+      if (next) seenTokens.add(next);
+
+      for (const { Key } of page.Contents ?? []) {
+        // Do not send a delete for a key outside the requested workspace,
+        // even if an S3-compatible provider returns it for this prefix.
+        if (!Key?.startsWith(prefix)) {
+          failed++;
+          continue;
+        }
+        try {
+          await client.send(new DeleteObjectCommand({ Bucket: bucket, Key }));
+          deleted++;
+        } catch {
+          failed++;
+        }
+      }
+      continuationToken = next;
+    } while (continuationToken);
+
+    return { deleted, failed };
+  }
+
   public async deleteFile(
     filePath: string,
     bucket: string = 'default',
