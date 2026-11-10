@@ -6,9 +6,11 @@ for server operations and URL signing. This module does not own database tables.
 - `BUCKET_ACCESS` is the classification used by the generic presign routes.
   The upload route requires a platform admin and rejects private buckets.
   The download route requires a session, then applies bucket authorization.
-- `job-results` and `reports` are private. A domain service must perform its
-  authorization before issuing a signed URL. The low-level presign helpers
-  do not check the caller or bucket class.
+- `job-results`, `reports`, and `artifacts` are private. Domain services
+  authorize the caller before issuing a signed URL; the low-level helpers
+  do not check the caller or bucket class. Verify any pre-existing artifacts
+  bucket denies anonymous access before enabling writers. Startup does not
+  replace operator-managed private bucket policies.
 - Tenant reads resolve workspace ownership by object key. Screenshots resolve
   through asset services and targets; the `nuclei-templates` bucket
   resolves through the template row. Screenshots with the same asset value

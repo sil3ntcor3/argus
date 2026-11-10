@@ -1019,6 +1019,11 @@ describe('StorageService', () => {
       );
     });
 
+    it('allows the private artifacts bucket only to domain services', () => {
+      expect(() => service.assertBucketAllowed('artifacts')).not.toThrow();
+      expect(() => service.assertBucketNotPrivate('artifacts')).toThrow(ForbiddenException);
+    });
+
     it('should allow the default bucket', () => {
       expect(() => service.assertBucketNotPrivate('default')).not.toThrow();
     });
@@ -1037,6 +1042,7 @@ describe('StorageService', () => {
       ['screenshot', 'tenant'],
       ['nuclei-templates', 'tenant'],
       ['reports', 'private'],
+      ['artifacts', 'private'],
       ['job-results', 'private'],
       ['default', 'blocked'],
       ['nope', 'blocked'],

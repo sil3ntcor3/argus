@@ -45,6 +45,7 @@ const BUCKET_ACCESS = {
   'job-results': 'private',
   'cached-static': 'authenticated',
   reports: 'private',
+  artifacts: 'private',
   default: 'blocked',
 } as const satisfies Record<string, BucketAccess>;
 
