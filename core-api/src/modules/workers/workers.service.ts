@@ -698,7 +698,7 @@ export class WorkersService {
    *   Either way the event carries `joinKeyId` for the dialog that issued it.
    * - Without one, a known worker token resumes that worker — the usual
    *   restart, whose join key is long gone.
-   * - Else `OASM_CLOUD_APIKEY` creates a cloud worker.
+   * - Else `ARGUS_CLOUD_APIKEY` creates a cloud worker.
    *
    * @param dto - The data transfer object containing the API key.
    * @returns A promise that resolves to the created worker instance.
@@ -710,7 +710,7 @@ export class WorkersService {
     const existingWorker = token
       ? await this.repo.findOne({ where: { token } })
       : null;
-    const cloudApiKey = this.configService.get<string>('OASM_CLOUD_APIKEY');
+    const cloudApiKey = this.configService.get<string>('ARGUS_CLOUD_APIKEY');
     const isCloudKey = !!cloudApiKey && cloudApiKey === apiKey;
 
     // 1. One-time join key
