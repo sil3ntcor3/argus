@@ -18,6 +18,8 @@ import {
   artifactsControllerRemove,
   getArtifactsControllerGetManyQueryKey,
   getArtifactsControllerGetUsageQueryKey,
+  useArtifactFoldersControllerGetById,
+  useArtifactFoldersControllerGetMany,
   useArtifactsControllerGetMany,
   useArtifactsControllerGetUsage,
   useArtifactsControllerRemove,
@@ -34,6 +36,7 @@ import { isAxiosError } from 'axios';
 import { Download, Trash2 } from 'lucide-react';
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { FileFolderNavigation } from './file-folder-navigation';
 import { FileIcon } from './file-icon';
 
 const PAGE_SIZE = 20;
@@ -206,15 +209,36 @@ function WorkspaceFiles({
   onAccessDenied: () => void;
 }) {
   const [scope, setScope] = useState<ArtifactsControllerGetManyScope>('mine');
+  const [folderId, setFolderId] = useState<string>();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [downloading, setDownloading] = useState(false);
   const queryClient = useQueryClient();
   const listRegion = useRef<HTMLDivElement>(null);
+  const folderRegion = useRef<HTMLDivElement>(null);
   const downloadRequest = useRef<AbortController | null>(null);
   const pendingDelete = useRef(false);
   const queryOptions = { ...freshRead, meta: { workspaceId } };
   const query = useDebounce(search.trim(), 250);
+  const browsingFolders = scope === 'mine' && !query;
+  // Separate disabled keys make returning to browse require a fresh response.
+  const folders = useArtifactFoldersControllerGetMany(
+    folderId ? { parentFolderId: folderId } : undefined,
+    {
+      query: {
+        ...queryOptions,
+        enabled: browsingFolders,
+        ...(!browsingFolders && { queryKey: ['files-folders-disabled'] }),
+      },
+    },
+  );
+  const folderDetail = useArtifactFoldersControllerGetById(folderId ?? '', {
+    query: {
+      ...queryOptions,
+      enabled: browsingFolders && !!folderId,
+      ...(!browsingFolders && { queryKey: ['files-folder-detail-disabled'] }),
+    },
+  });
   const files = useArtifactsControllerGetMany(
     {
       page,
@@ -223,6 +247,7 @@ function WorkspaceFiles({
       sortOrder: 'DESC',
       search: query,
       scope,
+      parentFolderId: browsingFolders ? (folderId ?? 'root') : undefined,
     },
     { query: queryOptions },
   );
@@ -273,7 +298,12 @@ function WorkspaceFiles({
       },
     },
   });
-  const denied = isAccessDenied(files.error) || isAccessDenied(usage.error);
+  const denied =
+    isAccessDenied(files.error) ||
+    isAccessDenied(usage.error) ||
+    (browsingFolders &&
+      (isAccessDenied(folders.error) ||
+        (!!folderId && isAccessDenied(folderDetail.error))));
   useEffect(() => {
     if (denied) onAccessDenied();
   }, [denied, onAccessDenied]);
@@ -292,6 +322,7 @@ function WorkspaceFiles({
           onAccessDenied();
           void files.refetch();
           void usage.refetch();
+          if (browsingFolders) retryFolders();
         }}
       />
     );
@@ -301,6 +332,18 @@ function WorkspaceFiles({
     usage.isFetchedAfterMount && !usage.isError ? usage.data : undefined;
   const nextDisabled =
     !currentFiles?.hasNextPage || search.trim() !== query || files.isFetching;
+
+  function retryFolders() {
+    folderRegion.current?.focus();
+    void folders.refetch();
+    if (folderId) void folderDetail.refetch();
+  }
+
+  function openFolder(id?: string) {
+    setFolderId(id);
+    setPage(1);
+    folderRegion.current?.focus();
+  }
 
   async function downloadFile(file: ArtifactListItemDto) {
     if (
@@ -366,6 +409,7 @@ function WorkspaceFiles({
                 size="sm"
                 aria-pressed={scope === option}
                 onClick={() => {
+                  if (option !== scope) setFolderId(undefined);
                   setScope(option);
                   setPage(1);
                 }}
@@ -388,6 +432,33 @@ function WorkspaceFiles({
           }}
         />
       </div>
+
+      {browsingFolders ? (
+        <div
+          ref={folderRegion}
+          role="region"
+          tabIndex={-1}
+          aria-label="Folder navigation"
+          className="empty:hidden focus:empty:block"
+        >
+          <FileFolderNavigation
+            folderId={folderId}
+            path={
+              folderDetail.isFetchedAfterMount && !folderDetail.isError
+                ? folderDetail.data?.path
+                : undefined
+            }
+            folders={
+              folders.isFetchedAfterMount && !folders.isError
+                ? folders.data
+                : undefined
+            }
+            failed={folders.isError || (!!folderId && folderDetail.isError)}
+            onOpen={openFolder}
+            onRetry={retryFolders}
+          />
+        </div>
+      ) : null}
 
       <div
         ref={listRegion}
