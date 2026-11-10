@@ -26,7 +26,11 @@ export async function lockFindingScannerSourceParents(
   );
 }
 
-/** Record first detection and distinct scanner runs under the upsert's finding locks. */
+/**
+ * Record every positive under the upsert's finding locks. Only a distinct
+ * run changes the detection count or status; repeat positives still advance
+ * the database-clock cutoff for comparing future scans.
+ */
 export async function recordFindingScannerSightings(
   manager: EntityManager,
   jobId: string,
@@ -97,18 +101,22 @@ export async function recordFindingScannerSightings(
          )
      ), counted AS (
        UPDATE vulnerabilities AS finding
-       SET "timesDetected" = finding."timesDetected" + 1,
+       SET "lastScannerObservedAt" = GREATEST(finding."lastScannerObservedAt", statement_timestamp()),
+           "timesDetected" = finding."timesDetected" + CASE WHEN countable."vulnerabilityId" IS NULL THEN 0 ELSE 1 END,
            "detectionStatus" = CASE
              WHEN countable.resurfaces THEN 'resurfaced'
              WHEN NOT finding."isArchived" AND countable."fromStatus" IN ('new', 'resurfaced')
-             THEN 'active' ELSE countable."fromStatus"
+             THEN 'active' ELSE finding."detectionStatus"
            END,
            "fixedAt" = CASE WHEN countable.resurfaces THEN NULL ELSE finding."fixedAt" END,
            "resurfacedCount" = finding."resurfacedCount" + CASE WHEN countable.resurfaces THEN 1 ELSE 0 END,
            "missedScans" = CASE WHEN countable.resurfaces THEN 0 ELSE finding."missedScans" END
-       FROM countable WHERE finding.id = countable."vulnerabilityId"
+       FROM unnest($2::uuid[]) AS observed("vulnerabilityId")
+       LEFT JOIN countable USING ("vulnerabilityId")
+       WHERE finding.id = observed."vulnerabilityId"
        RETURNING finding.id, countable."workspaceId", countable."jobHistoryId",
-                 countable."fromStatus", finding."detectionStatus" AS "toStatus"
+                 COALESCE(countable."fromStatus", finding."detectionStatus") AS "fromStatus",
+                 finding."detectionStatus" AS "toStatus"
      )
      INSERT INTO vulnerability_events
        ("vulnerabilityId", "workspaceId", type, "fromStatus", "toStatus", "jobHistoryId", "occurredAt")
