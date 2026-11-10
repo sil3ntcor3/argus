@@ -509,7 +509,7 @@ export class SummaryReportService {
       )
       .addSelect('COUNT(v.id)', 'total')
       .where('workspace.id = :workspaceId', { workspaceId })
-      .andWhere('v.isArchived = :isArchived', { isArchived: false })
+      .andWhere(openVulnerabilityCondition('v'))
       .groupBy('t.id')
       .addGroupBy('t.value')
       .addGroupBy('t.type')
@@ -577,7 +577,7 @@ export class SummaryReportService {
       .createQueryBuilder('t')
       .leftJoin('t.workspace', 'workspace')
       .leftJoin('t.assets', 'asset')
-      .leftJoin('asset.vulnerabilities', 'v')
+      .leftJoin('asset.vulnerabilities', 'v', openVulnerabilityCondition('v'))
       .select('t.value', 'identifier')
       .addSelect('t.createdAt', 'discovered')
       .addSelect('COUNT(v.id)', 'vulnCount')
@@ -610,7 +610,11 @@ export class SummaryReportService {
       .leftJoin('as.asset', 'asset')
       .leftJoin('asset.target', 'target')
       .leftJoin('target.workspace', 'workspace')
-      .leftJoin('asset.vulnerabilities', 'v', 'v.ports @> ARRAY["as".port::text]')
+      .leftJoin(
+        'asset.vulnerabilities',
+        'v',
+        `v.ports @> ARRAY["as".port::text] AND ${openVulnerabilityCondition('v')}`,
+      )
       .select('as.port', 'port')
       .addSelect('as.value', 'service')
       .addSelect('as.createdAt', 'discovered')
