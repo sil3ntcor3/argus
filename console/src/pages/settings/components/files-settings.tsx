@@ -33,8 +33,14 @@ import {
 } from '@/utils/workspaceState';
 import { useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
-import { Download, Trash2 } from 'lucide-react';
-import { type RefObject, useEffect, useRef, useState } from 'react';
+import { Download, LayoutGrid, List, Trash2 } from 'lucide-react';
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 import { FileFolderNavigation } from './file-folder-navigation';
 import { FileIcon } from './file-icon';
@@ -43,6 +49,20 @@ const PAGE_SIZE = 20;
 const BYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 const freshRead = { staleTime: 0, refetchOnMount: 'always' as const };
+const FILE_VIEW_KEY = 'argus.files.view';
+const FILE_VIEWS = [
+  { id: 'list', label: 'List view', Icon: List },
+  { id: 'grid', label: 'Grid view', Icon: LayoutGrid },
+] as const;
+type FileView = (typeof FILE_VIEWS)[number]['id'];
+
+function readFileView(): FileView {
+  try {
+    return localStorage.getItem(FILE_VIEW_KEY) === 'grid' ? 'grid' : 'list';
+  } catch {
+    return 'list';
+  }
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -197,6 +217,50 @@ function FileActions({
   );
 }
 
+/** Render the same page of files and actions in a responsive card layout. */
+function FileGrid({
+  rows,
+  renderActions,
+}: {
+  rows: ArtifactListItemDto[];
+  renderActions: (file: ArtifactListItemDto) => ReactNode;
+}) {
+  return (
+    <ul
+      role="list"
+      aria-label="Workspace file grid"
+      className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,12rem),1fr))] gap-3"
+    >
+      {rows.map((file) => (
+        <li
+          key={file.id}
+          className="min-w-0 overflow-hidden rounded-md border bg-card"
+        >
+          <div className="flex h-24 items-center justify-center bg-muted/50">
+            <FileIcon
+              name={file.name}
+              mimeType={file.mimeType}
+              className="size-10"
+            />
+          </div>
+          <div className="space-y-1 p-3">
+            <p className="break-all text-sm font-medium">{file.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {formatBytes(file.sizeBytes)} ·{' '}
+              {dateFormat.format(new Date(file.createdAt))}
+            </p>
+            <p className="break-all text-xs text-muted-foreground">
+              {file.source === 'agent' ? 'Agent' : 'Upload'}
+              {file.createdBy ? ` · ${file.createdBy.name}` : ''}
+            </p>
+            {renderActions(file)}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function WorkspaceFiles({
   workspaceId,
   canManage,
@@ -212,6 +276,7 @@ function WorkspaceFiles({
   const [folderId, setFolderId] = useState<string>();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [view, setView] = useState(readFileView);
   const [downloading, setDownloading] = useState(false);
   const queryClient = useQueryClient();
   const listRegion = useRef<HTMLDivElement>(null);
@@ -345,6 +410,15 @@ function WorkspaceFiles({
     folderRegion.current?.focus();
   }
 
+  function chooseView(next: FileView) {
+    setView(next);
+    try {
+      localStorage.setItem(FILE_VIEW_KEY, next);
+    } catch {
+      // The selected view still works when browser storage is unavailable.
+    }
+  }
+
   async function downloadFile(file: ArtifactListItemDto) {
     if (
       getGlobalWorkspaceId() !== workspaceId ||
@@ -391,6 +465,25 @@ function WorkspaceFiles({
     }
   }
 
+  function renderFileActions(file: ArtifactListItemDto) {
+    return (
+      <FileActions
+        file={file}
+        canDelete={canManage || (canWrite && file.isOwner)}
+        downloading={downloading}
+        deleting={removeFile.isPending}
+        focusAfterDelete={listRegion}
+        onDownload={() => void downloadFile(file)}
+        onDelete={() => {
+          if (pendingDelete.current || getGlobalWorkspaceId() !== workspaceId)
+            return;
+          pendingDelete.current = true;
+          removeFile.mutate({ id: file.id });
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-w-0 space-y-4">
       <StorageUsage
@@ -431,6 +524,22 @@ function WorkspaceFiles({
             setPage(1);
           }}
         />
+        <div role="group" aria-label="File view" className="flex gap-1">
+          {FILE_VIEWS.map(({ id, label, Icon }) => (
+            <Button
+              key={id}
+              type="button"
+              variant={view === id ? 'default' : 'outline'}
+              size="icon"
+              aria-label={label}
+              aria-pressed={view === id}
+              title={label}
+              onClick={() => chooseView(id)}
+            >
+              <Icon aria-hidden="true" className="size-4" />
+            </Button>
+          ))}
+        </div>
       </div>
 
       {browsingFolders ? (
@@ -491,6 +600,8 @@ function WorkspaceFiles({
           <p className="rounded-md border p-4 text-sm text-muted-foreground">
             {query ? 'No files match your search.' : 'No files to display.'}
           </p>
+        ) : view === 'grid' ? (
+          <FileGrid rows={rows} renderActions={renderFileActions} />
         ) : (
           <div className="rounded-md border">
             <Table aria-label="Workspace files">
@@ -523,25 +634,7 @@ function WorkspaceFiles({
                     <TableCell>
                       {dateFormat.format(new Date(file.createdAt))}
                     </TableCell>
-                    <TableCell>
-                      <FileActions
-                        file={file}
-                        canDelete={canManage || (canWrite && file.isOwner)}
-                        downloading={downloading}
-                        deleting={removeFile.isPending}
-                        focusAfterDelete={listRegion}
-                        onDownload={() => void downloadFile(file)}
-                        onDelete={() => {
-                          if (
-                            pendingDelete.current ||
-                            getGlobalWorkspaceId() !== workspaceId
-                          )
-                            return;
-                          pendingDelete.current = true;
-                          removeFile.mutate({ id: file.id });
-                        }}
-                      />
-                    </TableCell>
+                    <TableCell>{renderFileActions(file)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import {
   File,
   FileArchive,
@@ -79,10 +80,17 @@ function fileKind(name: string, mimeType: string) {
 export function FileIcon({
   name,
   mimeType,
+  className,
 }: {
   name: string;
   mimeType: string;
+  className?: string;
 }) {
   const { icon: Icon, color } = fileKind(name, mimeType);
-  return <Icon aria-hidden="true" className={`size-4 shrink-0 ${color}`} />;
+  return (
+    <Icon
+      aria-hidden="true"
+      className={cn('size-4 shrink-0', color, className)}
+    />
+  );
 }
