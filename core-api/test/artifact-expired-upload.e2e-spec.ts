@@ -1,5 +1,5 @@
 import { ARTIFACT_BUCKET, workspaceArtifactKey, workspaceArtifactUploadKey } from '@/common/constants/artifact-storage';
-import { ArtifactExpiredUploadService } from '@/modules/artifacts/artifact-expired-upload.service';
+import { ArtifactCleanupService, UPLOAD_EXPIRY_GRACE_MS } from '@/modules/artifacts/artifact-cleanup.service';
 import { ArtifactExpirySweepService, ARTIFACT_EXPIRY_CURSOR } from '@/modules/artifacts/artifact-expiry-sweep.service';
 import { ArtifactQuotaService } from '@/modules/artifacts/artifact-quota.service';
 import { ArtifactUploadCompletionService } from '@/modules/artifacts/artifact-upload-completion.service';
@@ -16,7 +16,7 @@ describe('Expired private artifact upload (e2e)', () => {
   let storage: StorageService;
   let completion: ArtifactUploadCompletionService;
   let reservation: ArtifactUploadReservationService;
-  let expiry: ArtifactExpiredUploadService;
+  let expiry: ArtifactCleanupService;
   let sweep: ArtifactExpirySweepService;
   let redis: RedisService;
   let cursorKey: string;
@@ -32,7 +32,7 @@ describe('Expired private artifact upload (e2e)', () => {
     const quota = new ArtifactQuotaService();
     reservation = new ArtifactUploadReservationService(app.dataSource, storage, quota);
     completion = new ArtifactUploadCompletionService(app.dataSource, storage, quota);
-    expiry = app.app.get(ArtifactExpiredUploadService);
+    expiry = app.app.get(ArtifactCleanupService);
     sweep = app.app.get(ArtifactExpirySweepService);
     redis = app.app.get(RedisService);
   });
@@ -185,7 +185,21 @@ describe('Expired private artifact upload (e2e)', () => {
     await sweep.sweepPage();
     expect(reclaim).toHaveBeenCalledTimes(25);
     expect(reclaim).toHaveBeenNthCalledWith(1, input());
-    await sweep.sweepPage();
+    const cycle = await redis.get(ARTIFACT_EXPIRY_CURSOR);
+    if (!cycle) throw new Error('Expected a continuation cursor after a full page');
+    const [, , startedAt] = cycle.split('|');
+    const next = await reservation.reserveUpload({
+      workspaceId, createdByUserId: userId, name: 'next-cycle.txt', contentType: 'text/plain', sizeBytes: 0,
+    });
+    await repo().update(next.artifact.id, {
+      expiresAt: new Date(Date.parse(startedAt) - UPLOAD_EXPIRY_GRACE_MS + 1_000),
+    });
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.parse(startedAt) + 2_000);
+    try {
+      await sweep.sweepPage();
+    } finally {
+      clock.mockRestore();
+    }
     expect(reclaim).toHaveBeenCalledTimes(26);
     expect(reclaim).toHaveBeenNthCalledWith(26, { workspaceId, artifactId: tiedIds[24] });
     await sweep.sweepPage();
