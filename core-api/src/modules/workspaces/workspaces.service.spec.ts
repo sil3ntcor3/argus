@@ -2076,6 +2076,11 @@ describe('WorkspacesService', () => {
       }
     });
 
+    it('offers the separate file read, write, and management permissions', () => {
+      const artifact = service.getPermissionCatalog().find((resource) => resource.resource === 'artifact');
+      expect(artifact?.actions.map((action) => action.action)).toEqual(['read', 'write', 'manage']);
+    });
+
     it('catalog includes audit.read for the audit log endpoints', () => {
       const catalog = service.getPermissionCatalog();
       const audit = catalog.find((resource) => resource.resource === 'audit');
