@@ -609,9 +609,11 @@ export class StorageService implements OnModuleInit {
     const stagingKey = workspaceArtifactUploadKey(workspaceId, artifactId);
     const finalKey = workspaceArtifactKey(workspaceId, artifactId);
     const marker = artifactId.toLowerCase();
+    // Completion holds database locks; bound all requests and retries together.
+    const abortSignal = AbortSignal.timeout(15_000);
 
     const alreadyPublished = async () => {
-      const final = await this.headArtifactObject(finalKey);
+      const final = await this.headArtifactObject(finalKey, abortSignal);
       if (!final) return false;
       if (final.Metadata?.['argus-artifact-id'] !== marker ||
           final.ContentLength !== sizeBytes || final.ContentType !== contentType) {
@@ -621,7 +623,7 @@ export class StorageService implements OnModuleInit {
     };
     if (await alreadyPublished()) return;
 
-    const staged = await this.headArtifactObject(stagingKey);
+    const staged = await this.headArtifactObject(stagingKey, abortSignal);
     if (!staged) {
       throw new NotFoundException('Artifact upload has not arrived');
     }
@@ -640,7 +642,7 @@ export class StorageService implements OnModuleInit {
         Metadata: { 'argus-artifact-id': marker },
         ContentType: contentType,
         CacheControl: 'private, no-store',
-      }));
+      }), { abortSignal });
     } catch (error: unknown) {
       if (!(error instanceof S3ServiceException)) throw error;
       const status = error.$metadata.httpStatusCode;
@@ -655,11 +657,13 @@ export class StorageService implements OnModuleInit {
     }
   }
 
-  private async headArtifactObject(key: string): Promise<HeadObjectCommandOutput | undefined> {
+  private async headArtifactObject(
+    key: string, abortSignal: AbortSignal,
+  ): Promise<HeadObjectCommandOutput | undefined> {
     try {
       return await this.rustFsClient.getClient().send(new HeadObjectCommand({
         Bucket: ARTIFACT_BUCKET, Key: key,
-      }));
+      }), { abortSignal });
     } catch (error: unknown) {
       if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 404) {
         return undefined;
