@@ -1,7 +1,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
-import type { LanguageModel } from 'ai';
+import { defaultSettingsMiddleware, wrapLanguageModel, type LanguageModel } from 'ai';
 import type { ProviderModelDto } from './dto/llm-config.dto';
 import { LLMProvider } from './enums/agent.enums';
 
@@ -280,7 +280,21 @@ export const llmProviderSupported: LLMProviderSupported[] = [
     id: LLMProvider.OPENAI,
     name: 'OpenAI',
     logo: '/static/images/openai.svg',
-    handler: (apiKey, model) => createOpenAI({ apiKey }).chat(model),
+    handler: (apiKey, model) => {
+      const provider = createOpenAI({ apiKey });
+      const baseURL = process.env.OPENAI_BASE_URL;
+      // A deployment override may point to a Chat-only compatible proxy.
+      if (baseURL && !/^https:\/\/(?:[a-z]{2}\.)?api\.openai\.com\/v1\/?$/i.test(baseURL)) {
+        return provider.chat(model);
+      }
+      return wrapLanguageModel({
+        model: provider.responses(model),
+        // Argus owns the conversation history. Don't create stored response state.
+        middleware: defaultSettingsMiddleware({
+          settings: { providerOptions: { openai: { store: false, reasoningSummary: null } } },
+        }),
+      });
+    },
     fetchModels: fetchOpenAIModels,
   },
   {
@@ -360,7 +374,7 @@ type AnthropicReasoningOptions = {
 };
 
 type OpenAIReasoningOptions = {
-  openai: { reasoningEffort: string; reasoningSummary: string };
+  openai: { reasoningEffort: string; reasoningSummary: string | null };
 };
 
 type GoogleReasoningOptions = {
@@ -379,7 +393,8 @@ const REASONING_OPTIONS: Partial<Record<LLMProvider, ProviderReasoningOptions>> 
     anthropic: { thinking: { type: 'enabled', budgetTokens: 10000 } },
   },
   [LLMProvider.OPENAI]: {
-    openai: { reasoningEffort: 'high', reasoningSummary: 'auto' },
+    // Summaries can require organization verification even when reasoning works.
+    openai: { reasoningEffort: 'high', reasoningSummary: null },
   },
   [LLMProvider.OPENROUTER]: {
     openai: { reasoningEffort: 'high', reasoningSummary: 'auto' },
