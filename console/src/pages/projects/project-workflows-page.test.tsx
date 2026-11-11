@@ -126,6 +126,8 @@ describe('ProjectWorkflowsPage', () => {
     expect(
       screen.getByRole('button', { name: 'Rename workflow Discovery' }),
     ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Edit pipeline for Discovery' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Edit pipeline for Shared' })).toBeNull();
     expect(
       screen.queryByRole('button', { name: 'Rename workflow Shared' }),
     ).toBeNull();

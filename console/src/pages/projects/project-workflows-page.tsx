@@ -23,6 +23,7 @@ import { ProjectWorkflowCreateDialog } from './project-workflow-create-dialog';
 import { ProjectWorkflowDetachDialog } from './project-workflow-detach-dialog';
 import { projectWorkflowLabel } from './project-workflow-label';
 import { ProjectWorkflowRenameDialog } from './project-workflow-rename-dialog';
+import { ProjectWorkflowPipelineDialog } from './project-workflow-pipeline-dialog';
 import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
 
@@ -109,6 +110,15 @@ function WorkflowCard({
               <ProjectWorkflowRenameDialog
                 projectId={projectId}
                 bindingId={binding.id}
+                workflowName={name}
+                workspaceId={editWorkspaceId}
+              />
+            )}
+          {editWorkspaceId &&
+            canRenameWorkflow(binding.workflow, projectId) && (
+              <ProjectWorkflowPipelineDialog
+                projectId={projectId}
+                binding={binding}
                 workflowName={name}
                 workspaceId={editWorkspaceId}
               />
