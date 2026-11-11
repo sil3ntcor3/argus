@@ -59,18 +59,21 @@ describe('Files settings actions', () => {
     mocks.folders.mockReturnValue({ isFetchedAfterMount: true, data: [] });
     mocks.folderDetail.mockReturnValue({});
     localStorage.removeItem('argus.files.view');
+    const filesByScope: Record<string, (typeof owned)[]> = {
+      mine: [owned],
+      shared: [peer],
+      all: [owned, peer],
+    };
     mocks.files.mockImplementation((params: { scope: string }) => ({
       isFetchedAfterMount: true,
       data: {
-        data: (params.scope === 'all' ? [owned, peer] : [owned]).map(
-          (file) => ({
-            ...file,
-            mimeType: 'text/plain',
-            sizeBytes: 4,
-            source: 'upload',
-            createdAt: '2026-01-02T00:00:00Z',
-          }),
-        ),
+        data: filesByScope[params.scope].map((file) => ({
+          ...file,
+          mimeType: 'text/plain',
+          sizeBytes: 4,
+          source: 'upload',
+          createdAt: '2026-01-02T00:00:00Z',
+        })),
       },
     }));
     setGlobalWorkspaceId('workspace');
@@ -360,6 +363,68 @@ describe('Files settings actions', () => {
       screen.getByRole('table', { name: 'Workspace files' }),
     ).toBeVisible();
     expect(localStorage.getItem('argus.files.view')).toBe('list');
+  });
+
+  it('browses shared files in table and grid without management controls or folder filters', async () => {
+    show(['artifact.read']);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Shared with me' }),
+    );
+    expect(mocks.files.mock.lastCall?.[0]).toMatchObject({
+      scope: 'shared',
+      parentFolderId: undefined,
+      page: 1,
+    });
+    expect(
+      screen.getByRole('button', { name: 'Shared with me' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'All files' })).toBeNull();
+    expect(
+      screen.queryByRole('region', { name: 'Folder navigation' }),
+    ).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Download Peer report.txt' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Delete Peer report.txt' }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Grid view' }));
+    expect(
+      within(
+        screen.getByRole('list', { name: 'Workspace file grid' }),
+      ).getByRole('button', { name: 'Download Peer report.txt' }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'My files' }));
+    expect(mocks.files.mock.lastCall?.[0]).toMatchObject({
+      scope: 'mine',
+      parentFolderId: 'root',
+      page: 1,
+    });
+    expect(screen.getByText('My report.txt')).toBeVisible();
+  });
+
+  it('downloads a named shared file through the existing cancellable request', async () => {
+    mocks.download.mockResolvedValue({ url: '/api/storage/artifacts/shared' });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    try {
+      show(['artifact.read']);
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'Shared with me' }),
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Download Peer report.txt' }),
+      );
+      await waitFor(() => expect(click).toHaveBeenCalledOnce());
+      expect(mocks.download).toHaveBeenCalledWith(
+        'peer',
+        undefined,
+        expect.any(AbortSignal),
+      );
+    } finally {
+      click.mockRestore();
+    }
   });
 
   it('offers a download for an owned file and no delete to a read-only viewer', async () => {
