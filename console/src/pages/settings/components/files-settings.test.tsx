@@ -101,6 +101,18 @@ describe('Files settings actions', () => {
     setGlobalWorkspaceId('workspace');
   });
 
+  it('reserves readable filename width beside every owner action', async () => {
+    show(['artifact.read', 'artifact.write']);
+    const table = await screen.findByRole('table', { name: 'Workspace files' });
+    const row = within(table).getByRole('row', { name: /My report.txt/ });
+    expect(within(row).getAllByRole('cell')[0]).toHaveClass('min-w-48');
+    for (const action of ['Share', 'Download', 'Delete']) {
+      expect(
+        within(row).getByRole('button', { name: `${action} My report.txt` }),
+      ).toBeVisible();
+    }
+  });
+
   it.each([
     [0, 0, 100, 0],
     [40, 10, 100, 50],
