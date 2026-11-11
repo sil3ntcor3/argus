@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ProjectTriggerReadService } from './project-trigger-read.service';
 import { AssetGroupModule } from '../asset-group/asset-group.module';
 import { ConnectorsModule } from '../connectors/connectors.module';
 import { ProjectWorkflowJobsService } from './project-workflow-jobs.service';
@@ -27,6 +28,7 @@ import { ProjectOverviewReadService } from './project-overview-read.service';
   imports: [AssetGroupModule, ProjectScopeModule, ConnectorsModule],
   controllers: [ProjectsController],
   providers: [
+    ProjectTriggerReadService,
     ProjectOverviewReadService,
     ProjectOverviewActivityService,
     ProjectOverviewRunsService,

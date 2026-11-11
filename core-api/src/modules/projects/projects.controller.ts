@@ -1,3 +1,5 @@
+import { ProjectTriggerReadService } from './project-trigger-read.service';
+import { ProjectTriggerDto } from './dto/project-trigger-read.dto';
 import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
@@ -92,6 +94,7 @@ export class ProjectsController {
     private readonly assetCommands: ProjectAssetsCommandService,
     private readonly candidateAssets: AssetGroupAssetService,
     private readonly assetRead: ProjectAssetReadService,
+    private readonly triggerRead: ProjectTriggerReadService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly workflowCreate: ProjectWorkflowCreateService,
     private readonly workflowUpdate: ProjectWorkflowUpdateService,
@@ -125,6 +128,17 @@ export class ProjectsController {
   @Get('workflow-templates')
   getWorkflowTemplates(@WorkspaceId() workspaceId: string) {
     return this.workflowTemplates.list(workspaceId);
+  }
+
+  @Doc({
+    summary: 'List project workflow triggers',
+    response: { serialization: ProjectTriggerDto, isArray: true },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('project.read')
+  @Get(':id/triggers')
+  getTriggers(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string) {
+    return this.triggerRead.list(id, workspaceId);
   }
 
   @Doc({
