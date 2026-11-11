@@ -1,4 +1,8 @@
 import { ARTIFACT_BUCKET, workspaceArtifactUploadKey } from '@/common/constants/artifact-storage';
+import { AuditActorType, AuditOutcome } from '@/common/enums/enum';
+import { EVENT_CATALOG } from '@/modules/event-bridge/contracts/event-catalog';
+import type { EventEnvelopeData } from '@/modules/event-bridge/contracts/event-envelope';
+import { EventBridgeService } from '@/modules/event-bridge/publishing/event-bridge.service';
 import { StorageService } from '@/modules/storage/storage.service';
 import { Injectable } from '@nestjs/common';
 import { ArtifactUploadCompletionService } from './artifact-upload-completion.service';
@@ -19,6 +23,7 @@ export class ArtifactBufferService {
     private readonly reservation: ArtifactUploadReservationService,
     private readonly completion: ArtifactUploadCompletionService,
     private readonly storage: StorageService,
+    private readonly eventBridge: EventBridgeService,
   ) {}
 
   /** The caller authorizes the workspace and actor before creating a private file. */
@@ -33,6 +38,14 @@ export class ArtifactBufferService {
     await this.storage.uploadFile(
       workspaceArtifactUploadKey(workspaceId, artifact.id), buffer, ARTIFACT_BUCKET, contentType, signal,
     );
-    return this.completion.completeUpload({ workspaceId, userId, artifactId: artifact.id, source: 'agent', abortSignal: signal });
+    const file = await this.completion.completeUpload({ workspaceId, userId, artifactId: artifact.id, source: 'agent', abortSignal: signal });
+    await this.eventBridge.publishSafely(EVENT_CATALOG.artifact.created, {
+      workspaceId: file.workspaceId,
+      actor: { type: AuditActorType.Agent, id: userId },
+      outcome: AuditOutcome.Success,
+      resourceType: 'artifact', resourceId: file.id,
+      metadata: { source: file.source, sizeBytes: Number(file.sizeBytes) },
+    } satisfies EventEnvelopeData, { subject: `workspace:${file.workspaceId}/artifact:${file.id}` });
+    return file;
   }
 }

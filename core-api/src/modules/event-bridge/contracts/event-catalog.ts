@@ -430,6 +430,7 @@ export const EVENT_CATALOG = {
     },
   },
   artifact: {
+    created: { name: 'artifact.created', summary: 'File created' },
     downloaded: { name: 'artifact.downloaded', summary: 'File download URL issued' },
     deleted: { name: 'artifact.deleted', summary: 'File deleted' },
     updated: { name: 'artifact.updated', summary: 'File access changed' },
