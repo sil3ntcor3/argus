@@ -4988,6 +4988,15 @@ export type CreateProjectWorkflowDto = {
   name?: string;
 };
 
+export type RenameProjectWorkflowDto = {
+  /**
+   * Trimmed workflow name
+   * @minLength 1
+   * @maxLength 120
+   */
+  name: string;
+};
+
 export type CreateProjectDto = {
   /**
    * Name of the project
@@ -46104,6 +46113,107 @@ export const useProjectsControllerCreateWorkflow = <
 > => {
   return useMutation(
     getProjectsControllerCreateWorkflowMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Rename a project-owned workflow
+ */
+export const projectsControllerUpdateWorkflow = (
+  id: string,
+  bindingId: string,
+  renameProjectWorkflowDto: RenameProjectWorkflowDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<AssetGroupWorkflow>(
+    {
+      url: `/api/projects/${id}/workflows/${bindingId}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: renameProjectWorkflowDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerUpdateWorkflowMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+    TError,
+    { id: string; bindingId: string; data: RenameProjectWorkflowDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+  TError,
+  { id: string; bindingId: string; data: RenameProjectWorkflowDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerUpdateWorkflow'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+    { id: string; bindingId: string; data: RenameProjectWorkflowDto }
+  > = (props) => {
+    const { id, bindingId, data } = props ?? {};
+
+    return projectsControllerUpdateWorkflow(
+      id,
+      bindingId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerUpdateWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>
+>;
+export type ProjectsControllerUpdateWorkflowMutationBody =
+  RenameProjectWorkflowDto;
+export type ProjectsControllerUpdateWorkflowMutationError = unknown;
+
+/**
+ * @summary Rename a project-owned workflow
+ */
+export const useProjectsControllerUpdateWorkflow = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+      TError,
+      { id: string; bindingId: string; data: RenameProjectWorkflowDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+  TError,
+  { id: string; bindingId: string; data: RenameProjectWorkflowDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerUpdateWorkflowMutationOptions(options),
     queryClient,
   );
 };
