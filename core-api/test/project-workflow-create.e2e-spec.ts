@@ -143,6 +143,11 @@ describe('Project workflow creation API (e2e)', () => {
       undefined,
       headers,
     ).expect(403);
+    await post(
+      { copyFromProjectWorkflowId: randomUUID() },
+      undefined,
+      headers,
+    ).expect(403);
     await app.dataSource.query(
       'UPDATE workspace_permissions SET permissions=$1 WHERE id=$2',
       [['group.write'], role],
@@ -213,6 +218,114 @@ describe('Project workflow creation API (e2e)', () => {
         [owner.workspace.id],
       ),
     ).toEqual(before);
+  });
+
+  it('copies another project binding including an archived source, without scheduling or mutating it', async () => {
+    const { body: sourceBinding } = await post({ template }).expect(201);
+    const { body: destination } = await request(app.server)
+      .post('/api/projects')
+      .set(owner.headers)
+      .send({ name: 'Copy destination' })
+      .expect(201);
+    const content = { ...source, instructions: 'Do not copy this metadata' };
+    await app.dataSource.query('UPDATE workflows SET content=$1 WHERE id=$2', [
+      JSON.stringify(content),
+      sourceBinding.workflowId,
+    ]);
+    await app.dataSource.query(
+      'UPDATE project_workflows SET schedule=$1,"jobId"=$2 WHERE id=$3',
+      ['0 6 * * *', 'source-schedule', sourceBinding.id],
+    );
+    await app.dataSource.query(
+      'UPDATE projects SET "archivedAt"=NOW() WHERE id=$1',
+      [projectId],
+    );
+    try {
+      const { body } = await post(
+        { copyFromProjectWorkflowId: sourceBinding.id },
+        destination.id,
+      ).expect(201);
+      expect(body).toEqual({
+        id: expect.any(String),
+        workflowId: expect.any(String),
+        name: source.name + ' (copy)',
+        schedule: 'disabled',
+      });
+      expect(body.workflowId).not.toBe(sourceBinding.workflowId);
+      const [copy] = await app.dataSource.query(
+        'SELECT w.content,w."workspaceId",w."filePath",pw."projectId",pw.schedule,pw."jobId" FROM workflows w JOIN project_workflows pw ON pw."workflowId"=w.id WHERE pw.id=$1',
+        [body.id],
+      );
+      expect(copy).toEqual({
+        content: { name: body.name, jobs },
+        workspaceId: owner.workspace.id,
+        filePath: expect.stringMatching('^project-' + destination.id + '-'),
+        projectId: destination.id,
+        schedule: 'disabled',
+        jobId: null,
+      });
+      expect(
+        (
+          await post(
+            {
+              copyFromProjectWorkflowId: sourceBinding.id,
+              name: '  Named copy  ',
+            },
+            destination.id.toUpperCase(),
+          ).expect(201)
+        ).body.name,
+      ).toBe('Named copy');
+      expect(
+        (
+          await app.dataSource.query(
+            'SELECT content FROM workflows WHERE id=$1',
+            [sourceBinding.workflowId],
+          )
+        )[0].content,
+      ).toEqual(content);
+      expect(
+        (
+          await app.dataSource.query(
+            'SELECT schedule,"jobId" FROM project_workflows WHERE id=$1',
+            [sourceBinding.id],
+          )
+        )[0],
+      ).toEqual({ schedule: '0 6 * * *', jobId: 'source-schedule' });
+    } finally {
+      await app.dataSource.query(
+        'UPDATE projects SET "archivedAt"=NULL WHERE id=$1',
+        [projectId],
+      );
+    }
+  });
+
+  it('requires a valid copy source whose project and workflow both belong to the workspace', async () => {
+    const { body: sourceBinding } = await post({ template }).expect(201);
+    const { body: foreign } = await post(
+      { template: 'foreign-' + template },
+      foreignId,
+      other.headers,
+    ).expect(201);
+    for (const payload of [
+      { copyFromProjectWorkflowId: null },
+      { copyFromProjectWorkflowId: 'invalid' },
+      { template, copyFromProjectWorkflowId: sourceBinding.id },
+      { jobs, copyFromProjectWorkflowId: sourceBinding.id },
+      { template, jobs, copyFromProjectWorkflowId: sourceBinding.id },
+    ])
+      await post(payload).expect(400);
+    for (const id of [randomUUID(), foreign.id, sourceBinding.workflowId])
+      await post({ copyFromProjectWorkflowId: id }).expect(404);
+    await app.dataSource.query('UPDATE workflows SET content=$1 WHERE id=$2', [
+      JSON.stringify({ jobs: { a: { run: 'httpx', needs: ['missing'] } } }),
+      sourceBinding.workflowId,
+    ]);
+    await post({ copyFromProjectWorkflowId: sourceBinding.id }).expect(400);
+    await app.dataSource.query(
+      'UPDATE project_workflows SET "workflowId"=$1 WHERE id=$2',
+      [foreign.workflowId, sourceBinding.id],
+    );
+    await post({ copyFromProjectWorkflowId: sourceBinding.id }).expect(404);
   });
 
   it('rolls back selected-job creation when saving the binding fails', async () => {
@@ -572,6 +685,16 @@ describe('Project workflow creation API (e2e)', () => {
       expect(
         decryptInlineConfig({ apiKey: selectedSecret }, ['apiKey'], dek).apiKey,
       ).toBe('Selected-job secret');
+      const { body: copied } = await post({
+        copyFromProjectWorkflowId: selected.id,
+      }).expect(201);
+      const [copiedWorkflow] = await app.dataSource.query(
+        'SELECT content FROM workflows WHERE id=$1',
+        [copied.workflowId],
+      );
+      expect(copiedWorkflow.content.jobs.finding.config.apiKey).toBe(
+        selectedSecret,
+      );
       for (const apiKey of [encrypted, '****']) {
         const result = await patch({ config: { apiKey } });
         expect(result.body.workflow.content.jobs.finding.config.apiKey).toBe(
@@ -606,6 +729,18 @@ describe('Project workflow creation API (e2e)', () => {
       );
       await patch({ configProfileId: own });
       await patch({
+        configProfileId: own,
+        config: { target: 'partial override' },
+      });
+      const { body: profileCopy } = await post({
+        copyFromProjectWorkflowId: created.id,
+      }).expect(201);
+      const [profileWorkflow] = await app.dataSource.query(
+        'SELECT content FROM workflows WHERE id=$1',
+        [profileCopy.workflowId],
+      );
+      expect(profileWorkflow.content.jobs.finding).toEqual({
+        run: toolName,
         configProfileId: own,
         config: { target: 'partial override' },
       });

@@ -8,6 +8,7 @@ import { WorkflowJob } from '@/modules/workflows/entities/workflow.entity';
 import {
   IsObject,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   NotContains,
@@ -17,7 +18,7 @@ import {
 export class CreateProjectWorkflowDto {
   @ApiPropertyOptional({
     description:
-      'Workspace template path. Supply exactly one of template or jobs.',
+      'Workspace template path. Supply exactly one of template, jobs or copyFromProjectWorkflowId.',
     maxLength: 255,
   })
   @ValidateIf((_object, value: unknown) => value !== undefined)
@@ -28,7 +29,8 @@ export class CreateProjectWorkflowDto {
   template?: string;
 
   @ApiPropertyOptional({
-    description: 'Selected job graph. Supply exactly one of template or jobs.',
+    description:
+      'Selected job graph. Supply exactly one of template, jobs or copyFromProjectWorkflowId.',
     type: 'object',
     additionalProperties: { $ref: getSchemaPath(WorkflowJob) },
     minProperties: 1,
@@ -39,8 +41,17 @@ export class CreateProjectWorkflowDto {
   jobs?: Record<string, WorkflowJob>;
 
   @ApiPropertyOptional({
+    format: 'uuid',
     description:
-      'Defaults to the template name or Project workflow for selected jobs',
+      'Project workflow binding in the selected workspace. Supply exactly one creation source.',
+  })
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsUUID()
+  copyFromProjectWorkflowId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Defaults to the template name, Project workflow for selected jobs, or the source name plus (copy)',
     maxLength: 120,
   })
   @ValidateIf((_object, value: unknown) => value !== undefined)

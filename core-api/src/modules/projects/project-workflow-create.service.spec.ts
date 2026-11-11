@@ -1,5 +1,5 @@
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 import type { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
@@ -76,7 +76,15 @@ describe('ProjectWorkflowCreateService', () => {
     expect(manager.save).not.toHaveBeenCalled();
   });
 
-  it.each([{}, { template: 'probe.yaml', jobs: { probe: { run: 'httpx' } } }])(
+  it.each([
+    {},
+    { template: 'probe.yaml', jobs: { probe: { run: 'httpx' } } },
+    { template: 'probe.yaml', copyFromProjectWorkflowId: randomUUID() },
+    {
+      jobs: { probe: { run: 'httpx' } },
+      copyFromProjectWorkflowId: randomUUID(),
+    },
+  ])(
     'rejects ambiguous or missing sources before opening a transaction',
     async (input) => {
       const { service, transaction, getDEK } = setup();
@@ -120,6 +128,72 @@ describe('ProjectWorkflowCreateService', () => {
     prepare.mockRejectedValueOnce(new BadRequestException('Invalid pipeline'));
     await expect(
       service.create(projectId, workspaceId, { jobs: {} }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
+  it('copies a workspace binding graph without triggers or re-encrypting stored secrets', async () => {
+    const { service, manager, prepare, getDEK } = setup();
+    const sourceId = randomUUID();
+    const jobs = {
+      probe: { run: 'httpx', config: { key: 'stored-ciphertext' } },
+    };
+    manager.findOne.mockResolvedValueOnce({
+      workflow: {
+        name: 'Source scan',
+        content: { name: 'Source scan', jobs, on: { schedule: '* * * * *' } },
+      },
+    });
+    await expect(
+      service.create(projectId, workspaceId, {
+        copyFromProjectWorkflowId: sourceId,
+      }),
+    ).resolves.toMatchObject({
+      name: 'Source scan (copy)',
+      schedule: 'disabled',
+    });
+    expect(manager.findOne).toHaveBeenCalledWith(
+      AssetGroupWorkflow,
+      expect.objectContaining({
+        where: {
+          id: sourceId,
+          assetGroup: { workspace: { id: workspaceId } },
+          workflow: { workspace: { id: workspaceId } },
+        },
+        relations: { workflow: true },
+      }),
+    );
+    expect(manager.save.mock.calls[0][1].content).toEqual({
+      name: 'Source scan (copy)',
+      jobs,
+    });
+    expect(prepare).not.toHaveBeenCalled();
+    expect(getDEK).not.toHaveBeenCalled();
+  });
+
+  it('rejects inaccessible copy sources before saving either row', async () => {
+    const { service, manager } = setup();
+    manager.findOne.mockResolvedValueOnce(null);
+    await expect(
+      service.create(projectId, workspaceId, {
+        copyFromProjectWorkflowId: randomUUID(),
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects an invalid stored source graph without creating a workflow', async () => {
+    const { service, manager } = setup();
+    manager.findOne.mockResolvedValueOnce({
+      workflow: {
+        name: 'Broken',
+        content: { jobs: { a: { run: 'httpx', needs: ['missing'] } } },
+      },
+    });
+    await expect(
+      service.create(projectId, workspaceId, {
+        copyFromProjectWorkflowId: randomUUID(),
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(manager.save).not.toHaveBeenCalled();
   });
