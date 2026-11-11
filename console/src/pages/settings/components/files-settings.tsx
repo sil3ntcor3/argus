@@ -73,6 +73,11 @@ const FILE_VIEWS = [
   { id: 'grid', label: 'Grid view', Icon: LayoutGrid },
 ] as const;
 type FileView = (typeof FILE_VIEWS)[number]['id'];
+const FILE_SCOPES = [
+  { value: 'mine', label: 'My files' },
+  { value: 'shared', label: 'Shared with me' },
+  { value: 'all', label: 'All files' },
+] as const;
 const FILE_SORT_FIELDS = [
   { value: 'name', label: 'Name' },
   { value: 'updatedAt', label: 'Modified' },
@@ -177,8 +182,10 @@ function FileAccessError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+/** Render the actions allowed for the file in the current list scope. */
 function FileActions({
   file,
+  canDownload,
   canDelete,
   downloading,
   deleting,
@@ -187,6 +194,7 @@ function FileActions({
   onDelete,
 }: {
   file: ArtifactListItemDto;
+  canDownload: boolean;
   canDelete: boolean;
   downloading: boolean;
   deleting: boolean;
@@ -197,7 +205,7 @@ function FileActions({
   const confirmed = useRef(false);
   return (
     <div className="flex justify-end gap-1">
-      {file.isOwner ? (
+      {canDownload ? (
         <Button
           type="button"
           size="icon"
@@ -293,6 +301,7 @@ function FileGrid({
   );
 }
 
+/** Browse workspace files with scope-specific folders and actions. */
 function WorkspaceFiles({
   workspaceId,
   canManage,
@@ -531,10 +540,12 @@ function WorkspaceFiles({
     }
   }
 
+  /** Share action handling across table and grid views. */
   function renderFileActions(file: ArtifactListItemDto) {
     return (
       <FileActions
         file={file}
+        canDownload={file.isOwner || scope === 'shared'}
         canDelete={canManage || (canWrite && file.isOwner)}
         downloading={downloading}
         deleting={removeFile.isPending}
@@ -558,28 +569,32 @@ function WorkspaceFiles({
         onRetry={() => void usage.refetch()}
       />
       <div className="flex flex-wrap items-center gap-3">
-        {canManage ? (
-          <div role="group" aria-label="File scope" className="flex gap-2">
-            {(['mine', 'all'] as const).map((option) => (
+        <div
+          role="group"
+          aria-label="File scope"
+          className="flex flex-wrap gap-2"
+        >
+          {FILE_SCOPES.filter(({ value }) => value !== 'all' || canManage).map(
+            ({ value, label }) => (
               <Button
-                key={option}
+                key={value}
                 type="button"
-                variant={scope === option ? 'default' : 'outline'}
+                variant={scope === value ? 'default' : 'outline'}
                 size="sm"
-                aria-pressed={scope === option}
+                aria-pressed={scope === value}
                 onClick={() => {
-                  if (option !== scope && folderId) {
+                  if (value !== scope && folderId) {
                     setFolderLocation(undefined, true);
                   }
-                  setScope(option);
+                  setScope(value);
                   setPage(1);
                 }}
               >
-                {option === 'mine' ? 'My files' : 'All files'}
+                {label}
               </Button>
-            ))}
-          </div>
-        ) : null}
+            ),
+          )}
+        </div>
         <Input
           type="search"
           aria-label="Search files"
