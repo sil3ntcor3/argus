@@ -4,7 +4,7 @@ import { ArtifactCleanupService } from './artifact-cleanup.service';
 import { ArtifactExpirySweepService } from './artifact-expiry-sweep.service';
 import { ArtifactFoldersController } from './artifact-folders.controller';
 import { ArtifactFoldersService } from './artifact-folders.service';
-import { ArtifactQuotaService } from './artifact-quota.service';
+import { ArtifactQuotaModule } from './artifact-quota.module';
 import { ArtifactReadService } from './artifact-read.service';
 import { ArtifactShareService } from './artifact-share.service';
 import { ArtifactStagingSweepService } from './artifact-staging-sweep.service';
@@ -16,13 +16,12 @@ import { WorkspaceStorageUsage } from './entities/workspace-storage-usage.entity
 import { PublicArtifactsController } from './public-artifacts.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkspaceStorageUsage, WorkspaceArtifact, ArtifactFolder])],
+  imports: [TypeOrmModule.forFeature([WorkspaceStorageUsage, WorkspaceArtifact, ArtifactFolder]), ArtifactQuotaModule],
   controllers: [ArtifactsController, ArtifactFoldersController, PublicArtifactsController],
   providers: [
     ArtifactUsageService,
     ArtifactReadService,
     ArtifactShareService,
-    ArtifactQuotaService,
     ArtifactCleanupService,
     ArtifactExpirySweepService,
     ArtifactFoldersService,

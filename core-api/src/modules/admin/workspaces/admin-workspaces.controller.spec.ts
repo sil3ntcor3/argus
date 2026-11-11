@@ -11,7 +11,7 @@ type PublishEventMetadata = { event: { name: string } } & PublishEventConfig;
 
 const reflector = new Reflector();
 
-const auditConfig = (method: 'updateWorkspace' | 'setArchived') =>
+const auditConfig = (method: 'updateWorkspace' | 'setArchived' | 'updateStorageQuota') =>
   reflector.get<PublishEventMetadata>(
     PUBLISH_EVENT_KEY,
     AdminWorkspacesController.prototype[method],
@@ -60,6 +60,18 @@ describe('AdminWorkspacesController', () => {
     );
 
     expect(changes).toEqual({ name: { after: 'Renamed' } });
+  });
+
+  it('audits the saved quota and target workspace without forwarding the request', () => {
+    const config = auditConfig('updateStorageQuota');
+    expect(config.event.name).toBe('storage.quota.updated');
+    expect(config.workspaceId?.({ workspaceId: 'target' })).toBe('target');
+    expect(config.resourceId?.({ workspaceId: 'target' })).toBe('target');
+    expect(config.metadata?.({}, undefined)).toEqual({ platformAdmin: true });
+    expect(config.changes?.({ quotaBytes: 42, secret: 'private' }, { quotaBytes: null }))
+      .toEqual({ quotaBytes: { after: null } });
+    expect(config.changes?.({}, undefined)).toEqual({});
+    expect(config.payload).toBeUndefined();
   });
 
   it('records the archived flag on setArchived', () => {

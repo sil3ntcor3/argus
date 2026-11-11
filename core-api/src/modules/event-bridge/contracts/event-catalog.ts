@@ -437,6 +437,7 @@ export const EVENT_CATALOG = {
     unshared: { name: 'artifact.unshared', summary: 'File unshared from a member' },
   },
   storage: {
+    quota: { updated: { name: 'storage.quota.updated', summary: 'Workspace storage quota changed' } },
     object: {
       deleted: {
         name: 'storage.object.deleted',

@@ -81,6 +81,7 @@ export const EVENT_POLICY: Record<EventName, EventPolicy> = {
   'artifact.updated': { persist: true, severity: 'important' },
   'artifact.shared': { persist: true, severity: 'important' },
   'artifact.unshared': { persist: true, severity: 'important' },
+  'storage.quota.updated': { persist: true, severity: 'important' },
 
   // ─── Runtime events ──────────────────────────────────────────────────────
   // `persist: false` on all of them: they are operational signals, not the 37

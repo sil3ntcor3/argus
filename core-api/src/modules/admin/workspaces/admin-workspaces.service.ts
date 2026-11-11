@@ -1,10 +1,12 @@
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
+import { ArtifactQuotaService } from '@/modules/artifacts/artifact-quota.service';
 import type { User } from '@/modules/auth/entities/user.entity';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { getManyResponse } from '@/utils/getManyResponse';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import type { WorkspaceStorageQuotaDto } from './dto/storage-quota.dto';
 import {
   AdminWorkspaceDto,
   AdminWorkspaceUserDto,
@@ -68,7 +70,20 @@ export class AdminWorkspacesService {
   constructor(
     @InjectRepository(Workspace)
     private readonly workspacesRepository: Repository<Workspace>,
+    private readonly quota: ArtifactQuotaService,
   ) {}
+
+  /** Lock the workspace before its meter, matching reservation and deletion order. */
+  async setStorageQuota(workspaceId: string, quotaBytes: number | null): Promise<WorkspaceStorageQuotaDto> {
+    return this.workspacesRepository.manager.transaction(async manager => {
+      const workspace = await manager.findOne(Workspace, {
+        where: { id: workspaceId }, select: { id: true }, lock: { mode: 'for_key_share' },
+      });
+      if (!workspace) throw new NotFoundException('Workspace not found');
+      await this.quota.setQuota(manager, workspace.id, quotaBytes);
+      return { workspaceId: workspace.id, quotaBytes };
+    });
+  }
 
   /** Lists every workspace on the platform, regardless of membership. */
   public async getWorkspaces(query: GetManyAdminWorkspacesDto) {
