@@ -23,7 +23,10 @@ preserves encrypted configuration and profile references under the same key,
 and omits instructions, triggers, schedules and run history. Inaccessible
 sources return 404 and invalid stored graphs return 400. The source is unchanged.
 
-In Projects → Workflows → Create workflow, choose a template or Selected tools.
+In Projects → Workflows → Create workflow, choose a template, Selected tools,
+or Copy project workflow. Copying offers searchable, paginated workspace
+projects and their saved workflows; searching or paging clears the prior source
+selection. New copies start with scheduling disabled.
 The tools source supports staged pipelines and inline installation. Catalog
 refreshes retain the draft name and selections. An ambiguous server response
 blocks retries until the dialog is closed and the assignments are checked.
