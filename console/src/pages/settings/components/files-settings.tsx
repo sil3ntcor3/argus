@@ -49,6 +49,7 @@ import {
   Download,
   LayoutGrid,
   List,
+  Share2,
   Trash2,
 } from 'lucide-react';
 import {
@@ -61,6 +62,7 @@ import {
 import { toast } from 'sonner';
 import { FileFolderNavigation } from './file-folder-navigation';
 import { FileIcon } from './file-icon';
+import { FileSharingDialog } from './file-sharing-dialog';
 
 const DEFAULT_PAGE_SIZE = 20;
 const FILE_PAGE_SIZES = [5, 10, 20, 50, 100] as const;
@@ -186,25 +188,42 @@ function FileAccessError({ onRetry }: { onRetry: () => void }) {
 function FileActions({
   file,
   canDownload,
+  canShare,
   canDelete,
   downloading,
   deleting,
   focusAfterDelete,
   onDownload,
+  onShare,
   onDelete,
 }: {
   file: ArtifactListItemDto;
   canDownload: boolean;
+  canShare: boolean;
   canDelete: boolean;
   downloading: boolean;
   deleting: boolean;
   focusAfterDelete: RefObject<HTMLElement | null>;
   onDownload: () => void;
+  onShare: (trigger: HTMLButtonElement) => void;
   onDelete: () => void;
 }) {
   const confirmed = useRef(false);
   return (
     <div className="flex justify-end gap-1">
+      {canShare ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label={`Share ${file.name}`}
+          title="Share"
+          disabled={deleting || downloading}
+          onClick={(event) => onShare(event.currentTarget)}
+        >
+          <Share2 aria-hidden="true" className="size-4" />
+        </Button>
+      ) : null}
       {canDownload ? (
         <Button
           type="button"
@@ -340,6 +359,11 @@ function WorkspaceFiles({
   }
   const [view, setView] = useState(readFileView);
   const [downloading, setDownloading] = useState(false);
+  const [sharingFile, setSharingFile] = useState<ArtifactListItemDto | null>(
+    null,
+  );
+  const sharingTrigger = useRef<HTMLElement | null>(null);
+  if (sharingFile && !canWrite) setSharingFile(null);
   const queryClient = useQueryClient();
   const listRegion = useRef<HTMLDivElement>(null);
   const folderRegion = useRef<HTMLDivElement>(null);
@@ -546,11 +570,16 @@ function WorkspaceFiles({
       <FileActions
         file={file}
         canDownload={file.isOwner || scope === 'shared'}
+        canShare={canWrite && file.isOwner}
         canDelete={canManage || (canWrite && file.isOwner)}
         downloading={downloading}
         deleting={removeFile.isPending}
         focusAfterDelete={listRegion}
         onDownload={() => void downloadFile(file)}
+        onShare={(trigger) => {
+          sharingTrigger.current = trigger;
+          setSharingFile(file);
+        }}
         onDelete={() => {
           if (pendingDelete.current || getGlobalWorkspaceId() !== workspaceId)
             return;
@@ -563,6 +592,16 @@ function WorkspaceFiles({
 
   return (
     <div className="min-w-0 space-y-4">
+      {sharingFile && canWrite && (
+        <FileSharingDialog
+          key={sharingFile.id}
+          file={sharingFile}
+          workspaceId={workspaceId}
+          focusAfterClose={sharingTrigger}
+          onClose={() => setSharingFile(null)}
+          onAccessDenied={onAccessDenied}
+        />
+      )}
       <StorageUsage
         data={usageData}
         failed={usage.isError}
