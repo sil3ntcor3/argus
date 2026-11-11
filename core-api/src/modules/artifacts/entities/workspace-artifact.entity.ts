@@ -26,6 +26,7 @@ import { ArtifactFolder } from './artifact-folder.entity';
 @Check('CHK_artifacts_size_bytes', '"sizeBytes" BETWEEN 0 AND 9007199254740991')
 @Check('CHK_artifacts_source', `"source" IN ('upload', 'agent')`)
 @Check('CHK_artifacts_status', `"status" IN ('pending', 'ready', 'deleted')`)
+@Check('CHK_artifacts_share_type', `"shareType" IN ('private', 'shared', 'public')`)
 @Check('CHK_artifacts_pending_expiry', `"status" <> 'pending' OR "expiresAt" IS NOT NULL`)
 @Check('CHK_artifacts_metadata', `jsonb_typeof("metadata") = 'object'`)
 @Check(
@@ -76,6 +77,9 @@ export class WorkspaceArtifact {
 
   @Column({ type: 'varchar', default: 'pending' })
   status: 'pending' | 'ready' | 'deleted';
+
+  @Column({ type: 'varchar', default: 'private' })
+  shareType: 'private' | 'shared' | 'public';
 
   @Column({ type: 'jsonb', default: () => "'{}'" })
   metadata: Record<string, unknown>;
