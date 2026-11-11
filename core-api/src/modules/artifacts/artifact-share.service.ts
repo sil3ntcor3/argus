@@ -2,13 +2,27 @@ import { WorkspaceMembers } from '@/modules/workspaces/entities/workspace-member
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import type { EntityManager } from 'typeorm';
+import { ArtifactReadService } from './artifact-read.service';
+import type { ArtifactListItemDto } from './dto/artifact-list.dto';
 import type { AddArtifactSharesResultDto } from './dto/artifact-share.dto';
 import { ArtifactShare } from './entities/artifact-share.entity';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 
 @Injectable()
 export class ArtifactShareService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly files: ArtifactReadService,
+  ) {}
+
+  async updateAccess(workspaceId: string, userId: string, id: string, shareType: WorkspaceArtifact['shareType']): Promise<ArtifactListItemDto> {
+    const { affected } = await this.dataSource.getRepository(WorkspaceArtifact).update(
+      { id, workspaceId, createdByUserId: userId, status: 'ready' },
+      { shareType },
+    );
+    if (affected !== 1) throw new NotFoundException('File not found');
+    return this.files.getById(workspaceId, userId, id, []);
+  }
 
   addShares(workspaceId: string, userId: string, id: string, emails: string[]): Promise<AddArtifactSharesResultDto> {
     const distinctEmails = [...new Set(emails)];

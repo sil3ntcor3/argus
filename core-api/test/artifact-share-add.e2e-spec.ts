@@ -142,6 +142,48 @@ describe('Adding artifact share recipients (e2e)', () => {
     }
   });
 
+  it('updates each stored mode while preserving recipients and quota', async () => {
+    const shares = app.dataSource.getRepository(ArtifactShare);
+    const before = await shares.findBy({ artifactId: ready });
+    await app.dataSource.query('INSERT INTO workspace_storage_usage ("workspaceId","usedBytes","reservedBytes") VALUES ($1,17,11)', [owner.workspace.id]);
+    const usage = await app.dataSource.query('SELECT * FROM workspace_storage_usage WHERE "workspaceId"=$1', [owner.workspace.id]);
+    for (const shareType of ['private', 'shared', 'public']) {
+      const result = await request(app.server).patch(`/api/artifacts/${ready}`)
+        .set(owner.headers).send({ shareType }).expect(200);
+      expect(result.headers['cache-control']).toBe('private, no-store');
+      expect(result.body).toMatchObject({ id: ready, name: 'file.txt', shareType, isOwner: true });
+      expect((await app.dataSource.getRepository(WorkspaceArtifact).findOneByOrFail({ id: ready })).shareType).toBe(shareType);
+    }
+    expect(await shares.findBy({ artifactId: ready })).toEqual(before);
+    expect(await app.dataSource.query('SELECT * FROM workspace_storage_usage WHERE "workspaceId"=$1', [owner.workspace.id])).toEqual(usage);
+    await request(app.server).get(`/api/artifacts/${ready}/download`).expect(401);
+  });
+
+  it('requires an authenticated owner with write access to change modes', async () => {
+    const path = `/api/artifacts/${ready}`;
+    const headers = wsHeaders(recipient.cookie, owner.workspace.id);
+    await request(app.server).patch(path).send({ shareType: 'shared' }).expect(401);
+    await app.dataSource.query('UPDATE workspace_permissions SET permissions = $1 WHERE id = $2', [
+      ['artifact.read'], groupId,
+    ]);
+    await request(app.server).patch(path).set(headers).send({ shareType: 'shared' }).expect(403);
+    await app.dataSource.query('UPDATE workspace_permissions SET permissions = $1 WHERE id = $2', [
+      ['artifact.write', 'artifact.manage'], groupId,
+    ]);
+    await request(app.server).patch(path).set(headers).send({ shareType: 'shared' }).expect(404);
+  });
+
+  it('rejects invalid modes and hides unavailable files from mode updates', async () => {
+    const update = (id: string, body: object) => request(app.server).patch(`/api/artifacts/${id}`).set(owner.headers).send(body);
+    for (const body of [{}, { shareType: null }, { shareType: 'unknown' }, { shareType: ['private'] }]) {
+      await update(ready, body).expect(400);
+    }
+    await update('invalid', { shareType: 'private' }).expect(400);
+    for (const id of [pending, otherWorkspace, randomUUID()]) {
+      await update(id, { shareType: 'private' }).expect(404);
+    }
+  });
+
   it('returns 404 for pending, absent, and other-workspace files', async () => {
     for (const id of [pending, otherWorkspace, randomUUID()]) {
       await add(id, owner.headers, { emails: [recipient.email] }).expect(404);

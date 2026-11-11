@@ -1,6 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsEmail } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsEmail, IsIn } from 'class-validator';
+import type { WorkspaceArtifact } from '../entities/workspace-artifact.entity';
+
+export class UpdateArtifactAccessDto {
+  @ApiProperty({ enum: ['private', 'shared', 'public'] })
+  @IsIn(['private', 'shared', 'public'])
+  shareType: WorkspaceArtifact['shareType'];
+}
 
 export class AddArtifactSharesDto {
   @ApiProperty({ type: [String], maxItems: 50, example: ['member@example.com'] })

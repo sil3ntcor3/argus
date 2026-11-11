@@ -6,7 +6,7 @@ import { DefaultMessageResponseDto } from '@/common/dtos/default-message-respons
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import type { RequestWithMetadata, UserContextPayload } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { Body, Controller, Delete, Get, Header, HttpStatus, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
 import { ArtifactCleanupService } from './artifact-cleanup.service';
 import { ArtifactReadService } from './artifact-read.service';
@@ -14,7 +14,7 @@ import { ArtifactShareService } from './artifact-share.service';
 import { ArtifactUsageService } from './artifact-usage.service';
 import { ArtifactDownloadDto } from './dto/artifact-download.dto';
 import { ArtifactListCreatorDto, ArtifactListItemDto, ArtifactListQueryDto } from './dto/artifact-list.dto';
-import { AddArtifactSharesDto, AddArtifactSharesResultDto } from './dto/artifact-share.dto';
+import { AddArtifactSharesDto, AddArtifactSharesResultDto, UpdateArtifactAccessDto } from './dto/artifact-share.dto';
 import { ArtifactUsageDto } from './dto/artifact-usage.dto';
 
 @ApiTags('Artifacts')
@@ -176,6 +176,30 @@ export class ArtifactsController {
     @UserContext() user: UserContextPayload,
   ): Promise<DefaultMessageResponseDto> {
     return this.shares.removeShare(workspaceId, user.id, id, recipientId);
+  }
+
+  @Doc({
+    summary: 'Update the stored access mode of a workspace file',
+    description: 'Updates the access-mode selection for a ready file owned by the caller in the selected workspace.',
+    response: { serialization: ArtifactListItemDto },
+    request: {
+      getWorkspaceId: true,
+      params: [{ name: 'id', schema: { type: 'string', format: 'uuid' } }],
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid access mode, file ID, or workspace selection.' })
+  @ApiForbiddenResponse({ description: 'Missing file write access in the selected workspace.' })
+  @ApiNotFoundResponse({ description: 'Owned ready file not found in the selected workspace.' })
+  @WorkspaceAccess('artifact.write')
+  @Header('Cache-Control', 'private, no-store')
+  @Patch(':id')
+  updateAccess(
+    @Param() { id }: IdQueryParamDto,
+    @Body() { shareType }: UpdateArtifactAccessDto,
+    @WorkspaceId() workspaceId: string,
+    @UserContext() user: UserContextPayload,
+  ): Promise<ArtifactListItemDto> {
+    return this.shares.updateAccess(workspaceId, user.id, id, shareType);
   }
 
   @Doc({
