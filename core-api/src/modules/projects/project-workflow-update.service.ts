@@ -10,11 +10,11 @@ import { Workflow } from '../workflows/entities/workflow.entity';
 import type { RenameProjectWorkflowDto } from './dto/project-workflow-rename.dto';
 
 @Injectable()
-export class ProjectWorkflowRenameService {
+export class ProjectWorkflowUpdateService {
   constructor(private readonly dataSource: DataSource) {}
 
   /** Rename both stored names under the same locks and transaction. */
-  rename(
+  update(
     projectId: string,
     workspaceId: string,
     bindingId: string,
