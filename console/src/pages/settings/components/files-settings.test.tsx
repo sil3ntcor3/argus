@@ -12,6 +12,7 @@ import FilesSettings from './files-settings';
 
 const mocks = vi.hoisted(() => ({
   permission: vi.fn(),
+  usage: vi.fn(),
   files: vi.fn(),
   folders: vi.fn(),
   folderDetail: vi.fn(),
@@ -33,7 +34,7 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 }));
 vi.mock('@/services/apis/gen/queries', async (original) => ({
   ...(await original<typeof import('@/services/apis/gen/queries')>()),
-  useArtifactsControllerGetUsage: () => ({}),
+  useArtifactsControllerGetUsage: mocks.usage,
   useArtifactsControllerGetMany: mocks.files,
   useArtifactFoldersControllerGetMany: mocks.folders,
   useArtifactFoldersControllerGetById: mocks.folderDetail,
@@ -64,6 +65,7 @@ function show(
 describe('Files settings actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.usage.mockReturnValue({});
     mocks.download.mockReset();
     mocks.remove.mockReset();
     mocks.metadata.mockReturnValue({
@@ -97,6 +99,38 @@ describe('Files settings actions', () => {
       },
     }));
     setGlobalWorkspaceId('workspace');
+  });
+
+  it.each([
+    [0, 0, 100, 0],
+    [40, 10, 100, 50],
+    [80, 60, 100, 100],
+    [0, 0, 0, 100],
+  ])('shows allocated storage for %i used, %i reserved and %i quota', async (used, reserved, quota, percent) => {
+    mocks.usage.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { usedBytes: used, reservedBytes: reserved, quotaBytes: quota, maxFileBytes: 512, bySource: [], byUser: [] },
+    });
+    show(['artifact.read']);
+    const meter = await screen.findByRole('progressbar', { name: 'Workspace storage allocated' });
+    expect(meter).toHaveAttribute('aria-valuenow', String(percent));
+    expect(meter).toHaveAttribute('aria-valuetext', `${used + reserved} B of ${quota} B allocated`);
+    const summary = screen.getByRole('region', { name: 'Workspace storage' });
+    for (const label of ['Used', 'Quota', 'Reserved', 'Per-file limit']) {
+      expect(within(summary).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it.each([false, true])('keeps the meter hidden while usage is unverified or failed (%s)', async failed => {
+    mocks.usage.mockReturnValue({
+      isFetchedAfterMount: failed, isError: failed,
+      data: { usedBytes: 50, reservedBytes: 0, quotaBytes: 100, maxFileBytes: 512, bySource: [], byUser: [] },
+      refetch: vi.fn(),
+    });
+    show(['artifact.read']);
+    await screen.findByRole('region', { name: 'Workspace storage' });
+    expect(screen.queryByRole('progressbar', { name: 'Workspace storage allocated' })).toBeNull();
+    expect(screen.getByText(failed ? 'Could not load storage usage.' : 'Loading storage usage…')).toBeInTheDocument();
   });
 
   it('browses personal folders with breadcrumbs and searches across folders', async () => {
