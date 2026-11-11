@@ -12,6 +12,7 @@ import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { formatCronLabel } from '@/lib/cron-schedule';
 import {
   type AssetGroupWorkflow,
+  type Workflow,
   useProjectsControllerGetById,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
@@ -21,6 +22,7 @@ import { projectRouteId } from './project-route-id';
 import { ProjectWorkflowCreateDialog } from './project-workflow-create-dialog';
 import { ProjectWorkflowDetachDialog } from './project-workflow-detach-dialog';
 import { projectWorkflowLabel } from './project-workflow-label';
+import { ProjectWorkflowRenameDialog } from './project-workflow-rename-dialog';
 import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
 
@@ -28,6 +30,22 @@ const runDate = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
+
+/** Use the detail payload's existing path and edit flags for ownership. */
+function canRenameWorkflow(workflow: Workflow | undefined, projectId: string) {
+  if (
+    !workflow?.isCanEdit ||
+    !workflow.isCanDelete ||
+    !('filePath' in workflow) ||
+    typeof workflow.filePath !== 'string'
+  )
+    return false;
+  return (
+    workflow.filePath.startsWith(`project-${projectId}-`) ||
+    workflow.filePath === `group-${projectId}.yaml` ||
+    workflow.filePath === `group-workflow---${projectId}.yaml`
+  );
+}
 
 function WorkflowCard({
   binding,
@@ -86,6 +104,15 @@ function WorkflowCard({
               )}
             />
           )}
+          {editWorkspaceId &&
+            canRenameWorkflow(binding.workflow, projectId) && (
+              <ProjectWorkflowRenameDialog
+                projectId={projectId}
+                bindingId={binding.id}
+                workflowName={name}
+                workspaceId={editWorkspaceId}
+              />
+            )}
           {editWorkspaceId && (
             <ProjectWorkflowScheduleDialog
               projectId={projectId}
