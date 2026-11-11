@@ -96,6 +96,44 @@ describe('ProjectWorkflowsPage', () => {
     expect(screen.getByText('No run summary available')).toBeVisible();
   });
 
+  it('offers rename only for editable workflows owned by this project', () => {
+    mock.permission.mockReturnValue({ hasPermission: () => true });
+    const data = mock.project().data;
+    const workflow = data.assetGroupWorkflows[0].workflow;
+    Object.assign(workflow, {
+      id: runId,
+      isCanEdit: true,
+      isCanDelete: true,
+      filePath: `project-${projectId}-pipeline.yaml`,
+    });
+    data.assetGroupWorkflows.push(
+      {
+        id: 'shared',
+        workflow: { ...workflow, name: 'Shared', filePath: 'shared.yaml' },
+        schedule: 'disabled',
+      },
+      {
+        id: 'locked',
+        workflow: { ...workflow, name: 'Locked', isCanEdit: false },
+        schedule: 'disabled',
+      },
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProjectWorkflowsPage projectId={projectId} />
+      </QueryClientProvider>,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Rename workflow Discovery' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Rename workflow Shared' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Rename workflow Locked' }),
+    ).toBeNull();
+  });
+
   it('shows run evidence without a link when job read is absent', () => {
     mock.permission.mockReturnValue({
       hasPermission: (key: string) => key === 'project.read',
