@@ -10,16 +10,8 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  getAssetGroupControllerGetByIdQueryKey,
-  getProjectsControllerGetByIdQueryKey,
-  projectsControllerUpdateWorkflow,
-  useProjectsControllerUpdateWorkflow,
-  type ProjectViewDto,
-} from '@/services/apis/gen/queries';
-import { getGlobalWorkspaceId } from '@/utils/workspaceState';
-import { useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, useId, useRef, useState } from 'react';
+import { type FormEvent, useId, useState } from 'react';
+import { useProjectWorkflowSave } from './use-project-workflow-save';
 import { toast } from 'sonner';
 
 /** Rename an owned workflow through the selected workspace's project API. */
@@ -37,23 +29,9 @@ export function ProjectWorkflowRenameDialog({
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(workflowName);
   const [baseline, setBaseline] = useState(workflowName);
-  const [saving, setSaving] = useState(false);
-  const lock = useRef(false);
   const inputId = useId();
-  const client = useQueryClient();
-  const key = getProjectsControllerGetByIdQueryKey(projectId);
-  const legacyKey = getAssetGroupControllerGetByIdQueryKey(projectId);
-  const update = useProjectsControllerUpdateWorkflow({
-    mutation: {
-      networkMode: 'always',
-      retry: false,
-      mutationFn: ({ id, bindingId, data }) => {
-        if (getGlobalWorkspaceId() !== workspaceId)
-          throw new Error('The selected workspace changed');
-        return projectsControllerUpdateWorkflow(id, bindingId, data);
-      },
-    },
-  });
+  const update = useProjectWorkflowSave(projectId, workspaceId);
+  const { saving } = update;
   const conflict = open && !saving && workflowName !== baseline;
   const value = draft.trim();
   const canSave =
@@ -64,48 +42,18 @@ export function ProjectWorkflowRenameDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canSave || lock.current || getGlobalWorkspaceId() !== workspaceId)
-      return;
-    lock.current = true;
-    setSaving(true);
-    try {
-      const result = await update
-        .mutateAsync({ id: projectId, bindingId, data: { name: value } })
-        .catch(() => undefined);
-      if (!result || getGlobalWorkspaceId() !== workspaceId) return;
-      await client.cancelQueries({ queryKey: key, exact: true });
-      if (getGlobalWorkspaceId() !== workspaceId) return;
-      client.setQueryData<ProjectViewDto>(
-        key,
-        (project) =>
-          project && {
-            ...project,
-            assetGroupWorkflows: project.assetGroupWorkflows?.map((binding) =>
-              binding.id === result.id ? { ...binding, ...result } : binding,
-            ),
-          },
-      );
-      await client.invalidateQueries({
-        predicate: ({ queryKey: [path] }) =>
-          typeof path === 'string' &&
-          (path.toLowerCase() === key[0] ||
-            path.toLowerCase() === legacyKey[0]),
-        refetchType: getGlobalWorkspaceId() === workspaceId ? 'active' : 'none',
-      });
-      if (getGlobalWorkspaceId() !== workspaceId) return;
+    if (!canSave) return;
+    await update.save(bindingId, { name: value }, () => {
       setOpen(false);
       toast.success('Workflow renamed.');
-    } finally {
-      lock.current = false;
-      setSaving(false);
-    }
+    });
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (lock.current) return;
+        if (update.isLocked()) return;
         if (next) {
           setDraft(workflowName);
           setBaseline(workflowName);
