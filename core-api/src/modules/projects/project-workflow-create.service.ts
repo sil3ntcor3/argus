@@ -32,8 +32,14 @@ export class ProjectWorkflowCreateService {
     workspaceId: string,
     dto: CreateProjectWorkflowDto,
   ): Promise<CreatedProjectWorkflowDto> {
-    if ((dto.template !== undefined) === (dto.jobs !== undefined))
-      throw new BadRequestException('Provide exactly one of template or jobs');
+    if (
+      [dto.template, dto.jobs, dto.copyFromProjectWorkflowId].filter(
+        (source) => source !== undefined,
+      ).length !== 1
+    )
+      throw new BadRequestException(
+        'Provide exactly one of template, jobs or copyFromProjectWorkflowId',
+      );
     // Resolve the key before holding transaction locks or a pooled connection.
     const dek =
       dto.jobs !== undefined ? await this.encryption.getDEK(workspaceId) : null;
@@ -67,11 +73,35 @@ export class ProjectWorkflowCreateService {
       if (dto.template !== undefined && !template)
         throw new NotFoundException('Workflow template not found');
 
-      const name = dto.name?.trim() ?? template?.name ?? 'Project workflow';
+      const copied =
+        dto.copyFromProjectWorkflowId !== undefined
+          ? (
+              await manager.findOne(AssetGroupWorkflow, {
+                where: {
+                  id: dto.copyFromProjectWorkflowId,
+                  assetGroup: { workspace: { id: workspaceId } },
+                  workflow: { workspace: { id: workspaceId } },
+                },
+                relations: { workflow: true },
+                select: {
+                  id: true,
+                  workflow: { id: true, name: true, content: true },
+                },
+              })
+            )?.workflow
+          : null;
+      if (dto.copyFromProjectWorkflowId !== undefined && !copied)
+        throw new NotFoundException('Source project workflow not found');
+
+      const name =
+        dto.name?.trim() ??
+        (copied
+          ? `${copied.name} (copy)`
+          : (template?.name ?? 'Project workflow'));
       const jobs =
         dto.jobs !== undefined
           ? await this.jobs.prepare(manager, workspaceId, dto.jobs, {}, dek)
-          : template!.content.jobs;
+          : (copied ?? template)!.content.jobs;
       let content: Workflow['content'];
       try {
         // Only copy the pipeline so template triggers cannot schedule this workflow.
@@ -82,7 +112,9 @@ export class ProjectWorkflowCreateService {
       } catch (error) {
         if (error instanceof WorkflowGraphError) {
           throw new BadRequestException(
-            'Workflow template contains an invalid pipeline',
+            copied
+              ? 'Source workflow contains an invalid pipeline'
+              : 'Workflow template contains an invalid pipeline',
           );
         }
         throw error;

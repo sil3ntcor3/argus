@@ -128,7 +128,7 @@ export class ProjectsController {
   }
 
   @Doc({
-    summary: 'Create a project workflow from a template or selected jobs',
+    summary: 'Create a project workflow from a template, selected jobs or another project binding',
     response: { serialization: CreatedProjectWorkflowDto, httpStatus: HttpStatus.CREATED },
     request: { getWorkspaceId: true },
   })
