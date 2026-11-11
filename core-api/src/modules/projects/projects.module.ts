@@ -10,6 +10,7 @@ import { ProjectScopeModule } from './project-scope.module';
 import { ProjectAssetsService } from './project-assets.service';
 import { ProjectAssetsCommandService } from './project-assets-command.service';
 import { ProjectAssetReadService } from './project-asset-read.service';
+import { ProjectWorkflowRenameService } from './project-workflow-rename.service';
 import { ProjectWorkflowCreateService } from './project-workflow-create.service';
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
 import { ProjectRunReadService } from './project-run-read.service';
@@ -33,6 +34,7 @@ import { ProjectOverviewReadService } from './project-overview-read.service';
     ProjectRunReadService,
     ProjectWorkflowTemplatesService,
     ProjectWorkflowCreateService,
+    ProjectWorkflowRenameService,
     ProjectAssetReadService,
     ProjectAssetsService,
     ProjectAssetsCommandService,

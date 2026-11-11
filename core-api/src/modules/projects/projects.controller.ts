@@ -39,6 +39,9 @@ import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
 import { ProjectMetadataReadService } from './project-metadata-read.service';
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
+import { AssetGroupWorkflow } from '../asset-group/entities/asset-groups-workflows.entity';
+import { RenameProjectWorkflowDto } from './dto/project-workflow-rename.dto';
+import { ProjectWorkflowRenameService } from './project-workflow-rename.service';
 import { ProjectWorkflowCreateService } from './project-workflow-create.service';
 import { CreatedProjectWorkflowDto, CreateProjectWorkflowDto } from './dto/project-workflow-create.dto';
 import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
@@ -91,6 +94,7 @@ export class ProjectsController {
     private readonly assetRead: ProjectAssetReadService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly workflowCreate: ProjectWorkflowCreateService,
+    private readonly workflowRename: ProjectWorkflowRenameService,
     private readonly runRead: ProjectRunReadService,
     private readonly findingRead: ProjectFindingReadService,
     private readonly findingTimeline: ProjectFindingTimelineService,
@@ -143,6 +147,29 @@ export class ProjectsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.workflowCreate.create(id, workspaceId, dto);
+  }
+
+  @Doc({
+    summary: 'Rename a project-owned workflow',
+    response: { serialization: AssetGroupWorkflow },
+    request: { getWorkspaceId: true },
+  })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: (_body, result) => ({
+      change: ProjectChange.WORKFLOW_UPDATED,
+      ...(result ? { workflow: (result as AssetGroupWorkflow).workflow.name } : {}),
+    }),
+  })
+  @WorkspaceAccess('project.write')
+  @Patch(':id/workflows/:bindingId')
+  updateWorkflow(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('bindingId', ParseUUIDPipe) bindingId: string,
+    @Body() dto: RenameProjectWorkflowDto,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    return this.workflowRename.rename(id, workspaceId, bindingId, dto);
   }
 
   @Doc({
