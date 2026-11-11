@@ -24,11 +24,10 @@ describe('ArtifactReadService', () => {
     getOne: jest.fn(),
   };
   const createQueryBuilder = jest.fn(() => builder);
-  const findOne = jest.fn();
   const getPresignedDownloadUrl = jest.fn();
   const getFolder = jest.fn();
   const service = new ArtifactReadService(
-    { createQueryBuilder, findOne } as unknown as Repository<WorkspaceArtifact>,
+    { createQueryBuilder } as unknown as Repository<WorkspaceArtifact>,
     { getPresignedDownloadUrl } as unknown as StorageService,
     { getById: getFolder } as unknown as ArtifactFoldersService,
   );
@@ -66,31 +65,32 @@ describe('ArtifactReadService', () => {
     expect(createQueryBuilder).not.toHaveBeenCalled();
   });
 
-  it('returns not found when the ready, workspace-scoped lookup yields no owned file', async () => {
+  it('returns not found when the ready, workspace-scoped lookup yields no readable file', async () => {
     const id = randomUUID();
     builder.getOne.mockResolvedValueOnce(null);
     await expect(service.getById(workspaceId, userId, id, ['artifact.read'])).rejects.toThrow(NotFoundException);
     expect(builder.where).toHaveBeenCalledWith('artifact.workspaceId = :workspaceId', { workspaceId });
     expect(builder.andWhere).toHaveBeenCalledWith('artifact.status = :status', { status: 'ready' });
     expect(builder.andWhere).toHaveBeenCalledWith('artifact.id = :id', { id });
-    expect(builder.andWhere).toHaveBeenCalledWith('artifact.createdByUserId = :userId', { userId });
+    expect(builder.andWhere).toHaveBeenCalledWith(expect.stringContaining('recipient_share."userId" = :userId'), { userId });
   });
 
-  it('does not sign a URL when the owned ready file is absent', async () => {
+  it('does not sign a URL when the readable ready file is absent', async () => {
     const id = randomUUID();
-    findOne.mockResolvedValueOnce(null);
+    builder.getOne.mockResolvedValueOnce(null);
     await expect(service.getDownloadUrl(workspaceId, userId, id)).rejects.toThrow(NotFoundException);
-    expect(findOne).toHaveBeenCalledWith({
-      where: { id, workspaceId, createdByUserId: userId, status: 'ready' },
-      select: { id: true, name: true, objectKey: true },
-    });
+    expect(builder.where).toHaveBeenCalledWith('artifact.workspaceId = :workspaceId', { workspaceId });
+    expect(builder.andWhere).toHaveBeenCalledWith('artifact.status = :status', { status: 'ready' });
+    expect(builder.andWhere).toHaveBeenCalledWith('artifact.id = :id', { id });
+    expect(builder.andWhere).toHaveBeenCalledWith(expect.stringContaining('JOIN workspace_members'), { userId });
+    expect(builder.select).toHaveBeenCalledWith(['artifact.id', 'artifact.name', 'artifact.objectKey']);
     expect(getPresignedDownloadUrl).not.toHaveBeenCalled();
   });
 
   it.each(['report.html', ''])('signs the canonical object for download with display name %j', async name => {
     const id = randomUUID();
     const key = workspaceArtifactKey(workspaceId, id);
-    findOne.mockResolvedValueOnce({ id, name, objectKey: key });
+    builder.getOne.mockResolvedValueOnce({ id, name, objectKey: key });
     const signed = { url: '/api/storage/artifacts/signed-fixture', expiresIn: 300 };
     getPresignedDownloadUrl.mockResolvedValueOnce(signed);
     await expect(service.getDownloadUrl(workspaceId, userId, id)).resolves.toEqual(signed);
@@ -104,14 +104,14 @@ describe('ArtifactReadService', () => {
     const id = randomUUID();
     const date = new Date();
     builder.getManyAndCount.mockResolvedValueOnce([[
-      { id, name: 'archive', mimeType: 'application/octet-stream', source: 'upload',
+      { id, name: 'archive', mimeType: 'application/octet-stream', source: 'upload', shareType: 'private',
         createdBy: null, createdByUserId: null, sizeBytes: String(Number.MAX_SAFE_INTEGER),
         objectKey: 'private', metadata: { internal: true }, createdAt: date, updatedAt: date },
     ], 1]);
     const query = Object.assign(new ArtifactListQueryDto(), { scope: ArtifactListScope.ALL });
     const result = await service.getMany(workspaceId, userId, query, ['*']);
     expect(result.data).toEqual([{
-      id, name: 'archive', mimeType: 'application/octet-stream', source: 'upload',
+      id, name: 'archive', mimeType: 'application/octet-stream', source: 'upload', shareType: 'private',
       createdBy: null, isOwner: false, sizeBytes: Number.MAX_SAFE_INTEGER, createdAt: date, updatedAt: date,
     }]);
   });

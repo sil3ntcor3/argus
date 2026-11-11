@@ -12,6 +12,18 @@ import { ArtifactShare } from './entities/artifact-share.entity';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 
 const DOWNLOAD_TTL_SECONDS = 5 * 60;
+const OWNED_OR_SHARED_FILE = `(
+  artifact."createdByUserId" = :userId OR (
+    artifact."shareType" = 'shared' AND EXISTS (
+      SELECT 1 FROM artifact_shares recipient_share
+      JOIN workspace_members recipient_member
+        ON recipient_member."workspaceId" = artifact."workspaceId"
+        AND recipient_member."userId" = recipient_share."userId"
+      WHERE recipient_share."artifactId" = artifact.id
+        AND recipient_share."userId" = :userId
+    )
+  )
+)`;
 
 @Injectable()
 export class ArtifactReadService {
@@ -72,7 +84,7 @@ export class ArtifactReadService {
   ): Promise<ArtifactListItemDto> {
     const builder = this.readyFiles(workspaceId).andWhere('artifact.id = :id', { id });
     if (!this.canManage(permissions)) {
-      builder.andWhere('artifact.createdByUserId = :userId', { userId });
+      builder.andWhere(OWNED_OR_SHARED_FILE, { userId });
     }
     const row = await builder.getOne();
     if (!row) throw new NotFoundException('File not found');
@@ -81,10 +93,11 @@ export class ArtifactReadService {
 
   async getDownloadUrl(workspaceId: string, userId: string, id: string): Promise<ArtifactDownloadDto> {
     // Workspace management grants metadata access only.
-    const file = await this.artifacts.findOne({
-      where: { id, workspaceId, createdByUserId: userId, status: 'ready' },
-      select: { id: true, name: true, objectKey: true },
-    });
+    const file = await this.readyArtifacts(workspaceId)
+      .andWhere('artifact.id = :id', { id })
+      .andWhere(OWNED_OR_SHARED_FILE, { userId })
+      .select(['artifact.id', 'artifact.name', 'artifact.objectKey'])
+      .getOne();
     if (!file) throw new NotFoundException('File not found');
 
     return this.storage.getPresignedDownloadUrl({
