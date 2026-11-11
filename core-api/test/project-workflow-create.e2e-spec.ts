@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout } from 'node:timers/promises';
 import { EntityManager } from 'typeorm';
+import { ConnectorRegistryService } from '@/modules/connectors/connector-registry.service';
+import { decryptInlineConfig } from '@/modules/tools/validators/tool-config-profiles.crypto';
+import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
 import { Workflow } from '@/modules/workflows/entities/workflow.entity';
 import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
@@ -344,6 +347,160 @@ describe('Project workflow creation API (e2e)', () => {
       .set(headers)
       .send({ name: 'Alias rename' })
       .expect(200);
+  });
+
+  it('replaces a named DAG while retaining scheduling and authored content', async () => {
+    const { body: created } = await post({ template }).expect(201);
+    const content = {
+      name: source.name,
+      jobs,
+      on: { schedule: '0 5 * * *' },
+      instructions: 'Keep me',
+    };
+    await app.dataSource.query('UPDATE workflows SET content=$1 WHERE id=$2', [
+      JSON.stringify(content),
+      created.workflowId,
+    ]);
+    const pipeline = {
+      ports: { run: 'naabu', input: ['host'], allowFailure: false },
+      web: { run: 'httpx', needs: ['ports'] },
+    };
+    const { body } = await request(app.server)
+      .patch(url(projectId.toUpperCase()) + '/' + created.id)
+      .set(owner.headers)
+      .send({ jobs: pipeline })
+      .expect(200);
+    expect(body.workflow.content).toEqual({ ...content, jobs: pipeline });
+    expect(body.workflow.name).toBe(source.name);
+    expect(body.schedule).toBe('disabled');
+  });
+
+  it('rejects invalid graphs and leaves the prior name and pipeline intact', async () => {
+    const { body: created } = await post({ template }).expect(201);
+    const patch = (pipeline: unknown, status = 400) =>
+      request(app.server)
+        .patch(url() + '/' + created.id)
+        .set(owner.headers)
+        .send({ name: 'Must roll back', jobs: pipeline })
+        .expect(status);
+    for (const pipeline of [
+      null,
+      {},
+      { p: { run: 'httpx', needs: ['missing'] } },
+      { p: { run: 'httpx', input: ['repo'] } },
+      { ' __proto__ ': { run: 'httpx' } },
+      { ' toString ': { run: 'httpx' } },
+      { p: { run: 'httpx', config: [] } },
+      { p: { run: 'httpx', config: { text: '\u0000' } } },
+      { p: { run: 'httpx', configProfileId: 'invalid' } },
+      { a: { run: 'naabu', needs: ['b'] }, b: { run: 'httpx', needs: ['a'] } },
+      Object.fromEntries(
+        Array.from({ length: 51 }, (_, i) => [
+          'j' + i,
+          { run: 'missing-' + i },
+        ]),
+      ),
+    ]) {
+      await patch(pipeline);
+    }
+    await patch({ p: { run: randomUUID() } }, 404);
+    const [saved] = await app.dataSource.query(
+      'SELECT name,content FROM workflows WHERE id=$1',
+      [created.workflowId],
+    );
+    expect(saved).toEqual({
+      name: source.name,
+      content: { name: source.name, jobs },
+    });
+  });
+
+  it('encrypts connector edits, preserves echoed secrets, and scopes profiles to workspace and tool', async () => {
+    const toolName = 'pipeline-' + randomUUID();
+    const tool = await insert(
+      'INSERT INTO tools(name,type,categories) VALUES ($1,$2,$3)',
+      [
+        toolName,
+        'connector',
+        JSON.stringify([
+          {
+            name: 'vulnerabilities',
+            targetTypes: ['DOMAIN'],
+            inputs: ['host'],
+          },
+        ]),
+      ],
+    );
+    const registry = jest
+      .spyOn(app.app.get(ConnectorRegistryService), 'getConnector')
+      .mockReturnValue({
+        configSchema: {
+          required: ['apiKey'],
+          properties: { apiKey: { type: 'string', 'ui:widget': 'password' } },
+        },
+      } as ReturnType<ConnectorRegistryService['getConnector']>);
+    try {
+      const { body: created } = await post({ template }).expect(201);
+      const patch = (job: object, status = 200) =>
+        request(app.server)
+          .patch(url() + '/' + created.id)
+          .set(owner.headers)
+          .send({ jobs: { finding: { run: toolName, ...job } } })
+          .expect(status);
+      await patch({}, 400);
+      await patch(
+        { config: { apiKey: { value: 'Invalid secret object' } } },
+        400,
+      );
+      const first = await patch({
+        config: { apiKey: 'Local pipeline secret' },
+      });
+      const encrypted = first.body.workflow.content.jobs.finding.config
+        .apiKey as string;
+      expect(encrypted).not.toBe('Local pipeline secret');
+      const dek = await app.app
+        .get(WorkspaceEncryptionService)
+        .getDEK(owner.workspace.id);
+      expect(
+        decryptInlineConfig({ apiKey: encrypted }, ['apiKey'], dek).apiKey,
+      ).toBe('Local pipeline secret');
+      for (const apiKey of [encrypted, '****']) {
+        const result = await patch({ config: { apiKey } });
+        expect(result.body.workflow.content.jobs.finding.config.apiKey).toBe(
+          encrypted,
+        );
+      }
+      const foreign = await insert(
+        'INSERT INTO tool_config_profiles(name,config,"workspaceId","toolId") VALUES ($1,$2,$3,$4)',
+        [randomUUID(), '{}', other.workspace.id, tool],
+      );
+      await patch({ configProfileId: foreign }, 404);
+      const [builtin] = await app.dataSource.query(
+        'SELECT id FROM tools WHERE name=$1',
+        ['httpx'],
+      );
+      const wrong = await insert(
+        'INSERT INTO tool_config_profiles(name,config,"workspaceId","toolId") VALUES ($1,$2,$3,$4)',
+        [randomUUID(), '{}', owner.workspace.id, builtin.id],
+      );
+      await patch({ configProfileId: wrong }, 404);
+      const own = await insert(
+        'INSERT INTO tool_config_profiles(name,config,"workspaceId","toolId") VALUES ($1,$2,$3,$4)',
+        [
+          randomUUID(),
+          JSON.stringify({ apiKey: 'Profile secret' }),
+          owner.workspace.id,
+          tool,
+        ],
+      );
+      await patch({ configProfileId: own });
+      await patch({
+        configProfileId: own,
+        config: { target: 'partial override' },
+      });
+    } finally {
+      registry.mockRestore();
+      await app.dataSource.query('DELETE FROM tools WHERE id=$1', [tool]);
+    }
   });
 
   it('rejects malformed input and archived projects', async () => {

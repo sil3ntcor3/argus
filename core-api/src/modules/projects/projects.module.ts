@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AssetGroupModule } from '../asset-group/asset-group.module';
+import { ConnectorsModule } from '../connectors/connectors.module';
+import { ProjectWorkflowJobsService } from './project-workflow-jobs.service';
 import { ProjectsController } from './projects.controller';
 import { ProjectMetadataReadService } from './project-metadata-read.service';
 import { ProjectScopeNormalizer } from './project-scope-normalizer.service';
@@ -22,7 +24,7 @@ import { ProjectOverviewActivityService } from './project-overview-activity.serv
 import { ProjectOverviewReadService } from './project-overview-read.service';
 
 @Module({
-  imports: [AssetGroupModule, ProjectScopeModule],
+  imports: [AssetGroupModule, ProjectScopeModule, ConnectorsModule],
   controllers: [ProjectsController],
   providers: [
     ProjectOverviewReadService,
@@ -35,6 +37,7 @@ import { ProjectOverviewReadService } from './project-overview-read.service';
     ProjectWorkflowTemplatesService,
     ProjectWorkflowCreateService,
     ProjectWorkflowUpdateService,
+    ProjectWorkflowJobsService,
     ProjectAssetReadService,
     ProjectAssetsService,
     ProjectAssetsCommandService,
