@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 dayjs.extend(relativeTime);
 
+const canReadAgents = vi.hoisted(() => vi.fn(() => false));
 const canReadAssets = vi.hoisted(() => vi.fn(() => true));
 const canReadJobs = vi.hoisted(() => vi.fn(() => true));
 const canWriteJobs = vi.hoisted(() => vi.fn(() => false));
@@ -45,6 +46,7 @@ vi.mock('@/hooks/usePermission', () => ({
   usePermission: () => ({
     hasPermission: (key: string) =>
       key === 'target.read' ||
+      (key === 'agent.read' && canReadAgents()) ||
       (key === 'asset.read' && canReadAssets()) ||
       (key === 'job.read' && canReadJobs()) ||
       (key === 'job.write' && canWriteJobs()) ||
@@ -94,6 +96,7 @@ function show(tab = 'overview') {
 }
 
 beforeEach(() => {
+  canReadAgents.mockReturnValue(false);
   canReadAssets.mockReturnValue(true);
   canReadJobs.mockReturnValue(true);
   canWriteJobs.mockReturnValue(false);
@@ -493,6 +496,23 @@ describe('Target Overview runs', () => {
 });
 
 describe('Target Overview tab', () => {
+  it.each([true, false])(
+    'offers the target AI launch only to agent readers (%s)',
+    async (allowed) => {
+      canReadAgents.mockReturnValue(allowed);
+      show();
+      await screen.findByRole('navigation', { name: 'Target sections' });
+      if (!allowed) {
+        expect(screen.queryByRole('link', { name: 'Run AI Pentest' })).toBeNull();
+        return;
+      }
+      const action = screen.getByRole('link', { name: 'Run AI Pentest' });
+      const url = new URL(action.getAttribute('href')!, 'http://localhost');
+      expect(url.pathname).toBe('/aistudio/agents');
+      expect(url.searchParams.get('text')).toBe('Pentest overview.example.test');
+      expect(action).toHaveAttribute('title', expect.stringContaining('Argus'));
+    },
+  );
   const failedRun = '96e23195-3829-45b2-b170-2a16eaf57cbc';
   it.each([
     { allowed: true, runId: failedRun },
