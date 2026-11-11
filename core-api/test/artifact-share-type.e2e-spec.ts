@@ -5,7 +5,7 @@ import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
 
-describe('Private artifact access-mode storage (e2e)', () => {
+describe('Artifact access-mode storage and metadata (e2e)', () => {
   let app: TestApp;
   let owner: Awaited<ReturnType<typeof createUserWithWorkspace>>;
   const id = randomUUID();
@@ -49,9 +49,17 @@ describe('Private artifact access-mode storage (e2e)', () => {
       .rejects.toMatchObject({ code: '23502' });
   });
 
-  it('keeps the stored mode private to persistence', async () => {
-    const result = await request(app.server).get(`/api/artifacts/${id}`).set(owner.headers).expect(200);
-    expect(result.body).not.toHaveProperty('shareType');
+  it('reports each stored mode in existing file metadata and lists', async () => {
+    for (const mode of ['private', 'shared', 'public']) {
+      await app.dataSource.query('UPDATE artifacts SET "shareType"=$1 WHERE id=$2', [mode, id]);
+      const detail = await request(app.server).get(`/api/artifacts/${id}`).set(owner.headers).expect(200);
+      expect(detail.body.shareType).toBe(mode);
+      const list = await request(app.server).get('/api/artifacts').set(owner.headers).expect(200);
+      expect(list.body.data.find((file: { id: string }) => file.id === id).shareType).toBe(mode);
+    }
+  });
+
+  it('keeps file downloads authenticated', async () => {
     await request(app.server).get(`/api/artifacts/${id}/download`).expect(401);
   });
 });

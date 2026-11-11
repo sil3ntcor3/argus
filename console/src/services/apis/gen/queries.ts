@@ -5714,6 +5714,18 @@ export const ArtifactListItemDtoSource = {
   agent: 'agent',
 } as const;
 
+/**
+ * Stored file access mode.
+ */
+export type ArtifactListItemDtoShareType =
+  (typeof ArtifactListItemDtoShareType)[keyof typeof ArtifactListItemDtoShareType];
+
+export const ArtifactListItemDtoShareType = {
+  private: 'private',
+  shared: 'shared',
+  public: 'public',
+} as const;
+
 export type ArtifactListItemDto = {
   id: string;
   name: string;
@@ -5721,6 +5733,8 @@ export type ArtifactListItemDto = {
   /** @minimum 0 */
   sizeBytes: number;
   source: ArtifactListItemDtoSource;
+  /** Stored file access mode. */
+  shareType: ArtifactListItemDtoShareType;
   /** @nullable */
   createdBy: ArtifactListCreatorDto | null;
   isOwner: boolean;

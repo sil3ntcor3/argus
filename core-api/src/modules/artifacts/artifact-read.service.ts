@@ -128,7 +128,7 @@ export class ArtifactReadService {
       .leftJoin('artifact.createdBy', 'creator')
       .select([
         'artifact.id', 'artifact.name', 'artifact.mimeType', 'artifact.sizeBytes', 'artifact.source',
-        'artifact.createdByUserId', 'artifact.createdAt', 'artifact.updatedAt',
+        'artifact.createdByUserId', 'artifact.createdAt', 'artifact.updatedAt', 'artifact.shareType',
         'creator.id', 'creator.name', 'creator.image',
       ]);
   }
@@ -144,6 +144,7 @@ export class ArtifactReadService {
       mimeType: row.mimeType,
       sizeBytes: Number(row.sizeBytes),
       source: row.source,
+      shareType: row.shareType,
       createdBy: row.createdBy ? { id: row.createdBy.id, name: row.createdBy.name, image: row.createdBy.image ?? null } : null,
       isOwner: row.createdByUserId === userId,
       createdAt: row.createdAt,
