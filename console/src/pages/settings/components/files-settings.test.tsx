@@ -17,6 +17,11 @@ const mocks = vi.hoisted(() => ({
   folderDetail: vi.fn(),
   download: vi.fn(),
   remove: vi.fn(),
+  metadata: vi.fn(),
+  shares: vi.fn(),
+  updateAccess: vi.fn(),
+  addShares: vi.fn(),
+  removeShare: vi.fn(),
 }));
 
 const owned = { id: 'mine', name: 'My report.txt', isOwner: true };
@@ -34,6 +39,11 @@ vi.mock('@/services/apis/gen/queries', async (original) => ({
   useArtifactFoldersControllerGetById: mocks.folderDetail,
   artifactsControllerDownload: mocks.download,
   artifactsControllerRemove: mocks.remove,
+  useArtifactsControllerGetById: mocks.metadata,
+  useArtifactsControllerGetShares: mocks.shares,
+  artifactsControllerUpdateAccess: mocks.updateAccess,
+  artifactsControllerAddShares: mocks.addShares,
+  artifactsControllerRemoveShare: mocks.removeShare,
 }));
 
 function show(
@@ -56,6 +66,16 @@ describe('Files settings actions', () => {
     vi.clearAllMocks();
     mocks.download.mockReset();
     mocks.remove.mockReset();
+    mocks.metadata.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { ...owned, shareType: 'private' },
+      refetch: vi.fn(),
+    });
+    mocks.shares.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: [],
+      refetch: vi.fn(),
+    });
     mocks.folders.mockReturnValue({ isFetchedAfterMount: true, data: [] });
     mocks.folderDetail.mockReturnValue({});
     localStorage.removeItem('argus.files.view');
@@ -363,6 +383,39 @@ describe('Files settings actions', () => {
       screen.getByRole('table', { name: 'Workspace files' }),
     ).toBeVisible();
     expect(localStorage.getItem('argus.files.view')).toBe('list');
+  });
+
+  it('opens owner sharing controls and restores focus after closing', async () => {
+    show(['artifact.read', 'artifact.write']);
+    const trigger = await screen.findByRole('button', {
+      name: 'Share My report.txt',
+    });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Share My report.txt',
+    });
+    expect(
+      within(dialog).getByRole('combobox', { name: 'General access' }),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole('textbox', { name: 'Add people' }),
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByRole('button', { name: 'Copy public link' }),
+    ).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('withholds sharing controls from readers and from managers viewing another creator’s files', async () => {
+    show(['artifact.read', 'artifact.write', 'artifact.manage']);
+    fireEvent.click(await screen.findByRole('button', { name: 'All files' }));
+    expect(
+      screen.getByRole('button', { name: 'Share My report.txt' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Share Peer report.txt' }),
+    ).toBeNull();
   });
 
   it('browses shared files in table and grid without management controls or folder filters', async () => {
