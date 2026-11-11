@@ -74,7 +74,7 @@ export class ArtifactCleanupService {
 
       const repo = manager.getRepository(WorkspaceArtifact);
       const artifact = await repo.findOne({
-        where: { id: artifactId, workspaceId: workspace.id, status, ...(status === 'pending' ? { source: 'upload' } : {}) },
+        where: { id: artifactId, workspaceId: workspace.id, status },
         lock: { mode: 'pessimistic_write' },
       });
       // Recheck under the same row lock as completion. Allow time for requests

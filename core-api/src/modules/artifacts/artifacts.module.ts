@@ -9,6 +9,7 @@ import { ArtifactReadService } from './artifact-read.service';
 import { ArtifactShareService } from './artifact-share.service';
 import { ArtifactStagingSweepService } from './artifact-staging-sweep.service';
 import { ArtifactUsageService } from './artifact-usage.service';
+import { ArtifactWriteModule } from './artifact-write.module';
 import { ArtifactsController } from './artifacts.controller';
 import { ArtifactFolder } from './entities/artifact-folder.entity';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
@@ -16,7 +17,7 @@ import { WorkspaceStorageUsage } from './entities/workspace-storage-usage.entity
 import { PublicArtifactsController } from './public-artifacts.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WorkspaceStorageUsage, WorkspaceArtifact, ArtifactFolder]), ArtifactQuotaModule],
+  imports: [TypeOrmModule.forFeature([WorkspaceStorageUsage, WorkspaceArtifact, ArtifactFolder]), ArtifactQuotaModule, ArtifactWriteModule],
   controllers: [ArtifactsController, ArtifactFoldersController, PublicArtifactsController],
   providers: [
     ArtifactUsageService,

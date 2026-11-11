@@ -42,7 +42,7 @@ export class ArtifactExpirySweepService {
       `SELECT id, "workspaceId", status, "dueAt"::text AS "dueAt"
        FROM (
          SELECT id, "workspaceId", status, "expiresAt" AS "dueAt" FROM artifacts
-         WHERE status = 'pending' AND source = 'upload' AND "expiresAt" <= $1
+         WHERE status = 'pending' AND "expiresAt" <= $1
          UNION ALL
          SELECT id, "workspaceId", status, "createdAt" AS "dueAt" FROM artifacts
          WHERE status = 'deleted' AND "updatedAt" <= $5

@@ -95,6 +95,16 @@ describe('Expired private artifact upload (e2e)', () => {
     await expect(storage.headObject(ARTIFACT_BUCKET, artifact.objectKey)).resolves.toMatchObject({ contentLength: 3 });
   });
 
+  it('reserves and completes agent files while retaining upload defaults', async () => {
+    const reserved = await reservation.reserveUpload({
+      workspaceId, createdByUserId: userId, name: 'agent.txt', contentType: 'text/plain', sizeBytes: 0, source: 'agent',
+    });
+    expect(reserved.artifact.source).toBe('agent');
+    await storage.uploadFile(workspaceArtifactUploadKey(workspaceId, reserved.artifact.id), Buffer.alloc(0), ARTIFACT_BUCKET, 'text/plain');
+    await completion.completeUpload({ workspaceId, userId, artifactId: reserved.artifact.id, source: 'agent' });
+    await storage.deleteArtifactUploadObjects({ workspaceId, artifactId: reserved.artifact.id });
+  });
+
   it('removes staging and an orphaned final copy and releases the reservation once', async () => {
     await storage.publishArtifactUpload({ ...input(), contentType: 'text/plain', sizeBytes: 3 });
     await expired();
@@ -122,7 +132,7 @@ describe('Expired private artifact upload (e2e)', () => {
     expect(await usage()).toEqual({ usedBytes: '0', reservedBytes: '0' });
   });
 
-  it('selects only pending browser uploads past the expiry grace period', async () => {
+  it('selects pending browser and agent uploads past the expiry grace period', async () => {
     const reclaim = jest.spyOn(expiry, 'reclaim');
     await sweep.sweepPage();
     await repo().update(artifact.id, { expiresAt: new Date(Date.now() - 60_000) });
@@ -138,7 +148,9 @@ describe('Expired private artifact upload (e2e)', () => {
         objectKey: workspaceArtifactKey(workspaceId, readyId), source: 'upload', status: 'ready', expiresAt: new Date(0) },
     ]);
     await sweep.sweepPage();
-    expect(reclaim).toHaveBeenCalledTimes(1);
+    expect(reclaim).toHaveBeenCalledTimes(2);
+    expect(reclaim).toHaveBeenCalledWith({ workspaceId, artifactId: agentId });
+    expect(await repo().findOneBy({ id: agentId })).toBeNull();
     expect(reclaim).toHaveBeenCalledWith(input());
     expect(await record()).toBeNull();
     expect(await usage()).toEqual({ usedBytes: '0', reservedBytes: '0' });

@@ -13,6 +13,8 @@ interface ReserveArtifactUpload {
   name: string;
   contentType: string;
   sizeBytes: number;
+  source?: WorkspaceArtifact['source'];
+  abortSignal?: AbortSignal;
 }
 
 @Injectable()
@@ -28,8 +30,9 @@ export class ArtifactUploadReservationService {
    * returned until its pending record and quota reservation both commit.
    */
   async reserveUpload({
-    workspaceId, createdByUserId, name, contentType, sizeBytes,
+    workspaceId, createdByUserId, name, contentType, sizeBytes, source = 'upload', abortSignal,
   }: ReserveArtifactUpload) {
+    abortSignal?.throwIfAborted();
     if (!name.trim() || name.length > 255 || [...name].some(character => {
       const code = character.charCodeAt(0);
       return code < 32 || code === 127;
@@ -45,6 +48,7 @@ export class ArtifactUploadReservationService {
     });
 
     const assertLiveUpload = () => {
+      abortSignal?.throwIfAborted();
       if (upload.expiresAt.getTime() <= Date.now()) {
         throw new ConflictException('Artifact upload policy already expired');
       }
@@ -72,7 +76,7 @@ export class ArtifactUploadReservationService {
         mimeType: contentType,
         sizeBytes: String(sizeBytes),
         objectKey: workspaceArtifactKey(workspace.id, id),
-        source: 'upload',
+        source,
         status: 'pending',
         metadata: {},
         expiresAt: upload.expiresAt,
