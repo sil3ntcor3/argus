@@ -29,6 +29,7 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 - Files default to private. Shared mode grants reads to named recipients who remain workspace members with `artifact.read`. Public mode grants anonymous attachment redirects. Mode changes preserve recipient records.
 - Downloads use five-minute signed attachment URLs. Revocation, membership removal, and access-mode changes prevent new access when the policy no longer permits it. Issued URLs retain their original lifetime.
 - Owner access-mode updates publish `artifact.updated` with the resulting mode. Recipient additions publish `artifact.shared` with shared and skipped counts. Revocations publish `artifact.unshared` with the file identity.
+- Authenticated download requests publish `artifact.downloaded` when a signed URL is issued. Logical deletion publishes `artifact.deleted` when the file becomes unavailable, including when physical cleanup is deferred. Anonymous attachment redirects use the existing public download path.
 - The existing audit pipeline records workspace, file, actor, and outcome. Sharing event data excludes recipient emails, file names and contents, storage keys, and signed URLs. Handler failures carry the failure outcome. Existing producer errors are logged without changing the HTTP result.
 
 ## Folder persistence

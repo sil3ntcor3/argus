@@ -76,6 +76,8 @@ export const EVENT_POLICY: Record<EventName, EventPolicy> = {
   'audit.exported': { persist: true, severity: 'important' },
   'tool.installed': { persist: true, severity: 'normal' },
   'tool.uninstalled': { persist: true, severity: 'important' },
+  'artifact.downloaded': { persist: true, severity: 'normal' },
+  'artifact.deleted': { persist: true, severity: 'important' },
   'artifact.updated': { persist: true, severity: 'important' },
   'artifact.shared': { persist: true, severity: 'important' },
   'artifact.unshared': { persist: true, severity: 'important' },
