@@ -30,6 +30,17 @@ import {
   ReasoningTrigger,
 } from '@/components/ai-elements/reasoning';
 
+/** The chat scroll pane may use inline overflow rather than utility classes. */
+function findScrollContainer(element: HTMLElement): HTMLElement | null {
+  let parent = element.parentElement;
+  while (parent) {
+    const { overflowY } = getComputedStyle(parent);
+    if (overflowY === 'auto' || overflowY === 'scroll') return parent;
+    parent = parent.parentElement;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -112,6 +123,9 @@ export const ChatConversation = ({
 
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const prevScrollHeightRef = useRef<number>(0);
+  const prevMessageCountRef = useRef<number>(0);
+  const prevFirstMessageRef = useRef<string | undefined>(undefined);
 
   const sentinelRef = useCallback((el: HTMLDivElement | null) => {
     if (observerRef.current) {
@@ -120,12 +134,7 @@ export const ChatConversation = ({
     }
 
     if (el) {
-      if (!scrollContainerRef.current) {
-        const container =
-          el.closest('.overflow-y-auto, .overflow-y-scroll') ||
-          el.parentElement;
-        scrollContainerRef.current = container as HTMLElement;
-      }
+      scrollContainerRef.current = findScrollContainer(el) ?? el.parentElement;
 
       const observer = new IntersectionObserver(
         ([entry]) => {
@@ -135,6 +144,8 @@ export const ChatConversation = ({
             !isLoadingMoreRef.current &&
             onLoadMoreRef.current
           ) {
+            prevScrollHeightRef.current =
+              scrollContainerRef.current?.scrollHeight ?? 0;
             onLoadMoreRef.current();
           }
         },
@@ -149,9 +160,6 @@ export const ChatConversation = ({
     }
   }, []);
 
-  const prevScrollHeightRef = useRef<number>(0);
-  const prevMessageCountRef = useRef<number>(0);
-
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -160,7 +168,8 @@ export const ChatConversation = ({
 
     if (
       messages.length > prevMessageCountRef.current &&
-      prevMessageCountRef.current > 0
+      prevMessageCountRef.current > 0 &&
+      messages[0]?.id !== prevFirstMessageRef.current
     ) {
       const heightDifference =
         container.scrollHeight - prevScrollHeightRef.current;
@@ -171,6 +180,7 @@ export const ChatConversation = ({
 
     prevScrollHeightRef.current = container.scrollHeight;
     prevMessageCountRef.current = messages.length;
+    prevFirstMessageRef.current = messages[0]?.id;
   }, [messages]);
 
   const stickToBottomRef = useRef<StickToBottomContext>(null);
@@ -185,12 +195,7 @@ export const ChatConversation = ({
     // around the call grows the chat, which would pull it back to the end
     stickToBottomRef.current?.stopScroll();
 
-    let scrollContainer: HTMLElement | null = el.parentElement;
-    while (scrollContainer) {
-      const style = getComputedStyle(scrollContainer);
-      if (style.overflowY === 'auto' || style.overflowY === 'scroll') break;
-      scrollContainer = scrollContainer.parentElement;
-    }
+    const scrollContainer = findScrollContainer(el);
 
     if (scrollContainer) {
       const containerRect = scrollContainer.getBoundingClientRect();
