@@ -6,7 +6,7 @@ import { AUDIT_EVENTS } from '../audit/constants/audit-events';
 import { ArtifactsController } from './artifacts.controller';
 import { PublicArtifactsController } from './public-artifacts.controller';
 
-describe('File sharing audit wiring', () => {
+describe('Workspace file audit wiring', () => {
   const reflector = new Reflector();
   const config = (method: keyof ArtifactsController) =>
     reflector.get<PublishEventConfig & { event: { name: string } }>(PUBLISH_EVENT_KEY, ArtifactsController.prototype[method]);
@@ -48,10 +48,25 @@ describe('File sharing audit wiring', () => {
     expect(event?.payload).toBeUndefined();
   });
 
-  it.each(['getMany', 'getUsage', 'getById', 'download', 'getShares'] as const)(
+  it.each(['getMany', 'getUsage', 'getById', 'getShares'] as const)(
     'keeps %s reads outside sharing audit writes',
     method => expect(config(method)).toBeUndefined(),
   );
+
+  it.each([
+    ['download', 'artifact.downloaded'],
+    ['remove', 'artifact.deleted'],
+  ] as const)('%s records the route file and outcome without response data', (method, name) => {
+    const event = config(method);
+    expect(event?.event.name).toBe(name);
+    expect(event?.resourceIdFromRoute).toBe(true);
+    expect(event?.changes).toBeUndefined();
+    expect(event?.metadata).toBeUndefined();
+    expect(event?.payload).toBeUndefined();
+    expect(AUDIT_EVENTS).toContain(name);
+    expect(isPersisted(name)).toBe(true);
+    expect(reflector.get(WorkspacePermissions, ArtifactsController.prototype[method])).toEqual(['artifact.read']);
+  });
 
   it('keeps anonymous public downloads outside actor-based sharing audit writes', () => {
     expect(reflector.get(PUBLISH_EVENT_KEY, PublicArtifactsController.prototype.download)).toBeUndefined();

@@ -95,6 +95,7 @@ export class ArtifactsController {
   @ApiBadRequestResponse({ description: 'Invalid file ID or workspace selection.' })
   @ApiForbiddenResponse({ description: 'Missing file read access in the selected workspace.' })
   @ApiNotFoundResponse({ description: 'File not found in the selected workspace.' })
+  @PublishEvent(EVENT_CATALOG.artifact.downloaded, { resourceIdFromRoute: true })
   @WorkspaceAccess('artifact.read')
   @Header('Cache-Control', 'private, no-store')
   @Get(':id/download')
@@ -232,6 +233,7 @@ export class ArtifactsController {
   @ApiBadRequestResponse({ description: 'Invalid file ID or workspace selection.' })
   @ApiForbiddenResponse({ description: 'Missing workspace file permissions.' })
   @ApiNotFoundResponse({ description: 'File not found in the selected workspace.' })
+  @PublishEvent(EVENT_CATALOG.artifact.deleted, { resourceIdFromRoute: true })
   @WorkspaceAccess('artifact.read')
   @Delete(':id')
   remove(
