@@ -146,6 +146,33 @@ describe('Workflow inline tool installation', () => {
     );
   });
 
+  it('blocks stale search results until the debounced search settles', async () => {
+    const { user } = renderPicker();
+    const install = await screen.findByRole('button', {
+      name: 'Install Candidate',
+    });
+    await user.type(
+      screen.getByRole('textbox', { name: 'Search tools to install' }),
+      'far-tool',
+    );
+    expect(install).toBeDisabled();
+    await waitFor(() => expect(install).toBeEnabled());
+    expect(fixture.install).not.toHaveBeenCalled();
+  });
+
+  it('blocks confirmation during a catalog request', async () => {
+    fixture.query.mockReturnValue({
+      data: { data: [candidate] },
+      isFetching: true,
+    });
+    const { user } = renderPicker();
+    expect(
+      await screen.findByRole('button', { name: 'Install Candidate' }),
+    ).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Confirm Candidate' }));
+    expect(fixture.install).not.toHaveBeenCalled();
+  });
+
   it('installs on confirmation and refreshes tools while preserving staged selections', async () => {
     const { user, onChange } = renderPicker();
     await user.type(
