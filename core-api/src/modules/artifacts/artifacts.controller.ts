@@ -12,7 +12,7 @@ import { ArtifactCleanupService } from './artifact-cleanup.service';
 import { ArtifactReadService } from './artifact-read.service';
 import { ArtifactUsageService } from './artifact-usage.service';
 import { ArtifactDownloadDto } from './dto/artifact-download.dto';
-import { ArtifactListItemDto, ArtifactListQueryDto } from './dto/artifact-list.dto';
+import { ArtifactListCreatorDto, ArtifactListItemDto, ArtifactListQueryDto } from './dto/artifact-list.dto';
 import { ArtifactUsageDto } from './dto/artifact-usage.dto';
 
 @ApiTags('Artifacts')
@@ -99,6 +99,29 @@ export class ArtifactsController {
     @UserContext() user: UserContextPayload,
   ): Promise<ArtifactDownloadDto> {
     return this.files.getDownloadUrl(workspaceId, user.id, id);
+  }
+
+  @Doc({
+    summary: 'List recipients for an owned workspace file',
+    description: 'Lists current workspace members recorded as recipients of a ready file created by the caller.',
+    response: { serialization: ArtifactListCreatorDto, isArray: true },
+    request: {
+      getWorkspaceId: true,
+      params: [{ name: 'id', schema: { type: 'string', format: 'uuid' } }],
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid file ID or workspace selection.' })
+  @ApiForbiddenResponse({ description: 'Missing file write access in the selected workspace.' })
+  @ApiNotFoundResponse({ description: 'Owned ready file not found in the selected workspace.' })
+  @WorkspaceAccess('artifact.write')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/shares')
+  getShares(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @UserContext() user: UserContextPayload,
+  ): Promise<ArtifactListCreatorDto[]> {
+    return this.files.getShares(workspaceId, user.id, id);
   }
 
   @Doc({
