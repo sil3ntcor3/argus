@@ -54,6 +54,7 @@ const CONTROLLER_FILES: Record<string, string> = {
   JobsRegistryController: '@/modules/jobs-registry/jobs-registry.controller',
   WorkflowsController: '@/modules/workflows/workflows.controller',
   ToolsController: '@/modules/tools/tools.controller',
+  ArtifactsController: '@/modules/artifacts/artifacts.controller',
   IntegrationsController: '@/modules/integrations/integrations.controller',
   ApiKeysController: '@/modules/apikeys/apikeys.controller',
   AuditEventsController: '@/modules/audit/audit-events.controller',

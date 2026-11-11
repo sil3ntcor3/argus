@@ -429,6 +429,11 @@ export const EVENT_CATALOG = {
       summary: 'Expired system configs removed',
     },
   },
+  artifact: {
+    updated: { name: 'artifact.updated', summary: 'File access changed' },
+    shared: { name: 'artifact.shared', summary: 'File shared with members' },
+    unshared: { name: 'artifact.unshared', summary: 'File unshared from a member' },
+  },
   storage: {
     object: {
       deleted: {
