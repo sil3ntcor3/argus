@@ -8,3 +8,5 @@ Projects organize workspace assets with manual selection, inclusion rules, and e
 - Job and finding read models distinguish the original discovery, project membership, and findings attributed to a specific run. When a binding or project is removed, historical references follow their foreign-key behavior.
 
 Use scope, workflow, and provenance specs. Validate ownership and lock ordering against local Docker Postgres.
+
+`project_workflow_triggers` is private storage with cascade cleanup through its binding. It has no API, dispatcher or automatic backfill yet. Legacy binding `schedule` / `jobId` remain the active scheduling fields.
