@@ -11,6 +11,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  isPipelineValid,
+  ToolPipelineBuilder,
+  type PipelineToolEntry,
+} from '@/pages/asset-group/components/tool-pipeline-builder';
+import { jobsFromEntries } from '@/pages/asset-group/components/pipeline-mapping';
+import {
   getAssetGroupControllerGetByIdQueryKey,
   getProjectsControllerGetByIdQueryKey,
   getProjectsControllerGetManyQueryKey,
@@ -18,6 +24,7 @@ import {
   projectsControllerCreateWorkflow,
   useProjectsControllerCreateWorkflow,
   useProjectsControllerGetWorkflowTemplates,
+  useToolsControllerGetInstalledTools,
 } from '@/services/apis/gen/queries';
 import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
@@ -31,7 +38,7 @@ function mayHaveCreated(error: unknown): boolean {
   return status === undefined || status === 408 || status >= 500;
 }
 
-/** Copies a workspace template into a project as a disabled assignment. */
+/** Create a disabled project workflow from a template or selected tools. */
 export function ProjectWorkflowCreateDialog({
   projectId,
   workspaceId,
@@ -45,11 +52,22 @@ export function ProjectWorkflowCreateDialog({
   const mutationFilter = { mutationKey, exact: true };
   const creating = useIsMutating(mutationFilter) > 0;
   const [open, setOpen] = useState(false);
+  const [source, setSource] = useState<'template' | 'tools'>('template');
+  const [entries, setEntries] = useState<PipelineToolEntry[]>([]);
   const [template, setTemplate] = useState('');
   const [name, setName] = useState('');
   const templates = useProjectsControllerGetWorkflowTemplates({
-    query: { enabled: open, retry: false, networkMode: 'always' },
+    query: {
+      enabled: open && source === 'template',
+      retry: false,
+      networkMode: 'always',
+    },
   });
+  const tools = useToolsControllerGetInstalledTools(undefined, {
+    query: { enabled: open && source === 'tools', retry: false },
+  });
+  const byId = new Map((tools.data?.data ?? []).map((tool) => [tool.id, tool]));
+  const toolsReady = !!tools.data && !tools.isFetching && !tools.isError;
 
   /** Refresh project views without refetching under another workspace. */
   async function refreshAssignments() {
@@ -96,8 +114,13 @@ export function ProjectWorkflowCreateDialog({
     : undefined;
   const catalogReady = !templates.isFetching && !templates.isError;
   const canSubmit =
-    catalogReady &&
-    catalog.some((item) => item.filePath === template) &&
+    (source === 'template'
+      ? catalogReady && catalog.some((item) => item.filePath === template)
+      : toolsReady &&
+        entries.length > 0 &&
+        entries.length <= 50 &&
+        entries.every((entry) => byId.has(entry.toolId)) &&
+        isPipelineValid(entries, byId)) &&
     !uncertain &&
     !creating;
 
@@ -105,6 +128,8 @@ export function ProjectWorkflowCreateDialog({
   function changeOpen(next: boolean) {
     if (queryClient.isMutating(mutationFilter)) return;
     if (next) {
+      setSource('template');
+      setEntries([]);
       setTemplate('');
       setName('');
       create.reset();
@@ -125,7 +150,12 @@ export function ProjectWorkflowCreateDialog({
     try {
       await create.mutateAsync({
         id: projectId,
-        data: { template, ...(trimmedName ? { name: trimmedName } : {}) },
+        data: {
+          ...(source === 'template'
+            ? { template }
+            : { jobs: jobsFromEntries(entries, byId) }),
+          ...(trimmedName ? { name: trimmedName } : {}),
+        },
       });
     } catch {
       // The mutation error is shown next to the form.
@@ -143,24 +173,48 @@ export function ProjectWorkflowCreateDialog({
           {creating ? 'Creating workflow…' : 'Create workflow'}
         </Button>
       </DialogTrigger>
-      <DialogContent showCloseButton={!creating}>
+      <DialogContent
+        showCloseButton={!creating}
+        className={
+          source === 'tools'
+            ? 'sm:max-w-3xl max-h-[90dvh] overflow-y-auto'
+            : undefined
+        }
+      >
         <DialogHeader>
           <DialogTitle>Create project workflow</DialogTitle>
           <DialogDescription>
-            Copy a default workflow template into this project. Its schedule
+            Choose a workflow template or build a tool pipeline. Its schedule
             starts disabled.
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={(event) => void submit(event)}>
           <div className="space-y-2">
+            <Label htmlFor={formId + '-source'}>Creation source</Label>
+            <select
+              id={formId + '-source'}
+              className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm disabled:opacity-50"
+              value={source}
+              disabled={creating || uncertain}
+              onChange={(event) => {
+                setSource(event.target.value as 'template' | 'tools');
+                create.reset();
+              }}
+            >
+              <option value="template">Workflow template</option>
+              <option value="tools">Selected tools</option>
+            </select>
+          </div>
+          <div hidden={source !== 'template'} className="space-y-2">
             <Label htmlFor={formId + '-template'}>Workflow template</Label>
             <select
               id={formId + '-template'}
               className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm disabled:opacity-50"
               value={template}
               onChange={(event) => setTemplate(event.target.value)}
-              required
+              required={source === 'template'}
               disabled={
+                source !== 'template' ||
                 !catalogReady ||
                 !catalog.length ||
                 create.isPending ||
@@ -198,13 +252,63 @@ export function ProjectWorkflowCreateDialog({
               </p>
             ) : null}
           </div>
+          {source === 'tools' && (
+            <section
+              aria-label="Tool pipeline"
+              className="space-y-3"
+              onKeyDown={(event) => {
+                // Search Enter must not submit; portaled config forms keep their own keys.
+                if (
+                  event.key === 'Enter' &&
+                  event.target instanceof HTMLInputElement &&
+                  event.currentTarget.contains(event.target)
+                )
+                  event.preventDefault();
+              }}
+            >
+              <p className="text-sm text-muted-foreground">
+                Select 1–50 tools. Tools in one stage run together; later stages
+                wait for the previous stage.
+              </p>
+              {tools.isError ? (
+                <div role="status">
+                  <p>Unable to load tools.</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void tools.refetch()}
+                  >
+                    Retry tools
+                  </Button>
+                </div>
+              ) : !tools.data ? (
+                <p role="status">Loading tools…</p>
+              ) : null}
+              {tools.data && (
+                <ToolPipelineBuilder
+                  allowInstall
+                  tools={tools.data.data}
+                  value={entries}
+                  onChange={(next) => {
+                    setEntries(next);
+                    if (create.isError) create.reset();
+                  }}
+                  disabled={creating || uncertain || !toolsReady}
+                />
+              )}
+            </section>
+          )}
           <div className="space-y-2">
             <Label htmlFor={formId + '-name'}>Workflow name (optional)</Label>
             <Input
               id={formId + '-name'}
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Use the template name"
+              placeholder={
+                source === 'template'
+                  ? 'Use the template name'
+                  : 'Project workflow'
+              }
               maxLength={120}
               readOnly={creating || uncertain}
             />
@@ -215,7 +319,7 @@ export function ProjectWorkflowCreateDialog({
                 ? 'The server may have created the workflow. Close this dialog and check the assignments before trying again.'
                 : typeof message === 'string' && message
                   ? message
-                  : 'Unable to create the workflow. Check the template and try again.'}
+                  : 'Unable to create the workflow. Check the selected source and try again.'}
             </p>
           )}
           <DialogFooter>
