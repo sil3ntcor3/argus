@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -109,6 +110,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** unit).toFixed(1)} ${BYTE_UNITS[unit]}`;
 }
 
+/** Displays the quota totals and allocation, including in-flight reservations. */
 function StorageUsage({
   data,
   failed,
@@ -119,6 +121,10 @@ function StorageUsage({
   onRetry: () => void;
 }) {
   const summary = useRef<HTMLElement>(null);
+  const allocatedBytes = (data?.usedBytes ?? 0) + (data?.reservedBytes ?? 0);
+  const percent = data?.quotaBytes
+    ? Math.min(100, (allocatedBytes / data.quotaBytes) * 100)
+    : 100;
   return (
     <section
       ref={summary}
@@ -156,6 +162,17 @@ function StorageUsage({
               <dd className="font-medium">{formatBytes(bytes)}</dd>
             </div>
           ))}
+          <div className="col-span-full">
+            <dt className="sr-only">Allocated</dt>
+            <dd>
+              <Progress
+                value={percent}
+                aria-label="Workspace storage allocated"
+                aria-valuenow={percent}
+                aria-valuetext={`${formatBytes(allocatedBytes)} of ${formatBytes(data.quotaBytes)} allocated`}
+              />
+            </dd>
+          </div>
         </dl>
       ) : (
         <p role="status" className="text-sm text-muted-foreground">
