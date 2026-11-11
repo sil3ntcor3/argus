@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { DataSource } from 'typeorm';
+import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
+import { ProjectWorkflowJobsService } from './project-workflow-jobs.service';
 import { Workflow } from '../workflows/entities/workflow.entity';
 import {
   normalizeWorkflowContent,
@@ -19,13 +21,22 @@ import type {
 
 @Injectable()
 export class ProjectWorkflowCreateService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly jobs: ProjectWorkflowJobsService,
+    private readonly encryption: WorkspaceEncryptionService,
+  ) {}
 
-  create(
+  async create(
     projectId: string,
     workspaceId: string,
     dto: CreateProjectWorkflowDto,
   ): Promise<CreatedProjectWorkflowDto> {
+    if ((dto.template !== undefined) === (dto.jobs !== undefined))
+      throw new BadRequestException('Provide exactly one of template or jobs');
+    // Resolve the key before holding transaction locks or a pooled connection.
+    const dek =
+      dto.jobs !== undefined ? await this.encryption.getDEK(workspaceId) : null;
     return this.dataSource.transaction(async (manager) => {
       // Match workspace deletion's parent-to-child lock order.
       await manager.query(
@@ -42,23 +53,31 @@ export class ProjectWorkflowCreateService {
       if (project.archivedAt)
         throw new BadRequestException('Project is archived');
 
-      const template = await manager.findOne(Workflow, {
-        where: {
-          filePath: dto.template,
-          workspace: { id: workspaceId },
-          isCanEdit: false,
-        },
-        select: { id: true, name: true, content: true },
-      });
-      if (!template) throw new NotFoundException('Workflow template not found');
+      const template =
+        dto.template !== undefined
+          ? await manager.findOne(Workflow, {
+              where: {
+                filePath: dto.template,
+                workspace: { id: workspaceId },
+                isCanEdit: false,
+              },
+              select: { id: true, name: true, content: true },
+            })
+          : null;
+      if (dto.template !== undefined && !template)
+        throw new NotFoundException('Workflow template not found');
 
-      const name = dto.name?.trim() ?? template.name;
+      const name = dto.name?.trim() ?? template?.name ?? 'Project workflow';
+      const jobs =
+        dto.jobs !== undefined
+          ? await this.jobs.prepare(manager, workspaceId, dto.jobs, {}, dek)
+          : template!.content.jobs;
       let content: Workflow['content'];
       try {
         // Only copy the pipeline so template triggers cannot schedule this workflow.
         content = normalizeWorkflowContent({
           name,
-          jobs: template.content.jobs,
+          jobs,
         });
       } catch (error) {
         if (error instanceof WorkflowGraphError) {

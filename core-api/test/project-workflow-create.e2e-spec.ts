@@ -5,6 +5,7 @@ import { ConnectorRegistryService } from '@/modules/connectors/connector-registr
 import { decryptInlineConfig } from '@/modules/tools/validators/tool-config-profiles.crypto';
 import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
 import { Workflow } from '@/modules/workflows/entities/workflow.entity';
+import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
 import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
@@ -137,12 +138,105 @@ describe('Project workflow creation API (e2e)', () => {
     await request(app.server).post(url()).send({ template }).expect(401);
     const headers = { ...other.headers, 'X-Workspace-Id': owner.workspace.id };
     await post({ template }, undefined, headers).expect(403);
+    await post(
+      { jobs: { probe: { run: 'httpx' } } },
+      undefined,
+      headers,
+    ).expect(403);
     await app.dataSource.query(
       'UPDATE workspace_permissions SET permissions=$1 WHERE id=$2',
       [['group.write'], role],
     );
     const { body } = await post({ template }, undefined, headers).expect(201);
     expect(body.name).toBe(source.name);
+  });
+
+  it('creates a selected DAG without a template, preserving IDs and disabled scheduling', async () => {
+    const pipeline = {
+      ports: { run: 'naabu', input: ['host'] },
+      web: { run: 'httpx', needs: ['ports'] },
+    };
+    const { body } = await post(
+      { jobs: pipeline },
+      projectId.toUpperCase(),
+    ).expect(201);
+    expect(body).toEqual({
+      id: expect.any(String),
+      workflowId: expect.any(String),
+      name: 'Project workflow',
+      schedule: 'disabled',
+    });
+    const [saved] = await app.dataSource.query(
+      'SELECT w.name,w.content,w."workspaceId",pw."projectId",pw.schedule,pw."jobId" FROM workflows w JOIN project_workflows pw ON pw."workflowId"=w.id WHERE pw.id=$1',
+      [body.id],
+    );
+    expect(saved).toEqual({
+      name: body.name,
+      content: { name: body.name, jobs: pipeline },
+      workspaceId: owner.workspace.id,
+      projectId,
+      schedule: 'disabled',
+      jobId: null,
+    });
+    await post({ jobs: pipeline }, foreignId).expect(404);
+    expect(
+      (await post({ jobs: pipeline, name: '  Selected tools  ' }).expect(201))
+        .body.name,
+    ).toBe('Selected tools');
+  });
+
+  it('rejects invalid source combinations and graphs without writing workflows or bindings', async () => {
+    const before = await app.dataSource.query(
+      'SELECT id FROM workflows WHERE "workspaceId"=$1 ORDER BY id',
+      [owner.workspace.id],
+    );
+    for (const payload of [
+      {},
+      { template, jobs },
+      { template: null },
+      { jobs: null },
+      { jobs: [] },
+      { jobs: {} },
+      { jobs: { p: { run: 'httpx', needs: ['missing'] } } },
+      { jobs: { p: { run: 'httpx', input: ['repo'] } } },
+      {
+        jobs: Object.fromEntries(
+          Array.from({ length: 51 }, (_, i) => ['j' + i, { run: 'httpx' }]),
+        ),
+      },
+    ])
+      await post(payload).expect(400);
+    await post({ jobs: { p: { run: randomUUID() } } }).expect(404);
+    expect(
+      await app.dataSource.query(
+        'SELECT id FROM workflows WHERE "workspaceId"=$1 ORDER BY id',
+        [owner.workspace.id],
+      ),
+    ).toEqual(before);
+  });
+
+  it('rolls back selected-job creation when saving the binding fails', async () => {
+    const name = 'Rollback creation ' + randomUUID();
+    const original = EntityManager.prototype.save;
+    const save = jest
+      .spyOn(EntityManager.prototype, 'save')
+      .mockImplementation(async function (this: EntityManager, ...args) {
+        const result: unknown = await original.apply(this, args);
+        if (args[0] === AssetGroupWorkflow)
+          throw new Error('Simulated binding failure');
+        return result;
+      });
+    try {
+      await post({ name, jobs: { p: { run: 'httpx' } } }).expect(500);
+    } finally {
+      save.mockRestore();
+    }
+    expect(
+      await app.dataSource.query(
+        'SELECT id FROM workflows WHERE name=$1 AND "workspaceId"=$2',
+        [name, owner.workspace.id],
+      ),
+    ).toEqual([]);
   });
 
   it('rejects foreign projects, foreign templates and editable workflows', async () => {
@@ -463,6 +557,21 @@ describe('Project workflow creation API (e2e)', () => {
       expect(
         decryptInlineConfig({ apiKey: encrypted }, ['apiKey'], dek).apiKey,
       ).toBe('Local pipeline secret');
+      const { body: selected } = await post({
+        jobs: {
+          finding: { run: toolName, config: { apiKey: 'Selected-job secret' } },
+        },
+      }).expect(201);
+      const [stored] = await app.dataSource.query(
+        'SELECT content FROM workflows WHERE id=$1',
+        [selected.workflowId],
+      );
+      const selectedSecret = stored.content.jobs.finding.config
+        .apiKey as string;
+      expect(selectedSecret).not.toBe('Selected-job secret');
+      expect(
+        decryptInlineConfig({ apiKey: selectedSecret }, ['apiKey'], dek).apiKey,
+      ).toBe('Selected-job secret');
       for (const apiKey of [encrypted, '****']) {
         const result = await patch({ config: { apiKey } });
         expect(result.body.workflow.content.jobs.finding.config.apiKey).toBe(
@@ -474,6 +583,9 @@ describe('Project workflow creation API (e2e)', () => {
         [randomUUID(), '{}', other.workspace.id, tool],
       );
       await patch({ configProfileId: foreign }, 404);
+      await post({
+        jobs: { finding: { run: toolName, configProfileId: foreign } },
+      }).expect(404);
       const [builtin] = await app.dataSource.query(
         'SELECT id FROM tools WHERE name=$1',
         ['httpx'],
@@ -521,6 +633,7 @@ describe('Project workflow creation API (e2e)', () => {
       [projectId],
     );
     await post({ template }).expect(400);
+    await post({ jobs: { probe: { run: 'httpx' } } }).expect(400);
     await request(app.server)
       .patch(url() + '/' + editable.id)
       .set(owner.headers)
