@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   Injectable,
+  Inject,
+  forwardRef,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -453,6 +455,7 @@ export class AgentsCompletionsService {
     private readonly toolCallRepository: Repository<AgentMessageToolCall>,
     @InjectRepository(AgentConversationTodo)
     private readonly todoRepository: Repository<AgentConversationTodo>,
+    @Inject(forwardRef(() => AgentTool))
     private readonly agentTool: AgentTool,
     private readonly agentsMemories: AgentsMemoriesService,
     private readonly agentsMcpService: AgentsMcpService,
@@ -2949,6 +2952,7 @@ export class AgentsCompletionsService {
         todosEmitter,
         onResultRead: (id) => subagentHooks.onResultRead?.(id),
       }),
+      ...this.agentTool.getArtifactTools(workspaceId, userId, conversation.id, approval, todosEmitter),
       // Add memory tools
       ...(this.agentTool.getMemoryTools(
         workspaceId,

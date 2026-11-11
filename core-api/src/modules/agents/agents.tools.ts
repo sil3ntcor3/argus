@@ -1,3 +1,6 @@
+import { ArtifactBufferService } from '@/modules/artifacts/artifact-buffer.service';
+import { WorkspacesService } from '@/modules/workspaces/workspaces.service';
+import { artifactTools } from './tools/artifact.tools';
 import type { WrapperType } from '@/common/types/app.types';
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -175,10 +178,14 @@ export class AgentTool {
     private readonly toolConfigProfiles: ToolConfigProfilesService,
     private readonly remoteExecuteSubscribe: RemoteExecuteSubscribeService,
     private readonly redisService: RedisService,
+    private readonly artifactBufferService: ArtifactBufferService,
+    private readonly workspacesService: WorkspacesService,
   ) {}
 
   private get deps(): AgentToolDeps {
     return {
+      artifactBufferService: this.artifactBufferService,
+      workspacesService: this.workspacesService,
       assetsService: this.assetsService,
       targetsService: this.targetsService,
       vulnerabilitiesService: this.vulnerabilitiesService,
@@ -214,6 +221,17 @@ export class AgentTool {
     conversationId: string,
   ): Record<string, ToolType> {
     return memoryTools(this.deps, workspaceId, userId, conversationId);
+  }
+
+  /** File writes always use the conversation's existing write approval gate. */
+  getArtifactTools(
+    workspaceId: string,
+    userId: string,
+    conversationId: string,
+    approval: ApprovalSettings,
+    emitter?: EventEmitter,
+  ): Record<string, ToolType> {
+    return this.gateTools(artifactTools(this.deps, workspaceId, userId), workspaceId, conversationId, approval, emitter, false);
   }
 
   /**

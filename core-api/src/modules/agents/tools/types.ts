@@ -1,6 +1,8 @@
 import type { Repository } from 'typeorm';
 
 import type { WrapperType } from '@/common/types/app.types';
+import type { ArtifactBufferService } from '@/modules/artifacts/artifact-buffer.service';
+import type { WorkspacesService } from '@/modules/workspaces/workspaces.service';
 import type { AssetsService } from '@/modules/assets/assets.service';
 import type { ConnectorRegistryService } from '@/modules/connectors/connector-registry.service';
 import type { IssuesService } from '@/modules/issues/issues.service';
@@ -30,6 +32,8 @@ export interface ToolCallOptions {
 
 /** Everything AgentTool injects; each tool file takes the slice it uses. */
 export interface AgentToolDeps {
+  artifactBufferService: ArtifactBufferService;
+  workspacesService: WorkspacesService;
   assetsService: AssetsService;
   targetsService: TargetsService;
   vulnerabilitiesService: WrapperType<VulnerabilitiesService>;
