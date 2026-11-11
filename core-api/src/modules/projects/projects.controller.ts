@@ -41,7 +41,7 @@ import { ProjectMetadataReadService } from './project-metadata-read.service';
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
 import { AssetGroupWorkflow } from '../asset-group/entities/asset-groups-workflows.entity';
 import { RenameProjectWorkflowDto } from './dto/project-workflow-rename.dto';
-import { ProjectWorkflowRenameService } from './project-workflow-rename.service';
+import { ProjectWorkflowUpdateService } from './project-workflow-update.service';
 import { ProjectWorkflowCreateService } from './project-workflow-create.service';
 import { CreatedProjectWorkflowDto, CreateProjectWorkflowDto } from './dto/project-workflow-create.dto';
 import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
@@ -94,7 +94,7 @@ export class ProjectsController {
     private readonly assetRead: ProjectAssetReadService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly workflowCreate: ProjectWorkflowCreateService,
-    private readonly workflowRename: ProjectWorkflowRenameService,
+    private readonly workflowUpdate: ProjectWorkflowUpdateService,
     private readonly runRead: ProjectRunReadService,
     private readonly findingRead: ProjectFindingReadService,
     private readonly findingTimeline: ProjectFindingTimelineService,
@@ -169,7 +169,7 @@ export class ProjectsController {
     @Body() dto: RenameProjectWorkflowDto,
     @WorkspaceId() workspaceId: string,
   ) {
-    return this.workflowRename.rename(id, workspaceId, bindingId, dto);
+    return this.workflowUpdate.update(id, workspaceId, bindingId, dto);
   }
 
   @Doc({

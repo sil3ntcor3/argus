@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
-import { ProjectWorkflowRenameService } from './project-workflow-rename.service';
+import { ProjectWorkflowUpdateService } from './project-workflow-update.service';
 
-describe('ProjectWorkflowRenameService', () => {
+describe('ProjectWorkflowUpdateService', () => {
   const projectId = randomUUID();
   const workspaceId = randomUUID();
   const bindingId = randomUUID();
@@ -40,7 +40,7 @@ describe('ProjectWorkflowRenameService', () => {
         Promise.resolve(value),
       ),
     };
-    const service = new ProjectWorkflowRenameService({
+    const service = new ProjectWorkflowUpdateService({
       transaction: (callback: (value: typeof manager) => Promise<unknown>) =>
         callback(manager),
     } as unknown as DataSource);
@@ -49,7 +49,7 @@ describe('ProjectWorkflowRenameService', () => {
 
   it('preserves authored content, encrypted configuration and schedule while renaming', async () => {
     const { service, workflow, binding } = setup();
-    const result = await service.rename(projectId, workspaceId, bindingId, {
+    const result = await service.update(projectId, workspaceId, bindingId, {
       name: 'After',
     });
     expect(result.workflow.name).toBe('After');
