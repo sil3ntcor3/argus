@@ -53409,7 +53409,7 @@ export function useArtifactsControllerGetUsage<
 }
 
 /**
- * Returns metadata for a ready file in the selected workspace. Reading another creator’s file also requires artifact.manage.
+ * Returns metadata for a ready file in the selected workspace. Owners, named current members of shared files, and artifact.manage holders can read metadata.
  * @summary Get workspace file metadata
  */
 export const artifactsControllerGetById = (
@@ -53757,7 +53757,7 @@ export const useArtifactsControllerRemove = <TError = void, TContext = unknown>(
 };
 
 /**
- * Returns a five-minute attachment URL for a ready file created by the caller in the selected workspace.
+ * Returns a five-minute attachment URL for a ready file in the selected workspace to its owner or a named current member when the file is shared.
  * @summary Get a workspace file download URL
  */
 export const artifactsControllerDownload = (

@@ -60,7 +60,7 @@ export class ArtifactsController {
 
   @Doc({
     summary: 'Get workspace file metadata',
-    description: 'Returns metadata for a ready file in the selected workspace. Reading another creator’s file also requires artifact.manage.',
+    description: 'Returns metadata for a ready file in the selected workspace. Owners, named current members of shared files, and artifact.manage holders can read metadata.',
     response: { serialization: ArtifactListItemDto },
     request: {
       getWorkspaceId: true,
@@ -83,7 +83,7 @@ export class ArtifactsController {
 
   @Doc({
     summary: 'Get a workspace file download URL',
-    description: 'Returns a five-minute attachment URL for a ready file created by the caller in the selected workspace.',
+    description: 'Returns a five-minute attachment URL for a ready file in the selected workspace to its owner or a named current member when the file is shared.',
     response: { serialization: ArtifactDownloadDto },
     request: {
       getWorkspaceId: true,
