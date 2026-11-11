@@ -9,6 +9,7 @@ import { GetManyResponseDto } from '@/utils/getManyResponse';
 import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AdminWorkspacesService } from './admin-workspaces.service';
+import { UpdateStorageQuotaDto, WorkspaceStorageQuotaDto } from './dto/storage-quota.dto';
 import {
   AdminWorkspaceDto,
   GetManyAdminWorkspacesDto,
@@ -37,6 +38,28 @@ export class AdminWorkspacesController {
   constructor(
     private readonly adminWorkspacesService: AdminWorkspacesService,
   ) {}
+
+  @Doc({
+    summary: 'Set workspace storage quota',
+    description: 'Overrides the workspace quota in bytes. Null restores the default. Existing used and reserved bytes are preserved.',
+    response: { serialization: WorkspaceStorageQuotaDto },
+  })
+  @PublishEvent(EVENT_CATALOG.storage.quota.updated, {
+    workspaceId: result => (result as WorkspaceStorageQuotaDto | undefined)?.workspaceId,
+    resourceId: result => (result as WorkspaceStorageQuotaDto | undefined)?.workspaceId,
+    metadata: () => ({ platformAdmin: true }),
+    changes: (_body, result): Record<string, { after: number | null }> => {
+      if (!result) return {};
+      return { quotaBytes: { after: (result as WorkspaceStorageQuotaDto).quotaBytes } };
+    },
+  })
+  @Patch(':id/storage-quota')
+  updateStorageQuota(
+    @Param() { id }: IdQueryParamDto,
+    @Body() { quotaBytes }: UpdateStorageQuotaDto,
+  ): Promise<WorkspaceStorageQuotaDto> {
+    return this.adminWorkspacesService.setStorageQuota(id, quotaBytes);
+  }
 
   @Doc({
     summary: 'List workspaces',

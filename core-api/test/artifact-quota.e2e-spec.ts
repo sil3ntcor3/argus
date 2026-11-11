@@ -40,13 +40,8 @@ describe('Private artifact quota transactions (e2e)', () => {
     [workspaceId],
   ))[0];
 
-  const setQuota = async (bytes: number) => {
-    await app.dataSource.query(
-      `INSERT INTO workspace_storage_usage ("workspaceId","quotaBytes") VALUES ($1,$2)
-       ON CONFLICT ("workspaceId") DO UPDATE SET "quotaBytes"=EXCLUDED."quotaBytes"`,
-      [workspaceId, bytes],
-    );
-  };
+  const setQuota = (bytes: number) => app.dataSource.transaction(manager =>
+    quota.setQuota(manager, workspaceId, bytes));
 
   it('creates the meter lazily and rolls back a reservation with its caller', async () => {
     expect(await meter()).toBeUndefined();
@@ -99,6 +94,24 @@ describe('Private artifact quota transactions (e2e)', () => {
       expect(await quota.releaseUsed(manager, workspaceId, 2)).toBe(true);
     });
     expect(await meter()).toEqual({ quotaBytes: '1', usedBytes: '6', reservedBytes: '0' });
+  });
+
+  it('rolls back an override together with its caller', async () => {
+    await setQuota(10);
+    await expect(app.dataSource.transaction(async manager => {
+      await quota.setQuota(manager, workspaceId, 0);
+      throw new Error('caller failed');
+    })).rejects.toThrow('caller failed');
+    expect(await meter()).toEqual({ quotaBytes: '10', usedBytes: '0', reservedBytes: '0' });
+  });
+
+  it('preserves reservations when an override changes concurrently', async () => {
+    await setQuota(10);
+    const [accepted] = await Promise.all([
+      app.dataSource.transaction(manager => quota.reserve(manager, workspaceId, 7)),
+      app.dataSource.transaction(manager => quota.setQuota(manager, workspaceId, 0)),
+    ]);
+    expect(await meter()).toEqual({ quotaBytes: '0', usedBytes: '0', reservedBytes: accepted ? '7' : '0' });
   });
 
   it('requires a transaction and rejects invalid file sizes before writing', async () => {

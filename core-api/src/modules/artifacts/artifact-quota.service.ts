@@ -16,6 +16,17 @@ type BalanceChange = Partial<Record<'usedBytes' | 'reservedBytes', () => string>
  */
 @Injectable()
 export class ArtifactQuotaService {
+  /** Change an override without replacing the existing byte balances. */
+  async setQuota(manager: EntityManager, workspaceId: string, quotaBytes: number | null): Promise<void> {
+    this.validate(manager, quotaBytes === null ? 0 : quotaBytes);
+    await manager.createQueryBuilder()
+      .insert()
+      .into(WorkspaceStorageUsage)
+      .values({ workspaceId, quotaBytes: quotaBytes === null ? null : String(quotaBytes) })
+      .orUpdate(['quotaBytes', 'updatedAt'], ['workspaceId'])
+      .execute();
+  }
+
   /** Reserve bytes if used, reserved, and requested bytes fit the quota. */
   async reserve(manager: EntityManager, workspaceId: string, bytes: number): Promise<boolean> {
     this.validate(manager, bytes, ARTIFACT_MAX_FILE_BYTES);

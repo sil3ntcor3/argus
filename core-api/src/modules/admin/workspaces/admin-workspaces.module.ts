@@ -1,4 +1,5 @@
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
+import { ArtifactQuotaModule } from '@/modules/artifacts/artifact-quota.module';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminWorkspacesController } from './admin-workspaces.controller';
@@ -8,7 +9,7 @@ import { AdminWorkspacesService } from './admin-workspaces.service';
  * Admin read access to every workspace, served under /admin/workspaces.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([Workspace])],
+  imports: [TypeOrmModule.forFeature([Workspace]), ArtifactQuotaModule],
   controllers: [AdminWorkspacesController],
   providers: [AdminWorkspacesService],
 })

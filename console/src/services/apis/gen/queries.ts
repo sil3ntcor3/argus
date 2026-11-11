@@ -5532,6 +5532,26 @@ export type GetManyAdminUserDtoDto = {
   pageCount: number;
 };
 
+export type WorkspaceStorageQuotaDto = {
+  workspaceId: string;
+  /**
+   * @minimum 0
+   * @maximum 9007199254740991
+   * @nullable
+   */
+  quotaBytes: number | null;
+};
+
+export type UpdateStorageQuotaDto = {
+  /**
+   * Quota in bytes. Null restores the default.
+   * @minimum 0
+   * @maximum 9007199254740991
+   * @nullable
+   */
+  quotaBytes: number | null;
+};
+
 export type AdminWorkspaceUserDto = {
   id: string;
   name: string;
@@ -49634,6 +49654,107 @@ export function useAdminUsersControllerGetUser<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Overrides the workspace quota in bytes. Null restores the default. Existing used and reserved bytes are preserved.
+ * @summary Set workspace storage quota
+ */
+export const adminWorkspacesControllerUpdateStorageQuota = (
+  id: string,
+  updateStorageQuotaDto: UpdateStorageQuotaDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkspaceStorageQuotaDto>(
+    {
+      url: `/api/admin/workspaces/${id}/storage-quota`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateStorageQuotaDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getAdminWorkspacesControllerUpdateStorageQuotaMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof adminWorkspacesControllerUpdateStorageQuota>>,
+    TError,
+    { id: string; data: UpdateStorageQuotaDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof adminWorkspacesControllerUpdateStorageQuota>>,
+  TError,
+  { id: string; data: UpdateStorageQuotaDto },
+  TContext
+> => {
+  const mutationKey = ['adminWorkspacesControllerUpdateStorageQuota'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof adminWorkspacesControllerUpdateStorageQuota>>,
+    { id: string; data: UpdateStorageQuotaDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return adminWorkspacesControllerUpdateStorageQuota(
+      id,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AdminWorkspacesControllerUpdateStorageQuotaMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof adminWorkspacesControllerUpdateStorageQuota>>
+  >;
+export type AdminWorkspacesControllerUpdateStorageQuotaMutationBody =
+  UpdateStorageQuotaDto;
+export type AdminWorkspacesControllerUpdateStorageQuotaMutationError = unknown;
+
+/**
+ * @summary Set workspace storage quota
+ */
+export const useAdminWorkspacesControllerUpdateStorageQuota = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof adminWorkspacesControllerUpdateStorageQuota>>,
+      TError,
+      { id: string; data: UpdateStorageQuotaDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof adminWorkspacesControllerUpdateStorageQuota>>,
+  TError,
+  { id: string; data: UpdateStorageQuotaDto },
+  TContext
+> => {
+  return useMutation(
+    getAdminWorkspacesControllerUpdateStorageQuotaMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * Lists every workspace on the platform with its owner, target count and member count. `search` matches the workspace name or the owner name/email.
