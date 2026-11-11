@@ -14,6 +14,8 @@ import { AuditEvent } from './entities/audit-event.entity';
 // reports.controller transitively imports @react-pdf/renderer (ESM) via
 // ./renderer/pdf-renderer, which cannot load under jest. Mock it the same way
 // reports.controller.spec.ts does so S11 can resolve the controller class.
+// Match the AgentsController specs when resolving its real guard metadata.
+jest.mock('better-auth/node', () => ({ fromNodeHeaders: jest.fn() }));
 jest.mock('@/modules/reports/renderer/pdf-renderer', () => ({
   renderReportPdf: jest.fn().mockResolvedValue(Buffer.from('mock-pdf')),
 }));
@@ -54,6 +56,7 @@ const CONTROLLER_FILES: Record<string, string> = {
   JobsRegistryController: '@/modules/jobs-registry/jobs-registry.controller',
   WorkflowsController: '@/modules/workflows/workflows.controller',
   ToolsController: '@/modules/tools/tools.controller',
+  AgentsController: '@/modules/agents/agents.controller',
   ArtifactsController: '@/modules/artifacts/artifacts.controller',
   AdminWorkspacesController: '@/modules/admin/workspaces/admin-workspaces.controller',
   IntegrationsController: '@/modules/integrations/integrations.controller',

@@ -27,6 +27,8 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 
 ## Sharing and audit
 
+- Successful private agent buffer writes publish `artifact.created` after quota and readiness commit. The event contains workspace, file, requesting actor, source, and actual bytes. Failed writes publish no creation event. Publication uses the existing best-effort audit pipeline.
+
 - Files default to private. Shared mode grants reads to named recipients who remain workspace members with `artifact.read`. Public mode grants anonymous attachment redirects. Mode changes preserve recipient records.
 - Downloads use five-minute signed attachment URLs. Revocation, membership removal, and access-mode changes prevent new access when the policy no longer permits it. Issued URLs retain their original lifetime.
 - Owner access-mode updates publish `artifact.updated` with the resulting mode. Recipient additions publish `artifact.shared` with shared and skipped counts. Revocations publish `artifact.unshared` with the file identity.

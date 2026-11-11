@@ -84,6 +84,7 @@ export const AUDIT_ACTION_CATALOG = [
   // tools (36–37)
   { action: 'tool.installed', label: 'Installed tool', controller: 'ToolsController', method: 'installTool' },
   { action: 'tool.uninstalled', label: 'Uninstalled tool', controller: 'ToolsController', method: 'uninstallTool' },
+  { action: 'artifact.created', label: 'Agent saved file', controller: 'AgentsController', method: 'streamMessage' },
   { action: 'artifact.downloaded', label: 'Requested file download', controller: 'ArtifactsController', method: 'download' },
   { action: 'artifact.deleted', label: 'Deleted file', controller: 'ArtifactsController', method: 'remove' },
   { action: 'artifact.updated', label: 'Changed file access', controller: 'ArtifactsController', method: 'updateAccess' },
