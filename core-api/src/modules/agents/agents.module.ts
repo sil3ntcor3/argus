@@ -1,3 +1,4 @@
+import { ArtifactWriteModule } from '@/modules/artifacts/artifact-write.module';
 import { AssetsModule } from '@/modules/assets/assets.module';
 import { ConnectorsModule } from '@/modules/connectors/connectors.module';
 import { StatisticModule } from '@/modules/statistic/statistic.module';
@@ -52,6 +53,7 @@ import { HttpModule } from '@nestjs/axios';
       AgentSubagent,
       AgentDefinition,
     ]),
+    ArtifactWriteModule,
     AssetsModule,
     TargetsModule,
     forwardRef(() => VulnerabilitiesModule),

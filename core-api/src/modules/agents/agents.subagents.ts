@@ -2,6 +2,8 @@ import { AgentApprovalMode, AgentMode } from '@/common/enums/enum';
 import {
   BadRequestException,
   Injectable,
+  Inject,
+  forwardRef,
   Logger,
   NotFoundException,
   type OnModuleDestroy,
@@ -188,6 +190,7 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
     private readonly subagentRepository: Repository<AgentSubagent>,
     @InjectRepository(AgentConversation)
     private readonly conversationRepository: Repository<AgentConversation>,
+    @Inject(forwardRef(() => AgentTool))
     private readonly agentTool: AgentTool,
     private readonly agentsConfig: AgentsConfigService,
     private readonly modelsCatalog: AgentsModelsCatalogService,
