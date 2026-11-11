@@ -806,7 +806,7 @@ function WorkspaceFiles({
               <TableBody>
                 {rows.map((file) => (
                   <TableRow key={file.id}>
-                    <TableCell className="max-w-48 break-all whitespace-normal sm:max-w-96">
+                    <TableCell className="min-w-48 max-w-48 break-all whitespace-normal sm:max-w-96">
                       <div className="flex items-start gap-2">
                         <FileIcon name={file.name} mimeType={file.mimeType} />
                         <div className="min-w-0">
