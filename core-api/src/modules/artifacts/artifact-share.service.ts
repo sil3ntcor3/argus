@@ -1,6 +1,7 @@
 import { WorkspaceMembers } from '@/modules/workspaces/entities/workspace-members.entity';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import type { AddArtifactSharesResultDto } from './dto/artifact-share.dto';
 import { ArtifactShare } from './entities/artifact-share.entity';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
@@ -12,13 +13,7 @@ export class ArtifactShareService {
   addShares(workspaceId: string, userId: string, id: string, emails: string[]): Promise<AddArtifactSharesResultDto> {
     const distinctEmails = [...new Set(emails)];
     return this.dataSource.transaction(async manager => {
-      // Serialize with deletion and other share writes on this file.
-      const artifact = await manager.findOne(WorkspaceArtifact, {
-        where: { id, workspaceId, createdByUserId: userId, status: 'ready' },
-        select: { id: true },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!artifact) throw new NotFoundException('File not found');
+      const artifact = await this.lockOwnedFile(manager, workspaceId, userId, id);
       if (!distinctEmails.length) return { shared: 0, skipped: 0 };
 
       const recipients = await manager.getRepository(WorkspaceMembers)
@@ -41,5 +36,24 @@ export class ArtifactShareService {
       }
       return { shared: recipients.length, skipped: distinctEmails.length - recipients.length };
     });
+  }
+
+  removeShare(workspaceId: string, userId: string, id: string, recipientId: string): Promise<{ message: string }> {
+    return this.dataSource.transaction(async manager => {
+      const artifact = await this.lockOwnedFile(manager, workspaceId, userId, id);
+      await manager.delete(ArtifactShare, { artifactId: artifact.id, userId: recipientId });
+      return { message: 'Share removed' };
+    });
+  }
+
+  private async lockOwnedFile(manager: EntityManager, workspaceId: string, userId: string, id: string) {
+    // Serialize share changes with deletion and each other.
+    const artifact = await manager.findOne(WorkspaceArtifact, {
+      where: { id, workspaceId, createdByUserId: userId, status: 'ready' },
+      select: { id: true },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!artifact) throw new NotFoundException('File not found');
+    return artifact;
   }
 }

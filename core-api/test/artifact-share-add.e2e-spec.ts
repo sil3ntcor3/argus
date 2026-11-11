@@ -98,6 +98,50 @@ describe('Adding artifact share recipients (e2e)', () => {
     await add('invalid', owner.headers, { emails: [recipient.email] }).expect(400);
   });
 
+  it('revokes a former member idempotently while preserving shares on other files', async () => {
+    const second = randomUUID();
+    const original = await app.dataSource.getRepository(WorkspaceArtifact).findOneByOrFail({ id: ready });
+    await app.dataSource.getRepository(WorkspaceArtifact).insert({
+      ...original, id: second, objectKey: workspaceArtifactKey(owner.workspace.id, second),
+    });
+    const shares = app.dataSource.getRepository(ArtifactShare);
+    await shares.insert([
+      { artifactId: ready, userId: outsider.userId },
+      { artifactId: second, userId: outsider.userId },
+    ]);
+    const path = `/api/artifacts/${ready}/shares/${outsider.userId}`;
+    await request(app.server).delete(path).set(owner.headers).expect(200, { message: 'Share removed' });
+    await request(app.server).delete(path).set(owner.headers).expect(200, { message: 'Share removed' });
+    expect(await shares.existsBy({ artifactId: ready, userId: outsider.userId })).toBe(false);
+    expect(await shares.existsBy({ artifactId: ready, userId: recipient.userId })).toBe(true);
+    expect(await shares.existsBy({ artifactId: second, userId: outsider.userId })).toBe(true);
+  });
+
+  it('requires an authenticated owner with write access to revoke recipients', async () => {
+    const path = `/api/artifacts/${ready}/shares/${recipient.userId}`;
+    const headers = wsHeaders(recipient.cookie, owner.workspace.id);
+    await request(app.server).delete(path).expect(401);
+    await app.dataSource.query('UPDATE workspace_permissions SET permissions = $1 WHERE id = $2', [
+      ['artifact.read'], groupId,
+    ]);
+    await request(app.server).delete(path).set(headers).expect(403);
+    await app.dataSource.query('UPDATE workspace_permissions SET permissions = $1 WHERE id = $2', [
+      ['artifact.write', 'artifact.manage'], groupId,
+    ]);
+    await request(app.server).delete(path).set(headers).expect(404);
+    expect(await app.dataSource.getRepository(ArtifactShare).existsBy({ artifactId: ready, userId: recipient.userId })).toBe(true);
+  });
+
+  it('validates both revocation IDs and hides unavailable files', async () => {
+    const remove = (id: string, recipientId: string) =>
+      request(app.server).delete(`/api/artifacts/${id}/shares/${recipientId}`).set(owner.headers);
+    await remove('invalid', recipient.userId).expect(400);
+    await remove(ready, 'invalid').expect(400);
+    for (const id of [pending, otherWorkspace, randomUUID()]) {
+      await remove(id, recipient.userId).expect(404);
+    }
+  });
+
   it('returns 404 for pending, absent, and other-workspace files', async () => {
     for (const id of [pending, otherWorkspace, randomUUID()]) {
       await add(id, owner.headers, { emails: [recipient.email] }).expect(404);
