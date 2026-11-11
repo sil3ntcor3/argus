@@ -5793,6 +5793,19 @@ export type AddArtifactSharesDto = {
   emails: string[];
 };
 
+export type UpdateArtifactAccessDtoShareType =
+  (typeof UpdateArtifactAccessDtoShareType)[keyof typeof UpdateArtifactAccessDtoShareType];
+
+export const UpdateArtifactAccessDtoShareType = {
+  private: 'private',
+  shared: 'shared',
+  public: 'public',
+} as const;
+
+export type UpdateArtifactAccessDto = {
+  shareType: UpdateArtifactAccessDtoShareType;
+};
+
 export type ArtifactFolderDto = {
   id: string;
   name: string;
@@ -53561,6 +53574,102 @@ export function useArtifactsControllerGetById<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Updates the access-mode selection for a ready file owned by the caller in the selected workspace.
+ * @summary Update the stored access mode of a workspace file
+ */
+export const artifactsControllerUpdateAccess = (
+  id: string,
+  updateArtifactAccessDto: UpdateArtifactAccessDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactListItemDto>(
+    {
+      url: `/api/artifacts/${id}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateArtifactAccessDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getArtifactsControllerUpdateAccessMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+    TError,
+    { id: string; data: UpdateArtifactAccessDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+  TError,
+  { id: string; data: UpdateArtifactAccessDto },
+  TContext
+> => {
+  const mutationKey = ['artifactsControllerUpdateAccess'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+    { id: string; data: UpdateArtifactAccessDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return artifactsControllerUpdateAccess(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArtifactsControllerUpdateAccessMutationResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>
+>;
+export type ArtifactsControllerUpdateAccessMutationBody =
+  UpdateArtifactAccessDto;
+export type ArtifactsControllerUpdateAccessMutationError = void;
+
+/**
+ * @summary Update the stored access mode of a workspace file
+ */
+export const useArtifactsControllerUpdateAccess = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+      TError,
+      { id: string; data: UpdateArtifactAccessDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+  TError,
+  { id: string; data: UpdateArtifactAccessDto },
+  TContext
+> => {
+  return useMutation(
+    getArtifactsControllerUpdateAccessMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * Hides a ready file immediately and releases its quota after storage cleanup. Requires file read access and either ownership with artifact.write or artifact.manage.
