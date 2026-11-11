@@ -13,10 +13,11 @@ import { ArtifactsController } from './artifacts.controller';
 import { ArtifactFolder } from './entities/artifact-folder.entity';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 import { WorkspaceStorageUsage } from './entities/workspace-storage-usage.entity';
+import { PublicArtifactsController } from './public-artifacts.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([WorkspaceStorageUsage, WorkspaceArtifact, ArtifactFolder])],
-  controllers: [ArtifactsController, ArtifactFoldersController],
+  controllers: [ArtifactsController, ArtifactFoldersController, PublicArtifactsController],
   providers: [
     ArtifactUsageService,
     ArtifactReadService,
