@@ -4988,13 +4988,16 @@ export type CreateProjectWorkflowDto = {
   name?: string;
 };
 
-export type RenameProjectWorkflowDto = {
+export type UpdateProjectWorkflowDtoJobs = { [key: string]: WorkflowJob };
+
+export type UpdateProjectWorkflowDto = {
   /**
    * Trimmed workflow name
    * @minLength 1
    * @maxLength 120
    */
-  name: string;
+  name?: string;
+  jobs?: UpdateProjectWorkflowDtoJobs;
 };
 
 export type CreateProjectDto = {
@@ -46118,12 +46121,12 @@ export const useProjectsControllerCreateWorkflow = <
 };
 
 /**
- * @summary Rename a project-owned workflow
+ * @summary Update a project workflow name, job graph, or both
  */
 export const projectsControllerUpdateWorkflow = (
   id: string,
   bindingId: string,
-  renameProjectWorkflowDto: RenameProjectWorkflowDto,
+  updateProjectWorkflowDto: UpdateProjectWorkflowDto,
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
@@ -46132,7 +46135,7 @@ export const projectsControllerUpdateWorkflow = (
       url: `/api/projects/${id}/workflows/${bindingId}`,
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      data: renameProjectWorkflowDto,
+      data: updateProjectWorkflowDto,
       signal,
     },
     options,
@@ -46146,14 +46149,14 @@ export const getProjectsControllerUpdateWorkflowMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
     TError,
-    { id: string; bindingId: string; data: RenameProjectWorkflowDto },
+    { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
     TContext
   >;
   request?: SecondParameter<typeof orvalClient>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
   TError,
-  { id: string; bindingId: string; data: RenameProjectWorkflowDto },
+  { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
   TContext
 > => {
   const mutationKey = ['projectsControllerUpdateWorkflow'];
@@ -46167,7 +46170,7 @@ export const getProjectsControllerUpdateWorkflowMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
-    { id: string; bindingId: string; data: RenameProjectWorkflowDto }
+    { id: string; bindingId: string; data: UpdateProjectWorkflowDto }
   > = (props) => {
     const { id, bindingId, data } = props ?? {};
 
@@ -46186,11 +46189,11 @@ export type ProjectsControllerUpdateWorkflowMutationResult = NonNullable<
   Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>
 >;
 export type ProjectsControllerUpdateWorkflowMutationBody =
-  RenameProjectWorkflowDto;
+  UpdateProjectWorkflowDto;
 export type ProjectsControllerUpdateWorkflowMutationError = unknown;
 
 /**
- * @summary Rename a project-owned workflow
+ * @summary Update a project workflow name, job graph, or both
  */
 export const useProjectsControllerUpdateWorkflow = <
   TError = unknown,
@@ -46200,7 +46203,7 @@ export const useProjectsControllerUpdateWorkflow = <
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
       TError,
-      { id: string; bindingId: string; data: RenameProjectWorkflowDto },
+      { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
       TContext
     >;
     request?: SecondParameter<typeof orvalClient>;
@@ -46209,7 +46212,7 @@ export const useProjectsControllerUpdateWorkflow = <
 ): UseMutationResult<
   Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
   TError,
-  { id: string; bindingId: string; data: RenameProjectWorkflowDto },
+  { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
   TContext
 > => {
   return useMutation(

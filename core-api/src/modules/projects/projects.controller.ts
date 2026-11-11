@@ -40,7 +40,7 @@ import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator
 import { ProjectMetadataReadService } from './project-metadata-read.service';
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
 import { AssetGroupWorkflow } from '../asset-group/entities/asset-groups-workflows.entity';
-import { RenameProjectWorkflowDto } from './dto/project-workflow-rename.dto';
+import { UpdateProjectWorkflowDto } from './dto/project-workflow-update.dto';
 import { ProjectWorkflowUpdateService } from './project-workflow-update.service';
 import { ProjectWorkflowCreateService } from './project-workflow-create.service';
 import { CreatedProjectWorkflowDto, CreateProjectWorkflowDto } from './dto/project-workflow-create.dto';
@@ -150,7 +150,7 @@ export class ProjectsController {
   }
 
   @Doc({
-    summary: 'Rename a project-owned workflow',
+    summary: 'Update a project workflow name, job graph, or both',
     response: { serialization: AssetGroupWorkflow },
     request: { getWorkspaceId: true },
   })
@@ -166,7 +166,7 @@ export class ProjectsController {
   updateWorkflow(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('bindingId', ParseUUIDPipe) bindingId: string,
-    @Body() dto: RenameProjectWorkflowDto,
+    @Body() dto: UpdateProjectWorkflowDto,
     @WorkspaceId() workspaceId: string,
   ) {
     return this.workflowUpdate.update(id, workspaceId, bindingId, dto);

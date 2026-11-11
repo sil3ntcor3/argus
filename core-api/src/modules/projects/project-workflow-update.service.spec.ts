@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
+import type { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
+import type { ProjectWorkflowJobsService } from './project-workflow-jobs.service';
 import { ProjectWorkflowUpdateService } from './project-workflow-update.service';
 
 describe('ProjectWorkflowUpdateService', () => {
@@ -40,10 +42,14 @@ describe('ProjectWorkflowUpdateService', () => {
         Promise.resolve(value),
       ),
     };
-    const service = new ProjectWorkflowUpdateService({
-      transaction: (callback: (value: typeof manager) => Promise<unknown>) =>
-        callback(manager),
-    } as unknown as DataSource);
+    const service = new ProjectWorkflowUpdateService(
+      {
+        transaction: (callback: (value: typeof manager) => Promise<unknown>) =>
+          callback(manager),
+      } as unknown as DataSource,
+      {} as ProjectWorkflowJobsService,
+      {} as WorkspaceEncryptionService,
+    );
     return { service, manager, workflow, binding, query };
   }
 

@@ -5,21 +5,31 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
 import { DataSource } from 'typeorm';
 import { Workflow } from '../workflows/entities/workflow.entity';
-import type { RenameProjectWorkflowDto } from './dto/project-workflow-rename.dto';
+import { ProjectWorkflowJobsService } from './project-workflow-jobs.service';
+import type { UpdateProjectWorkflowDto } from './dto/project-workflow-update.dto';
 
 @Injectable()
 export class ProjectWorkflowUpdateService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly jobs: ProjectWorkflowJobsService,
+    private readonly encryption: WorkspaceEncryptionService,
+  ) {}
 
-  /** Rename both stored names under the same locks and transaction. */
-  update(
+  /** Update the project pipeline and name under the run-launch lock order. */
+  async update(
     projectId: string,
     workspaceId: string,
     bindingId: string,
-    dto: RenameProjectWorkflowDto,
+    dto: UpdateProjectWorkflowDto,
   ): Promise<AssetGroupWorkflow> {
+    if (dto.name === undefined && dto.jobs === undefined)
+      throw new BadRequestException('Provide a name or pipeline');
+    const dek =
+      dto.jobs !== undefined ? await this.encryption.getDEK(workspaceId) : null;
     return this.dataSource.transaction(async (manager) => {
       // Follow workspace deletion's parent-to-child lock order.
       await manager.query(
@@ -55,7 +65,7 @@ export class ProjectWorkflowUpdateService {
         .setLock('pessimistic_write', undefined, ['workflow'])
         .getOne();
       if (!workflow) throw new NotFoundException('Project workflow not found');
-      if (!isGroupOwnedWorkflow(workflow, projectId) || !workflow.isCanEdit) {
+      if (!isGroupOwnedWorkflow(workflow, project.id) || !workflow.isCanEdit) {
         throw new BadRequestException(
           'Workflow is not editable by this project',
         );
@@ -72,8 +82,22 @@ export class ProjectWorkflowUpdateService {
       if (!binding) throw new NotFoundException('Project workflow not found');
       binding.workflow = await manager.save(Workflow, {
         ...workflow,
-        name: dto.name,
-        content: { ...workflow.content, name: dto.name },
+        name: dto.name ?? workflow.name,
+        content: {
+          ...workflow.content,
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.jobs !== undefined
+            ? {
+                jobs: await this.jobs.prepare(
+                  manager,
+                  workspaceId,
+                  dto.jobs,
+                  workflow.content.jobs,
+                  dek,
+                ),
+              }
+            : {}),
+        },
       });
       return binding;
     });
