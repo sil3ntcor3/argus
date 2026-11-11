@@ -5,7 +5,6 @@ import {
   ToolPipelineBuilder,
   type PipelineToolEntry,
 } from '@/pages/asset-group/components/tool-pipeline-builder';
-import { NoInstalledToolsState } from '@/pages/asset-group/components/no-installed-tools-state';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -319,10 +318,9 @@ export function CreateAssetGroup() {
                 <LoaderCircleIcon className="size-4 animate-spin" />
                 Loading installed tools...
               </div>
-            ) : pipelineTools.length === 0 ? (
-              <NoInstalledToolsState />
             ) : (
               <ToolPipelineBuilder
+                allowInstall
                 tools={pipelineTools}
                 value={pipeline}
                 onChange={setPipeline}
