@@ -53789,6 +53789,173 @@ export function useArtifactsControllerDownload<
 }
 
 /**
+ * Lists current workspace members recorded as recipients of a ready file created by the caller.
+ * @summary List recipients for an owned workspace file
+ */
+export const artifactsControllerGetShares = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactListCreatorDto[]>(
+    { url: `/api/artifacts/${id}/shares`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerGetSharesQueryKey = (id: string) => {
+  return [`/api/artifacts/${id}/shares`] as const;
+};
+
+export const getArtifactsControllerGetSharesQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerGetSharesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetShares>>
+  > = ({ signal }) => artifactsControllerGetShares(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetSharesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetShares>>
+>;
+export type ArtifactsControllerGetSharesQueryError = void;
+
+export function useArtifactsControllerGetShares<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetShares>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetShares<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetShares>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetShares<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List recipients for an owned workspace file
+ */
+
+export function useArtifactsControllerGetShares<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetSharesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
  * Lists folders owned by the caller directly under the selected parent or at the workspace root.
  * @summary List personal artifact folders
  */

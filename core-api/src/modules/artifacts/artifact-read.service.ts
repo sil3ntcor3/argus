@@ -7,7 +7,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { ArtifactFoldersService } from './artifact-folders.service';
 import type { ArtifactDownloadDto } from './dto/artifact-download.dto';
-import { ARTIFACT_ROOT_FOLDER, ARTIFACT_SORT_FIELDS, ArtifactListScope, type ArtifactListItemDto, type ArtifactListQueryDto } from './dto/artifact-list.dto';
+import { ARTIFACT_ROOT_FOLDER, ARTIFACT_SORT_FIELDS, ArtifactListScope, type ArtifactListCreatorDto, type ArtifactListItemDto, type ArtifactListQueryDto } from './dto/artifact-list.dto';
+import { ArtifactShare } from './entities/artifact-share.entity';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 
 const DOWNLOAD_TTL_SECONDS = 5 * 60;
@@ -96,16 +97,40 @@ export class ArtifactReadService {
     });
   }
 
-  private readyFiles(workspaceId: string) {
+  async getShares(workspaceId: string, userId: string, id: string): Promise<ArtifactListCreatorDto[]> {
+    // Keep the owned file in the result even when it has no current recipients.
+    const rows = await this.readyArtifacts(workspaceId)
+      .andWhere('artifact.id = :id AND artifact.createdByUserId = :userId', { id, userId })
+      .leftJoin(ArtifactShare, 'share', `share."artifactId" = artifact.id AND EXISTS (
+        SELECT 1 FROM workspace_members member
+        WHERE member."workspaceId" = artifact."workspaceId" AND member."userId" = share."userId"
+      )`)
+      .leftJoin('share.user', 'recipient')
+      .select('recipient.id', 'id')
+      .addSelect('recipient.name', 'name')
+      .addSelect('recipient.image', 'image')
+      .orderBy('share.createdAt', 'ASC')
+      .addOrderBy('share.id', 'ASC')
+      .getRawMany<ArtifactListCreatorDto | { id: null; name: null; image: null }>();
+
+    if (!rows.length) throw new NotFoundException('File not found');
+    return rows.filter((row): row is ArtifactListCreatorDto => row.id !== null);
+  }
+
+  private readyArtifacts(workspaceId: string) {
     return this.artifacts.createQueryBuilder('artifact')
+      .where('artifact.workspaceId = :workspaceId', { workspaceId })
+      .andWhere('artifact.status = :status', { status: 'ready' });
+  }
+
+  private readyFiles(workspaceId: string) {
+    return this.readyArtifacts(workspaceId)
       .leftJoin('artifact.createdBy', 'creator')
       .select([
         'artifact.id', 'artifact.name', 'artifact.mimeType', 'artifact.sizeBytes', 'artifact.source',
         'artifact.createdByUserId', 'artifact.createdAt', 'artifact.updatedAt',
         'creator.id', 'creator.name', 'creator.image',
-      ])
-      .where('artifact.workspaceId = :workspaceId', { workspaceId })
-      .andWhere('artifact.status = :status', { status: 'ready' });
+      ]);
   }
 
   private canManage(permissions: string[]): boolean {
