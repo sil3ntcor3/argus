@@ -29,6 +29,7 @@ import { TargetActivityTab } from './components/target-activity-tab';
 import { TargetChangesPanel } from './components/target-changes-panel';
 import { TargetOverviewTab } from './components/target-overview-tab';
 import { TargetSwitcher } from './components/target-switcher';
+import { RunAiPentestButton } from './components/run-ai-pentest-button';
 import SettingTarget from './setting-target';
 
 const routeApi = getRouteApi('/_authed/targets/$id/$tab');
@@ -163,42 +164,45 @@ export function DetailTarget() {
       }
     >
       <div className="space-y-4">
-        <nav
-          ref={sectionNav}
-          aria-label="Target sections"
-          className="flex flex-wrap gap-2"
-        >
-          {[
-            ...(canReadAssets ? [{ value: 'overview', label: 'Overview' }] : []),
-            { value: 'assets', label: 'Assets' },
-            { value: 'vulnerabilities', label: 'Vulnerabilities' },
-            ...(canReadActivity ? [{ value: 'activity', label: 'Activity' }] : []),
-            ...(canChangeTarget
-              ? [{ value: 'settings', label: 'Settings' }]
-              : []),
-          ].map(({ value, label }) => (
-            <Button
-              key={value}
-              asChild
-              size="sm"
-              variant={activeTab === value ? 'secondary' : 'ghost'}
-            >
-              <Link
-                from="/targets/$id/$tab"
-                to="/targets/$id/$tab"
-                params={{ id, tab: value }}
-                search={
-                  activeTab === value
-                    ? true
-                    : (previous) => ({ ...previous, tab: undefined })
-                }
-                aria-current={activeTab === value ? 'page' : undefined}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <nav
+            ref={sectionNav}
+            aria-label="Target sections"
+            className="flex flex-wrap gap-2"
+          >
+            {[
+              ...(canReadAssets ? [{ value: 'overview', label: 'Overview' }] : []),
+              { value: 'assets', label: 'Assets' },
+              { value: 'vulnerabilities', label: 'Vulnerabilities' },
+              ...(canReadActivity ? [{ value: 'activity', label: 'Activity' }] : []),
+              ...(canChangeTarget
+                ? [{ value: 'settings', label: 'Settings' }]
+                : []),
+            ].map(({ value, label }) => (
+              <Button
+                key={value}
+                asChild
+                size="sm"
+                variant={activeTab === value ? 'secondary' : 'ghost'}
               >
-                {label}
-              </Link>
-            </Button>
-          ))}
-        </nav>
+                <Link
+                  from="/targets/$id/$tab"
+                  to="/targets/$id/$tab"
+                  params={{ id, tab: value }}
+                  search={
+                    activeTab === value
+                      ? true
+                      : (previous) => ({ ...previous, tab: undefined })
+                  }
+                  aria-current={activeTab === value ? 'page' : undefined}
+                >
+                  {label}
+                </Link>
+              </Button>
+            ))}
+          </nav>
+          <RunAiPentestButton targetValue={target.value} />
+        </div>
         {activeTab === 'overview' ? (
           canReadAssets ? (
             <TargetOverviewTab
