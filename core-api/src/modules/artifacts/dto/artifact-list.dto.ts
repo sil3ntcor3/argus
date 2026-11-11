@@ -7,6 +7,7 @@ export const ARTIFACT_SORT_FIELDS = ['createdAt', 'updatedAt', 'name', 'sizeByte
 export const ARTIFACT_ROOT_FOLDER = 'root';
 export enum ArtifactListScope {
   MINE = 'mine',
+  SHARED = 'shared',
   ALL = 'all',
 }
 

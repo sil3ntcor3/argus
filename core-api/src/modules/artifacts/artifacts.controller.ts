@@ -29,7 +29,7 @@ export class ArtifactsController {
 
   @Doc({
     summary: 'List workspace files',
-    description: 'Lists ready files in the selected workspace. Scope mine lists files created by the caller. Scope all also requires artifact.manage.',
+    description: 'Lists ready files in the selected workspace. Scope mine lists owned files. Scope shared lists other creators’ files shared with the current member. Scope all also requires artifact.manage.',
     response: { serialization: GetManyResponseDto(ArtifactListItemDto) },
     request: { getWorkspaceId: true },
   })

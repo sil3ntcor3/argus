@@ -6981,6 +6981,7 @@ export type ArtifactsControllerGetManyScope =
 
 export const ArtifactsControllerGetManyScope = {
   mine: 'mine',
+  shared: 'shared',
   all: 'all',
 } as const;
 
@@ -52896,7 +52897,7 @@ export const useReportsControllerDeleteReport = <
 };
 
 /**
- * Lists ready files in the selected workspace. Scope mine lists files created by the caller. Scope all also requires artifact.manage.
+ * Lists ready files in the selected workspace. Scope mine lists owned files. Scope shared lists other creators’ files shared with the current member. Scope all also requires artifact.manage.
  * @summary List workspace files
  */
 export const artifactsControllerGetMany = (

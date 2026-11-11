@@ -184,7 +184,7 @@ describe('Workspace file metadata (e2e)', () => {
 
   it('rejects unsupported scope, sort fields, and invalid pagination', async () => {
     for (const query of [
-      { scope: 'shared' }, { sortBy: 'metadata' }, { sortOrder: 'invalid' },
+      { scope: 'invalid' }, { sortBy: 'metadata' }, { sortOrder: 'invalid' },
       { limit: 0 }, { limit: 101 }, { page: 0 }, { page: 1.5 }, { search: '\0' },
     ]) {
       await list(owner.headers).query(query).expect(400);

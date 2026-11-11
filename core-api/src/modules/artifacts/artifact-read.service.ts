@@ -41,16 +41,22 @@ export class ArtifactReadService {
     permissions: string[],
   ): Promise<GetManyBaseResponseDto<ArtifactListItemDto>> {
     const all = query.scope === ArtifactListScope.ALL;
+    const shared = query.scope === ArtifactListScope.SHARED;
     if (all && !this.canManage(permissions)) {
       throw new ForbiddenException('Requires artifact.manage');
     }
     const parentFolderId = query.parentFolderId;
-    if (all && parentFolderId !== undefined) {
+    if (query.scope !== ArtifactListScope.MINE && parentFolderId !== undefined) {
       throw new BadRequestException('Folder filtering requires mine scope');
     }
 
     const builder = this.readyFiles(workspaceId);
-    if (!all) builder.andWhere('artifact.createdByUserId = :userId', { userId });
+    if (shared) {
+      builder.andWhere('artifact.createdByUserId IS DISTINCT FROM :userId', { userId })
+        .andWhere(OWNED_OR_SHARED_FILE, { userId });
+    } else if (!all) {
+      builder.andWhere('artifact.createdByUserId = :userId', { userId });
+    }
     if (parentFolderId === ARTIFACT_ROOT_FOLDER) {
       builder.andWhere('artifact.parentFolderId IS NULL');
     } else if (parentFolderId !== undefined) {
