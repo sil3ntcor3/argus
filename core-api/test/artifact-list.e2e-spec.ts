@@ -73,7 +73,7 @@ describe('Workspace file metadata (e2e)', () => {
     expect(first.headers['cache-control']).toBe('private, no-store');
     expect(first.body).toEqual({ data: [{
       id: own[0], name: 'Report_100%.txt', mimeType: 'text/plain', sizeBytes: 2,
-      source: 'upload', createdBy: { id: owner.user.userId, name: expect.any(String), image: null },
+      source: 'upload', shareType: 'private', createdBy: { id: owner.user.userId, name: expect.any(String), image: null },
       isOwner: true, createdAt: timestamp.toISOString(), updatedAt: timestamp.toISOString(),
     }], total: 2, limit: 1, page: 1, pageCount: 2, hasNextPage: true });
     const second = await list(owner.headers).query({ limit: 1, page: 2 }).expect(200);
