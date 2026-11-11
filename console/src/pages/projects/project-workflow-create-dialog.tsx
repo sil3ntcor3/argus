@@ -24,13 +24,27 @@ import {
   projectsControllerCreateWorkflow,
   useProjectsControllerCreateWorkflow,
   useProjectsControllerGetWorkflowTemplates,
+  useProjectsControllerGetMany,
+  useProjectsControllerGetById,
   useToolsControllerGetInstalledTools,
 } from '@/services/apis/gen/queries';
 import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, useId, useState } from 'react';
 import { toast } from 'sonner';
+import useDebounce from '@/hooks/use-debounce';
+import { projectWorkflowLabel } from './project-workflow-label';
+
+/** Search inputs must not implicitly submit; portaled config forms keep their keys. */
+function preventSearchSubmit(event: KeyboardEvent<HTMLElement>) {
+  if (
+    event.key === 'Enter' &&
+    event.target instanceof HTMLInputElement &&
+    event.currentTarget.contains(event.target)
+  )
+    event.preventDefault();
+}
 
 /** A transport or upstream error can arrive after the server commits. */
 function mayHaveCreated(error: unknown): boolean {
@@ -52,7 +66,14 @@ export function ProjectWorkflowCreateDialog({
   const mutationFilter = { mutationKey, exact: true };
   const creating = useIsMutating(mutationFilter) > 0;
   const [open, setOpen] = useState(false);
-  const [source, setSource] = useState<'template' | 'tools'>('template');
+  const [source, setSource] = useState<'template' | 'tools' | 'copy'>(
+    'template',
+  );
+  const [projectSearch, setProjectSearch] = useState('');
+  const [sourcePage, setSourcePage] = useState(1);
+  const [sourceProject, setSourceProject] = useState('');
+  const [copyBinding, setCopyBinding] = useState('');
+  const search = useDebounce(projectSearch.trim(), 300);
   const [entries, setEntries] = useState<PipelineToolEntry[]>([]);
   const [template, setTemplate] = useState('');
   const [name, setName] = useState('');
@@ -68,6 +89,36 @@ export function ProjectWorkflowCreateDialog({
   });
   const byId = new Map((tools.data?.data ?? []).map((tool) => [tool.id, tool]));
   const toolsReady = !!tools.data && !tools.isFetching && !tools.isError;
+  const projects = useProjectsControllerGetMany(
+    { page: sourcePage, limit: 50, search, sortBy: 'id' },
+    {
+      query: { enabled: open && source === 'copy', retry: false },
+    },
+  );
+  const sourceDetail = useProjectsControllerGetById(sourceProject, {
+    query: {
+      enabled: open && source === 'copy' && !!sourceProject,
+      retry: false,
+    },
+  });
+  const projectsReady =
+    !!projects.data &&
+    !projects.isError &&
+    !projects.isFetching &&
+    projectSearch.trim() === search;
+  const bindings = (sourceDetail.data?.assetGroupWorkflows ?? []).filter(
+    (binding) => binding.workflow,
+  );
+  const copyReady =
+    projectsReady &&
+    projects.data?.data.some((project) => project.id === sourceProject) &&
+    sourceDetail.data?.id === sourceProject &&
+    !sourceDetail.isFetching &&
+    !sourceDetail.isError;
+  function clearCopySource() {
+    setSourceProject('');
+    setCopyBinding('');
+  }
 
   /** Refresh project views without refetching under another workspace. */
   async function refreshAssignments() {
@@ -116,11 +167,13 @@ export function ProjectWorkflowCreateDialog({
   const canSubmit =
     (source === 'template'
       ? catalogReady && catalog.some((item) => item.filePath === template)
-      : toolsReady &&
-        entries.length > 0 &&
-        entries.length <= 50 &&
-        entries.every((entry) => byId.has(entry.toolId)) &&
-        isPipelineValid(entries, byId)) &&
+      : source === 'copy'
+        ? copyReady && bindings.some((binding) => binding.id === copyBinding)
+        : toolsReady &&
+          entries.length > 0 &&
+          entries.length <= 50 &&
+          entries.every((entry) => byId.has(entry.toolId)) &&
+          isPipelineValid(entries, byId)) &&
     !uncertain &&
     !creating;
 
@@ -129,6 +182,9 @@ export function ProjectWorkflowCreateDialog({
     if (queryClient.isMutating(mutationFilter)) return;
     if (next) {
       setSource('template');
+      setProjectSearch('');
+      setSourcePage(1);
+      clearCopySource();
       setEntries([]);
       setTemplate('');
       setName('');
@@ -153,7 +209,9 @@ export function ProjectWorkflowCreateDialog({
         data: {
           ...(source === 'template'
             ? { template }
-            : { jobs: jobsFromEntries(entries, byId) }),
+            : source === 'copy'
+              ? { copyFromProjectWorkflowId: copyBinding }
+              : { jobs: jobsFromEntries(entries, byId) }),
           ...(trimmedName ? { name: trimmedName } : {}),
         },
       });
@@ -178,14 +236,16 @@ export function ProjectWorkflowCreateDialog({
         className={
           source === 'tools'
             ? 'sm:max-w-3xl max-h-[90dvh] overflow-y-auto'
-            : undefined
+            : source === 'copy'
+              ? 'max-h-[90dvh] overflow-y-auto'
+              : undefined
         }
       >
         <DialogHeader>
           <DialogTitle>Create project workflow</DialogTitle>
           <DialogDescription>
-            Choose a workflow template or build a tool pipeline. Its schedule
-            starts disabled.
+            Choose a template, build a tool pipeline, or copy a project
+            workflow. Its schedule starts disabled.
           </DialogDescription>
         </DialogHeader>
         <form className="space-y-4" onSubmit={(event) => void submit(event)}>
@@ -197,12 +257,13 @@ export function ProjectWorkflowCreateDialog({
               value={source}
               disabled={creating || uncertain}
               onChange={(event) => {
-                setSource(event.target.value as 'template' | 'tools');
+                setSource(event.target.value as 'template' | 'tools' | 'copy');
                 create.reset();
               }}
             >
               <option value="template">Workflow template</option>
               <option value="tools">Selected tools</option>
+              <option value="copy">Copy project workflow</option>
             </select>
           </div>
           <div hidden={source !== 'template'} className="space-y-2">
@@ -256,15 +317,7 @@ export function ProjectWorkflowCreateDialog({
             <section
               aria-label="Tool pipeline"
               className="space-y-3"
-              onKeyDown={(event) => {
-                // Search Enter must not submit; portaled config forms keep their own keys.
-                if (
-                  event.key === 'Enter' &&
-                  event.target instanceof HTMLInputElement &&
-                  event.currentTarget.contains(event.target)
-                )
-                  event.preventDefault();
-              }}
+              onKeyDown={preventSearchSubmit}
             >
               <p className="text-sm text-muted-foreground">
                 Select 1–50 tools. Tools in one stage run together; later stages
@@ -298,6 +351,120 @@ export function ProjectWorkflowCreateDialog({
               )}
             </section>
           )}
+          {source === 'copy' && (
+            <section
+              className="space-y-3"
+              aria-label="Copy workflow source"
+              onKeyDown={preventSearchSubmit}
+            >
+              <Label htmlFor={formId + '-search'}>Search projects</Label>
+              <Input
+                id={formId + '-search'}
+                value={projectSearch}
+                readOnly={creating || uncertain}
+                onChange={(event) => {
+                  setProjectSearch(event.target.value);
+                  setSourcePage(1);
+                  clearCopySource();
+                }}
+              />
+              {projects.isError ? (
+                <div role="status">
+                  Unable to load projects.{' '}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void projects.refetch()}
+                  >
+                    Retry projects
+                  </Button>
+                </div>
+              ) : !projectsReady ? (
+                <p role="status">Loading projects…</p>
+              ) : !projects.data?.data.length ? (
+                <p role="status">No projects match this search.</p>
+              ) : null}
+              <Label htmlFor={formId + '-project'}>Source project</Label>
+              <select
+                id={formId + '-project'}
+                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm disabled:opacity-50"
+                value={sourceProject}
+                disabled={creating || uncertain || !projectsReady}
+                onChange={(event) => {
+                  setSourceProject(event.target.value);
+                  setCopyBinding('');
+                }}
+              >
+                <option value="">Select a project</option>
+                {projects.data?.data.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                {(
+                  [
+                    [-1, 'Previous projects'],
+                    [1, 'Next projects'],
+                  ] as const
+                ).map(([direction, label]) => (
+                  <Button
+                    key={label}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      creating ||
+                      uncertain ||
+                      !projectsReady ||
+                      (direction < 0
+                        ? sourcePage <= 1
+                        : sourcePage >= (projects.data?.pageCount ?? 1))
+                    }
+                    onClick={() => {
+                      setSourcePage((page) => page + direction);
+                      clearCopySource();
+                    }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              {sourceProject &&
+                (sourceDetail.isError ? (
+                  <div role="status">
+                    Unable to load workflows.{' '}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void sourceDetail.refetch()}
+                    >
+                      Retry workflows
+                    </Button>
+                  </div>
+                ) : !copyReady ? (
+                  <p role="status">Loading workflows…</p>
+                ) : !bindings.length ? (
+                  <p role="status">This project has no workflows to copy.</p>
+                ) : null)}
+              <Label htmlFor={formId + '-workflow'}>Source workflow</Label>
+              <select
+                id={formId + '-workflow'}
+                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm disabled:opacity-50"
+                value={copyBinding}
+                disabled={creating || uncertain || !copyReady}
+                onChange={(event) => setCopyBinding(event.target.value)}
+              >
+                <option value="">Select a workflow</option>
+                {bindings.map((binding) => (
+                  <option key={binding.id} value={binding.id}>
+                    {projectWorkflowLabel(binding.workflow)}
+                  </option>
+                ))}
+              </select>
+            </section>
+          )}
           <div className="space-y-2">
             <Label htmlFor={formId + '-name'}>Workflow name (optional)</Label>
             <Input
@@ -307,7 +474,9 @@ export function ProjectWorkflowCreateDialog({
               placeholder={
                 source === 'template'
                   ? 'Use the template name'
-                  : 'Project workflow'
+                  : source === 'copy'
+                    ? 'Use the source workflow name plus (copy)'
+                    : 'Project workflow'
               }
               maxLength={120}
               readOnly={creating || uncertain}

@@ -54,7 +54,7 @@ const tools = [
   { id: 'ports', name: 'naabu' },
   { id: 'web', name: 'httpx' },
 ];
-function show() {
+function show(source: 'tools' | 'copy' = 'tools') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -68,7 +68,7 @@ function show() {
     screen.getByRole('dialog', { name: 'Create project workflow' }),
   );
   fireEvent.change(dialog.getByLabelText('Creation source'), {
-    target: { value: 'tools' },
+    target: { value: source },
   });
   return {
     client,
@@ -209,5 +209,141 @@ describe('Project workflow tools creation', () => {
     expect(create).not.toHaveBeenCalled();
     client.clear();
     setGlobalWorkspaceId('fixture');
+  });
+
+  it('pages source projects and submits only the selected binding', async () => {
+    const create = vi.fn();
+    server.use(
+      http.get('/api/projects', ({ request }) =>
+        HttpResponse.json({
+          data: [
+            {
+              id:
+                new URL(request.url).searchParams.get('page') === '2'
+                  ? 'source'
+                  : 'first',
+              name: 'Source project',
+            },
+          ],
+          pageCount: 2,
+        }),
+      ),
+      http.get('/api/projects/source', () =>
+        HttpResponse.json({
+          id: 'source',
+          assetGroupWorkflows: [
+            {
+              id: 'binding',
+              workflow: { name: 'Saved scan', content: { name: 'Old hint' } },
+            },
+          ],
+        }),
+      ),
+      http.post('/api/projects/:id/workflows', async ({ request }) => {
+        create(await request.json());
+        return HttpResponse.json({ id: 'new' }, { status: 201 });
+      }),
+    );
+    const { client, dialog, submit } = show('copy');
+    await dialog.findByRole('option', { name: 'Source project' });
+    fireEvent.click(dialog.getByRole('button', { name: 'Next projects' }));
+    await waitFor(() =>
+      expect(
+        dialog.getByRole('option', { name: 'Source project' }),
+      ).toHaveValue('source'),
+    );
+    fireEvent.change(dialog.getByLabelText('Source project'), {
+      target: { value: 'source' },
+    });
+    await dialog.findByRole('option', { name: 'Saved scan' });
+    fireEvent.change(dialog.getByLabelText('Source workflow'), {
+      target: { value: 'binding' },
+    });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(create).toHaveBeenCalledExactlyOnceWith({
+        copyFromProjectWorkflowId: 'binding',
+      }),
+    );
+    client.clear();
+  });
+
+  it('clears a selected source when searching and prevents search Enter submission', async () => {
+    const create = vi.fn();
+    server.use(
+      http.get('/api/projects', ({ request }) =>
+        HttpResponse.json({
+          data: new URL(request.url).searchParams.get('search')
+            ? []
+            : [{ id: 'source', name: 'Source project' }],
+          pageCount: 1,
+        }),
+      ),
+      http.get('/api/projects/source', () =>
+        HttpResponse.json({
+          id: 'source',
+          assetGroupWorkflows: [
+            { id: 'binding', workflow: { name: 'Saved scan' } },
+          ],
+        }),
+      ),
+      http.post('/api/projects/:id/workflows', () => {
+        create();
+        return HttpResponse.json({ id: 'new' });
+      }),
+    );
+    const { client, dialog, submit } = show('copy');
+    await dialog.findByRole('option', { name: 'Source project' });
+    fireEvent.change(dialog.getByLabelText('Source project'), {
+      target: { value: 'source' },
+    });
+    await dialog.findByRole('option', { name: 'Saved scan' });
+    fireEvent.change(dialog.getByLabelText('Source workflow'), {
+      target: { value: 'binding' },
+    });
+    await waitFor(() => expect(submit).toBeEnabled());
+    const search = dialog.getByLabelText('Search projects');
+    fireEvent.change(search, { target: { value: 'missing' } });
+    expect(submit).toBeDisabled();
+    expect(fireEvent.keyDown(search, { key: 'Enter' })).toBe(false);
+    await dialog.findByText('No projects match this search.');
+    fireEvent.click(submit);
+    expect(create).not.toHaveBeenCalled();
+    client.clear();
+  });
+
+  it('retries project and workflow failures and handles an empty source project', async () => {
+    let projectsFail = true,
+      workflowsFail = true;
+    server.use(
+      http.get('/api/projects', () =>
+        projectsFail
+          ? new HttpResponse(null, { status: 503 })
+          : HttpResponse.json({
+              data: [{ id: 'source', name: 'Source project' }],
+              pageCount: 1,
+            }),
+      ),
+      http.get('/api/projects/source', () =>
+        workflowsFail
+          ? new HttpResponse(null, { status: 503 })
+          : HttpResponse.json({ id: 'source', assetGroupWorkflows: [] }),
+      ),
+    );
+    const { client, dialog, submit } = show('copy');
+    await dialog.findByRole('button', { name: 'Retry projects' });
+    projectsFail = false;
+    fireEvent.click(dialog.getByRole('button', { name: 'Retry projects' }));
+    await dialog.findByRole('option', { name: 'Source project' });
+    fireEvent.change(dialog.getByLabelText('Source project'), {
+      target: { value: 'source' },
+    });
+    await dialog.findByRole('button', { name: 'Retry workflows' });
+    workflowsFail = false;
+    fireEvent.click(dialog.getByRole('button', { name: 'Retry workflows' }));
+    await dialog.findByText('This project has no workflows to copy.');
+    expect(submit).toBeDisabled();
+    client.clear();
   });
 });
