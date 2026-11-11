@@ -64,6 +64,8 @@ function CatalogInstaller({
       },
     },
   });
+  // Opening a stale result can unmount its confirmation when search resolves.
+  const catalogPending = query.isFetching || search.trim() !== debouncedSearch;
   const queryClient = useQueryClient();
   const installedIds = new Set(installedTools.map((tool) => tool.id));
   const tools = (query.data?.data ?? []).filter(
@@ -72,7 +74,12 @@ function CatalogInstaller({
 
   /** A late response from another workspace cannot open a panel in this draft. */
   const install = async (tool: Tool) => {
-    if (disabled || installingId || getGlobalWorkspaceId() !== workspaceId)
+    if (
+      disabled ||
+      catalogPending ||
+      installingId ||
+      getGlobalWorkspaceId() !== workspaceId
+    )
       return;
     setInstallingId(tool.id);
     try {
@@ -141,7 +148,7 @@ function CatalogInstaller({
                   type="button"
                   variant="outline"
                   aria-label={`Install ${tool.name}`}
-                  disabled={disabled || installingId !== null}
+                  disabled={disabled || catalogPending || installingId !== null}
                 >
                   <ToolLogo name={tool.name} logoUrl={tool.logoUrl} size={24} />
                   {tool.name}
