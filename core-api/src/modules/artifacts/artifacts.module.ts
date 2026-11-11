@@ -6,6 +6,7 @@ import { ArtifactFoldersController } from './artifact-folders.controller';
 import { ArtifactFoldersService } from './artifact-folders.service';
 import { ArtifactQuotaService } from './artifact-quota.service';
 import { ArtifactReadService } from './artifact-read.service';
+import { ArtifactShareService } from './artifact-share.service';
 import { ArtifactStagingSweepService } from './artifact-staging-sweep.service';
 import { ArtifactUsageService } from './artifact-usage.service';
 import { ArtifactsController } from './artifacts.controller';
@@ -19,6 +20,7 @@ import { WorkspaceStorageUsage } from './entities/workspace-storage-usage.entity
   providers: [
     ArtifactUsageService,
     ArtifactReadService,
+    ArtifactShareService,
     ArtifactQuotaService,
     ArtifactCleanupService,
     ArtifactExpirySweepService,

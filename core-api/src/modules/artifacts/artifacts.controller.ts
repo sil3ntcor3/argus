@@ -6,13 +6,15 @@ import { DefaultMessageResponseDto } from '@/common/dtos/default-message-respons
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import type { RequestWithMetadata, UserContextPayload } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { Controller, Delete, Get, Header, Param, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpStatus, Param, Post, Query, Req } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
 import { ArtifactCleanupService } from './artifact-cleanup.service';
 import { ArtifactReadService } from './artifact-read.service';
+import { ArtifactShareService } from './artifact-share.service';
 import { ArtifactUsageService } from './artifact-usage.service';
 import { ArtifactDownloadDto } from './dto/artifact-download.dto';
 import { ArtifactListCreatorDto, ArtifactListItemDto, ArtifactListQueryDto } from './dto/artifact-list.dto';
+import { AddArtifactSharesDto, AddArtifactSharesResultDto } from './dto/artifact-share.dto';
 import { ArtifactUsageDto } from './dto/artifact-usage.dto';
 
 @ApiTags('Artifacts')
@@ -22,6 +24,7 @@ export class ArtifactsController {
     private readonly usage: ArtifactUsageService,
     private readonly files: ArtifactReadService,
     private readonly cleanup: ArtifactCleanupService,
+    private readonly shares: ArtifactShareService,
   ) {}
 
   @Doc({
@@ -122,6 +125,30 @@ export class ArtifactsController {
     @UserContext() user: UserContextPayload,
   ): Promise<ArtifactListCreatorDto[]> {
     return this.files.getShares(workspaceId, user.id, id);
+  }
+
+  @Doc({
+    summary: 'Add workspace file recipients',
+    description: 'Adds current members of the selected workspace to the share list of a ready file owned by the caller.',
+    response: { serialization: AddArtifactSharesResultDto, httpStatus: HttpStatus.CREATED },
+    request: {
+      getWorkspaceId: true,
+      params: [{ name: 'id', schema: { type: 'string', format: 'uuid' } }],
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid recipient list, file ID, or workspace selection.' })
+  @ApiForbiddenResponse({ description: 'Missing file write access in the selected workspace.' })
+  @ApiNotFoundResponse({ description: 'Owned ready file not found in the selected workspace.' })
+  @WorkspaceAccess('artifact.write')
+  @Header('Cache-Control', 'private, no-store')
+  @Post(':id/shares')
+  addShares(
+    @Param() { id }: IdQueryParamDto,
+    @Body() { emails }: AddArtifactSharesDto,
+    @WorkspaceId() workspaceId: string,
+    @UserContext() user: UserContextPayload,
+  ): Promise<AddArtifactSharesResultDto> {
+    return this.shares.addShares(workspaceId, user.id, id, emails);
   }
 
   @Doc({
