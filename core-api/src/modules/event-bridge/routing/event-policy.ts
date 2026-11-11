@@ -76,6 +76,9 @@ export const EVENT_POLICY: Record<EventName, EventPolicy> = {
   'audit.exported': { persist: true, severity: 'important' },
   'tool.installed': { persist: true, severity: 'normal' },
   'tool.uninstalled': { persist: true, severity: 'important' },
+  'artifact.updated': { persist: true, severity: 'important' },
+  'artifact.shared': { persist: true, severity: 'important' },
+  'artifact.unshared': { persist: true, severity: 'important' },
 
   // ─── Runtime events ──────────────────────────────────────────────────────
   // `persist: false` on all of them: they are operational signals, not the 37

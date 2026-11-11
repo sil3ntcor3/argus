@@ -8,6 +8,8 @@ import type { RequestWithMetadata, UserContextPayload } from '@/common/interface
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import { Body, Controller, Delete, Get, Header, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
+import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
+import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
 import { ArtifactCleanupService } from './artifact-cleanup.service';
 import { ArtifactReadService } from './artifact-read.service';
 import { ArtifactShareService } from './artifact-share.service';
@@ -139,6 +141,14 @@ export class ArtifactsController {
   @ApiBadRequestResponse({ description: 'Invalid recipient list, file ID, or workspace selection.' })
   @ApiForbiddenResponse({ description: 'Missing file write access in the selected workspace.' })
   @ApiNotFoundResponse({ description: 'Owned ready file not found in the selected workspace.' })
+  @PublishEvent(EVENT_CATALOG.artifact.shared, {
+    resourceIdFromRoute: true,
+    metadata: (_body, result): Record<string, number> => {
+      if (!result) return {};
+      const counts = result as AddArtifactSharesResultDto;
+      return { shared: counts.shared, skipped: counts.skipped };
+    },
+  })
   @WorkspaceAccess('artifact.write')
   @Header('Cache-Control', 'private, no-store')
   @Post(':id/shares')
@@ -166,6 +176,7 @@ export class ArtifactsController {
   @ApiBadRequestResponse({ description: 'Invalid file ID, recipient ID, or workspace selection.' })
   @ApiForbiddenResponse({ description: 'Missing file write access in the selected workspace.' })
   @ApiNotFoundResponse({ description: 'Owned ready file not found in the selected workspace.' })
+  @PublishEvent(EVENT_CATALOG.artifact.unshared, { resourceIdFromRoute: true })
   @WorkspaceAccess('artifact.write')
   @Header('Cache-Control', 'private, no-store')
   @Delete(':id/shares/:userId')
@@ -190,6 +201,13 @@ export class ArtifactsController {
   @ApiBadRequestResponse({ description: 'Invalid access mode, file ID, or workspace selection.' })
   @ApiForbiddenResponse({ description: 'Missing file write access in the selected workspace.' })
   @ApiNotFoundResponse({ description: 'Owned ready file not found in the selected workspace.' })
+  @PublishEvent(EVENT_CATALOG.artifact.updated, {
+    resourceId: result => (result as ArtifactListItemDto | undefined)?.id,
+    changes: (_body, result): Record<string, { after: string }> => {
+      if (!result) return {};
+      return { shareType: { after: (result as ArtifactListItemDto).shareType } };
+    },
+  })
   @WorkspaceAccess('artifact.write')
   @Header('Cache-Control', 'private, no-store')
   @Patch(':id')
