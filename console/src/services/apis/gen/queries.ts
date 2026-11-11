@@ -54063,6 +54063,95 @@ export const useArtifactsControllerAddShares = <
 };
 
 /**
+ * Removes a recipient record from a ready file owned by the caller, including a former workspace member.
+ * @summary Remove a workspace file recipient
+ */
+export const artifactsControllerRemoveShare = (
+  id: string,
+  userId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/artifacts/${id}/shares/${userId}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerRemoveShareMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+    TError,
+    { id: string; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  const mutationKey = ['artifactsControllerRemoveShare'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+    { id: string; userId: string }
+  > = (props) => {
+    const { id, userId } = props ?? {};
+
+    return artifactsControllerRemoveShare(id, userId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArtifactsControllerRemoveShareMutationResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerRemoveShare>>
+>;
+
+export type ArtifactsControllerRemoveShareMutationError = void;
+
+/**
+ * @summary Remove a workspace file recipient
+ */
+export const useArtifactsControllerRemoveShare = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+      TError,
+      { id: string; userId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  return useMutation(
+    getArtifactsControllerRemoveShareMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * Lists folders owned by the caller directly under the selected parent or at the workspace root.
  * @summary List personal artifact folders
  */

@@ -6,7 +6,7 @@ import { DefaultMessageResponseDto } from '@/common/dtos/default-message-respons
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import type { RequestWithMetadata, UserContextPayload } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { Body, Controller, Delete, Get, Header, HttpStatus, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpStatus, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiTags } from '@nestjs/swagger';
 import { ArtifactCleanupService } from './artifact-cleanup.service';
 import { ArtifactReadService } from './artifact-read.service';
@@ -149,6 +149,33 @@ export class ArtifactsController {
     @UserContext() user: UserContextPayload,
   ): Promise<AddArtifactSharesResultDto> {
     return this.shares.addShares(workspaceId, user.id, id, emails);
+  }
+
+  @Doc({
+    summary: 'Remove a workspace file recipient',
+    description: 'Removes a recipient record from a ready file owned by the caller, including a former workspace member.',
+    response: { serialization: DefaultMessageResponseDto },
+    request: {
+      getWorkspaceId: true,
+      params: [
+        { name: 'id', schema: { type: 'string', format: 'uuid' } },
+        { name: 'userId', schema: { type: 'string', format: 'uuid' } },
+      ],
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid file ID, recipient ID, or workspace selection.' })
+  @ApiForbiddenResponse({ description: 'Missing file write access in the selected workspace.' })
+  @ApiNotFoundResponse({ description: 'Owned ready file not found in the selected workspace.' })
+  @WorkspaceAccess('artifact.write')
+  @Header('Cache-Control', 'private, no-store')
+  @Delete(':id/shares/:userId')
+  removeShare(
+    @Param() { id }: IdQueryParamDto,
+    @Param('userId', ParseUUIDPipe) recipientId: string,
+    @WorkspaceId() workspaceId: string,
+    @UserContext() user: UserContextPayload,
+  ): Promise<DefaultMessageResponseDto> {
+    return this.shares.removeShare(workspaceId, user.id, id, recipientId);
   }
 
   @Doc({
