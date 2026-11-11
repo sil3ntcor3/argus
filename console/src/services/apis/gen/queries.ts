@@ -4975,14 +4975,21 @@ export type CreatedProjectWorkflowDto = {
   schedule: CreatedProjectWorkflowDtoSchedule;
 };
 
+/**
+ * Selected job graph. Supply exactly one of template or jobs.
+ */
+export type CreateProjectWorkflowDtoJobs = { [key: string]: WorkflowJob };
+
 export type CreateProjectWorkflowDto = {
   /**
-   * File path from the workspace template catalog
+   * Workspace template path. Supply exactly one of template or jobs.
    * @maxLength 255
    */
-  template: string;
+  template?: string;
+  /** Selected job graph. Supply exactly one of template or jobs. */
+  jobs?: CreateProjectWorkflowDtoJobs;
   /**
-   * Defaults to the template name
+   * Defaults to the template name or Project workflow for selected jobs
    * @maxLength 120
    */
   name?: string;
@@ -46026,7 +46033,7 @@ export function useProjectsControllerGetWorkflowTemplates<
 }
 
 /**
- * @summary Create a project workflow from a default template
+ * @summary Create a project workflow from a template or selected jobs
  */
 export const projectsControllerCreateWorkflow = (
   id: string,
@@ -46092,7 +46099,7 @@ export type ProjectsControllerCreateWorkflowMutationBody =
 export type ProjectsControllerCreateWorkflowMutationError = unknown;
 
 /**
- * @summary Create a project workflow from a default template
+ * @summary Create a project workflow from a template or selected jobs
  */
 export const useProjectsControllerCreateWorkflow = <
   TError = unknown,

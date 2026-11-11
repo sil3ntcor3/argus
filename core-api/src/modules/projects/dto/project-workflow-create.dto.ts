@@ -1,6 +1,12 @@
 import { CronSchedule } from '@/common/enums/enum';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ApiProperty,
+  ApiPropertyOptional,
+  getSchemaPath,
+} from '@nestjs/swagger';
+import { WorkflowJob } from '@/modules/workflows/entities/workflow.entity';
+import {
+  IsObject,
   IsString,
   Matches,
   MaxLength,
@@ -9,18 +15,32 @@ import {
 } from 'class-validator';
 
 export class CreateProjectWorkflowDto {
-  @ApiProperty({
-    description: 'File path from the workspace template catalog',
+  @ApiPropertyOptional({
+    description:
+      'Workspace template path. Supply exactly one of template or jobs.',
     maxLength: 255,
   })
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsString()
   @Matches(/\S/)
   @NotContains('\u0000')
   @MaxLength(255)
-  template: string;
+  template?: string;
 
   @ApiPropertyOptional({
-    description: 'Defaults to the template name',
+    description: 'Selected job graph. Supply exactly one of template or jobs.',
+    type: 'object',
+    additionalProperties: { $ref: getSchemaPath(WorkflowJob) },
+    minProperties: 1,
+    maxProperties: 50,
+  })
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @IsObject()
+  jobs?: Record<string, WorkflowJob>;
+
+  @ApiPropertyOptional({
+    description:
+      'Defaults to the template name or Project workflow for selected jobs',
     maxLength: 120,
   })
   @ValidateIf((_object, value: unknown) => value !== undefined)
