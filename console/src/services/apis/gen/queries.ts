@@ -5751,6 +5751,27 @@ export type GetManyArtifactListItemDtoDto = {
   pageCount: number;
 };
 
+export type ArtifactSourceUsageDtoSource =
+  (typeof ArtifactSourceUsageDtoSource)[keyof typeof ArtifactSourceUsageDtoSource];
+
+export const ArtifactSourceUsageDtoSource = {
+  upload: 'upload',
+  agent: 'agent',
+} as const;
+
+export type ArtifactSourceUsageDto = {
+  source: ArtifactSourceUsageDtoSource;
+  /** @minimum 0 */
+  bytes: number;
+};
+
+export type ArtifactUserUsageDto = {
+  /** @nullable */
+  user: ArtifactListCreatorDto | null;
+  /** @minimum 0 */
+  bytes: number;
+};
+
 export type ArtifactUsageDto = {
   /**
    * Effective workspace quota in bytes
@@ -5772,6 +5793,10 @@ export type ArtifactUsageDto = {
    * @minimum 0
    */
   maxFileBytes: number;
+  /** Ready-file bytes grouped by source, largest first. */
+  bySource: ArtifactSourceUsageDto[];
+  /** Ready-file bytes grouped by creator, largest first. Removed creators are grouped under null. */
+  byUser: ArtifactUserUsageDto[];
 };
 
 export type ArtifactDownloadDto = {
@@ -53256,7 +53281,7 @@ export function useArtifactsControllerGetMany<
 }
 
 /**
- * Returns quota, used and reserved bytes, and the per-file limit. Requires artifact.read.
+ * Returns quota, used and reserved bytes, the per-file limit, and ready-file bytes by source and creator across the selected workspace. Requires artifact.read.
  * @summary Get workspace storage usage
  */
 export const artifactsControllerGetUsage = (

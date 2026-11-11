@@ -7,7 +7,7 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 | Route | Selected workspace access |
 | --- | --- |
 | `GET /api/artifacts` | `artifact.read` for owned ready files or `scope=shared` recipient files. `scope=all` also requires `artifact.manage`. |
-| `GET /api/artifacts/usage` | `artifact.read`. Returns quota, used bytes, reserved bytes, and the per-file limit. |
+| `GET /api/artifacts/usage` | `artifact.read`. Returns quota, used bytes, reserved bytes, the per-file limit, and workspace-wide ready-file bytes by source and creator. |
 | `GET /api/artifacts/:id` | `artifact.read` for the owner or a current named recipient in shared mode. `artifact.manage` also permits other ready-file metadata. |
 | `GET /api/artifacts/:id/download` | `artifact.read` for the owner or a current named recipient in shared mode. |
 | `GET /api/public/artifacts/:id` | Anonymous attachment redirect for a ready file in public mode. |
@@ -22,6 +22,7 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 - `ArtifactReadService` scopes queries to the selected workspace and ready files. Foreign, pending, deleted, or otherwise invisible records return 404. Download signs a short-lived attachment URL with `application/octet-stream`.
 - In `scope=mine`, `parentFolderId=root` lists only files outside folders. An explicit folder UUID must have an owned breadcrumb in the selected workspace. Omitting the filter leaves listing and search across folders. Other scopes reject folder filtering.
 - `ArtifactUsageService` reads the meter without creating a row. A missing row has zero usage and the default 1 GiB quota. `ARTIFACT_MAX_FILE_BYTES` is 50 MiB.
+- Usage breakdowns count ready files only. Source and creator groups sort by bytes descending with stable ties. Creator objects contain only ID, name, and image, with removed creators grouped under null. Empty workspaces return empty arrays. Meter totals can also retain charges awaiting physical cleanup.
 - `ArtifactUploadReservationService` and `ArtifactUploadCompletionService` are internal. A future caller must authorize the workspace and actor before calling them.
 
 ## Sharing and audit

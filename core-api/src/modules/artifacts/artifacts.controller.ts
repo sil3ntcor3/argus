@@ -49,7 +49,7 @@ export class ArtifactsController {
 
   @Doc({
     summary: 'Get workspace storage usage',
-    description: 'Returns quota, used and reserved bytes, and the per-file limit. Requires artifact.read.',
+    description: 'Returns quota, used and reserved bytes, the per-file limit, and ready-file bytes by source and creator across the selected workspace. Requires artifact.read.',
     response: { serialization: ArtifactUsageDto },
     request: { getWorkspaceId: true },
   })
