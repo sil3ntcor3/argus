@@ -46,6 +46,7 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 - `ArtifactQuotaService` changes counters inside the caller's transaction with conditional updates. Keep byte values within the safe integer range. Postgres returns the stored `bigint` values as strings.
 - Deletion commits the tombstone first so reads stop immediately. `ArtifactCleanupService` removes both object keys before releasing the charge and removing the row. Failed purges keep their tombstones for retry.
 - `ArtifactExpirySweepService` reclaims pending reservations after their expiry plus a 15-minute grace period. It also retries tombstones. `ArtifactStagingSweepService` uses a Redis cursor to find older orphan staging writes in bounded pages.
+- The staging sweep also reclaims a ready file's staging key once its saved upload deadline passes the sweep cutoff.
 - Workspace deletion cascades file and quota rows, then attempts prefix cleanup. The staging sweep can retry a deleted workspace's prefix when the matching successful deletion audit event still exists. Absence from the workspace table alone does not authorize cleanup of final keys.
 
 ## Verification
