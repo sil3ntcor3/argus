@@ -22,6 +22,8 @@ describe('Named recipient file access (e2e)', () => {
   const deleted = randomUUID();
   const unshared = randomUUID();
   const foreign = randomUUID();
+  const orphan = randomUUID();
+  const mine = randomUUID();
   const headers = () => wsHeaders(recipient.user.cookie, owner.workspace.id);
   const detail = (id: string) => request(app.server).get(`/api/artifacts/${id}`).set(headers());
   const download = (id: string) => request(app.server).get(`/api/artifacts/${id}/download`).set(headers());
@@ -47,10 +49,12 @@ describe('Named recipient file access (e2e)', () => {
     const file = (id: string) => ({
       id, workspaceId, createdByUserId: owner.user.userId, name: 'shared.txt', mimeType: 'text/plain',
       objectKey: workspaceArtifactKey(workspaceId, id), source: 'upload' as const, status: 'ready' as const,
-      shareType: 'shared' as const, sizeBytes: '6',
+      shareType: 'shared' as const, sizeBytes: '6', createdAt: new Date('2026-01-01T00:00:00Z'),
     });
     await app.dataSource.getRepository(WorkspaceArtifact).insert([
       file(shared), file(unshared),
+      { ...file(orphan), createdByUserId: null, name: 'Legacy report.txt' },
+      { ...file(mine), createdByUserId: recipient.user.userId },
       { ...file(privateFile), shareType: 'private' },
       { ...file(publicFile), shareType: 'public' },
       { ...file(pending), status: 'pending', expiresAt: new Date(Date.now() + 3600000) },
@@ -58,7 +62,7 @@ describe('Named recipient file access (e2e)', () => {
       { ...file(foreign), workspaceId: recipient.workspace.id, objectKey: workspaceArtifactKey(recipient.workspace.id, foreign) },
     ]);
     await app.dataSource.getRepository(ArtifactShare).insert(
-      [shared, privateFile, publicFile, pending, deleted, foreign].map(artifactId => ({ artifactId, userId: recipient.user.userId })),
+      [shared, privateFile, publicFile, pending, deleted, foreign, orphan, mine].map(artifactId => ({ artifactId, userId: recipient.user.userId })),
     );
   });
 
@@ -103,10 +107,29 @@ describe('Named recipient file access (e2e)', () => {
     await request(app.server).get(`/api/artifacts/${shared}/download`).expect(401);
   });
 
+  it('paginates named shared files with stable ties and includes removed creators', async () => {
+    const ids = [shared, orphan].sort();
+    const list = (query: object) => request(app.server).get('/api/artifacts').set(headers())
+      .query({ scope: 'shared', limit: 1, sortBy: 'createdAt', sortOrder: 'ASC', ...query });
+    const first = await list({}).expect(200);
+    expect(first.headers['cache-control']).toBe('private, no-store');
+    expect(first.body).toMatchObject({ total: 2, page: 1, hasNextPage: true, data: [{ id: ids[0], isOwner: false, shareType: 'shared' }] });
+    const second = await list({ page: 2 }).expect(200);
+    expect(second.body).toMatchObject({ total: 2, page: 2, hasNextPage: false, data: [{ id: ids[1] }] });
+    const legacy = await list({ search: 'Legacy' }).expect(200);
+    expect(legacy.body).toMatchObject({ total: 1, data: [{ id: orphan, createdBy: null }] });
+    const mineResult = await request(app.server).get('/api/artifacts').set(headers()).query({ scope: 'mine' }).expect(200);
+    expect(mineResult.body.data.map((file: { id: string }) => file.id)).toEqual([mine]);
+    for (const parentFolderId of ['root', randomUUID()]) {
+      await list({ parentFolderId }).expect(400);
+    }
+  });
+
   it('requires effective file read access while keeping management metadata-only', async () => {
     await permissions([]);
     await detail(shared).expect(403);
     await download(shared).expect(403);
+    await request(app.server).get('/api/artifacts').set(headers()).query({ scope: 'shared' }).expect(403);
     await permissions(['artifact.read', 'artifact.manage']);
     await detail(privateFile).expect(200);
     await download(privateFile).expect(404);
@@ -117,6 +140,8 @@ describe('Named recipient file access (e2e)', () => {
     await request(app.server).delete(`/api/artifacts/${shared}/shares/${recipient.user.userId}`).set(owner.headers).expect(200);
     await detail(shared).expect(404);
     await download(shared).expect(404);
+    const revoked = await request(app.server).get('/api/artifacts').set(headers()).query({ scope: 'shared' }).expect(200);
+    expect(revoked.body.data.map((file: { id: string }) => file.id)).toEqual([orphan]);
     await request(app.server).post(`/api/artifacts/${shared}/shares`).set(owner.headers)
       .send({ emails: [recipient.user.email] }).expect(201);
     await detail(shared).expect(200);
