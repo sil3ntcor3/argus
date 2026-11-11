@@ -329,6 +329,20 @@ describe('StorageService', () => {
         $metadata: { httpStatusCode: 409 },
       });
 
+    it('honors a cancelled upload before issuing an S3 request', async () => {
+      const signal = AbortSignal.abort(new Error('Stopped'));
+      await expect(service.uploadFile('file', Buffer.from('x'), 'artifacts', 'text/plain', signal)).rejects.toThrow('Stopped');
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('passes cancellation through to S3 without a bucket retry', async () => {
+      const controller = new AbortController();
+      sendMock.mockImplementationOnce(() => { controller.abort(new Error('Stopped')); throw noSuchBucket(); });
+      await expect(service.uploadFile('file', Buffer.from('x'), 'artifacts', 'text/plain', controller.signal)).rejects.toThrow('Stopped');
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      expect(sendMock.mock.calls[0][1]).toEqual({ abortSignal: controller.signal });
+    });
+
     it('should not create a bucket when the upload succeeds on the first attempt', async () => {
       sendMock.mockResolvedValue({});
 

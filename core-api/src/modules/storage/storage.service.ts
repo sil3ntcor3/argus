@@ -446,7 +446,9 @@ export class StorageService implements OnModuleInit {
     buffer: Buffer,
     bucket: string = 'default',
     contentType?: string,
+    abortSignal?: AbortSignal,
   ) {
+    abortSignal?.throwIfAborted();
     const client = this.rustFsClient.getClient();
     const dotIndex = fileName.lastIndexOf('.');
     const derivedType =
@@ -463,11 +465,13 @@ export class StorageService implements OnModuleInit {
           Body: buffer,
           ContentType: resolvedContentType,
         }),
+        { abortSignal },
       );
 
     try {
       await putObject();
     } catch (error: unknown) {
+      abortSignal?.throwIfAborted();
       // The happy path stays a single round-trip — no HeadBucket probe, no
       // bucket churn. Only a genuinely missing bucket pays for a CreateBucket
       // plus exactly one retry. A concurrent `onModuleInit` caller can reach
@@ -479,9 +483,10 @@ export class StorageService implements OnModuleInit {
       }
 
       try {
-        await client.send(new CreateBucketCommand({ Bucket: bucket }));
+        await client.send(new CreateBucketCommand({ Bucket: bucket }), { abortSignal });
         this.logger.log(`Created bucket on demand: ${bucket}`);
       } catch (createError: unknown) {
+        abortSignal?.throwIfAborted();
         // Lost the race against another instance that created it first — the
         // bucket exists either way, so the retry below is still correct.
         if (!this.isBucketAlreadyExists(createError)) {
@@ -492,10 +497,12 @@ export class StorageService implements OnModuleInit {
       try {
         await putObject();
       } catch (retryError: unknown) {
+        abortSignal?.throwIfAborted();
         throw this.toUploadError(retryError);
       }
     }
 
+    abortSignal?.throwIfAborted();
     return { path: `${bucket}/${fileName}` };
   }
 
