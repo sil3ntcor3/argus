@@ -5767,6 +5767,18 @@ export type ArtifactDownloadDto = {
   expiresIn: number;
 };
 
+export type AddArtifactSharesResultDto = {
+  /** Current workspace recipients matched, including existing shares. */
+  shared: number;
+  /** Distinct addresses that did not match an eligible recipient. */
+  skipped: number;
+};
+
+export type AddArtifactSharesDto = {
+  /** @maxItems 50 */
+  emails: string[];
+};
+
 export type ArtifactFolderDto = {
   id: string;
   name: string;
@@ -53954,6 +53966,101 @@ export function useArtifactsControllerGetShares<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Adds current members of the selected workspace to the share list of a ready file owned by the caller.
+ * @summary Add workspace file recipients
+ */
+export const artifactsControllerAddShares = (
+  id: string,
+  addArtifactSharesDto: AddArtifactSharesDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<AddArtifactSharesResultDto>(
+    {
+      url: `/api/artifacts/${id}/shares`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: addArtifactSharesDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getArtifactsControllerAddSharesMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+    TError,
+    { id: string; data: AddArtifactSharesDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+  TError,
+  { id: string; data: AddArtifactSharesDto },
+  TContext
+> => {
+  const mutationKey = ['artifactsControllerAddShares'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+    { id: string; data: AddArtifactSharesDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return artifactsControllerAddShares(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArtifactsControllerAddSharesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerAddShares>>
+>;
+export type ArtifactsControllerAddSharesMutationBody = AddArtifactSharesDto;
+export type ArtifactsControllerAddSharesMutationError = void;
+
+/**
+ * @summary Add workspace file recipients
+ */
+export const useArtifactsControllerAddShares = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+      TError,
+      { id: string; data: AddArtifactSharesDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+  TError,
+  { id: string; data: AddArtifactSharesDto },
+  TContext
+> => {
+  return useMutation(
+    getArtifactsControllerAddSharesMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * Lists folders owned by the caller directly under the selected parent or at the workspace root.
