@@ -15,3 +15,7 @@ The approved migration is generated with
 rollback, reapplication and legacy-row preservation on disposable local
 Postgres. Run `task api:test:e2e:one SPEC=test/project-workflow-trigger-storage.e2e-spec.ts`
 for defaults, JSON settings, foreign-key and cascade behavior.
+
+`GET /api/projects/:id/triggers` requires workspace project read access, including
+archived projects. It orders by creation time/ID, checks workflow ownership and
+omits scheduler IDs/unknown settings. Reads never register schedules or run jobs.

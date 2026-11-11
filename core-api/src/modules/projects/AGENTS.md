@@ -9,4 +9,4 @@ Projects organize workspace assets with manual selection, inclusion rules, and e
 
 Use scope, workflow, and provenance specs. Validate ownership and lock ordering against local Docker Postgres.
 
-`project_workflow_triggers` is private storage with cascade cleanup through its binding. It has no API, dispatcher or automatic backfill yet. Legacy binding `schedule` / `jobId` remain the active scheduling fields.
+`project_workflow_triggers` is private storage with cascade cleanup through its binding. The read-only trigger endpoint returns recognized configuration without scheduler IDs; there is no dispatcher or automatic backfill yet. Legacy binding `schedule` / `jobId` remain the active scheduling fields.

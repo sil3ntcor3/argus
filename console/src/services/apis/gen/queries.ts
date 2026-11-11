@@ -4959,6 +4959,63 @@ export type WorkflowTemplateDto = {
   jobs: WorkflowTemplateJobDto[];
 };
 
+export type ProjectTriggerType =
+  (typeof ProjectTriggerType)[keyof typeof ProjectTriggerType];
+
+export const ProjectTriggerType = {
+  cron: 'cron',
+  event: 'event',
+} as const;
+
+export type ProjectTriggerEvent =
+  (typeof ProjectTriggerEvent)[keyof typeof ProjectTriggerEvent];
+
+export const ProjectTriggerEvent = {
+  projectassetsadded: 'project.assets.added',
+  projectruncompleted: 'project.run.completed',
+  vulnerabilitydetected: 'vulnerability.detected',
+} as const;
+
+export type ProjectTriggerConfigDtoStatusItem =
+  (typeof ProjectTriggerConfigDtoStatusItem)[keyof typeof ProjectTriggerConfigDtoStatusItem];
+
+export const ProjectTriggerConfigDtoStatusItem = {
+  success: 'success',
+  failure: 'failure',
+} as const;
+
+export type ProjectTriggerConfigDto = {
+  /**
+   * @minimum 0
+   * @maximum 1440
+   */
+  windowMinutes?: number;
+  /**
+   * @minimum 1
+   * @maximum 5000
+   */
+  maxAssets?: number;
+  targetTypes?: TargetType[];
+  workflows?: string[];
+  status?: ProjectTriggerConfigDtoStatusItem[];
+  severity?: Severity[];
+};
+
+export type ProjectTriggerDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  projectWorkflowId: string;
+  type: ProjectTriggerType;
+  /** @nullable */
+  cron: string | null;
+  event: ProjectTriggerEvent | null;
+  config: ProjectTriggerConfigDto;
+  enabled: boolean;
+  /** @nullable */
+  lastFiredAt: string | null;
+};
+
 export type CreatedProjectWorkflowDtoSchedule =
   (typeof CreatedProjectWorkflowDtoSchedule)[keyof typeof CreatedProjectWorkflowDtoSchedule];
 
@@ -46025,6 +46082,175 @@ export function useProjectsControllerGetWorkflowTemplates<
 } {
   const queryOptions =
     getProjectsControllerGetWorkflowTemplatesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary List project workflow triggers
+ */
+export const projectsControllerGetTriggers = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectTriggerDto[]>(
+    { url: `/api/projects/${id}/triggers`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetTriggersQueryKey = (id: string) => {
+  return [`/api/projects/${id}/triggers`] as const;
+};
+
+export const getProjectsControllerGetTriggersQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetTriggersQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetTriggers>>
+  > = ({ signal }) => projectsControllerGetTriggers(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetTriggersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetTriggers>>
+>;
+export type ProjectsControllerGetTriggersQueryError = unknown;
+
+export function useProjectsControllerGetTriggers<
+  TData = Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetTriggers>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetTriggers<
+  TData = Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetTriggers>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetTriggers<
+  TData = Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List project workflow triggers
+ */
+
+export function useProjectsControllerGetTriggers<
+  TData = Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetTriggers>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetTriggersQueryOptions(
+    id,
+    options,
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,
