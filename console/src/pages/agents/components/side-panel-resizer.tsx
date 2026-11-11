@@ -34,6 +34,22 @@ function clampWidth(width: number, rowWidth: number) {
   return Math.round(Math.min(max, Math.max(min, width)));
 }
 
+/** Preview the split without rendering the chat on every pointer move. */
+function previewWidth(
+  panel: HTMLElement | null,
+  divider: HTMLElement | null,
+  width: number,
+  total: number,
+) {
+  if (!panel || !divider) return;
+  panel.style.width = `${width}px`;
+  panel.style.maxWidth = 'none';
+  const { min, max } = widthLimits(total);
+  divider.setAttribute('aria-valuemin', String(min));
+  divider.setAttribute('aria-valuemax', String(max));
+  divider.setAttribute('aria-valuenow', String(width));
+}
+
 /** Desktop split with a local width preference and a keyboard-operable divider. */
 export function ResizableSidePanel({
   rowRef,
@@ -44,14 +60,18 @@ export function ResizableSidePanel({
 }) {
   const id = useId();
   const panelRef = useRef<HTMLElement>(null);
+  const dividerRef = useRef<HTMLDivElement>(null);
   const [preferred, setPreferred] = useState(readWidth);
-  const [preview, setPreview] = useState<number | null>(null);
   const [size, setSize] = useState({ row: 0, panel: 0 });
   const drag = useRef<{
     pointerId: number;
     x: number;
     width: number;
     last: number | null;
+    total: number;
+    inlineWidth: string;
+    inlineMaxWidth: string;
+    ariaValue: string | null;
   } | null>(null);
 
   useEffect(() => {
@@ -59,6 +79,20 @@ export function ResizableSidePanel({
     const panel = panelRef.current;
     if (!row || !panel) return;
     const measure = () => {
+      const current = drag.current;
+      if (current) {
+        const total = row.clientWidth;
+        if (total !== current.total) {
+          current.total = total;
+          previewWidth(
+            panel,
+            dividerRef.current,
+            clampWidth(current.last ?? current.width, total),
+            total,
+          );
+        }
+        return;
+      }
       const next = {
         row: row.clientWidth,
         panel: Math.round(panel.getBoundingClientRect().width),
@@ -78,9 +112,10 @@ export function ResizableSidePanel({
     return () => observer.disconnect();
   }, [rowRef]);
 
-  const desired = preview ?? preferred;
   const width =
-    size.row && desired !== null ? clampWidth(desired, size.row) : undefined;
+    size.row && preferred !== null
+      ? clampWidth(preferred, size.row)
+      : undefined;
   const { min, max } = widthLimits(size.row);
 
   function commitWidth(next: number | null) {
@@ -94,8 +129,11 @@ export function ResizableSidePanel({
   }
 
   function startDrag(event: PointerEvent<HTMLDivElement>) {
-    const width = panelRef.current?.getBoundingClientRect().width;
-    if (event.button !== 0 || drag.current || !width) return;
+    const panel = panelRef.current;
+    const width = panel?.getBoundingClientRect().width;
+    const total = rowRef.current?.clientWidth;
+    if (event.button !== 0 || drag.current || !panel || !width || !total)
+      return;
     event.preventDefault();
     event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -104,32 +142,49 @@ export function ResizableSidePanel({
       x: event.clientX,
       width,
       last: null,
+      total,
+      inlineWidth: panel.style.width,
+      inlineMaxWidth: panel.style.maxWidth,
+      ariaValue: event.currentTarget.getAttribute('aria-valuenow'),
     };
   }
 
   function moveDrag(event: PointerEvent<HTMLDivElement>) {
     const current = drag.current;
-    const total = rowRef.current?.clientWidth;
-    if (!current || current.pointerId !== event.pointerId || !total) return;
-    current.last = clampWidth(current.width + current.x - event.clientX, total);
-    setPreview(current.last);
+    if (!current || current.pointerId !== event.pointerId) return;
+    const next = clampWidth(
+      current.width + current.x - event.clientX,
+      current.total,
+    );
+    if (next === current.last) return;
+    current.last = next;
+    previewWidth(panelRef.current, dividerRef.current, next, current.total);
   }
 
   function endDrag(event: PointerEvent<HTMLDivElement>, commit: boolean) {
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
     drag.current = null;
-    setPreview(null);
-    if (
-      commit &&
-      current.last !== null &&
-      current.last !== Math.round(current.width)
-    ) {
-      commitWidth(current.last);
+    const next =
+      current.last === null ? null : clampWidth(current.last, current.total);
+    const panel = panelRef.current;
+    if (commit && next !== null && next !== Math.round(current.width)) {
+      commitWidth(next);
+    } else if (panel) {
+      panel.style.width = current.inlineWidth;
+      panel.style.maxWidth = current.inlineMaxWidth;
+      if (current.ariaValue === null)
+        event.currentTarget.removeAttribute('aria-valuenow');
+      else event.currentTarget.setAttribute('aria-valuenow', current.ariaValue);
     }
+    setSize({
+      row: current.total,
+      panel: Math.round(panel?.getBoundingClientRect().width ?? current.width),
+    });
   }
 
   function handleKey(event: KeyboardEvent<HTMLDivElement>) {
+    if (drag.current) return;
     if (event.key === 'Enter') {
       event.preventDefault();
       commitWidth(null);
@@ -148,6 +203,7 @@ export function ResizableSidePanel({
   return (
     <>
       <div
+        ref={dividerRef}
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize side panel"
@@ -164,7 +220,9 @@ export function ResizableSidePanel({
         onPointerCancel={(event) => endDrag(event, false)}
         onLostPointerCapture={(event) => endDrag(event, false)}
         onKeyDown={handleKey}
-        onDoubleClick={() => commitWidth(null)}
+        onDoubleClick={() => {
+          if (!drag.current) commitWidth(null);
+        }}
       >
         <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border group-hover:w-0.5 group-hover:bg-primary/60 group-focus-visible:w-0.5 group-focus-visible:bg-primary" />
       </div>
