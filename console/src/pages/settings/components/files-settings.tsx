@@ -62,7 +62,8 @@ import { toast } from 'sonner';
 import { FileFolderNavigation } from './file-folder-navigation';
 import { FileIcon } from './file-icon';
 
-const PAGE_SIZE = 20;
+const DEFAULT_PAGE_SIZE = 20;
+const FILE_PAGE_SIZES = [5, 10, 20, 50, 100] as const;
 const BYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB'];
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 const freshRead = { staleTime: 0, refetchOnMount: 'always' as const };
@@ -323,6 +324,7 @@ function WorkspaceFiles({
     useState<ArtifactsControllerGetManySortOrder>('DESC');
   const dateField = sortBy === 'updatedAt' ? 'updatedAt' : 'createdAt';
   const [pagination, setPagination] = useState({ folderId, page: 1 });
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const page = pagination.folderId === folderId ? pagination.page : 1;
   if (pagination.folderId !== folderId) {
     setPagination({ folderId, page: 1 });
@@ -358,7 +360,7 @@ function WorkspaceFiles({
   const files = useArtifactsControllerGetMany(
     {
       page,
-      limit: PAGE_SIZE,
+      limit: pageSize,
       sortBy,
       sortOrder,
       search: query,
@@ -760,31 +762,70 @@ function WorkspaceFiles({
 
       <nav
         aria-label="File pages"
-        className="flex items-center justify-end gap-3 text-sm"
+        className="flex flex-wrap items-center justify-end gap-3 text-sm"
       >
-        <Button
-          variant="outline"
-          size="sm"
-          aria-disabled={page === 1}
-          className="aria-disabled:opacity-50"
-          onClick={() => {
-            if (page > 1) setPage(page - 1);
-          }}
-        >
-          Previous page
-        </Button>
-        <span aria-live="polite">Page {page}</span>
-        <Button
-          variant="outline"
-          size="sm"
-          aria-disabled={nextDisabled}
-          className="aria-disabled:opacity-50"
-          onClick={() => {
-            if (!nextDisabled) setPage(page + 1);
-          }}
-        >
-          Next page
-        </Button>
+        {currentFiles && currentFiles.total > 0 && rows.length > 0 ? (
+          <span className="text-muted-foreground">
+            {(page - 1) * pageSize + 1}–{(page - 1) * pageSize + rows.length} of{' '}
+            {currentFiles.total}
+          </span>
+        ) : null}
+        <div className="flex items-center gap-2">
+          <span aria-hidden="true" className="text-muted-foreground">
+            Files per page
+          </span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(value) => {
+              const size = FILE_PAGE_SIZES.find(
+                (option) => String(option) === value,
+              );
+              if (size === undefined) return;
+              setPageSize(size);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Files per page"
+              className="w-20"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {FILE_PAGE_SIZES.map((size) => (
+                <SelectItem key={size} value={String(size)}>
+                  {size}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-disabled={page === 1}
+            className="aria-disabled:opacity-50"
+            onClick={() => {
+              if (page > 1) setPage(page - 1);
+            }}
+          >
+            Previous page
+          </Button>
+          <span aria-live="polite">Page {page}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-disabled={nextDisabled}
+            className="aria-disabled:opacity-50"
+            onClick={() => {
+              if (!nextDisabled) setPage(page + 1);
+            }}
+          >
+            Next page
+          </Button>
+        </div>
       </nav>
     </div>
   );

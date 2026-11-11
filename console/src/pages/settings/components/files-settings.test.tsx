@@ -304,6 +304,26 @@ describe('Files settings actions', () => {
     ).toBeVisible();
   });
 
+  it('changes the server page size and returns to the first page', async () => {
+    mocks.files.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { data: [], total: 24, hasNextPage: true },
+    });
+    show(['artifact.read']);
+    const pageSize = await screen.findByRole('combobox', {
+      name: 'Files per page',
+    });
+    const lastQuery = () => mocks.files.mock.lastCall?.[0];
+    expect(lastQuery()).toMatchObject({ limit: 20, page: 1 });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(lastQuery()).toMatchObject({ limit: 20, page: 2 });
+    fireEvent.keyDown(pageSize, { key: 'ArrowDown' });
+    fireEvent.keyDown(await screen.findByRole('option', { name: '5' }), {
+      key: 'Enter',
+    });
+    expect(lastQuery()).toMatchObject({ limit: 5, page: 1 });
+  });
+
   it('hides file rows when a folder request denies the shared read permission', async () => {
     mocks.folders.mockReturnValue({
       isError: true,
