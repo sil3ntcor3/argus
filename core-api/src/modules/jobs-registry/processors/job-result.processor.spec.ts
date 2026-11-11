@@ -106,6 +106,211 @@ describe('JobResultProcessor', () => {
     expect(processor).toBeDefined();
   });
 
+  it('passes private scan scope only to result ingestion', async () => {
+    const digest = 'a'.repeat(64);
+    const job = { ...baseJob, findingScanScopeKey: digest, isPublishEvent: true };
+    const payload = [{ name: 'finding' }];
+    mockJobsRegistryService.findJobForUpdate.mockResolvedValue(job);
+    mockStorageService.readJsonFile.mockResolvedValue({ payload });
+
+    await processor.process(baseBullJob);
+
+    expect(mockDataAdapterService.syncData).toHaveBeenCalledWith({ job, data: payload });
+    expect(mockWorkflowRunnerService.onJobTerminal.mock.calls[0][0])
+      .not.toHaveProperty('findingScanScopeKey');
+    expect(mockRedisService.publish).toHaveBeenCalledWith(
+      'jobs:job-1',
+      expect.not.stringContaining(digest),
+    );
+  });
+
+  describe('private finding scan coverage', () => {
+    const scopeKey = 'a'.repeat(64);
+    const scanClaimedAt = new Date('2026-11-09T12:00:00Z');
+    const scanJob = {
+      ...baseJob,
+      tool: { ...baseJob.tool, name: 'nuclei' },
+      category: ToolCategory.VULNERABILITIES,
+      findingScanScopeKey: scopeKey,
+      findingScanClaimedAt: scanClaimedAt,
+      isPublishEvent: true,
+    };
+    const completeResult = {
+      ...baseBullJob,
+      data: {
+        ...baseBullJob.data,
+        category: ToolCategory.VULNERABILITIES,
+        coverageComplete: true as const,
+      },
+    };
+
+    it.each([{ findings: [] }, { findings: [{ name: 'finding' }] }])(
+      'records completion evidence after ingesting a clean structured result ($findings)',
+      async ({ findings }) => {
+        mockJobsRegistryService.findJobForUpdate.mockResolvedValue(scanJob);
+        mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: findings });
+
+        await processor.process(completeResult);
+
+        expect(mockJobRepository.update).toHaveBeenCalledWith(
+          {
+            id: scanJob.id, status: JobStatus.IN_PROGRESS, workerId: 'worker-1',
+            findingScanScopeKey: scopeKey, findingScanClaimedAt: scanClaimedAt,
+          },
+          {
+            status: JobStatus.COMPLETED, completedAt: expect.any(Date),
+            findingScanCoverageComplete: true,
+          },
+        );
+        expect(mockDataAdapterService.syncData.mock.invocationCallOrder[0])
+          .toBeLessThan(mockJobRepository.update.mock.invocationCallOrder[0]);
+        expect(mockWorkflowRunnerService.onJobTerminal).toHaveBeenCalledWith(
+          expect.not.objectContaining({ findingScanClaimedAt: scanClaimedAt }),
+        );
+        expect(mockRedisService.publish).toHaveBeenCalledWith(
+          'jobs:job-1', expect.not.stringMatching(/findingScan/),
+        );
+      },
+    );
+
+    it.each(['legacy', 'retried', 'no-save', 'missing payload'] as const)(
+      'leaves coverage unknown for %s results',
+      async (kind) => {
+        const job = {
+          ...scanJob,
+          ...(kind === 'retried' ? { findingScanClaimedAt: null } : {}),
+          ...(kind === 'no-save' ? { isSaveData: false } : {}),
+        };
+        mockJobsRegistryService.findJobForUpdate.mockResolvedValue(job);
+        mockStorageService.readJsonFile.mockResolvedValue({
+          error: false, payload: kind === 'missing payload' ? undefined : [],
+        });
+
+        await processor.process(kind === 'legacy' ? baseBullJob : completeResult);
+
+        expect(mockJobRepository.update).toHaveBeenCalledWith(
+          { id: scanJob.id, status: JobStatus.IN_PROGRESS },
+          { status: JobStatus.COMPLETED, completedAt: expect.any(Date) },
+        );
+      },
+    );
+
+    const imageA = 'sha256:' + 'b'.repeat(64);
+    const imageB = 'sha256:' + 'c'.repeat(64);
+
+    const withImage = (connectorImageId: string, complete = true) => ({
+      ...completeResult,
+      data: {
+        ...completeResult.data,
+        coverageComplete: complete ? true as const : undefined,
+        connectorImageId,
+      },
+    });
+
+    const completedScope = () =>
+      (mockJobRepository.update.mock.calls.at(-1)?.[1] as Partial<Job>)
+        .findingScanScopeKey;
+
+    it('matches a clean empty result to a positive only when dispatch and actual image match', async () => {
+      const findings = [{ name: 'finding' }];
+      mockJobsRegistryService.findJobForUpdate.mockResolvedValue(scanJob);
+      mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: findings });
+      await processor.process(withImage(imageA));
+      const positiveScope = completedScope();
+      expect(positiveScope).toMatch(/^image-v1:[0-9a-f]{64}$/);
+      expect(mockDataAdapterService.syncData).toHaveBeenLastCalledWith({
+        data: findings, job: expect.objectContaining({ findingScanScopeKey: positiveScope }),
+      });
+      expect(mockJobRepository.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          findingScanScopeKey: scopeKey, findingScanClaimedAt: scanClaimedAt, workerId: 'worker-1',
+        }),
+        expect.objectContaining({ findingScanScopeKey: positiveScope, findingScanCoverageComplete: true }),
+      );
+
+      mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: [] });
+      await processor.process(withImage(imageA));
+      expect(completedScope()).toBe(positiveScope);
+      await processor.process(withImage(imageB));
+      expect(completedScope()).toMatch(/^image-v1:[0-9a-f]{64}$/);
+      expect(completedScope()).not.toBe(positiveScope);
+      mockJobsRegistryService.findJobForUpdate.mockResolvedValue({
+        ...scanJob, findingScanScopeKey: 'd'.repeat(64),
+      });
+      await processor.process(withImage(imageA));
+      expect(completedScope()).not.toBe(positiveScope);
+      expect(mockRedisService.publish).toHaveBeenLastCalledWith(
+        'jobs:job-1', expect.not.stringMatching(/findingScan|image-v1:|sha256:/),
+      );
+    });
+
+    it('qualifies a partial positive without using the partial job to prove coverage', async () => {
+      const findings = [{ name: 'finding' }];
+      mockJobsRegistryService.findJobForUpdate.mockResolvedValue(scanJob);
+      mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: findings });
+
+      await processor.process(withImage(imageA, false));
+
+      expect(mockDataAdapterService.syncData).toHaveBeenCalledWith({
+        data: findings, job: expect.objectContaining({
+          findingScanScopeKey: expect.stringMatching(/^image-v1:[0-9a-f]{64}$/),
+        }),
+      });
+      expect(mockJobRepository.update).toHaveBeenCalledWith(
+        {
+          id: scanJob.id, status: JobStatus.IN_PROGRESS, workerId: 'worker-1',
+          findingScanScopeKey: scopeKey, findingScanClaimedAt: scanClaimedAt,
+        },
+        { status: JobStatus.COMPLETED, completedAt: expect.any(Date) },
+      );
+    });
+
+    it.each(['malformed', 'retried', 'raw-payload'] as const)(
+      'does not promote %s evidence to an image-qualified scope',
+      async (kind) => {
+        mockJobsRegistryService.findJobForUpdate.mockResolvedValue({
+          ...scanJob, ...(kind === 'retried' ? { findingScanClaimedAt: null } : {}),
+        });
+        mockStorageService.readJsonFile.mockResolvedValue({
+          error: false, payload: kind === 'raw-payload' ? {} : [{ name: 'finding' }],
+        });
+
+        await processor.process(withImage(kind === 'malformed' ? imageA + '\n' : imageA));
+
+        expect(completedScope()).toBeUndefined();
+        expect(mockDataAdapterService.syncData).toHaveBeenCalledWith({
+          data: expect.anything(), job: expect.objectContaining({ findingScanScopeKey: scopeKey }),
+        });
+      },
+    );
+
+    it('does not record coverage if ingestion fails', async () => {
+      mockJobsRegistryService.findJobForUpdate.mockResolvedValue(scanJob);
+      mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: [] });
+      mockDataAdapterService.syncData.mockRejectedValueOnce(new Error('ingest failed'));
+
+      await expect(processor.process(completeResult)).rejects.toThrow('ingest failed');
+
+      expect(mockJobRepository.update).not.toHaveBeenCalled();
+      expect(mockWorkflowRunnerService.onJobTerminal).not.toHaveBeenCalled();
+    });
+
+    it('does not advance a run when the claimed job changed before recording coverage', async () => {
+      mockJobsRegistryService.findJobForUpdate.mockResolvedValue(scanJob);
+      mockStorageService.readJsonFile.mockResolvedValue({ error: false, payload: [] });
+      mockJobRepository.update.mockResolvedValueOnce({ affected: 0 });
+
+      await processor.process(completeResult);
+
+      expect(mockJobRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ findingScanClaimedAt: scanClaimedAt }),
+        expect.objectContaining({ findingScanCoverageComplete: true }),
+      );
+      expect(mockWorkflowRunnerService.onJobTerminal).not.toHaveBeenCalled();
+      expect(mockRedisService.publish).not.toHaveBeenCalled();
+    });
+  });
+
   describe('when the job is not found', () => {
     it('should delete the orphaned result file instead of leaking it', async () => {
       mockJobsRegistryService.findJobForUpdate.mockResolvedValue(null);

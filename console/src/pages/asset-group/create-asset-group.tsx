@@ -31,7 +31,6 @@ import {
 import { useServerDataTable } from '@/hooks/useServerDataTable';
 import { cn } from '@/lib/utils';
 import {
-  ToolCategory,
   useAssetGroupControllerCreate,
   useAssetsControllerGetHostAssets,
   useToolsControllerGetInstalledTools,
@@ -102,21 +101,9 @@ export function CreateAssetGroup() {
 
   const toolsQuery = useToolsControllerGetInstalledTools();
 
-  // Pipeline-capable tool categories. url_discovery connectors (e.g. gau)
-  // run in the group pipeline alongside vulnerability scanners.
+  // All installed categories can participate in a staged pipeline.
   const pipelineTools = useMemo(
-    () =>
-      (toolsQuery.data?.data ?? []).filter(
-        (tool) =>
-          tool.categories?.some((c) =>
-            (
-              [
-                ToolCategory.vulnerabilities,
-                ToolCategory.url_discovery,
-              ] as ToolCategory[]
-            ).includes(c.name),
-          ),
-      ),
+    () => toolsQuery.data?.data ?? [],
     [toolsQuery.data?.data],
   );
 
@@ -137,19 +124,12 @@ export function CreateAssetGroup() {
       setStep((prev) => prev + 1);
       return;
     }
-    const dto = {
+    const dto: CreateAssetGroupDto = {
       name: name.trim(),
       hexColor: hexColor || undefined,
       hostIds: Array.from(hostIds),
       tools: pipeline,
       schedule,
-    } as CreateAssetGroupDto & {
-      tools: {
-        toolId: string;
-        config?: Record<string, unknown>;
-        configProfileId?: string;
-        category?: ToolCategory;
-      }[];
     };
     createAssetGroup(
       { data: dto },

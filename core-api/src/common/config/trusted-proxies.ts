@@ -1,3 +1,4 @@
+import type { IncomingMessage } from 'node:http';
 import { BlockList, isIP } from 'node:net';
 
 /**
@@ -66,4 +67,17 @@ export function resolveClientIp(
     if (!isTrusted(hops[i])) return hops[i];
   }
   return peerIp;
+}
+
+
+/** Resolve HTTP audit attribution using only explicitly trusted proxy hops. */
+export function requestClientIp(
+  request: Pick<IncomingMessage, 'socket' | 'headers'>,
+): string | undefined {
+  const forwarded = request.headers?.['x-forwarded-for'];
+  return resolveClientIp(
+    request.socket?.remoteAddress,
+    typeof forwarded === 'string' ? forwarded : undefined,
+    parseTrustedProxies(process.env.TRUSTED_PROXIES),
+  );
 }

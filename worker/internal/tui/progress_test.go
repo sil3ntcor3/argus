@@ -18,7 +18,7 @@ func TestProgressModelRendersBarForActivePull(t *testing.T) {
 		t.Fatal("a fresh model must render nothing")
 	}
 
-	m.update("job-1", "ghcr.io/oasm-platform/connector-nmap:7.97", 0.42, false)
+	m.update("job-1", "ghcr.io/sil3ntcor3/connector-nmap:7.97", 0.42, false)
 
 	if !m.active() || m.height() != 1 {
 		t.Fatalf("active=%t height=%d, want true/1", m.active(), m.height())

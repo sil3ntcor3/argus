@@ -1,3 +1,4 @@
+import { requestClientIp } from '@/common/config/trusted-proxies';
 import { MCP_API_KEY_HEADER } from '@/common/constants/app.constants';
 import { AuditActorType, AuditOutcome } from '@/common/enums/enum';
 import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
@@ -160,13 +161,16 @@ export class EventPublishInterceptor implements NestInterceptor {
       // fallback the old audit interceptor used.
       const resourceId =
         extract.resourceId ??
-        (outcome === AuditOutcome.Failure ? this.routeParamId(req) : undefined);
+        (config.resourceIdFromRoute || outcome === AuditOutcome.Failure
+          ? this.routeParamId(req)
+          : undefined);
       const subject =
         extract.subject ??
         `workspace:${workspaceId}/${resourceType}${
           resourceId ? `:${resourceId}` : ''
         }`;
 
+      const sourceIp = requestClientIp(req);
       const data: EventEnvelopeData = {
         workspaceId,
         outcome,
@@ -185,7 +189,7 @@ export class EventPublishInterceptor implements NestInterceptor {
         ...(extract.payload !== undefined
           ? { payload: redactSecrets(extract.payload) }
           : {}),
-        ...(req.ip ? { sourceIp: req.ip } : {}),
+        ...(sourceIp ? { sourceIp } : {}),
         ...(req.headers?.['user-agent']
           ? { userAgent: String(req.headers['user-agent']).slice(0, 512) }
           : {}),

@@ -8,13 +8,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { useVulnerabilitiesControllerBulkDismissVulnerabilities } from '@/services/apis/gen/queries';
+import { addDays, format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
+import {
+  latestRiskExpiry,
+  MAX_RISK_ACCEPTANCE_DAYS,
+  RISK_DATE_FORMAT,
+  riskExpiryAt,
+} from '../risk-expiry';
 
 /** Available reasons for dismissing a vulnerability */
 const DISMISS_REASONS = [
@@ -32,6 +40,11 @@ const DISMISS_REASONS = [
     value: 'wont_fix',
     label: "Won't fix",
     description: 'This alert is not relevant',
+  },
+  {
+    value: 'risk_accepted',
+    label: 'Risk accepted',
+    description: 'Dismiss this alert until a date',
   },
 ] as const;
 
@@ -59,19 +72,28 @@ export function DismissAlertDialog({
   onDismissSuccess,
 }: DismissAlertDialogProps) {
   const [open, setOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [reason, setReason] = useState<DismissReason | ''>('');
   const [comment, setComment] = useState('');
+  const [expiry, setExpiry] = useState('');
+  const expiryId = useId();
 
   const bulkDismissMutation =
     useVulnerabilitiesControllerBulkDismissVulnerabilities();
 
-  const isBulkDismiss = vulnerabilityIds.length > 1;
+  const isBulkDismiss = selectedIds.length > 1;
+  const isRisk = reason === 'risk_accepted';
+  const now = new Date();
+  const selectedExpiry = isRisk ? riskExpiryAt(expiry, now) : null;
+  const invalidExpiry = isRisk && Boolean(expiry) && !selectedExpiry;
 
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
+    setSelectedIds(isOpen ? [...vulnerabilityIds] : []);
     if (!isOpen) {
       setReason('');
       setComment('');
+      setExpiry('');
     }
   };
 
@@ -79,32 +101,42 @@ export function DismissAlertDialog({
    * Handles the dismiss action by calling the bulk dismiss API.
    * Shows success/error toast based on the result.
    */
-  const handleDismiss = async () => {
-    if (!reason || vulnerabilityIds.length === 0) return;
+  const handleDismiss = () => {
+    if (!reason || selectedIds.length === 0) return;
+    const expiresAt = isRisk ? riskExpiryAt(expiry) : null;
+    if (isRisk && !expiresAt) {
+      toast.error('Choose a future expiry date within 180 days.');
+      return;
+    }
 
     bulkDismissMutation.mutate(
       {
         data: {
-          ids: vulnerabilityIds,
+          ids: selectedIds,
           reason,
           comment: comment.trim(),
+          ...(expiresAt ? { expiresAt: expiresAt.toISOString() } : {}),
         },
       },
       {
         onSuccess: () => {
           toast.success(
-            isBulkDismiss ? 'Alerts dismissed' : 'Alert dismissed',
+            expiresAt
+              ? 'Risk accepted'
+              : isBulkDismiss
+                ? 'Alerts dismissed'
+                : 'Alert dismissed',
             {
-              description: isBulkDismiss
-                ? `${vulnerabilityIds.length} vulnerabilities have been dismissed.`
-                : vulnerabilityName
-                  ? `"${vulnerabilityName}" has been dismissed.`
-                  : 'The vulnerability has been dismissed.',
+              description: expiresAt
+                ? `Acceptance ends on ${format(expiresAt, 'MMM d, yyyy')}.`
+                : isBulkDismiss
+                  ? `${selectedIds.length} vulnerabilities have been dismissed.`
+                  : vulnerabilityName
+                    ? `"${vulnerabilityName}" has been dismissed.`
+                    : 'The vulnerability has been dismissed.',
             },
           );
-          setOpen(false);
-          setReason('');
-          setComment('');
+          handleOpenChange(false);
           onDismissSuccess?.();
         },
         onError: (error) => {
@@ -119,12 +151,16 @@ export function DismissAlertDialog({
     );
   };
 
-  const isSubmitDisabled = !reason || bulkDismissMutation.isPending;
+  const isSubmitDisabled =
+    !reason ||
+    selectedIds.length === 0 ||
+    (isRisk && !selectedExpiry) ||
+    bulkDismissMutation.isPending;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Dismiss alert</DialogTitle>
           <DialogDescription>
@@ -136,7 +172,10 @@ export function DismissAlertDialog({
           {/* Reason selection radio group */}
           <RadioGroup
             value={reason}
-            onValueChange={(value) => setReason(value as DismissReason)}
+            onValueChange={(value) => {
+              setReason(value as DismissReason);
+              if (value !== 'risk_accepted') setExpiry('');
+            }}
             className="space-y-3"
           >
             {DISMISS_REASONS.map((option) => (
@@ -161,6 +200,36 @@ export function DismissAlertDialog({
             ))}
           </RadioGroup>
 
+          {isRisk && (
+            <div className="space-y-2">
+              <Label htmlFor={expiryId}>Accepted until</Label>
+              <Input
+                id={expiryId}
+                type="date"
+                required
+                value={expiry}
+                min={format(addDays(now, 1), RISK_DATE_FORMAT)}
+                max={format(latestRiskExpiry(now), RISK_DATE_FORMAT)}
+                onChange={(event) => setExpiry(event.target.value)}
+                aria-invalid={invalidExpiry}
+                aria-describedby={`${expiryId}-hint`}
+              />
+              <p
+                id={`${expiryId}-hint`}
+                role={invalidExpiry ? 'alert' : undefined}
+                className={
+                  invalidExpiry
+                    ? 'text-sm text-destructive'
+                    : 'text-sm text-muted-foreground'
+                }
+              >
+                {invalidExpiry
+                  ? `Choose a future date within ${MAX_RISK_ACCEPTANCE_DAYS} days.`
+                  : 'The alert reopens at the start of this date in your local timezone.'}
+              </p>
+            </div>
+          )}
+
           {/* Optional comment field */}
           <div className="space-y-2">
             <Label htmlFor="dismiss-comment">Comment</Label>
@@ -178,7 +247,7 @@ export function DismissAlertDialog({
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => setOpen(false)}
+            onClick={() => handleOpenChange(false)}
             disabled={bulkDismissMutation.isPending}
           >
             Cancel

@@ -143,11 +143,11 @@ describe('Asset filter tree (e2e)', () => {
     svcB = b.serviceId;
 
     groupId = await insertOne(
-      `INSERT INTO asset_groups (name, "workspaceId") VALUES ($1, $2) RETURNING id`,
+      `INSERT INTO projects (name, "workspaceId") VALUES ($1, $2) RETURNING id`,
       ['e2e-filter-group', ctx.workspace.id],
     );
     await dataSource.query(
-      `INSERT INTO assets_group_assets ("assetGroupId", "assetId") VALUES ($1, $2)`,
+      `INSERT INTO project_assets ("projectId", "assetId") VALUES ($1, $2)`,
       [groupId, a.assetId],
     );
   });
@@ -371,5 +371,96 @@ describe('Asset filter tree (e2e)', () => {
     expect(await listIds('/api/assets', undefined, {}, otherHeaders)).toEqual(
       [],
     );
+  });
+
+  describe('aggregate tab sorting', () => {
+    let targetId: string;
+    const query = async (
+      path: string,
+      sortBy: string,
+      sortOrder = 'ASC',
+      limit = 10,
+      page = 1,
+    ) => {
+      const res = await request(server)
+        .get(`/api/assets/${path}`)
+        .query({ targetIds: targetId, sortBy, sortOrder, page, limit })
+        .set(headers)
+        .expect(200);
+      return res.body as {
+        total: number;
+        data: {
+          port: number;
+          statusCode: number;
+          ip: string;
+          technology: { name: string };
+        }[];
+      };
+    };
+
+    beforeAll(async () => {
+      const value = 'sort.' + domain;
+      targetId = await insertOne(
+        `INSERT INTO targets (value, "workspaceId", type) VALUES ($1, $2, 'DOMAIN') RETURNING id`,
+        [value, workspaceIds[0]],
+      );
+      for (const [i, [port, ip, name, status]] of [
+        ['22', '192.0.2.2', 'SortZulu', 200],
+        ['80', '192.0.2.10', 'SortAlpha', 404],
+        ['22', '192.0.2.2', 'SortAlpha', 200],
+      ].entries()) {
+        const host = `fixture-${i}.${value}`;
+        const { assetId } = await seedService(targetId, {
+          host,
+          port: String(port),
+          ip: String(ip),
+          tech: [String(name), null],
+          url: `https://${host}/`,
+          status: Number(status),
+          tls: host,
+          tag: 'asset-sort',
+        });
+        if (i === 0)
+          await dataSource.query(
+            `INSERT INTO ip_observations ("assetId", ip, source) VALUES ($1, '2001:db8::1', 'dns_aaaa')`,
+            [assetId],
+          );
+      }
+    });
+
+    it.each([
+      ['port', 'port', [22, 80]],
+      ['status-code', 'statusCode', [200, 404]],
+    ] as const)(
+      'sorts /%s by the requested column in both directions',
+      async (path, key, expected) => {
+        const values = async (order: string) =>
+          (await query(path, key, order)).data.map((row) => Number(row[key]));
+        expect(await values('ASC')).toEqual(expected);
+        expect(await values('DESC')).toEqual([...expected].reverse());
+      },
+    );
+
+    it('sorts technologies by name rather than count', async () => {
+      const names = async (order: string) =>
+        (await query('tech', 'technology', order)).data.map(
+          (row) => row.technology.name,
+        );
+      expect(await names('ASC')).toEqual(['SortAlpha', 'SortZulu']);
+      expect(await names('DESC')).toEqual(['SortZulu', 'SortAlpha']);
+    });
+
+    it('sorts IPs numerically and keeps count ties stable across pages', async () => {
+      const ips = ['192.0.2.2', '192.0.2.10', '2001:db8::1'];
+      expect((await query('ip', 'ip')).data.map((row) => row.ip)).toEqual(ips);
+      expect(
+        (await query('ip', 'ip', 'DESC')).data.map((row) => row.ip),
+      ).toEqual([...ips].reverse());
+      for (const [i, ip] of ['192.0.2.10', '2001:db8::1', '192.0.2.2'].entries()) {
+        const result = await query('ip', 'unknown', 'ASC', 1, i + 1);
+        expect(result.total).toBe(3);
+        expect(result.data.map((row) => row.ip)).toEqual([ip]);
+      }
+    });
   });
 });

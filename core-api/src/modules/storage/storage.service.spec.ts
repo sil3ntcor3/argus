@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
@@ -19,6 +20,7 @@ import {
   PutPublicAccessBlockCommand,
   S3ServiceException,
 } from '@aws-sdk/client-s3';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type * as S3Module from '@aws-sdk/client-s3';
 import { DataSource } from 'typeorm';
@@ -44,6 +46,11 @@ jest.mock('@aws-sdk/client-s3', () => {
   };
 });
 
+jest.mock('@aws-sdk/s3-presigned-post', () => ({
+  createPresignedPost: jest.fn(),
+}));
+
+const mockCreatePresignedPost = jest.mocked(createPresignedPost);
 const mockGetSignedUrl = getSignedUrl as jest.Mock;
 
 describe('StorageService', () => {
@@ -98,6 +105,143 @@ describe('StorageService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('getPresignedArtifactUpload', () => {
+    const workspaceId = '72646c96-c731-48e6-a376-38274982f6d7';
+    const artifactId = '7afe5e65-0e29-4886-b10d-ec9496e35eca';
+    const opts = { workspaceId, artifactId, contentType: 'text/plain', sizeBytes: 12 };
+
+    it('pins the workspace key, MIME type, byte size and signed deadline', async () => {
+      const expiration = '2030-01-01T00:00:00Z';
+      const fields = {
+        Policy: Buffer.from(JSON.stringify({ expiration })).toString('base64'),
+      };
+      mockCreatePresignedPost.mockResolvedValue({ url: 'https://public-example/artifacts/', fields });
+
+      await expect(service.getPresignedArtifactUpload(opts)).resolves.toEqual({
+        url: 'https://public-example/artifacts/',
+        fields,
+        expiresAt: new Date(expiration),
+      });
+      expect(mockCreatePresignedPost).toHaveBeenCalledWith(
+        mockRustFsClient.getPresignClient(),
+        {
+          Bucket: 'artifacts',
+          Key: `workspaces/${workspaceId}/${artifactId}/upload`,
+          Conditions: [['content-length-range', 12, 12]],
+          Fields: { 'Content-Type': 'text/plain' },
+          Expires: 900,
+        },
+      );
+    });
+
+    it.each([
+      { workspaceId: '../outside' },
+      { workspaceId: workspaceId + '\n' },
+      { artifactId: '123/${filename}' },
+      { contentType: 'text/plain\n' },
+      { contentType: 'text/html\r\nX-Test: invalid' },
+      { sizeBytes: 50 * 1024 * 1024 + 1 },
+      { sizeBytes: -1 },
+      { sizeBytes: 0.25 },
+    ])('rejects invalid upload inputs before signing (%j)', async (invalid) => {
+      await expect(service.getPresignedArtifactUpload({ ...opts, ...invalid }))
+        .rejects.toBeInstanceOf(BadRequestException);
+      expect(mockCreatePresignedPost).not.toHaveBeenCalled();
+    });
+  });
+
+  it('rejects a changed staging object when no competing final copy exists', async () => {
+    const workspaceId = '72646c96-c731-48e6-a376-38274982f6d7';
+    const artifactId = '7afe5e65-0e29-4886-b10d-ec9496e35eca';
+    const missing = new S3ServiceException({
+      name: 'NotFound', $fault: 'client', $metadata: { httpStatusCode: 404 },
+    });
+    const changed = new S3ServiceException({
+      name: 'PreconditionFailed', $fault: 'client', $metadata: { httpStatusCode: 412 },
+    });
+    sendMock
+      .mockRejectedValueOnce(missing)
+      .mockResolvedValueOnce({ ContentType: 'text/plain', ContentLength: 3, ETag: '"validated"' })
+      .mockRejectedValueOnce(changed)
+      .mockRejectedValueOnce(missing);
+
+    await expect(service.publishArtifactUpload({
+      workspaceId, artifactId, contentType: 'text/plain', sizeBytes: 3,
+    })).rejects.toBeInstanceOf(ConflictException);
+    expect(sendMock).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      input: expect.objectContaining({ CopySourceIfMatch: '"validated"', IfNoneMatch: '*' }),
+    }), expect.objectContaining({ abortSignal: expect.any(AbortSignal) }));
+    const requests = sendMock.mock.calls as Array<[unknown, { abortSignal: AbortSignal }]>;
+    expect(new Set(requests.map(([, options]) => options.abortSignal)).size).toBe(1);
+  });
+
+  it('recognizes the other successful copy after a documented conditional 409', async () => {
+    const workspaceId = '72646c96-c731-48e6-a376-38274982f6d7';
+    const artifactId = '7afe5e65-0e29-4886-b10d-ec9496e35eca';
+    sendMock
+      .mockRejectedValueOnce(new S3ServiceException({
+        name: 'NotFound', $fault: 'client', $metadata: { httpStatusCode: 404 },
+      }))
+      .mockResolvedValueOnce({ ContentType: 'text/plain', ContentLength: 3, ETag: '"validated"' })
+      .mockRejectedValueOnce(new S3ServiceException({
+        name: 'ConditionalRequestConflict', $fault: 'client', $metadata: { httpStatusCode: 409 },
+      }))
+      .mockResolvedValueOnce({
+        ContentType: 'text/plain', ContentLength: 3, Metadata: { 'argus-artifact-id': artifactId },
+      });
+
+    await expect(service.publishArtifactUpload({
+      workspaceId, artifactId, contentType: 'text/plain', sizeBytes: 3,
+    })).resolves.toBeUndefined();
+    expect(sendMock).toHaveBeenCalledTimes(4);
+  });
+
+  describe('deleteWorkspaceArtifacts', () => {
+    const workspace = '72646c96-c731-48e6-a376-38274982f6d7';
+    const prefix = `workspaces/${workspace}/`;
+
+    it.each(['', ' ', '../', workspace + 'a', workspace + '/sibling', workspace + '\n'])(
+      'refuses a malformed workspace without contacting storage (%s)',
+      async (id) => {
+        await expect(service.deleteWorkspaceArtifacts(id)).rejects.toBeInstanceOf(BadRequestException);
+        expect(sendMock).not.toHaveBeenCalled();
+      },
+    );
+
+    it('scopes every page and delete, and continues after one object fails', async () => {
+      const first = prefix + 'first';
+      const broken = prefix + 'broken';
+      const last = prefix + 'last';
+      const foreign = `workspaces/${workspace}f/other`;
+      sendMock
+        .mockResolvedValueOnce({
+          Contents: [{ Key: first }, { Key: broken }, { Key: foreign }],
+          IsTruncated: true,
+          NextContinuationToken: 'page-2',
+        })
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error('deny'))
+        .mockResolvedValueOnce({ Contents: [{ Key: last }] })
+        .mockResolvedValueOnce({});
+
+      await expect(service.deleteWorkspaceArtifacts(workspace)).resolves.toEqual({ deleted: 2, failed: 2 });
+      const calls = sendMock.mock.calls as Array<[{ input: object }]>;
+      expect(calls.map(([command]) => command.input)).toEqual([
+        expect.objectContaining({ Bucket: 'artifacts', Prefix: prefix }),
+        { Bucket: 'artifacts', Key: first },
+        { Bucket: 'artifacts', Key: broken },
+        { Bucket: 'artifacts', Prefix: prefix, ContinuationToken: 'page-2' },
+        { Bucket: 'artifacts', Key: last },
+      ]);
+    });
+
+    it('rejects a truncated listing that cannot advance', async () => {
+      sendMock.mockResolvedValue({ IsTruncated: true, NextContinuationToken: 'same' });
+      await expect(service.deleteWorkspaceArtifacts(workspace)).rejects.toThrow('did not advance');
+      expect(sendMock).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('listFiles', () => {
@@ -478,7 +622,7 @@ describe('StorageService', () => {
       expect(command.input).toMatchObject({
         Bucket: 'default',
         Key: 'b/r.pdf',
-        ResponseContentDisposition: 'attachment; filename="r.pdf"',
+        ResponseContentDisposition: 'attachment; filename="r.pdf"; filename*=UTF-8\'\'r.pdf',
         ResponseContentType: 'application/pdf',
       });
       expect(mockGetSignedUrl).toHaveBeenCalledWith(
@@ -495,6 +639,19 @@ describe('StorageService', () => {
       await expect(
         service.getPresignedDownloadUrl({ bucket: 'default', key: '../a' }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+
+  describe('download filename safety', () => {
+    it.each([
+      ['a"b\r\nc.txt', 'attachment; filename="a_b__c.txt"; filename*=UTF-8\'\'a%22b%0D%0Ac.txt'],
+      ["bá'o(1).pdf", 'attachment; filename="b_\'o(1).pdf"; filename*=UTF-8\'\'b%C3%A1%27o%281%29.pdf'],
+      ['a\\b\0.txt', 'attachment; filename="a_b_.txt"; filename*=UTF-8\'\'a%5Cb%00.txt'],
+      ['a\uD800b.txt', 'attachment; filename="a_b.txt"; filename*=UTF-8\'\'a%EF%BF%BDb.txt'],
+    ])('encodes the user-supplied filename %p', async (fileName, expected) => {
+      await service.getPresignedDownloadUrl({ bucket: 'reports', key: 'a/file', fileName });
+      expect(mockGetSignedUrl.mock.calls.at(-1)?.[1].input.ResponseContentDisposition).toBe(expected);
     });
   });
 
@@ -1006,6 +1163,11 @@ describe('StorageService', () => {
       );
     });
 
+    it('allows the private artifacts bucket only to domain services', () => {
+      expect(() => service.assertBucketAllowed('artifacts')).not.toThrow();
+      expect(() => service.assertBucketNotPrivate('artifacts')).toThrow(ForbiddenException);
+    });
+
     it('should allow the default bucket', () => {
       expect(() => service.assertBucketNotPrivate('default')).not.toThrow();
     });
@@ -1024,6 +1186,7 @@ describe('StorageService', () => {
       ['screenshot', 'tenant'],
       ['nuclei-templates', 'tenant'],
       ['reports', 'private'],
+      ['artifacts', 'private'],
       ['job-results', 'private'],
       ['default', 'blocked'],
       ['nope', 'blocked'],

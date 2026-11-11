@@ -1,4 +1,4 @@
-import { BullMQName, JobStatus, WorkerType } from '@/common/enums/enum';
+import { BullMQName, JobStatus, ToolCategory, WorkerType } from '@/common/enums/enum';
 import { JobDataResultType } from '@/common/types/app.types';
 import { DataAdapterService } from '@/modules/data-adapter/data-adapter.service';
 import { StorageService } from '@/modules/storage/storage.service';
@@ -8,11 +8,31 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job as BullJob, UnrecoverableError } from 'bullmq';
+import { createHash } from 'node:crypto';
 import { Repository } from 'typeorm';
 import { DataPayloadResult } from '../dto/jobs-registry.dto';
 import { Job } from '../entities/job.entity';
 import { JobsRegistryService } from '../jobs-registry.service';
 import { WorkflowRunnerService } from '../workflow-runner.service';
+
+/** Extend the keyed dispatch digest without storing the raw Docker image ID. */
+function qualifyFindingScanScope(dispatchKey: string, imageId?: string): string | undefined {
+  if (
+    dispatchKey.length !== 64 ||
+    !/^[0-9a-f]{64}$/.test(dispatchKey) ||
+    typeof imageId !== 'string' ||
+    imageId.length !== 71 ||
+    !/^sha256:[0-9a-f]{64}$/.test(imageId)
+  ) {
+    return undefined;
+  }
+  const digest = createHash('sha256')
+    .update('argus-finding-scan-image-scope:v1\0')
+    .update(dispatchKey)
+    .update(imageId)
+    .digest('hex');
+  return `image-v1:${digest}`;
+}
 
 /** Shape of result JSON stored on S3 by the new category-specific endpoint. */
 interface CategoryResultData {
@@ -111,19 +131,21 @@ export class JobResultProcessor extends WorkerHost {
       jobId: string;
       resultRef: string;
       category?: string;
+      coverageComplete?: true;
+      connectorImageId?: string;
     }>,
   ): Promise<void> {
-    const { workerId, jobId, resultRef, category } = bullJob.data;
+    const { workerId, jobId, resultRef, category, coverageComplete } = bullJob.data;
 
     // resultRef is in format "bucket/filename"
     const [bucket, ...rest] = resultRef.split('/');
     const fileName = rest.join('/');
 
-    const job = await this.jobsRegistryService.findJobForUpdate(
+    const claimedJob = await this.jobsRegistryService.findJobForUpdate(
       workerId,
       jobId,
     );
-    if (!job) {
+    if (!claimedJob) {
       // The job is no longer ours: deleted, or (the common case) cancelled or
       // re-run while the worker was still executing it — the lookup only
       // matches IN_PROGRESS. Nothing can be processed — delete the staged
@@ -142,6 +164,8 @@ export class JobResultProcessor extends WorkerHost {
       return;
     }
 
+    // Keep private scan evidence out of the terminal job sent to subscribers.
+    const { findingScanScopeKey, findingScanClaimedAt, ...job } = claimedJob;
     try {
       // A result is shaped by the endpoint it was posted to; syncing it through
       // a different category's handler would write the wrong data. Retrying
@@ -234,12 +258,35 @@ export class JobResultProcessor extends WorkerHost {
         }
       }
 
+      // Only a structured connector result for a recorded claim can qualify
+      // its dispatch scope. Partial positives qualify, but never prove coverage.
+      const scanClaim =
+        category === ToolCategory.VULNERABILITIES &&
+        rawResult.error === false &&
+        !benignReason &&
+        !isBuiltInTools &&
+        job.isSaveData &&
+        Array.isArray(dataForSync) &&
+        findingScanScopeKey &&
+        findingScanClaimedAt
+          ? { workerId, findingScanScopeKey, findingScanClaimedAt }
+          : undefined;
+      const imageScopeKey = scanClaim
+        ? qualifyFindingScanScope(scanClaim.findingScanScopeKey, bullJob.data.connectorImageId)
+        : undefined;
+      const observationScopeKey = imageScopeKey ?? findingScanScopeKey;
       if (job.isSaveData && dataForSync !== undefined) {
         await this.dataAdapterService.syncData({
           data: dataForSync,
-          job,
+          job: observationScopeKey ? { ...job, findingScanScopeKey: observationScopeKey } : job,
         });
       }
+
+      // Record complete coverage after ingestion, with the original claim in
+      // the predicate. An image-qualified positive and empty result then use
+      // the same key, but a different image (or a legacy worker) cannot match.
+      const coverageClaim = coverageComplete === true ? scanClaim : undefined;
+      const completionClaim = imageScopeKey ? scanClaim : coverageClaim;
 
       const completedAt = new Date();
       // Conditional write: the run may have been cancelled (or the job
@@ -247,8 +294,13 @@ export class JobResultProcessor extends WorkerHost {
       // IN_PROGRESS → COMPLETED is ours to make — an unconditional save would
       // overwrite the CANCELLED status and let the workflow keep spawning.
       const completion = await this.jobRepo.update(
-        { id: job.id, status: JobStatus.IN_PROGRESS },
-        { status: JobStatus.COMPLETED, completedAt },
+        { id: job.id, status: JobStatus.IN_PROGRESS, ...completionClaim },
+        {
+          status: JobStatus.COMPLETED,
+          completedAt,
+          ...(coverageClaim ? { findingScanCoverageComplete: true } : {}),
+          ...(coverageClaim && imageScopeKey ? { findingScanScopeKey: imageScopeKey } : {}),
+        },
       );
 
       if (!completion.affected) {

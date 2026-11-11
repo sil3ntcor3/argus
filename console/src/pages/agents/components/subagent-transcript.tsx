@@ -211,8 +211,12 @@ export function SubagentTranscript({
           <TabsTrigger value="conversation" className={SEGMENT}>
             Conversation
           </TabsTrigger>
-          <TabsTrigger value="tools" className={SEGMENT}>
-            Tool calls{calls.length > 0 && ` (${calls.length})`}
+          <TabsTrigger
+            value="tools"
+            className={SEGMENT}
+            badge={calls.length || undefined}
+          >
+            Tool calls
           </TabsTrigger>
         </TabsList>
         {stats && (
@@ -241,6 +245,11 @@ export function SubagentTranscript({
         {subagent.status === SubagentResponseDtoStatus.pending && (
           <p className="text-sm text-muted-foreground">
             Queued, waiting for a free slot…
+          </p>
+        )}
+        {subagent.status === SubagentResponseDtoStatus.cancelled && (
+          <p className="text-sm text-muted-foreground">
+            Cancelled when the conversation was stopped.
           </p>
         )}
         {subagent.error && (

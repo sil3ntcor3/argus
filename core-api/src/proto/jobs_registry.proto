@@ -105,6 +105,10 @@ message VulnerabilitiesResultRequest {
   bool error = 3;
   optional string raw = 4;
   VulnerabilityList vulnerabilities = 5;
+  // True only after an error-free connector Done; partial and legacy results omit it.
+  optional bool coverage_complete = 6;
+  // Immutable image configuration ID reported by the actual connector container.
+  optional string connector_image_id = 7;
 }
 
 message ScreenshotResultRequest {

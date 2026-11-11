@@ -16,6 +16,8 @@ import { AuditSink } from './sinks/audit/audit.sink';
 import { IntegrationsSink } from './sinks/integrations/integrations.sink';
 import { NotificationsSink } from './sinks/notifications/notifications.sink';
 import { ProjectionSink } from './sinks/projection/projection.sink';
+import { ProjectsSink } from './sinks/projects/projects.sink';
+import { ProjectScopeModule } from '../projects/project-scope.module';
 
 /**
  * Every lane, one per `EventBusGroup`. Adding a lane = a sink class here plus
@@ -23,6 +25,7 @@ import { ProjectionSink } from './sinks/projection/projection.sink';
  * `EVENT_SINKS`.
  */
 export const SINKS = [
+  ProjectsSink,
   AuditSink,
   ProjectionSink,
   NotificationsSink,
@@ -52,6 +55,7 @@ export const SINKS = [
 @Global()
 @Module({
   imports: [
+    ProjectScopeModule,
     ServicesModule,
     IntegrationsModule,
     TypeOrmModule.forFeature([

@@ -14,6 +14,7 @@ import {
 } from 'class-validator';
 import { Target, TargetType } from '../entities/target.entity';
 import { TargetSourceDto } from '../target-source.dto';
+import { parseBooleanQuery } from './parse-boolean-query';
 
 export class GitOrgTargetSettingsDto {
   @ApiProperty({
@@ -184,6 +185,26 @@ export class GetManyTargetResponseDto {
 }
 
 export class GetManyWorkspaceQueryParamsDto extends GetManyBaseQueryParams {
+  @ApiProperty({
+    required: false,
+    description:
+      'When true, only targets with open critical findings. Requires vulnerability read access.',
+  })
+  @IsOptional()
+  @Transform(parseBooleanQuery)
+  @IsBoolean()
+  hasCritical?: boolean;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'When true, only targets never discovered or last discovered more than 30 days ago.',
+  })
+  @IsOptional()
+  @Transform(parseBooleanQuery)
+  @IsBoolean()
+  stale?: boolean;
+
   @ApiProperty({ required: false })
   @IsString()
   @IsOptional()

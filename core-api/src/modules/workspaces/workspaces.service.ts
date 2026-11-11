@@ -34,6 +34,7 @@ import { ApiKeysService } from '../apikeys/apikeys.service';
 import { AuditContext, AuditService } from '../audit/audit.service';
 import { CreateNotificationDto } from '../notifications/dto/create-notification.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../storage/storage.service';
 import { Target } from '../targets/entities/target.entity';
 import { WorkflowTemplateService } from '../workflows/workflow-template.service';
 import { GetWorkspaceConfigsDto } from './dto/get-workspace-configs.dto';
@@ -60,6 +61,7 @@ import { WorkspacePermission } from './entities/workspace-permission.entity';
 import { Workspace } from './entities/workspace.entity';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
+import { withProjectPermissionAliases } from './project-permission-aliases';
 
 /** Invitation validity window: 7 days */
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -104,6 +106,7 @@ export class WorkspacesService implements OnModuleInit {
     private workflowTemplateService: WorkflowTemplateService,
     private workspaceEncryptionService: WorkspaceEncryptionService,
     private auditService: AuditService,
+    private readonly storage: StorageService,
   ) {}
 
   async onModuleInit() {}
@@ -343,9 +346,7 @@ export class WorkspacesService implements OnModuleInit {
   }
 
   /**
-   * Deletes a workspace by its ID, but only if the requesting user is the owner.
-   * The workspace is soft deleted, meaning it is not actually removed from the
-   * database, but its `deletedAt` field is set to the current timestamp.
+   * Permanently deletes an authorized workspace and starts storage cleanup after commit.
    *
    * @param id - The ID of the workspace to be deleted.
    * @param userContext - The user's context data, which includes the user's ID.
@@ -380,6 +381,12 @@ export class WorkspacesService implements OnModuleInit {
           outcome: AuditOutcome.Success,
         });
       }
+    });
+
+    void this.storage.deleteWorkspaceArtifacts(workspace.id).then(({ failed }) => {
+      if (failed) this.logger.warn(`Deferred cleanup of ${failed} object(s) for workspace ${workspace.id}`);
+    }).catch((error: unknown) => {
+      this.logger.warn(`Deferred artifact cleanup for workspace ${workspace.id}`, error);
     });
 
     return {
@@ -735,7 +742,7 @@ export class WorkspacesService implements OnModuleInit {
       }
     }
 
-    return { membership, permissionKeys: [...keys] };
+    return { membership, permissionKeys: withProjectPermissionAliases(keys) };
   }
 
   /**

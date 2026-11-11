@@ -1,7 +1,17 @@
 import { EventTriggerType, JobRunType, JobStatus } from '@/common/enums/enum';
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { DataSource, type QueryRunner } from 'typeorm';
+import { DataSource, In, type EntityManager, type QueryRunner } from 'typeorm';
+import { AssetGroupAsset } from '../asset-group/entities/asset-groups-assets.entity';
+import { lockProjectScope } from '../projects/project-scope-sync';
+import { Target } from '../targets/entities/target.entity';
 import { Tool } from '../tools/entities/tools.entity';
 import { ToolsService } from '../tools/tools.service';
 import { Workflow } from '../workflows/entities/workflow.entity';
@@ -20,9 +30,11 @@ import {
 } from '../workflows/workflow-graph';
 import { resolveToolCategory } from '../tools/tool-categories';
 import { WorkspacesService } from '../workspaces/workspaces.service';
+import type { RetryRunResponseDto } from './dto/retry-run-response.dto';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
 import { JobsRegistryService } from './jobs-registry.service';
+import { canRetryRunScope, getRecordedRunRetryScope } from './run-retry-scope';
 
 export interface StartRunInput {
   workflow: Workflow;
@@ -33,6 +45,9 @@ export interface StartRunInput {
   targetIds?: string[];
   /** Scope of an asset-group run: every step stays inside the selected assets. */
   assetIds?: string[];
+  /** Private provenance supplied by the project workflow binding that starts a run. */
+  projectId?: string;
+  projectWorkflowId?: string;
 }
 
 export interface StartRunResult {
@@ -75,7 +90,10 @@ export class WorkflowRunnerService {
    * run scope, emits `WORKFLOW_START` (once per run) and dispatches every root
    * step.
    */
-  public async startRun(input: StartRunInput): Promise<StartRunResult> {
+  public async startRun(
+    input: StartRunInput,
+    validateScope?: (manager: EntityManager) => Promise<void>,
+  ): Promise<StartRunResult> {
     const context = await this.buildRunGraph(input.workflow, input.workspaceId);
     if (context.graph.steps.length === 0) {
       this.logger.warn(
@@ -89,6 +107,7 @@ export class WorkflowRunnerService {
     await queryRunner.startTransaction();
     let jobHistory: JobHistory;
     try {
+      if (validateScope) await validateScope(queryRunner.manager);
       jobHistory = queryRunner.manager.create(JobHistory, {
         workflow: input.workflow,
         jobRunType: input.jobRunType,
@@ -96,6 +115,8 @@ export class WorkflowRunnerService {
         isCompleted: false,
         steps: {},
         scope: this.buildScope(input.targetIds, input.assetIds),
+        projectId: input.projectId ?? null,
+        projectWorkflowId: input.projectWorkflowId ?? null,
       });
       await queryRunner.manager.save(jobHistory);
       await queryRunner.commitTransaction();
@@ -120,6 +141,136 @@ export class WorkflowRunnerService {
 
     const { dispatched } = await this.advance(jobHistory.id, context);
     return { jobHistory, dispatched };
+  }
+
+  /** Starts a fresh run within a closed run's recorded scope. */
+  public async retryRun(
+    workspaceId: string,
+    historyId: string,
+    permissions: readonly string[],
+  ): Promise<RetryRunResponseDto> {
+    const history = await this.dataSource
+      .getRepository(JobHistory)
+      .createQueryBuilder('history')
+      .innerJoinAndSelect('history.workflow', 'workflow')
+      .addSelect(['history.projectId', 'history.projectWorkflowId'])
+      .where('history.id = :historyId', { historyId })
+      .andWhere('workflow.workspaceId = :workspaceId', { workspaceId })
+      .getOne();
+    if (!history) {
+      throw new NotFoundException('Job history not found in workspace');
+    }
+    if (
+      !history.isCompleted ||
+      (await this.dataSource.getRepository(Job).existsBy({
+        jobHistory: { id: historyId },
+        status: In([JobStatus.PENDING, JobStatus.IN_PROGRESS]),
+      }))
+    ) {
+      throw new ConflictException(
+        'Only closed runs with no active jobs can be retried',
+      );
+    }
+
+    const scope = getRecordedRunRetryScope(history);
+    if (!scope) {
+      throw new BadRequestException('This run has no eligible recorded scope');
+    }
+    if (!canRetryRunScope(scope, permissions)) {
+      throw new ForbiddenException('You do not have permission to retry this run');
+    }
+    const input: StartRunInput = {
+      workflow: history.workflow,
+      workspaceId,
+      jobName: `Retry - ${history.jobHistoryName ?? history.workflow.name}`,
+      jobRunType: JobRunType.MANUAL,
+      ...scope,
+    };
+    let validateScope: ((manager: EntityManager) => Promise<void>) | undefined;
+    if ('assetIds' in scope) {
+      validateScope = (manager) =>
+        this.validateProjectRetryScope(
+          manager,
+          workspaceId,
+          history.workflow.id,
+          scope,
+        );
+    } else {
+      const targets = await this.dataSource.getRepository(Target).countBy({
+        id: In(scope.targetIds),
+        workspaceId,
+      });
+      if (targets !== scope.targetIds.length) {
+        throw new BadRequestException('One or more recorded targets are unavailable');
+      }
+    }
+
+    const { jobHistory } = await this.startRun(input, validateScope);
+    if (!jobHistory) {
+      throw new BadRequestException('This workflow has no runnable steps');
+    }
+    return { jobHistoryId: jobHistory.id, message: 'Run started' };
+  }
+
+  private async validateProjectRetryScope(
+    manager: EntityManager,
+    workspaceId: string,
+    workflowId: string,
+    {
+      projectId,
+      projectWorkflowId,
+      assetIds,
+    }: {
+      projectId: string;
+      projectWorkflowId: string;
+      assetIds: string[];
+    },
+  ): Promise<void> {
+    const unavailable = 'The recorded project scope is no longer available';
+    // Match deletion's workspace → project → workflow lock order. Acquire the
+    // workflow FK lock before any binding lock so a cascading delete can finish.
+    await manager.query(
+      'SELECT id FROM workspaces WHERE id = $1 FOR KEY SHARE',
+      [workspaceId],
+    );
+    try {
+      await lockProjectScope(manager, projectId, workspaceId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new BadRequestException(unavailable);
+      }
+      throw error;
+    }
+
+    const [workflow] = await manager.query<{ id: string }[]>(
+      'SELECT id FROM workflows WHERE id = $1 AND "workspaceId" = $2 FOR KEY SHARE',
+      [workflowId, workspaceId],
+    );
+    if (!workflow) throw new BadRequestException(unavailable);
+
+    const assets = await manager
+      .getRepository(AssetGroupAsset)
+      .createQueryBuilder('membership')
+      .innerJoin('membership.assetGroup', 'project')
+      .innerJoin('project.assetGroupWorkflows', 'binding')
+      .innerJoin('membership.asset', 'asset')
+      .innerJoin('asset.target', 'target')
+      .where('project.id = :projectId', { projectId })
+      .andWhere('project.archivedAt IS NULL')
+      .andWhere(
+        'binding.id = :projectWorkflowId AND binding.workflowId = :workflowId',
+        { projectWorkflowId, workflowId },
+      )
+      .andWhere('target.workspaceId = :workspaceId AND asset.isEnabled = true', {
+        workspaceId,
+      })
+      .andWhere('asset.id = ANY(:assetIds)', { assetIds })
+      .select('asset.id', 'id')
+      .setLock('pessimistic_read', undefined, ['binding', 'asset'])
+      .getRawMany<{ id: string }>();
+    if (assets.length !== assetIds.length) {
+      throw new BadRequestException(unavailable);
+    }
   }
 
   /**
@@ -228,6 +379,7 @@ export class WorkflowRunnerService {
               config: step.config,
               configProfileId: step.configProfileId,
               category: step.category,
+              input: step.input,
               // Every step of a run reuses the scope captured at start, so a
               // subdomain step's newly discovered assets are picked up by the
               // next step while an asset-group run stays inside its selection.

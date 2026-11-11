@@ -2,17 +2,41 @@ import { GITHUB_REPO } from '@/common/constants/app.constants';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { ReleaseVersion } from '@/common/interfaces/app.interface';
 import { RedisService } from '@/services/redis/redis.service';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
+import { encrypt } from '@/common/utils/encryption.util';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
 import { Repository } from 'typeorm';
 import { StorageService } from '@/modules/storage/storage.service';
 import {
+  MailProvider,
+  SystemSettingsDto,
   SystemConfigResponseDto,
   UpdateSystemConfigDto,
 } from './dto/system-configs.dto';
-import { SystemConfig } from './entities/system-config.entity';
+import {
+  SystemConfig,
+  type SystemSettings,
+} from './entities/system-config.entity';
+
+/** Stored SMTP settings; the password remains encrypted until a send. */
+export interface MailServerConfig {
+  enabled: boolean;
+  provider: MailProvider;
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password?: string;
+  fromEmail: string;
+  fromName: string;
+}
 
 /**
  * Service for managing system configuration
@@ -21,6 +45,19 @@ import { SystemConfig } from './entities/system-config.entity';
 @Injectable()
 export class SystemConfigsService implements OnModuleInit {
   private static readonly DEFAULT_SYSTEM_NAME = 'Argus';
+  private static readonly DEFAULT_SETTINGS: SystemSettings = {
+    auth: { allowSignUp: false },
+    mailServer: {
+      enabled: false,
+      provider: MailProvider.SMTP,
+      host: '',
+      port: 587,
+      secure: false,
+      username: '',
+      fromEmail: '',
+      fromName: '',
+    },
+  };
   private readonly logger = new Logger(SystemConfigsService.name);
 
   constructor(
@@ -99,13 +136,134 @@ export class SystemConfigsService implements OnModuleInit {
     return { message: 'No system logo to remove' };
   }
 
+  /** Internal settings explicitly select private fields and retain future sections. */
+  async getSettings(): Promise<SystemSettings> {
+    const config = await this.findOrCreateConfig(true);
+    const defaults = SystemConfigsService.DEFAULT_SETTINGS;
+    const stored = config.settings ?? {};
+    return Object.fromEntries(
+      [...new Set([...Object.keys(defaults), ...Object.keys(stored)])].map(
+        (section) => [section, { ...defaults[section], ...stored[section] }],
+      ),
+    );
+  }
+
+  /** Read the private mail section with defaults, retaining ciphertext. */
+  async getMailServer(): Promise<MailServerConfig> {
+    const { mailServer } = await this.getSettings();
+    return mailServer as unknown as MailServerConfig;
+  }
+
+  /** Public signup requires administrator consent and an enabled mail server. */
+  async isSignUpAllowed(): Promise<boolean> {
+    const { auth, mailServer } = await this.getSettings();
+    return auth?.allowSignUp === true && mailServer?.enabled === true;
+  }
+
+  /** Only documented sections and fields cross the admin response boundary. */
+  async getSettingsView(): Promise<SystemSettingsDto> {
+    const settings = await this.getSettings();
+    const mailServer = settings.mailServer;
+    const visibleMail = Object.fromEntries(
+      Object.keys(SystemConfigsService.DEFAULT_SETTINGS.mailServer).map(
+        (key) => [key, mailServer[key]],
+      ),
+    );
+    return {
+      auth: { allowSignUp: settings.auth.allowSignUp === true },
+      mailServer: {
+        ...visibleMail,
+        hasPassword:
+          typeof mailServer.password === 'string' &&
+          mailServer.password.length > 0,
+      },
+    };
+  }
+
+  /** Lock the row so validation and concurrent section merges use the same state. */
+  async updateSettings(
+    dto: SystemSettingsDto,
+  ): Promise<DefaultMessageResponseDto> {
+    const sections: SystemSettings = Object.fromEntries(
+      Object.entries(dto)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => [
+          key,
+          Object.fromEntries(
+            Object.entries(value as Record<string, unknown>).filter(
+              ([, field]) => field !== undefined && field !== null,
+            ),
+          ),
+        ]),
+    );
+    if (Object.keys(sections).length) {
+      const config = await this.findOrCreateConfig();
+      await this.systemConfigRepository.manager.transaction(async (manager) => {
+        const repo = manager.getRepository(SystemConfig);
+        const current = await repo.findOneOrFail({
+          where: { id: config.id },
+          select: { id: true, settings: true },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (sections.mailServer) {
+          sections.mailServer = this.prepareMailServerPatch(
+            sections.mailServer,
+            current.settings?.mailServer,
+          );
+        }
+        await repo
+          .createQueryBuilder()
+          .update()
+          .set({
+            settings: () =>
+              `settings || (SELECT jsonb_object_agg(s.key, COALESCE(settings -> s.key, '{}'::jsonb) || s.value) FROM jsonb_each(CAST(:sections AS jsonb)) s)`,
+          })
+          .setParameter('sections', JSON.stringify(sections))
+          .where('id = :id', { id: config.id })
+          .execute();
+      });
+    }
+    return { message: 'System settings updated successfully' };
+  }
+
+  private prepareMailServerPatch(
+    dto: Record<string, unknown>,
+    stored?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const patch = Object.fromEntries(
+      Object.entries(dto).filter(
+        ([key]) => key !== 'password' && key !== 'hasPassword',
+      ),
+    );
+    if (typeof dto.password === 'string' && dto.password)
+      patch.password = encrypt(dto.password);
+    const merged = {
+      ...SystemConfigsService.DEFAULT_SETTINGS.mailServer,
+      ...stored,
+      ...patch,
+    };
+    if (
+      merged.enabled &&
+      (!(typeof merged.host === 'string' && merged.host.trim()) ||
+        !merged.fromEmail)
+    ) {
+      throw new BadRequestException(
+        'Set a host and a sender email before turning on the mail server',
+      );
+    }
+    return patch;
+  }
+
   /**
    * Find existing config or create default if not exists
    * @returns System config entity
    */
-  private async findOrCreateConfig(): Promise<SystemConfig> {
+  private async findOrCreateConfig(
+    includeSettings = false,
+  ): Promise<SystemConfig> {
     let config = await this.systemConfigRepository.findOne({
       where: {},
+      ...(includeSettings ? { select: { id: true, settings: true } } : {}),
     });
 
     if (!config) {

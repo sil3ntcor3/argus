@@ -8,9 +8,9 @@ import (
 
 // secretEnvPrefixes are env-var prefixes never handed to commands the worker
 // runs on its host: WORKER_* carries the API key (on a cloud worker the
-// platform-wide key) and connector token, OASM_* the platform secrets. A
-// command that can read them can impersonate the worker.
-var secretEnvPrefixes = []string{"WORKER_", "OASM_"}
+// platform-wide key) and connector token. OASM_* and ARGUS_CLOUD_APIKEY
+// also carry platform secrets that can be used to impersonate workers.
+var secretEnvPrefixes = []string{"WORKER_", "OASM_", "ARGUS_CLOUD_APIKEY="}
 
 func isSecretEnv(entry string) bool {
 	for _, p := range secretEnvPrefixes {

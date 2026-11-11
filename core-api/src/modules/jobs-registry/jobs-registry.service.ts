@@ -1,3 +1,5 @@
+import { JOB_HISTORY_STATUS_SQL } from './job-history-status';
+import { canRetryRunScope, getRecordedRunRetryScope } from './run-retry-scope';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
 import {
@@ -20,6 +22,7 @@ import { getManyResponse } from '@/utils/getManyResponse';
 import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -28,7 +31,8 @@ import {
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
+import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
 import {
   DataSource,
   DeepPartial,
@@ -36,10 +40,8 @@ import {
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
-import { AssetService } from '../assets/entities/asset-services.entity';
-import { Asset } from '../assets/entities/assets.entity';
-import type { TargetType } from '@/common/enums/enum';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
+import { isRepositoryAsset, type ConnectorInputs } from './connector-inputs';
 import { StorageService } from '../storage/storage.service';
 import { ToolConfigProfilesService } from '../tools/tool-config-profiles.service';
 import {
@@ -47,11 +49,15 @@ import {
   maskProfile,
 } from '../tools/validators/tool-config-profiles.crypto';
 import { resolveToolCategory } from '../tools/tool-categories';
+import { resolveStepInputs } from '../tools/tool-io';
 import { resolveToolTargetTypes } from '../tools/tool-target-types';
 import { builtInTools } from '../tools/tools-provider/built-in-tools';
 import { ToolsService } from '../tools/tools.service';
+import { StepScopeLoader } from './step-scope.loader';
+import { planStepInputs } from './step-inputs';
 import {
   normalizeNeeds,
+  normalizeInput,
   orderedJobEntries,
   withStepSkipped,
   type RunStepStatus,
@@ -115,6 +121,7 @@ const orderJob = (job: WorkflowStepDefinition): WorkflowJob => ({
   ...(job.name ? { name: job.name } : {}),
   run: job.run,
   ...(job.category ? { category: job.category as ToolCategory } : {}),
+  ...(job.input ? { input: normalizeInput(job.input) } : {}),
   // Authored `needs` may be a single string (legacy array form); the
   // definition is always stored canonical.
   ...(normalizeNeeds(job.needs).length ? { needs: normalizeNeeds(job.needs) } : {}),
@@ -133,47 +140,10 @@ const JOB_HISTORY_SORTABLE_COLUMNS: string[] = [
   'jobRunType',
 ];
 
-/**
- * A run's status rolled up from its jobs. Kept as one string because the same
- * expression backs both the SELECT and the status filter (HAVING).
- */
-const JOB_HISTORY_STATUS_SQL = `CASE
-          WHEN COUNT(*) FILTER (WHERE job.status = '${JobStatus.CANCELLED}') > 0
-               AND COUNT(*) FILTER (WHERE job.status IN ('${JobStatus.PENDING}', '${JobStatus.IN_PROGRESS}')) = 0
-            THEN '${JobStatus.CANCELLED}'
-          WHEN COUNT(*) FILTER (WHERE job.status = '${JobStatus.FAILED}') > 0 THEN '${JobStatus.FAILED}'
-          WHEN COUNT(*) FILTER (WHERE job.status = '${JobStatus.IN_PROGRESS}') > 0 THEN '${JobStatus.IN_PROGRESS}'
-          WHEN COUNT(*) FILTER (WHERE job.status = '${JobStatus.COMPLETED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.COMPLETED}'
-          WHEN COUNT(*) FILTER (WHERE job.status = '${JobStatus.SKIPPED}') = COUNT(*) AND COUNT(*) > 0 THEN '${JobStatus.SKIPPED}'
-          ELSE '${JobStatus.PENDING}'
-        END`;
-
-/** Default HTTPS and HTTP ports win, then the lowest port. */
-const urlDiscoveryPortRank = (port: number): number =>
-  port === 443 ? -2 : port === 80 ? -1 : port;
-
-/**
- * Keeps one service per asset. Connector inputs carry only the host
- * (`buildConnectorInputs`), so URL_DISCOVERY jobs for two ports of the same
- * host received identical inputs and stored the same URLs once per port.
- */
-const oneServicePerAsset = (services: AssetService[]): AssetService[] => {
-  const byAsset = new Map<string, AssetService>();
-  for (const service of services) {
-    const assetId = service.asset?.id ?? service.assetId;
-    const kept = byAsset.get(assetId);
-    if (
-      !kept ||
-      urlDiscoveryPortRank(service.port) < urlDiscoveryPortRank(kept.port)
-    ) {
-      byAsset.set(assetId, service);
-    }
-  }
-  return [...byAsset.values()];
-};
-
 @Injectable()
 export class JobsRegistryService {
+  private readonly stepScope: StepScopeLoader;
+
   constructor(
     @InjectRepository(Job) public readonly repo: Repository<Job>,
     @InjectRepository(JobHistory)
@@ -189,7 +159,10 @@ export class JobsRegistryService {
     private readonly connectorRegistry: ConnectorRegistryService,
     private readonly toolConfigProfilesService: ToolConfigProfilesService,
     private readonly workerStreamRegistry: WorkerStreamRegistry,
-  ) {}
+    private readonly workspaceEncryption: WorkspaceEncryptionService,
+  ) {
+    this.stepScope = new StepScopeLoader(dataSource);
+  }
   private readonly logger = new Logger(JobsRegistryService.name);
   public async getManyJobs(
     workspaceId: string,
@@ -292,6 +265,7 @@ export class JobsRegistryService {
     configProfileId,
     config,
     category,
+    input,
   }: CreateJobs): Promise<Job[]> {
     if (!tool) {
       throw new Error('Tool is required for creating a job');
@@ -403,107 +377,52 @@ export class JobsRegistryService {
     // A step left with no eligible asset produces no job and is skipped.
     const targetTypes = resolveToolTargetTypes(categorySpec);
 
-    // Step 2: find appropriate data source based on the job category
-    if (
-      jobCategory === ToolCategory.HTTP_PROBE ||
-      jobCategory === ToolCategory.SCREENSHOT ||
-      jobCategory === ToolCategory.URL_DISCOVERY
-    ) {
-      // HTTP_PROBE must probe every enabled asset_service port; SCREENSHOT and
-      // URL_DISCOVERY are HTTP-crawl follow-ups and must only target services
-      // httpx actually confirmed live.
-      const liveOnly =
-        jobCategory === ToolCategory.SCREENSHOT ||
-        jobCategory === ToolCategory.URL_DISCOVERY;
-      const services = await this.findAssetServicesForJob(
-        targetIds,
-        assetIds,
-        workspaceId,
-        liveOnly,
-        assetServiceIds,
-        targetTypes,
-      );
-      const assetServices =
-        jobCategory === ToolCategory.URL_DISCOVERY
-          ? oneServicePerAsset(services)
-          : services;
+    // Plan the first available input kind independently for each asset.
+    const inputs = resolveStepInputs(tool.name, categorySpec, input);
+    const loaded = await this.stepScope.load(inputs, {
+      targetIds, assetIds, assetServiceIds, workspaceId, targetTypes,
+    });
+    const planned = planStepInputs(inputs, loaded.scope);
 
-      // Step 3: iterate tools and create jobs
-      const defaultCommand = builtInTools.find(
-        (t) => t.name === tool.name,
-      )?.command;
+    // Step 3: iterate tools and create jobs
+    const defaultCommand = builtInTools.find(
+      (t) => t.name === tool.name,
+    )?.command;
 
-      // Create jobs for each asset service
-      for (const assetService of assetServices) {
-        const job = jobRepo.create({
-          id: randomUUID(),
-          asset: assetService.asset, // Use the associated asset from asset service
-          assetService, // Store the asset service reference
-          jobName: tool.name,
-          status: JobStatus.PENDING,
-          category: jobCategory,
-          tool,
-          priority: priority ?? 4,
-          jobHistory,
-          command: isConnector
-            ? undefined
-            : bindingCommand(defaultCommand ?? '', {
-                // Use the default command template for HTTP_PROBE
-                value: assetService.value,
-                port: assetService.port.toString(),
-              }),
-          configProfileId: isConnector ? configProfileId : undefined,
-          config: isConnector ? mergedConfig ?? config ?? null : null,
-          isSaveRawResult: isSaveRawResult ?? false,
-          isPublishEvent,
-        } as DeepPartial<Job>);
+    for (const input of planned) {
+      const job = jobRepo.create({
+        id: randomUUID(),
+        asset: loaded.assets.get(input.assetId)!,
+        assetService: input.serviceId ? loaded.services.get(input.serviceId) : undefined,
+        inputs: isConnector ? input.connectorInputs : null,
+        jobName: tool.name,
+        status: JobStatus.PENDING,
+        category: jobCategory,
+        tool,
+        priority: priority ?? 4,
+        jobHistory,
+        command: isConnector
+          ? undefined
+          : bindingCommand(defaultCommand ?? '', input.commandValues),
+        configProfileId: isConnector ? configProfileId : undefined,
+        config: isConnector ? mergedConfig ?? config ?? null : null,
+        isSaveRawResult: isSaveRawResult ?? false,
+        isPublishEvent,
+      } as DeepPartial<Job>);
 
-        jobsToInsert.push(job);
-      }
-    } else {
-      // For all other categories, use regular assets
-      const assets = await this.findAssetsForJob(
-        targetIds,
-        assetIds,
-        workspaceId,
-        targetTypes,
-      );
-
-      const filteredAssets = this.filterAssetsByCategory(assets, jobCategory);
-
-      // Step 3: iterate tools and create jobs
-      const defaultCommand = builtInTools.find(
-        (t) => t.name === tool.name,
-      )?.command;
-
-      for (const asset of filteredAssets) {
-        const job = jobRepo.create({
-          id: randomUUID(),
-          asset,
-          jobName: tool.name,
-          status: JobStatus.PENDING,
-          category: jobCategory,
-          tool,
-          priority: priority ?? 4,
-          jobHistory,
-          command: isConnector
-            ? undefined
-            : bindingCommand(defaultCommand ?? '', {
-                value: asset.value,
-              }),
-          configProfileId: isConnector ? configProfileId : undefined,
-          config: isConnector ? mergedConfig ?? config ?? null : null,
-          isSaveRawResult: isSaveRawResult ?? false,
-          isPublishEvent,
-        } as DeepPartial<Job>);
-
-        jobsToInsert.push(job);
-      }
+      jobsToInsert.push(job);
     }
 
     // Step 4: save all jobs
     if (jobsToInsert.length > 0) {
-      await jobRepo.save(jobsToInsert);
+      // Bound INSERT parameters as typed input planning increases job fan-out.
+      await this.dataSource.transaction(async (manager) => {
+        const jobs = manager.getRepository(Job);
+        for (let offset = 0; offset < jobsToInsert.length; offset += 500) {
+          await jobs.save(jobsToInsert.slice(offset, offset + 500));
+        }
+      });
+      this.notifyJobsAvailable(workspaceId);
     }
 
     return jobsToInsert;
@@ -579,137 +498,6 @@ export class JobsRegistryService {
   }
 
   /**
-   * Finds assets for job creation based on targetIds, assetIds, and workspaceId
-   * @param targetIds list of target IDs to filter assets
-   * @param assetIds list of asset IDs to filter assets
-   * @param workspaceId workspace ID to filter assets
-   * @param targetTypes only assets whose target has one of these types
-   * @returns Promise<Array<Asset>> list of filtered assets
-   */
-  private async findAssetsForJob(
-    targetIds: string[] | undefined,
-    assetIds: string[] | undefined,
-    workspaceId: string | undefined,
-    targetTypes: TargetType[],
-  ): Promise<Asset[]> {
-    const assetsQueryBuilder = this.dataSource
-      .getRepository(Asset)
-      .createQueryBuilder('assets')
-      .innerJoin('assets.target', 'target')
-      .where('assets.isEnabled = true')
-      .andWhere('target.type IN (:...targetTypes)', { targetTypes });
-
-    if (targetIds && targetIds.length > 0) {
-      assetsQueryBuilder.andWhere('assets.targetId IN (:...targetIds)', {
-        targetIds,
-      });
-    }
-
-    if (assetIds && assetIds.length > 0) {
-      assetsQueryBuilder.andWhere('assets.id IN (:...assetIds)', {
-        assetIds,
-      });
-    }
-
-    if (workspaceId) {
-      assetsQueryBuilder.andWhere('target.workspaceId = :workspaceId', {
-        workspaceId,
-      });
-    }
-
-    return await assetsQueryBuilder.getMany();
-  }
-
-  /**
-   * Finds asset services for HTTP_PROBE / SCREENSHOT job creation based on
-   * targetIds, assetIds, and workspaceId.
-   * @param targetIds list of target IDs to filter asset services
-   * @param assetIds list of asset IDs to filter asset services
-   * @param workspaceId workspace ID to filter asset services
-   * @param liveOnly when true, restrict to services with an http_responses
-   *   row where failed = false (i.e. httpx confirmed live). Used by
-   *   SCREENSHOT so jobs are not created for every open port naabu found.
-   *   NOTE: isErrorPage = false is NOT sufficient — a service with ZERO
-   *   http_responses rows also has isErrorPage = false (default), so the
-   *   EXISTS predicate on http_responses with failed = false is the
-   *   authoritative "httpx confirmed live" predicate.
-   * @param targetTypes only services whose asset's target has one of these types
-   * @returns Promise<Array<AssetService>> list of filtered asset services
-   */
-  private async findAssetServicesForJob(
-    targetIds: string[] | undefined,
-    assetIds: string[] | undefined,
-    workspaceId: string | undefined,
-    liveOnly: boolean | undefined,
-    assetServiceIds: string[] | undefined,
-    targetTypes: TargetType[],
-  ): Promise<AssetService[]> {
-    const assetServicesQueryBuilder = this.dataSource
-      .getRepository(AssetService)
-      .createQueryBuilder('assetServices')
-      .innerJoinAndSelect('assetServices.asset', 'asset')
-      .innerJoin('asset.target', 'target')
-      .where('asset.isEnabled = true')
-      .andWhere('target.type IN (:...targetTypes)', { targetTypes });
-
-    if (liveOnly) {
-      // EXISTS semi-join: keeps the row set unmultiplied, so no DISTINCT is
-      // needed. DISTINCT over the asset join previously failed on
-      // asset.dnsRecords (PG `json` has no equality operator). The outer alias
-      // must stay double-quoted — unquoted assetServices folds to lowercase.
-      assetServicesQueryBuilder.andWhere(
-        'EXISTS (SELECT 1 FROM http_responses hr WHERE hr."assetServiceId" = "assetServices"."id" AND hr.failed = false)',
-      );
-    }
-
-    if (targetIds && targetIds.length > 0) {
-      assetServicesQueryBuilder.andWhere('asset.targetId IN (:...targetIds)', {
-        targetIds,
-      });
-    }
-
-    if (assetIds && assetIds.length > 0) {
-      assetServicesQueryBuilder.andWhere(
-        'assetServices.assetId IN (:...assetIds)',
-        {
-          assetIds,
-        },
-      );
-    }
-
-    if (assetServiceIds && assetServiceIds.length > 0) {
-      assetServicesQueryBuilder.andWhere(
-        'assetServices.id IN (:...assetServiceIds)',
-        { assetServiceIds },
-      );
-    }
-
-    if (workspaceId) {
-      assetServicesQueryBuilder.andWhere('target.workspaceId = :workspaceId', {
-        workspaceId,
-      });
-    }
-
-    return await assetServicesQueryBuilder.getMany();
-  }
-
-  /**
-   * Filters assets based on tool category
-   * @param assets list of assets to filter
-   * @param toolCategory the category of the tool
-   * @returns filtered list of assets
-   */
-  private filterAssetsByCategory(
-    assets: Asset[],
-    toolCategory: ToolCategory,
-  ): Asset[] {
-    if (toolCategory === ToolCategory.SUBDOMAINS) {
-      return assets.filter((asset) => asset.isPrimary);
-    }
-    return assets;
-  }
-
-  /**
    * Retrieves the next job associated with the given worker that has not yet
    * been started. If a job is found, it is updated with the worker's ID and
    * saved to the database. If no job is found, this function returns `null`.
@@ -766,6 +554,8 @@ export class JobsRegistryService {
     try {
       const queryBuilder = queryRunner.manager
         .createQueryBuilder(Job, 'jobs')
+        .addSelect('jobs.inputs')
+        .addSelect('statement_timestamp()', 'scanClaimInstant')
         .innerJoinAndSelect('jobs.asset', 'asset')
         .innerJoinAndSelect('asset.target', 'target')
         .leftJoinAndSelect('jobs.tool', 'tool')
@@ -836,16 +626,28 @@ export class JobsRegistryService {
       queryBuilder.leftJoinAndSelect('jobs.assetService', 'assetService');
 
       // [OPT-4] SKIP LOCKED avoids workers blocking each other on the same rows
-      const jobs = await queryBuilder
+      const { entities: jobs, raw } = await queryBuilder
         .setLock('pessimistic_write', undefined, ['jobs'])
         .limit(claimSize)
-        .getMany();
+        .getRawAndEntities<{ scanClaimInstant?: unknown }>();
 
       if (jobs.length === 0) {
         await queryRunner.rollbackTransaction();
         return [];
       }
 
+      // Use PostgreSQL's absolute clock, not the adjusted claim generation.
+      const instant = raw[0]?.scanClaimInstant;
+      const scanClaimInstant = instant instanceof Date && Number.isFinite(instant.getTime())
+        ? instant
+        : undefined;
+
+      // The timestamp also distinguishes this claim from an older one on
+      // the same worker. Make it increase even if a replica's clock lags.
+      const claimedAt = new Date(Math.max(
+        Date.now(),
+        ...jobs.map(job => (job.pickJobAt?.getTime() ?? 0) + 1),
+      ));
       // [OPT-5] One UPDATE for the whole claim instead of one per job —
       // direct SQL, no per-row SELECT.
       await queryRunner.manager.update(
@@ -854,14 +656,17 @@ export class JobsRegistryService {
         {
           workerId,
           status: JobStatus.IN_PROGRESS,
-          pickJobAt: new Date(),
+          pickJobAt: claimedAt,
+          findingScanScopeKey: null,
+          findingScanClaimedAt: null,
+          findingScanCoverageComplete: null,
         },
       );
 
       await queryRunner.commitTransaction();
 
       return jobs.map((job) =>
-        this.toGetNextJobResult(worker, isBuiltInTools, job),
+        this.toGetNextJobResult(worker, isBuiltInTools, job, claimedAt, scanClaimInstant),
       );
     } catch (error) {
       Logger.error(
@@ -875,17 +680,93 @@ export class JobsRegistryService {
     }
   }
 
+  /** Stores private evidence only for the exact claim being handed to a worker. */
+  async recordFindingScanScope(
+    job: GetNextJobResult,
+    workerId: string,
+    image: string,
+    inputs: ConnectorInputs,
+    config: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    if (
+      job.category !== ToolCategory.VULNERABILITIES ||
+      !job.claimedAt ||
+      !job.workspaceId ||
+      !job.asset?.id ||
+      !job.tool?.id ||
+      !inputs.target ||
+      isRepositoryAsset(job.asset)
+    ) {
+      return;
+    }
+
+    try {
+      const key = await this.workspaceEncryption.getDEK(job.workspaceId);
+      if (!key) return;
+      const scope = JSON.stringify(
+        {
+          assetId: job.asset.id,
+          toolId: job.tool.id,
+          image,
+          inputs,
+          config: config ?? {},
+        },
+        (_name, value: unknown) =>
+          value && typeof value === 'object' && !Array.isArray(value)
+            ? Object.fromEntries(
+                Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+                  a < b ? -1 : a > b ? 1 : 0,
+                ),
+              )
+            : value,
+      );
+      const findingScanScopeKey = createHmac('sha256', key)
+        .update('argus-finding-scan-scope:v1\0')
+        .update(scope)
+        .digest('hex');
+      await this.repo.query(
+        `WITH claim AS (
+           SELECT id FROM jobs
+           WHERE id = $1 AND "workerId" = $2 AND status = $3 AND "pickJobAt" = $4
+           FOR UPDATE SKIP LOCKED
+         )
+         UPDATE jobs AS job
+         SET "findingScanScopeKey" = $5, "findingScanClaimedAt" = $6::timestamptz
+         FROM claim WHERE job.id = claim.id`,
+        [
+          job.id,
+          workerId,
+          JobStatus.IN_PROGRESS,
+          job.claimedAt,
+          findingScanScopeKey,
+          job.scanClaimInstant?.toISOString() ?? null,
+        ],
+      );
+    } catch {
+      // A scope recording problem must not prevent dispatch or log config.
+      this.logger.warn(`Could not record finding scan scope for job ${job.id}`);
+    }
+  }
+
   /**
    * Shapes a claimed Job row into the payload a worker consumes. Kept separate
-   * from the claim so `getNextJobs` stays a pure query/claim concern.
+   * from the claim so `getNextJobs` stays a pure query/claim concern. Private
+   * input snapshots are carried here for connector dispatch only.
    */
   private toGetNextJobResult(
     worker: WorkerInstance,
     isBuiltInTools: boolean,
     job: Job,
+    claimedAt: Date,
+    scanClaimInstant: Date | undefined,
   ): GetNextJobResult {
     const base: GetNextJobResult = {
       id: job.id,
+      // Results carry the job ID but no attempt ID. A delayed response from
+      // an older attempt must never inherit a different scope after reclaim.
+      claimedAt: job.pickJobAt ? undefined : claimedAt,
+      scanClaimInstant: job.pickJobAt ? undefined : scanClaimInstant,
+      inputs: job.inputs,
       category: job.category,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
@@ -997,7 +878,7 @@ export class JobsRegistryService {
     workerId: string,
     dto: UpdateResultDto,
   ): Promise<{ jobId: string; queueId: string }> {
-    const fileName = `${dto.jobId}-${Date.now()}.json`;
+    const fileName = `${dto.jobId}-${randomUUID()}.json`;
     const { path: resultRef } = await this.storageService.uploadFile(
       fileName,
       Buffer.from(JSON.stringify(dto.data)),
@@ -1036,8 +917,10 @@ export class JobsRegistryService {
     workerId: string,
     dto: BaseResultDto,
     category: ToolCategory,
+    trustedCoverageComplete?: boolean,
+    trustedConnectorImageId?: string,
   ): Promise<{ jobId: string; queueId: string }> {
-    const fileName = `${dto.jobId}-${Date.now()}.json`;
+    const fileName = `${dto.jobId}-${randomUUID()}.json`;
     const { path: resultRef } = await this.storageService.uploadFile(
       fileName,
       Buffer.from(JSON.stringify(dto)),
@@ -1051,6 +934,19 @@ export class JobsRegistryService {
         jobId: dto.jobId,
         resultRef,
         category,
+        // Coverage evidence comes from the authenticated gRPC handler,
+        // never from the HTTP DTO or stored scanner payload.
+        ...(trustedCoverageComplete === true &&
+          dto.error === false &&
+          category === ToolCategory.VULNERABILITIES
+          ? { coverageComplete: true }
+          : {}),
+        ...(dto.error === false &&
+          category === ToolCategory.VULNERABILITIES &&
+          trustedConnectorImageId?.length === 71 &&
+          /^sha256:[0-9a-f]{64}$/.test(trustedConnectorImageId)
+          ? { connectorImageId: trustedConnectorImageId }
+          : {}),
       },
       {
         attempts: 3,
@@ -1209,25 +1105,19 @@ export class JobsRegistryService {
    * @returns
    */
   public async findJobForUpdate(workerId: string, jobId: string) {
-    return this.repo.findOne({
-      where: {
-        workerId,
-        id: jobId,
-        status: JobStatus.IN_PROGRESS,
-      },
-      relations: {
-        asset: {
-          target: true,
+    return this.repo
+      .createQueryBuilder('job')
+      .setFindOptions({
+        where: { workerId, id: jobId, status: JobStatus.IN_PROGRESS },
+        relations: {
+          asset: { target: true },
+          jobHistory: { workflow: { workspace: true } },
+          tool: true,
+          assetService: true,
         },
-        jobHistory: {
-          workflow: {
-            workspace: true,
-          },
-        },
-        tool: true,
-        assetService: true,
-      },
-    });
+      })
+      .addSelect(['job.findingScanScopeKey', 'job.findingScanClaimedAt'])
+      .getOne();
   }
 
   public async getManyJobHistories(
@@ -1278,7 +1168,10 @@ export class JobsRegistryService {
       id: string;
       createdAt: Date;
       updatedAt: Date;
-      totalJobs: string; // COUNT returns string in some databases
+      totalJobs: string; // COUNT returns string in PostgreSQL.
+      completedJobs: string;
+      failedJobs: string;
+      cancelledJobs: string;
       status: JobStatus;
       workflowName: string;
       jobHistoryName: string;
@@ -1314,6 +1207,9 @@ export class JobsRegistryService {
         '"jobHistory"."jobRunType" as "jobRunType"',
         'COUNT(job.id) as "totalJobs"',
         `${JOB_HISTORY_STATUS_SQL} as "status"`,
+        `COUNT(*) FILTER (WHERE job.status = '${JobStatus.COMPLETED}') as "completedJobs"`,
+        `COUNT(*) FILTER (WHERE job.status = '${JobStatus.FAILED}') as "failedJobs"`,
+        `COUNT(*) FILTER (WHERE job.status = '${JobStatus.CANCELLED}') as "cancelledJobs"`,
         'COUNT(*) OVER () as "total"',
       ])
       .groupBy('jobHistory.id')
@@ -1332,17 +1228,33 @@ export class JobsRegistryService {
     const total =
       rawResults.length > 0 ? parseInt(rawResults[0].total, 10) : 0;
 
-    // Transform raw results to match the response DTO structure
-    const transformedData = rawResults.map((raw) => ({
-      id: raw.id,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt,
-      totalJobs: parseInt(raw.totalJobs),
-      status: raw.status,
-      workflowName: raw.workflowName,
-      jobHistoryName: raw.jobHistoryName,
-      jobRunType: raw.jobRunType,
-    }));
+    const transformedData = rawResults.map((raw) => {
+      const totalJobs = Number(raw.totalJobs);
+      const completedJobs = Number(raw.completedJobs);
+      const failedJobs = Number(raw.failedJobs);
+      const settledJobs = completedJobs + failedJobs + Number(raw.cancelledJobs);
+      const progress =
+        totalJobs > 0
+          ? Math.min(
+              settledJobs === totalJobs ? 100 : 99,
+              Math.round((settledJobs / totalJobs) * 100),
+            )
+          : 0;
+
+      return {
+        id: raw.id,
+        createdAt: raw.createdAt,
+        updatedAt: raw.updatedAt,
+        totalJobs,
+        completedJobs,
+        failedJobs,
+        progress,
+        status: raw.status,
+        workflowName: raw.workflowName,
+        jobHistoryName: raw.jobHistoryName,
+        jobRunType: raw.jobRunType,
+      };
+    });
 
     return getManyResponse({ query, data: transformedData, total });
   }
@@ -1389,24 +1301,29 @@ export class JobsRegistryService {
       throw new NotFoundException('Job history not found');
     }
 
-    const belongsToWorkspace = await this.jobHistoryRepo
+    const provenance = await this.jobHistoryRepo
       .createQueryBuilder('jobHistory')
       .innerJoin('jobHistory.workflow', 'workflow')
       .innerJoin('workflow.workspace', 'workspace')
       .where('jobHistory.id = :id', { id })
       .andWhere('workspace.id = :workspaceId', { workspaceId })
-      .getExists();
+      .select([
+        'jobHistory.projectId AS "projectId"',
+        'jobHistory.projectWorkflowId AS "projectWorkflowId"',
+      ])
+      .getRawOne<Pick<JobHistory, 'projectId' | 'projectWorkflowId'>>();
 
-    if (!belongsToWorkspace) {
+    if (!provenance) {
       throw new NotFoundException('Job history not found in workspace');
     }
 
-    return jobHistory;
+    return Object.assign(jobHistory, provenance);
   }
 
   public async getJobHistoryDetail(
     workspaceId: string,
     id: string,
+    permissions: readonly string[] = [],
   ): Promise<JobHistoryDetailResponseDto> {
     const jobHistory = await this.loadJobHistoryInWorkspace(workspaceId, id);
 
@@ -1429,6 +1346,36 @@ export class JobsRegistryService {
       },
     });
 
+    const settled = steps.filter(({ id: stepId }) => {
+      const status = jobHistory.steps?.[stepId]?.status;
+      return status === 'done' || status === 'failed' || status === 'skipped';
+    }).length;
+    const etaSeconds =
+      jobHistory.isCompleted === false &&
+      activeJobsCount > 0 &&
+      settled > 0 &&
+      settled < steps.length &&
+      workflow?.id
+        ? await this.estimateRunEta(
+            workspaceId,
+            workflow.id,
+            historyId,
+            (steps.length - settled) / steps.length,
+          )
+        : null;
+
+    const failureReason =
+      jobHistory.isCompleted && activeJobsCount === 0
+        ? await this.findRunFailureReason(workspaceId, historyId)
+        : null;
+
+    const retryScope =
+      jobHistory.isCompleted && activeJobsCount === 0
+        ? getRecordedRunRetryScope(jobHistory)
+        : null;
+    const retryAvailable =
+      retryScope !== null && canRetryRunScope(retryScope, permissions);
+
     return {
       id: historyId,
       workflowName: workflow?.name,
@@ -1439,7 +1386,72 @@ export class JobsRegistryService {
       tools,
       steps,
       activeJobsCount,
+      etaSeconds,
+      failureReason,
+      retryAvailable,
     };
+  }
+
+  private async findRunFailureReason(
+    workspaceId: string,
+    historyId: string,
+  ): Promise<string | null> {
+    const latest = await this.jobErrorLogRepo
+      .createQueryBuilder('log')
+      .innerJoin('log.job', 'job')
+      .innerJoin('job.asset', 'asset')
+      .innerJoin('asset.target', 'target')
+      .where('job.jobHistoryId = :historyId', { historyId })
+      .andWhere('target.workspaceId = :workspaceId', { workspaceId })
+      .andWhere('job.status = :status', { status: JobStatus.FAILED })
+      .andWhere("log.logMessage ~ '[^[:space:]]'")
+      .select(
+        "LEFT(REGEXP_REPLACE(log.logMessage, '^[[:space:]]+|[[:space:]]+$', '', 'g'), 500)",
+        'message',
+      )
+      .orderBy('log.createdAt', 'DESC')
+      .addOrderBy('log.id', 'DESC')
+      .limit(1)
+      .getRawOne<{ message: string }>();
+    return latest?.message ?? null;
+  }
+
+  private async estimateRunEta(
+    workspaceId: string,
+    workflowId: string,
+    historyId: string,
+    remainingFraction: number,
+  ): Promise<number | null> {
+    const samples = await this.jobHistoryRepo
+      .createQueryBuilder('history')
+      .innerJoin('history.workflow', 'workflow')
+      .where('workflow.id = :workflowId', { workflowId })
+      .andWhere('workflow.workspaceId = :workspaceId', { workspaceId })
+      .andWhere('history.id <> :historyId', { historyId })
+      .andWhere('history.isCompleted = true')
+      .andWhere("history.updatedAt >= LOCALTIMESTAMP - INTERVAL '90 days'")
+      .andWhere('history.updatedAt <= LOCALTIMESTAMP')
+      .andWhere('history.updatedAt > history.createdAt')
+      .select(
+        'EXTRACT(EPOCH FROM (history.updatedAt - history.createdAt))',
+        'seconds',
+      )
+      .orderBy('history.updatedAt', 'DESC')
+      .addOrderBy('history.id', 'DESC')
+      .limit(20)
+      .getRawMany<{ seconds: string }>();
+
+    const durations = samples
+      .map(({ seconds }) => Number(seconds))
+      .filter((seconds) => Number.isFinite(seconds) && seconds > 0)
+      .sort((a, b) => a - b);
+    if (durations.length < 2) return null;
+
+    const median =
+      (durations[Math.floor((durations.length - 1) / 2)] +
+        durations[Math.floor(durations.length / 2)]) /
+      2;
+    return Math.round(median * remainingFraction);
   }
 
   /** A run step's category: the declared one, else its tool's default. */
@@ -1698,10 +1710,12 @@ export class JobsRegistryService {
       job.status = JobStatus.PENDING;
       job.workerId = undefined;
       job.retryCount = job.retryCount + 1;
+      job.findingScanCoverageComplete = null;
 
       await queryRunner.manager.save(job);
 
       await queryRunner.commitTransaction();
+      this.notifyJobsAvailable(workspaceId);
 
       return { message: 'Job re-run successfully' };
     } catch (error) {
@@ -1710,6 +1724,24 @@ export class JobsRegistryService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Nudge workers that can claim in this workspace to pull now instead of
+   * waiting out their idle poll. Fire-and-forget: the jobs are already saved,
+   * and a lost hint only delays pickup by one poll interval.
+   */
+  private notifyJobsAvailable(workspaceId: string | undefined): void {
+    if (!workspaceId) return;
+    this.workerStreamRegistry
+      .publishJobsAvailable(workspaceId)
+      .catch((error: unknown) =>
+        this.logger.warn(
+          `Failed to publish jobs-available for workspace ${workspaceId}: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        ),
+      );
   }
 
   public async cancelJob(
@@ -1766,9 +1798,8 @@ export class JobsRegistryService {
   }
 
   /**
-   * Cancels a whole run: every job of the history becomes CANCELLED, so the run
-   * and the tools it spans all report the same thing the user just did. The run
-   * status itself is derived from its jobs (see getManyJobHistories).
+   * Cancels an open run under the workflow engine's run lock. Every job in an
+   * accepted cancellation is marked cancelled so the derived run status agrees.
    */
   public async cancelJobHistory(
     workspaceId: string,
@@ -1795,8 +1826,18 @@ export class JobsRegistryService {
         )
         .getExists();
 
-      if (!belongsToWorkspace) {
+      // Serialize cancellation with the workflow engine's dispatch and closure.
+      const history = belongsToWorkspace
+        ? await queryRunner.manager.findOne(JobHistory, {
+            where: { id: jobHistoryId },
+            lock: { mode: 'for_no_key_update' },
+          })
+        : null;
+      if (!history) {
         throw new NotFoundException('Job history not found in workspace');
+      }
+      if (history.isCompleted) {
+        throw new ConflictException('Run has already closed');
       }
 
       // Capture which jobs are executing right now BEFORE the bulk update: only
@@ -1829,25 +1870,17 @@ export class JobsRegistryService {
       // straggler job result could dispatch another step of a run the user just
       // cancelled. Steps that never ran get an explicit reason so the run detail
       // view does not show them as still pending.
-      const history = await queryRunner.manager.findOne(JobHistory, {
-        where: { id: jobHistoryId },
-      });
-      if (history) {
-        let steps = history.steps ?? {};
-        for (const [stepName, stepState] of Object.entries(steps)) {
-          if (
-            stepState.status === 'pending' ||
-            stepState.status === 'dispatched'
-          ) {
-            steps = withStepSkipped(steps, stepName, 'run-cancelled');
-          }
+      let steps = history.steps ?? {};
+      for (const [stepName, stepState] of Object.entries(steps)) {
+        if (stepState.status === 'pending' || stepState.status === 'dispatched') {
+          steps = withStepSkipped(steps, stepName, 'run-cancelled');
         }
-        await queryRunner.manager.update(
-          JobHistory,
-          { id: jobHistoryId },
-          { steps, isCompleted: true },
-        );
       }
+      await queryRunner.manager.update(
+        JobHistory,
+        { id: jobHistoryId },
+        { steps, isCompleted: true },
+      );
 
       await queryRunner.commitTransaction();
 

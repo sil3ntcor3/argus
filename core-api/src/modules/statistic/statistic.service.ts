@@ -36,6 +36,7 @@ import { TimelineResponseDto } from './dto/timeline.dto';
 import { TopAssetVulnerabilities } from './dto/top-assets-vulnerabilities.dto';
 import { TopTagAsset } from './dto/top-tags-assets.dto';
 import { Statistic } from './entities/statistic.entity';
+import { applyReportFindingFilter, type ReportFindingFilter } from './report-finding-filter';
 
 interface RawTlsStatistic {
   alreadyExpired: string;
@@ -1018,7 +1019,7 @@ export class StatisticService {
     workspaceId: string,
     startDate: Date,
     endDate: Date,
-    options?: { targetIds?: string[] },
+    options?: ReportFindingFilter,
   ) {
     const qb = this.dataSource
       .getRepository(Vulnerability)
@@ -1034,11 +1035,7 @@ export class StatisticService {
       .groupBy("TO_CHAR(v.createdAt, 'YYYY-MM-DD')")
       .orderBy('date', 'ASC');
 
-    if (options?.targetIds?.length) {
-      qb.andWhere('target.id IN (:...targetIds)', {
-        targetIds: options.targetIds,
-      });
-    }
+    applyReportFindingFilter(qb, options);
 
     const results = await qb.getRawMany<{ date: string; count: string }>();
 
@@ -1067,7 +1064,7 @@ export class StatisticService {
    */
   async getVulnerabilityTrends(
     workspaceId: string,
-    options?: { targetIds?: string[] },
+    options?: ReportFindingFilter,
   ) {
     const now = new Date();
     const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -1166,7 +1163,7 @@ export class StatisticService {
    */
   async getTopAssetsWithVulnerabilities(
     workspaceId: string,
-    options?: { startDate?: Date; endDate?: Date; targetIds?: string[] },
+    options?: ReportFindingFilter,
     limit = 10,
   ) {
     const qb = this.dataSource
@@ -1193,19 +1190,7 @@ export class StatisticService {
       .orderBy('"totalCount"', 'DESC')
       .limit(limit);
 
-    if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', {
-        startDate: options.startDate,
-      });
-    }
-    if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
-    }
-    if (options?.targetIds?.length) {
-      qb.andWhere('target.id IN (:...targetIds)', {
-        targetIds: options.targetIds,
-      });
-    }
+    applyReportFindingFilter(qb, options);
 
     const results = await qb.getRawMany<{
       assetValue: string;
@@ -1235,7 +1220,7 @@ export class StatisticService {
    */
   async getTargetVulnerabilityStats(
     workspaceId: string,
-    options?: { startDate?: Date; endDate?: Date; targetIds?: string[] },
+    options?: ReportFindingFilter,
   ) {
     const qb = this.dataSource
       .getRepository(Target)
@@ -1264,17 +1249,7 @@ export class StatisticService {
       .having('COUNT(v.id) > 0')
       .orderBy('total', 'DESC');
 
-    if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', {
-        startDate: options.startDate,
-      });
-    }
-    if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
-    }
-    if (options?.targetIds?.length) {
-      qb.andWhere('t.id IN (:...targetIds)', { targetIds: options.targetIds });
-    }
+    applyReportFindingFilter(qb, options, 't');
 
     const results = await qb.getRawMany<{
       targetValue: string;

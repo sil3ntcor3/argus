@@ -23,7 +23,7 @@ func TestAgentLaneHasItsOwnReplicaCount(t *testing.T) {
 	rt := runtime.NewFakeRuntime()
 	mgr := NewManager(rt, 0)
 	mgr.SetPool(NewPoolManager(0, 1, 0))
-	img := "ghcr.io/oasm-platform/connector-nmap:7.97"
+	img := "ghcr.io/sil3ntcor3/connector-nmap:7.97"
 
 	if _, err := mgr.Submit(context.Background(), JobSpec{Tool: "nmap", Image: img, JobID: "registry-1"}); err != nil {
 		t.Fatalf("registry submit: %v", err)

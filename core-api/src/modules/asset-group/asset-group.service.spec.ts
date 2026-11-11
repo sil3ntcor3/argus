@@ -1,6 +1,7 @@
-import { ToolCategory } from '@/common/enums/enum';
+import { DataKind, ToolCategory } from '@/common/enums/enum';
 import { BullMQName, CronSchedule } from '@/common/enums/enum';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
+import { In, type EntityManager } from 'typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
@@ -25,6 +26,8 @@ describe('AssetGroupService', () => {
   const mockManager = {
     findOneBy: jest.fn(),
     find: jest.fn(),
+    transaction: jest.fn(),
+    query: jest.fn(),
   };
 
   const mockAssetGroupRepo = {
@@ -57,6 +60,8 @@ describe('AssetGroupService', () => {
   };
 
   const mockWorkflowRepo = {
+    manager: mockManager,
+    createQueryBuilder: jest.fn(),
     findByIds: jest.fn(),
     create: jest.fn<
       Record<string, unknown>,
@@ -69,6 +74,11 @@ describe('AssetGroupService', () => {
   const mockScanScheduleQueue = {
     add: jest.fn(),
     removeJobScheduler: jest.fn(),
+  };
+  const lockedWorkflows = {
+    select: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(), setLock: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([]),
   };
 
   // Query builder chain mock for the asset group list query
@@ -133,6 +143,23 @@ describe('AssetGroupService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    lockedWorkflows.getMany.mockResolvedValue([]);
+    mockWorkflowRepo.createQueryBuilder.mockReturnValue(lockedWorkflows);
+    mockManager.query.mockImplementation((_sql: string, [id]: [string]) =>
+      Promise.resolve([{ id }]),
+    );
+    mockManager.transaction.mockImplementation(
+      (callback: (manager: EntityManager) => Promise<void>) =>
+        callback({
+          query: mockManager.query,
+          getRepository: (entity: unknown) =>
+            entity === Workflow
+              ? mockWorkflowRepo
+              : entity === AssetGroup
+                ? mockAssetGroupRepo
+                : mockAssetGroupWorkflowRepo,
+        } as unknown as EntityManager),
+    );
     mockAssetGroupCountBuilder.getRawOne.mockResolvedValue({
       totalAssets: '0',
     });
@@ -204,6 +231,21 @@ describe('AssetGroupService', () => {
       expect(result.id).toBe(groupId);
       expect(mockWorkflowRepo.save).not.toHaveBeenCalled();
       expect(mockScanScheduleQueue.add).not.toHaveBeenCalled();
+    });
+
+    it('persists canonical metadata in the initial save before attaching assets', async () => {
+      await service.create(
+        { name: 'Metadata', hostIds: ['asset'] },
+        workspaceId,
+        { description: '  Saved  ', autoAddAssets: false },
+      );
+      expect(mockAssetGroupRepo.save.mock.calls[0][0]).toMatchObject({
+        description: 'Saved',
+        autoAddAssets: false,
+      });
+      expect(mockAssetGroupRepo.save.mock.invocationCallOrder[0]).toBeLessThan(
+        mockAssetAssetService.addManyAssets.mock.invocationCallOrder[0],
+      );
     });
 
     it('should persist the hexColor passed at creation', async () => {
@@ -315,6 +357,124 @@ describe('AssetGroupService', () => {
           }),
         }),
       );
+    });
+
+    it.each([
+      { input: undefined, expected: undefined },
+      { input: [], expected: undefined },
+      { input: [DataKind.WEB], expected: [DataKind.WEB] },
+      {
+        input: [DataKind.WEB, DataKind.HOST, DataKind.WEB],
+        expected: [DataKind.WEB, DataKind.HOST],
+      },
+    ])(
+      'preserves accepted per-tool inputs $input in the canonical workflow',
+      async ({ input, expected }) => {
+        mockManager.find.mockResolvedValue([
+          {
+            id: 'tool-1',
+            name: 'nuclei',
+            categories: [
+              {
+                name: ToolCategory.VULNERABILITIES,
+                targetTypes: [],
+                inputs: [DataKind.HOST, DataKind.WEB],
+              },
+            ],
+          },
+        ]);
+        mockWorkflowRepo.create.mockImplementation((data) => data);
+        mockWorkflowRepo.save.mockResolvedValue({ id: 'workflow-1' });
+        await service.create(
+          {
+            name: 'Input selection',
+            schedule: 'disabled',
+            tools: [{ toolId: 'tool-1', input }],
+          },
+          workspaceId,
+        );
+        expect(mockWorkflowRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            content: expect.objectContaining({
+              jobs: {
+                nuclei: {
+                  run: 'nuclei',
+                  ...(expected ? { input: expected } : {}),
+                },
+              },
+            }),
+          }),
+        );
+      },
+    );
+
+    it('builds stage barriers without losing input or profile references', async () => {
+      mockManager.find.mockResolvedValue([
+        { id: 'tool-b', name: 'nuclei', categories: [{ name: ToolCategory.VULNERABILITIES, targetTypes: [], inputs: [DataKind.WEB] }] },
+        { id: 'tool-a', name: 'httpx' },
+      ]);
+      mockWorkflowRepo.create.mockImplementation((data) => data);
+      mockWorkflowRepo.save.mockResolvedValue({ id: 'workflow-1' });
+      await service.create({
+        name: 'Stages', schedule: 'disabled', tools: [
+          { toolId: 'tool-a' },
+          { toolId: 'tool-b', stage: 3, input: [DataKind.WEB], configProfileId: 'profile-1' },
+        ],
+      }, workspaceId);
+      expect(mockWorkflowRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+        content: expect.objectContaining({ jobs: {
+          httpx: { run: 'httpx' },
+          nuclei: { run: 'nuclei', input: [DataKind.WEB], configProfileId: 'profile-1', needs: ['httpx'] },
+        } }),
+      }));
+    });
+
+    it('rejects unsupported input and rolls back the new group before saving a workflow', async () => {
+      mockAssetGroupRepo.findOne
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValue({ id: groupId });
+      mockManager.find.mockResolvedValue([
+        {
+          id: 'tool-1',
+          name: 'nuclei',
+          categories: [
+            {
+              name: ToolCategory.VULNERABILITIES,
+              targetTypes: [],
+              inputs: [DataKind.HOST, DataKind.WEB],
+            },
+          ],
+        },
+      ]);
+      await expect(
+        service.create(
+          {
+            name: 'Invalid selection',
+            schedule: 'disabled',
+            tools: [{ toolId: 'tool-1', input: [DataKind.SERVICE] }],
+          },
+          workspaceId,
+        ),
+      ).rejects.toThrow(/cannot take service/);
+      expect(mockWorkflowRepo.save).not.toHaveBeenCalled();
+      expect(mockEncryptionService.getDEK).not.toHaveBeenCalled();
+      expect(mockAssetGroupRepo.remove).toHaveBeenCalledWith({ id: groupId });
+    });
+
+    it('limits failure rollback to workflows created for this group in its workspace', async () => {
+      mockAssetGroupRepo.findOne.mockResolvedValueOnce(undefined).mockResolvedValue({ id: groupId });
+      mockManager.find.mockResolvedValue([{ id: 'tool-1', name: 'nuclei' }]);
+      mockWorkflowRepo.create.mockImplementation((data) => data);
+      mockWorkflowRepo.save.mockResolvedValue({ id: 'owned' });
+      mockWorkflowService.addManyWorkflows.mockRejectedValueOnce(new Error('assignment failed'));
+      lockedWorkflows.getMany.mockResolvedValue([{ id: 'owned', filePath: `group-${groupId}.yaml` }]);
+      mockAssetGroupWorkflowRepo.find.mockResolvedValueOnce([
+        { workflow: { id: 'owned', filePath: `group-${groupId}.yaml` } },
+        { workflow: { id: 'shared', filePath: 'shared.yaml' } },
+      ]).mockResolvedValueOnce([]);
+      await expect(service.create({ name: 'Rollback', schedule: 'disabled', toolIds: ['tool-1'] }, workspaceId)).rejects.toThrow('assignment failed');
+      expect(mockWorkflowRepo.delete).toHaveBeenCalledWith({ id: In(['owned']), workspace: { id: workspaceId } });
+      expect(mockAssetGroupRepo.remove).toHaveBeenCalledWith({ id: groupId });
     });
 
     it('should reject a per-tool category the tool does not declare', async () => {
@@ -734,8 +894,31 @@ describe('AssetGroupService', () => {
     });
   });
 
+  it('applies explicit metadata updates and leaves omitted fields intact', async () => {
+    const saved = {
+      id: 'project',
+      name: 'Old',
+      description: 'Old',
+      autoAddAssets: true,
+    };
+    mockAssetGroupRepo.findOne.mockResolvedValue(saved);
+    mockAssetGroupRepo.save.mockImplementation((entity) =>
+      Promise.resolve(entity),
+    );
+    const metadata = { description: null, autoAddAssets: false };
+    await service.updateAssetGroupById(saved.id, {}, 'workspace', metadata);
+    expect(saved).toMatchObject(metadata);
+    await service.updateAssetGroupById(saved.id, { name: 'New' }, 'workspace', {
+      description: undefined,
+      autoAddAssets: undefined,
+    });
+    expect(saved).toMatchObject({ ...metadata, name: 'New' });
+  });
+
   describe('delete', () => {
     const groupId = 'group-1';
+    const workspaceId = 'workspace-uuid';
+    beforeEach(() => mockAssetGroupWorkflowRepo.find.mockResolvedValue([]));
 
     it('should cancel the schedulers and delete the group workflows so their job histories and jobs cascade', async () => {
       mockAssetGroupRepo.findOne.mockResolvedValue({
@@ -743,14 +926,18 @@ describe('AssetGroupService', () => {
         name: 'Web Servers',
         assetGroupAssets: [{ id: 'aga-1' }],
         assetGroupWorkflows: [
-          { id: 'agw-1', jobId: 'repeat-key-1', workflow: { id: 'wf-1' } },
-          { id: 'agw-2', jobId: 'repeat-key-2', workflow: { id: 'wf-2' } },
+          { id: 'agw-1', jobId: 'repeat-key-1', workflow: { id: 'wf-1', filePath: `group-${groupId}.yaml` } },
+          { id: 'agw-2', jobId: 'repeat-key-2', workflow: { id: 'wf-2', filePath: `group-workflow---${groupId}.yaml` } },
         ],
       });
       mockAssetGroupRepo.remove.mockResolvedValue(undefined);
       mockWorkflowRepo.delete.mockResolvedValue(undefined);
+      lockedWorkflows.getMany.mockResolvedValue([
+        { id: 'wf-1', filePath: `group-${groupId}.yaml` },
+        { id: 'wf-2', filePath: `group-workflow---${groupId}.yaml` },
+      ]);
 
-      const result = await service.delete(groupId);
+      const result = await service.delete(groupId, workspaceId);
 
       expect(mockScanScheduleQueue.removeJobScheduler).toHaveBeenCalledTimes(2);
       expect(mockScanScheduleQueue.removeJobScheduler).toHaveBeenCalledWith(
@@ -759,11 +946,14 @@ describe('AssetGroupService', () => {
       expect(mockScanScheduleQueue.removeJobScheduler).toHaveBeenCalledWith(
         'repeat-key-2',
       );
-      expect(mockWorkflowRepo.delete).toHaveBeenCalledWith(['wf-1', 'wf-2']);
+      expect(mockWorkflowRepo.delete).toHaveBeenCalledWith({
+        id: In(['wf-1', 'wf-2']), workspace: { id: workspaceId },
+      });
       expect(mockAssetGroupRepo.remove).toHaveBeenCalledWith(
         expect.objectContaining({ id: groupId }),
       );
       expect(result.message).toContain(groupId);
+      expect(lockedWorkflows.setLock).toHaveBeenCalledWith('pessimistic_write');
     });
 
     it('should not touch schedulers or workflows when the group has no workflows', async () => {
@@ -774,7 +964,7 @@ describe('AssetGroupService', () => {
       });
       mockAssetGroupRepo.remove.mockResolvedValue(undefined);
 
-      const result = await service.delete(groupId);
+      const result = await service.delete(groupId, workspaceId);
 
       expect(mockScanScheduleQueue.removeJobScheduler).not.toHaveBeenCalled();
       expect(mockWorkflowRepo.delete).not.toHaveBeenCalled();
@@ -785,10 +975,48 @@ describe('AssetGroupService', () => {
     it('should throw NotFoundException when the group does not exist', async () => {
       mockAssetGroupRepo.findOne.mockResolvedValue(undefined);
 
-      await expect(service.delete(groupId)).rejects.toThrow(NotFoundException);
+      await expect(service.delete(groupId, workspaceId)).rejects.toThrow(NotFoundException);
       expect(mockScanScheduleQueue.removeJobScheduler).not.toHaveBeenCalled();
       expect(mockWorkflowRepo.delete).not.toHaveBeenCalled();
       expect(mockAssetGroupRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('removes only the binding schedulers while preserving shared, protected and unclassified workflows', async () => {
+      mockAssetGroupRepo.findOne.mockResolvedValue({
+        id: groupId,
+        assetGroupWorkflows: [
+          { jobId: 'shared-repeat', workflow: { id: 'shared', filePath: 'domain_discovery.yaml' } },
+          { jobId: 'protected-repeat', workflow: { id: 'protected', filePath: `group-${groupId}.yaml`, isCanDelete: false } },
+          { workflow: { id: 'unclassified' } },
+        ],
+      });
+      await service.delete(groupId, workspaceId);
+      expect(mockWorkflowRepo.delete).not.toHaveBeenCalled();
+      expect(mockScanScheduleQueue.removeJobScheduler).toHaveBeenCalledWith('shared-repeat');
+      expect(mockScanScheduleQueue.removeJobScheduler).toHaveBeenCalledWith('protected-repeat');
+      expect(mockAssetGroupRepo.remove).toHaveBeenCalledWith(expect.objectContaining({ id: groupId }));
+    });
+
+    it('preserves an owned workflow reused by another group', async () => {
+      const owned = { id: 'owned', filePath: `group-${groupId}.yaml` };
+      mockAssetGroupRepo.findOne.mockResolvedValue({ id: groupId, assetGroupWorkflows: [{ workflow: owned }] });
+      lockedWorkflows.getMany.mockResolvedValue([owned]);
+      mockAssetGroupWorkflowRepo.find.mockResolvedValue([{ workflowId: 'owned', assetGroupId: 'other-group' }]);
+      await service.delete(groupId, workspaceId);
+      expect(mockWorkflowRepo.delete).not.toHaveBeenCalled();
+      expect(mockAssetGroupRepo.remove).toHaveBeenCalledWith(expect.objectContaining({ id: groupId }));
+    });
+
+    it('rechecks ownership after locking instead of deleting stale candidates', async () => {
+      mockAssetGroupRepo.findOne.mockResolvedValue({
+        id: groupId,
+        assetGroupWorkflows: [{ workflowId: 'changed', workflow: { id: 'changed', filePath: `group-${groupId}.yaml` } }],
+      });
+      lockedWorkflows.getMany.mockResolvedValue([{ id: 'changed', filePath: 'shared.yaml' }]);
+      await service.delete(groupId, workspaceId);
+      expect(lockedWorkflows.where).toHaveBeenCalledWith({ id: In(['changed']), workspace: { id: workspaceId } });
+      expect(mockWorkflowRepo.delete).not.toHaveBeenCalled();
+      expect(mockAssetGroupRepo.remove).toHaveBeenCalled();
     });
   });
 });

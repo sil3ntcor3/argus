@@ -31,6 +31,7 @@ describe('RootService', () => {
               name: 'Open ASM',
               logoPath: 'http://localhost:9000/system/logo.png',
             }),
+            isSignUpAllowed: jest.fn().mockResolvedValue(false),
           },
         },
         {
@@ -75,6 +76,7 @@ describe('RootService', () => {
     it('returns Argus docs while preserving saved branding and installer URLs', async () => {
       expect(await service.getMetadata()).toEqual({
         isInit: true,
+        allowSignUp: false,
         name: 'Open ASM',
         logoPath: 'http://localhost:9000/system/logo.png',
         currentVersion: '1.0.0',
@@ -101,6 +103,28 @@ describe('RootService', () => {
 
       expect(result.logoPath).toBe('http://localhost:9000/system/logo.png');
       expect(result.storagePresignTtlSeconds).toBe(900);
+    });
+
+    it('reads signup eligibility again for each public metadata request', async () => {
+      const configs = module.get<SystemConfigsService>(SystemConfigsService);
+      const gate = jest.mocked(configs.isSignUpAllowed);
+      for (const allowed of [false, true, false]) {
+        gate.mockResolvedValueOnce(allowed);
+        await expect(service.getMetadata()).resolves.toMatchObject({
+          allowSignUp: allowed,
+        });
+      }
+      expect(gate).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not return metadata when signup eligibility cannot be read', async () => {
+      const configs = module.get<SystemConfigsService>(SystemConfigsService);
+      jest
+        .mocked(configs.isSignUpAllowed)
+        .mockRejectedValueOnce(new Error('settings unavailable'));
+      await expect(service.getMetadata()).rejects.toThrow(
+        'settings unavailable',
+      );
     });
   });
 });

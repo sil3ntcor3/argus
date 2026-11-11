@@ -15,6 +15,7 @@ import { WorkspaceEncryptionService } from '@/services/workspace-encryption/work
 import { ApiKeysService } from '../apikeys/apikeys.service';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../storage/storage.service';
 import { WorkflowTemplateService } from '../workflows/workflow-template.service';
 import { WorkspaceInvitation } from './entities/workspace-invitation.entity';
 import { WorkspaceMemberPermission } from './entities/workspace-member-permission.entity';
@@ -38,6 +39,7 @@ describe('WorkspacesService', () => {
     pseudonymizeActor: jest.Mock;
     buildActorContext: jest.Mock;
   };
+  let deleteWorkspaceArtifacts: jest.Mock;
   let mockDataSource: Partial<DataSource>;
   let mockManager: any;
   let fixedTransactionalRepository: {
@@ -226,6 +228,7 @@ describe('WorkspacesService', () => {
       pseudonymizeActor: jest.fn().mockResolvedValue(undefined),
       buildActorContext: jest.fn(),
     };
+    deleteWorkspaceArtifacts = jest.fn().mockResolvedValue({ deleted: 1, failed: 0 });
 
     const mockWorkspaceEncryptionService = {
       generateWrappedDEK: jest.fn().mockReturnValue('wrapped-dek'),
@@ -273,6 +276,10 @@ describe('WorkspacesService', () => {
         {
           provide: AuditService,
           useValue: mockAuditService,
+        },
+        {
+          provide: StorageService,
+          useValue: { deleteWorkspaceArtifacts },
         },
         {
           provide: DataSource,
@@ -623,6 +630,32 @@ describe('WorkspacesService', () => {
       ],
     };
 
+    it.each([
+      ['group.read', 'project.read'],
+      ['project.read', 'group.read'],
+      ['group.write', 'project.write'],
+      ['project.write', 'group.write'],
+    ])('allows a holder of %s to grant its exact alias %s', async (held, granted) => {
+      (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue({
+        memberPermissions: [{ permission: { permissions: [held] } }],
+      });
+      await expect(service.createPermissionGroup(testWorkspaceId, {
+        name: 'Equivalent project grant', permissions: [granted],
+      }, testUserId)).resolves.toBeDefined();
+    });
+
+    it.each([
+      ['project.read', 'group.write'], ['group.read', 'project.write'],
+      ['project.write', 'group.read'], ['group.write', 'project.read'],
+    ])('does not let %s grant a different action %s', async (held, granted) => {
+      (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue({
+        memberPermissions: [{ permission: { permissions: [held] } }],
+      });
+      await expect(service.createPermissionGroup(testWorkspaceId, {
+        name: 'Different action', permissions: [granted],
+      }, testUserId)).rejects.toThrow(/You can only grant permission keys you already hold/);
+    });
+
     it('should create a permission group', async () => {
       (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue(
         holderMembership,
@@ -812,6 +845,22 @@ describe('WorkspacesService', () => {
       ...overrides,
     });
 
+    it.each([
+      [['group.read'], ['group.read', 'project.read']],
+      [['project.read'], ['project.read', 'group.read']],
+      [['group.write'], ['group.write', 'project.write']],
+      [['project.write'], ['project.write', 'group.write']],
+      [['group.read', 'project.read', 'group.read'], ['group.read', 'project.read']],
+      [['toString', 'GROUP.read', 'group.delete', 'asset.read'], ['toString', 'GROUP.read', 'group.delete', 'asset.read']],
+      [['*'], ['*']], [[], []],
+    ])('resolves only exact project aliases for %j', async (stored, expected) => {
+      (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue({
+        memberPermissions: [{ permission: { permissions: stored } }],
+      });
+      expect((await service.getMembershipWithPermissions(testWorkspaceId, testUserId)).permissionKeys).toEqual(expected);
+      expect((await service.getCurrentPermission(testWorkspaceId, testUserId)).currentPermission).toEqual(expected);
+    });
+
     it('should aggregate permission keys across groups', async () => {
       (mockWorkspaceMembersRepository.findOne as jest.Mock).mockResolvedValue({
         memberPermissions: [
@@ -828,6 +877,7 @@ describe('WorkspacesService', () => {
       expect(result.permissionKeys.sort()).toEqual([
         '*',
         'group.read',
+        'project.read',
         'target.read',
       ]);
     });
@@ -861,6 +911,7 @@ describe('WorkspacesService', () => {
         expect(result.currentPermission.sort()).toEqual([
           '*',
           'group.read',
+          'project.read',
           'target.read',
         ]);
       });
@@ -1094,6 +1145,10 @@ describe('WorkspacesService', () => {
           execute: jest.fn().mockResolvedValue({ raw: [] }),
         }),
       });
+      mockAuditService.recordInTx.mockImplementationOnce(() => {
+        expect(deleteWorkspaceArtifacts).not.toHaveBeenCalled();
+        return Promise.resolve({ id: randomUUID() });
+      });
 
       const result = await service.deleteWorkspace(
         testWorkspaceId,
@@ -1102,6 +1157,7 @@ describe('WorkspacesService', () => {
       );
 
       expect(result).toEqual({ message: 'Workspace deleted successfully' });
+      expect(deleteWorkspaceArtifacts).toHaveBeenCalledWith(testWorkspaceId);
       expect(mockManager.delete).toHaveBeenCalledWith(Workspace, {
         id: testWorkspaceId,
       });
@@ -1140,6 +1196,7 @@ describe('WorkspacesService', () => {
       await expect(
         service.deleteWorkspace(testWorkspaceId, testUserContext, auditContext),
       ).rejects.toThrow('audit write failed');
+      expect(deleteWorkspaceArtifacts).not.toHaveBeenCalled();
 
       // The transaction callback rejected → in production the tx rolls back
       // the workspace delete. Here we verify the failure propagates (the
@@ -2030,6 +2087,11 @@ describe('WorkspacesService', () => {
           expect(action.description.trim().length).toBeGreaterThan(0);
         }
       }
+    });
+
+    it('offers the separate file read, write, and management permissions', () => {
+      const artifact = service.getPermissionCatalog().find((resource) => resource.resource === 'artifact');
+      expect(artifact?.actions.map((action) => action.action)).toEqual(['read', 'write', 'manage']);
     });
 
     it('catalog includes audit.read for the audit log endpoints', () => {

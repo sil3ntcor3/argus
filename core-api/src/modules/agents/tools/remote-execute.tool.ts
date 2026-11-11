@@ -11,6 +11,67 @@ import type { Deps, ToolCallOptions } from './types';
 /** stderr kept in the model's result; it is not paged like stdout */
 const STDERR_MAX_CHARS = 4 * 1024;
 
+/** The page after a browser command, for the user's Browser panel. */
+export interface BrowserScreenshotEvent {
+  toolCallId: string;
+  command: string;
+  /** Base64 JPEG */
+  image: string;
+  /** The browser session (`b-<id>`) the command ran in */
+  browserSessionId?: string;
+  /** The subagent that ran the command; unset for the main agent */
+  subagent?: { id: string; name: string };
+}
+
+/**
+ * The browser session a command ran in: the one it names with `-s` / `--session`, or the
+ * one `browser open` started (the first line of its output).
+ */
+export function browserSessionOf(
+  command: string,
+  stdout: string,
+): string | undefined {
+  // Match the worker's shell-like argument tokens, so quoted text cannot
+  // masquerade as a session flag. No shell expansion is performed.
+  const tokens = (
+    command.match(/(?:[^\s"'\\]|\\[\s\S]|"(?:\\["\\]|[^"])*"|'[^']*')+/g) ?? []
+  ).map((raw: string) => ({
+    raw,
+    value: raw.replace(
+      /"((?:\\["\\]|[^"])*)"|'([^']*)'|\\([\s\S])/g,
+      (
+        _match: string,
+        double: string | undefined,
+        single: string | undefined,
+        escaped: string | undefined,
+      ) =>
+        double !== undefined
+          ? double.replace(/\\(["\\])/g, '$1')
+          : single ?? escaped ?? '',
+    ),
+  }));
+  const isSession = (flag: string) => flag === '-s' || flag === '--session';
+  const valid = (value: string | undefined) =>
+    value !== undefined && /^b-[0-9a-f]{32}$/.test(value);
+  let session: string | undefined;
+  if (tokens[0]?.value === 'browser') {
+    let i = 1;
+    // Leading global flags may repeat: the worker uses the last value.
+    for (; tokens[i]?.value.startsWith('-') && tokens[i + 1]; i += 2) {
+      if (isSession(tokens[i].value)) session = tokens[i + 1].value;
+    }
+    // After the command, only an unquoted flag with a valid ID counts.
+    for (i++; i + 1 < tokens.length; i++) {
+      if (!session && isSession(tokens[i].raw) && valid(tokens[i + 1].value)) {
+        session = tokens[++i].value;
+      }
+    }
+  }
+  return valid(session)
+    ? session
+    : /^session: (b-[0-9a-f]{32})\r?(?:\n|$)/.exec(stdout)?.[1];
+}
+
 const inputSchema = z.object({
   command: z.string().min(1).describe('Shell command to execute'),
 });
@@ -86,7 +147,13 @@ export function remoteExecuteTool(
       // A browser command comes back with the page as a JPEG: a live view
       // for the user's Browser panel, never stored nor shown to the model
       if (image) {
-        emitter?.emit('browser-screenshot', { toolCallId, command, image });
+        const browserSessionId = browserSessionOf(command, result.stdout);
+        emitter?.emit('browser-screenshot', {
+          toolCallId,
+          command,
+          image,
+          ...(browserSessionId ? { browserSessionId } : {}),
+        } satisfies BrowserScreenshotEvent);
       }
       // The live terminal already streamed everything; the model gets the
       // first page, since the result is resent on every later step

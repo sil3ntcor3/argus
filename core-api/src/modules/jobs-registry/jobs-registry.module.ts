@@ -9,6 +9,7 @@ import { ConnectorsModule } from '../connectors/connectors.module';
 import { IntegrationsModule } from '../integrations/integrations.module';
 import { ToolConfigProfile } from '../tools/entities/tool-config-profiles.entity';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
+import { FindingScanAccountingService } from './finding-scan-accounting.service';
 import { JobErrorLog } from './entities/job-error-log.entity';
 import { JobHistory } from './entities/job-history.entity';
 import { Job } from './entities/job.entity';
@@ -54,6 +55,7 @@ import { WorkflowRunnerService } from './workflow-runner.service';
     AssetsDiscoveryScheduleConsumer,
     AssetGroupsScheduleConsumer,
     JobResultProcessor,
+    FindingScanAccountingService,
     JobResultCleanupService,
     JobRetentionService,
     // IssueCreationProcessor,

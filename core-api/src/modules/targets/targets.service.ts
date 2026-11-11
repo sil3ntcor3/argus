@@ -5,6 +5,7 @@ import {
   CronSchedule,
   IntegrationType,
   JobStatus,
+  Severity,
   TargetScopeType,
 } from '@/common/enums/enum';
 import { UserContextPayload } from '@/common/interfaces/app.interface';
@@ -13,6 +14,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
@@ -28,6 +30,10 @@ import { sourceCodeHost } from '../integrations/repository-sync.plan';
 import { Asset } from '../assets/entities/assets.entity';
 import type { AuditContext } from '../audit/audit.service';
 import { AuditService } from '../audit/audit.service';
+import { EventBridgeService } from '../event-bridge/publishing/event-bridge.service';
+import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
+import type { AssetDiscoveredPayload } from '../event-bridge/contracts/event-payloads';
+import { openVulnerabilityCondition } from '../vulnerabilities/open-vulnerability';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
   BulkTargetResultDto,
@@ -38,7 +44,12 @@ import {
   GetManyWorkspaceQueryParamsDto,
   UpdateTargetDto,
 } from './dto/targets.dto';
-import { Target, TargetSource, TargetType } from './entities/target.entity';
+import {
+  Target,
+  TargetSource,
+  TargetType,
+  type TargetDiscoverySchedulePayload,
+} from './entities/target.entity';
 import {
   type Cidr,
   cidrsOverlap,
@@ -46,6 +57,7 @@ import {
   formatIPv4,
   parseCidr,
 } from './cidr';
+import { staleTargetCondition } from './stale-target-condition';
 import { resolveTargetLogo } from './target-logo';
 import { TargetSourceDto, toTargetSourceDto } from './target-source.dto';
 
@@ -80,6 +92,8 @@ function trimTrailingSlashes(value: string): string {
 
 @Injectable()
 export class TargetsService implements OnModuleInit {
+  private readonly logger = new Logger(TargetsService.name);
+
   constructor(
     @InjectRepository(Target)
     private readonly repo: Repository<Target>,
@@ -89,8 +103,9 @@ export class TargetsService implements OnModuleInit {
     public assetService: AssetsService,
     private eventEmitter: EventEmitter2,
     @InjectQueue(BullMQName.ASSETS_DISCOVERY_SCHEDULE)
-    private scanScheduleQueue: Queue<Target>,
+    private scanScheduleQueue: Queue<Required<TargetDiscoverySchedulePayload>>,
     private readonly auditService: AuditService,
+    private readonly eventBridge: EventBridgeService,
   ) {}
 
   async onModuleInit() {
@@ -449,6 +464,7 @@ export class TargetsService implements OnModuleInit {
     );
 
     const targetValues = targets.map((t) => t.value);
+    let createdAssets: Array<{ id: string; target: { id: string } }> = [];
 
     // Use transaction to ensure atomicity
     const result = await this.repo.manager.transaction(
@@ -607,6 +623,7 @@ export class TargetsService implements OnModuleInit {
             .orIgnore()
             .execute();
         }
+        createdAssets = assetValues;
 
         return {
           created: createdTargetEntities,
@@ -622,6 +639,21 @@ export class TargetsService implements OnModuleInit {
     for (const target of result.created) {
       const typeToEvent = target.type.toLocaleLowerCase(); // e.g. DOMAIN -> domain, CIDR -> cidr
       this.eventEmitter.emit(`target.${typeToEvent}.create`, target);
+    }
+
+    const assetIdsByTarget = new Map<string, string[]>();
+    for (const asset of createdAssets) {
+      const ids = assetIdsByTarget.get(asset.target.id) ?? [];
+      ids.push(asset.id);
+      assetIdsByTarget.set(asset.target.id, ids);
+    }
+    for (const [targetId, assetIds] of assetIdsByTarget) {
+      await this.eventBridge.publishSafely(EVENT_CATALOG.asset.discovered, {
+        workspaceId,
+        outcome: 'success',
+        resourceType: 'asset',
+        payload: { targetId, assetIds } satisfies AssetDiscoveredPayload,
+      });
     }
 
     return result;
@@ -735,8 +767,9 @@ export class TargetsService implements OnModuleInit {
       }
     >
   > {
-    const { limit, page, sortBy, sortOrder, value, type, status, scope } =
-      query;
+    const {
+      limit, page, sortBy, sortOrder, value, type, status, scope, hasCritical, stale,
+    } = query;
 
     const offset = (page - 1) * limit;
 
@@ -806,6 +839,38 @@ export class TargetsService implements OnModuleInit {
       }
     }
 
+    if (hasCritical) {
+      queryBuilder.andWhere(
+        `EXISTS (
+          SELECT 1 FROM vulnerabilities v
+          JOIN assets a ON a.id = v."assetId"
+          WHERE a."targetId" = targets.id AND v.severity = :criticalSeverity
+            AND ${openVulnerabilityCondition('v')}
+        )`,
+        { criticalSeverity: Severity.CRITICAL },
+      );
+    }
+
+    if (stale) {
+      queryBuilder.andWhere(staleTargetCondition('targets'));
+    }
+
+    let total: number;
+    if (status) {
+      // TypeORM's getCount strips GROUP BY, which changes the meaning of the
+      // per-target HAVING clause for status. Count the matching groups instead.
+      const matchingGroups = queryBuilder.clone().select('targets.id');
+      const count = await this.repo.manager
+        .createQueryBuilder()
+        .select('COUNT(*)', 'total')
+        .from(`(${matchingGroups.getQuery()})`, 'matching_targets')
+        .setParameters(matchingGroups.getParameters())
+        .getRawOne<{ total: string }>();
+      total = Number(count?.total ?? 0);
+    } else {
+      total = await queryBuilder.getCount();
+    }
+
     if (sortBy === 'totalAssetServices' || sortBy === 'duration') {
       queryBuilder.orderBy(`"${sortBy}"`, sortOrder);
     } else if (sortBy in Target) {
@@ -813,8 +878,6 @@ export class TargetsService implements OnModuleInit {
     } else {
       queryBuilder.orderBy('targets.createdAt', sortOrder);
     }
-
-    const total = await queryBuilder.getCount();
 
     const targets: (Omit<Target, 'source'> & {
       source: unknown;
@@ -922,7 +985,30 @@ export class TargetsService implements OnModuleInit {
       });
     }
 
+    if (target.jobId) {
+      // The due consumer can retry cleanup if Redis is unavailable here.
+      void this.scanScheduleQueue
+        .removeJobScheduler(target.jobId)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Unable to remove schedule for deleted target "${id}"`,
+            error,
+          );
+        });
+    }
+
     return { message: 'Target deleted successfully' };
+  }
+
+  /** Drops a stale repeat entry only when the target was permanently removed. */
+  async removeOrphanedDiscoverySchedule(
+    id: string,
+    repeatJobKey?: string,
+  ): Promise<boolean> {
+    if (await this.repo.existsBy({ id })) return false;
+    if (repeatJobKey)
+      await this.scanScheduleQueue.removeJobScheduler(repeatJobKey);
+    return true;
   }
 
   /**
@@ -1054,7 +1140,7 @@ export class TargetsService implements OnModuleInit {
   private async updateTargetScanScheduleJob(
     target: Target,
     scanSchedule: CronSchedule,
-  ): Promise<Job<Target> | null> {
+  ): Promise<Job<Required<TargetDiscoverySchedulePayload>> | null> {
     // Remove any existing jobs for this target
     if (target.jobId) {
       await this.scanScheduleQueue.removeJobScheduler(target.jobId);
@@ -1062,7 +1148,7 @@ export class TargetsService implements OnModuleInit {
     if (scanSchedule !== CronSchedule.DISABLED) {
       const job = await this.scanScheduleQueue.add(
         target.id, // Job name is the target ID
-        { id: target.id } as Target,
+        { id: target.id, workspaceId: target.workspaceId },
         {
           repeat: {
             pattern: scanSchedule,
@@ -1081,7 +1167,12 @@ export class TargetsService implements OnModuleInit {
   async handleUpdateScanSchedule(): Promise<void> {
     const targetSchedules = await this.repo
       .createQueryBuilder('target')
-      .select(['target.value', 'target.id', 'target.scanSchedule'])
+      .select([
+        'target.value',
+        'target.id',
+        'target.scanSchedule',
+        'target.workspaceId',
+      ])
       .where('target.scanSchedule IS NOT NULL')
       .andWhere('target.jobId IS NULL')
       .getMany();

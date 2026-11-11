@@ -1,3 +1,4 @@
+import type { AdminUserDto } from '@/services/apis/gen/queries';
 import type { User } from '@/utils/authClient';
 import { redirect } from '@tanstack/react-router';
 
@@ -22,3 +23,8 @@ export function requireAdmin(session: User | null, href: string) {
     throw redirect({ to: '/' });
   }
 }
+
+/** Matches the backend's pending signup marker using the existing user fields. */
+export const isPendingApproval = (
+  user: Pick<AdminUserDto, 'banned' | 'banReason'>,
+) => !!user.banned && user.banReason === 'Pending approval';

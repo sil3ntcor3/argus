@@ -24,7 +24,9 @@ import {
   DEFAULT_PORT,
 } from './common/constants/app.constants';
 import { mergeBetterAuthSpec } from './utils/mergeBetterAuth';
+import { assertEncryptionKeys } from './common/utils/encryption.util';
 async function bootstrap() {
+  assertEncryptionKeys();
   const app = await NestFactory.create<NestNodeApplication>(
     AppModule,
     createHttpAdapter(),

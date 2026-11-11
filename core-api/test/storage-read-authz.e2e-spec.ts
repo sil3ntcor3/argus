@@ -21,7 +21,7 @@ import {
  * `cached-static` needs a session, `screenshot`/`nuclei-templates` need a
  * session AND membership of ANY workspace that owns the object (screenshot keys
  * are `md5(asset.value)` and can collide across workspaces), `reports`/
- * `job-results` are private (403), `default` is blocked (404).
+ * `job-results`/`artifacts` are private (403), `default` is blocked (404).
  *
  * Proofs:
  *  1. Presign AE-02 matrix: public/authed-tenant/private/blocked classes incl.
@@ -311,7 +311,7 @@ describe('Storage presign + public-read matrix (e2e)', () => {
         .expect(404);
     });
 
-    it.each(['reports', 'job-results'])(
+    it.each(['reports', 'job-results', 'artifacts'])(
       'rejects the private %s bucket with 403',
       async (bucket) => {
         await request(server)
@@ -350,6 +350,21 @@ describe('Storage presign + public-read matrix (e2e)', () => {
     it('denies anonymous reads of the tenant screenshot bucket with 403', async () => {
       const fetched = await fetch(`${storageOrigin}/screenshot/${ownedKey}`);
       expect(fetched.status).toBe(403);
+    });
+
+    it('allows a domain service to store an artifact but denies unsigned reads', async () => {
+      await expect(storage.listFiles('artifacts')).resolves.toEqual(expect.any(Array));
+      const artifactKey = `e2e-private-${randomUUID()}.txt`;
+      await storage.uploadFile(artifactKey, Buffer.from(textPayload), 'artifacts');
+      uploaded.push({ key: artifactKey, bucket: 'artifacts' });
+
+      const anonymous = await fetch(`${storageOrigin}/artifacts/${artifactKey}`);
+      expect(anonymous.status).toBe(403);
+      await expect(storage.getClientUrlForPath(`artifacts/${artifactKey}`)).rejects.toThrow('is private');
+      const presigned = await storage.getPresignedDownloadUrl({ bucket: 'artifacts', key: artifactKey });
+      const authenticated = await fetch(presigned.url);
+      expect(authenticated.status).toBe(200);
+      expect(await authenticated.text()).toBe(textPayload);
     });
 
     it('denies anonymous reads of the blocked default bucket with 403', async () => {

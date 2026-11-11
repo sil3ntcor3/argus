@@ -521,6 +521,50 @@ export const TargetScopeType = {
   EXTERNAL: 'EXTERNAL',
 } as const;
 
+export type SeverityCountsDto = {
+  /** @minimum 0 */
+  critical: number;
+  /** @minimum 0 */
+  high: number;
+  /** @minimum 0 */
+  medium: number;
+  /** @minimum 0 */
+  low: number;
+  /** @minimum 0 */
+  info: number;
+};
+
+export type TargetSummaryDto = {
+  /** @minimum 0 */
+  total: number;
+  /**
+   * Targets with a pending or running job
+   * @minimum 0
+   */
+  scanning: number;
+  /**
+   * Targets with discovery scheduled
+   * @minimum 0
+   */
+  scheduled: number;
+  /**
+   * Targets with no discovery in 30 days
+   * @minimum 0
+   */
+  stale: number;
+  /**
+   * Targets with an open critical finding, or null without vulnerability read access
+   * @minimum 0
+   * @nullable
+   */
+  withCritical: number | null;
+  /**
+   * Open findings by severity, or null without vulnerability read access
+   * @nullable
+   */
+  openVulnerabilities: SeverityCountsDto | null;
+};
+
 export type TargetRepositoryDto = {
   /** Asset id */
   id: string;
@@ -541,6 +585,258 @@ export type TargetRepositoryDto = {
 
 export type GetManyTargetRepositoryDtoDto = {
   data: TargetRepositoryDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
+export type JobRunType = (typeof JobRunType)[keyof typeof JobRunType];
+
+export const JobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type TargetRunDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Whether the workflow engine has closed the run */
+  isCompleted: boolean;
+  /** Status of the entire run */
+  status: JobStatus;
+  jobRunType: JobRunType;
+  workflowName: string;
+  /**
+   * Linked workspace project, or null without project read access or a link
+   * @nullable
+   */
+  projectId: string | null;
+  /** @nullable */
+  projectName: string | null;
+  /**
+   * Jobs on the target
+   * @minimum 0
+   */
+  jobsTotal: number;
+  /**
+   * Completed or skipped jobs on the target
+   * @minimum 0
+   */
+  jobsDone: number;
+  /**
+   * Failed jobs on the target
+   * @minimum 0
+   */
+  jobsFailed: number;
+  /**
+   * Running jobs on the target
+   * @minimum 0
+   */
+  jobsRunning: number;
+  /**
+   * Tool on the running target job with the latest claim time. Missing times sort last, and ties use job ID descending.
+   * @nullable
+   */
+  currentTool: string | null;
+  /**
+   * Findings first attributed to this run on the target, including later archives and dismissals. Null without vulnerability read access.
+   * @minimum 0
+   * @nullable
+   */
+  newVulnerabilities: number | null;
+};
+
+export type Severity = (typeof Severity)[keyof typeof Severity];
+
+export const Severity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type TargetTopVulnerabilityDto = {
+  id: string;
+  name: string;
+  severity: Severity;
+  assetValue: string;
+  /** @nullable */
+  cveId: string[] | null;
+  createdAt: string;
+};
+
+export type ProjectOverviewWeekDto = {
+  /** @minimum 0 */
+  critical: number;
+  /** @minimum 0 */
+  high: number;
+  /** @minimum 0 */
+  medium: number;
+  /** @minimum 0 */
+  low: number;
+  /** @minimum 0 */
+  info: number;
+  /** Monday in UTC */
+  week: string;
+};
+
+export type TargetProjectRefDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  hexColor: string | null;
+  /** @minimum 1 */
+  assets: number;
+};
+
+export type TargetExposureCountDto = {
+  name: string;
+  /**
+   * Distinct services in this group
+   * @minimum 1
+   */
+  count: number;
+};
+
+export type TargetExposureDto = {
+  /** @maxItems 6 */
+  ports: TargetExposureCountDto[];
+  /** @maxItems 6 */
+  technologies: TargetExposureCountDto[];
+  /** @maxItems 6 */
+  statusCodes: TargetExposureCountDto[];
+};
+
+export type TargetInsightKind =
+  (typeof TargetInsightKind)[keyof typeof TargetInsightKind];
+
+export const TargetInsightKind = {
+  critical_open: 'critical_open',
+  last_run_failed: 'last_run_failed',
+  tls_expiring: 'tls_expiring',
+  stale_scan: 'stale_scan',
+  new_assets: 'new_assets',
+  no_schedule: 'no_schedule',
+} as const;
+
+export type TargetInsightLevel =
+  (typeof TargetInsightLevel)[keyof typeof TargetInsightLevel];
+
+export const TargetInsightLevel = {
+  critical: 'critical',
+  warning: 'warning',
+  info: 'info',
+} as const;
+
+export type TargetInsightDto = {
+  kind: TargetInsightKind;
+  level: TargetInsightLevel;
+  /** @minimum 1 */
+  count?: number;
+  /** @minimum 1 */
+  days?: number;
+  runId?: string;
+};
+
+export type TargetOverviewDto = {
+  /** Enabled assets on the target */
+  totalAssets: number;
+  /** Enabled assets discovered in the last seven days */
+  newAssets: number;
+  /** Discovered services on the target */
+  totalServices: number;
+  /** Services discovered in the last seven days */
+  newServices: number;
+  /** Distinct ports among discovered services */
+  openPorts: number;
+  /**
+   * Next recorded discovery firing time, or null when unavailable
+   * @nullable
+   */
+  nextScanAt: string | null;
+  /**
+   * Latest target run, or null without job read access or a run
+   * @nullable
+   */
+  lastRun: TargetRunDto | null;
+  /**
+   * Recent unfinished runs, or null without job read access
+   * @maxItems 5
+   * @nullable
+   */
+  activeRuns: TargetRunDto[] | null;
+  /**
+   * Open findings by severity, or null without vulnerability read access
+   * @nullable
+   */
+  openVulnerabilities: SeverityCountsDto | null;
+  /**
+   * Open findings first seen in the last seven days, or null without vulnerability read access
+   * @nullable
+   */
+  newVulnerabilities: number | null;
+  /**
+   * Open findings ranked by severity and discovery time, or null without vulnerability read access
+   * @maxItems 5
+   * @nullable
+   */
+  topVulnerabilities: TargetTopVulnerabilityDto[] | null;
+  /**
+   * Eight UTC Monday buckets of finding discoveries, oldest first, or null without vulnerability read access
+   * @minItems 8
+   * @maxItems 8
+   * @nullable
+   */
+  weekly: ProjectOverviewWeekDto[] | null;
+  /**
+   * Non-archived projects containing target assets, or null without project read access
+   * @maxItems 6
+   * @nullable
+   */
+  projects: TargetProjectRefDto[] | null;
+  /** Most common service observations */
+  exposure: TargetExposureDto;
+  /** Discovery and schedule insights for the target */
+  insights: TargetInsightDto[];
+};
+
+export type GetManyTargetRunDtoDto = {
+  data: TargetRunDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
+export type TargetChangeKind =
+  (typeof TargetChangeKind)[keyof typeof TargetChangeKind];
+
+export const TargetChangeKind = {
+  asset: 'asset',
+  service: 'service',
+  vulnerability: 'vulnerability',
+} as const;
+
+export type TargetChangeDto = {
+  kind: TargetChangeKind;
+  at: string;
+  id: string;
+  label: string;
+  /**
+   * Parent asset value for a service or finding
+   * @nullable
+   */
+  assetValue: string | null;
+  severity?: Severity;
+};
+
+export type GetManyTargetChangeDtoDto = {
+  data: TargetChangeDto[];
   total: number;
   page: number;
   limit: number;
@@ -886,12 +1182,25 @@ export const ToolCategory = {
   url_discovery: 'url_discovery',
 } as const;
 
+export type DataKind = (typeof DataKind)[keyof typeof DataKind];
+
+export const DataKind = {
+  target: 'target',
+  host: 'host',
+  service: 'service',
+  web: 'web',
+  url: 'url',
+  repository: 'repository',
+  vulnerability: 'vulnerability',
+} as const;
+
 export type WorkflowJobConfig = { [key: string]: unknown };
 
 export type WorkflowJob = {
   name?: string;
   run: string;
   category?: ToolCategory;
+  input?: DataKind[];
   needs?: string[];
   allowFailure?: boolean;
   config?: WorkflowJobConfig;
@@ -956,6 +1265,8 @@ export type GetMetadataDto = {
    * @nullable
    */
   logoPath: string | null;
+  /** Whether public signup is currently allowed by signup and mail settings */
+  allowSignUp: boolean;
   /** Current system version */
   currentVersion: GetMetadataDtoCurrentVersion;
   /** TTL in seconds for storage presigned URLs */
@@ -1022,6 +1333,69 @@ export type UpdateSystemConfigDto = {
   name?: string;
   /** Path to system logo */
   logoPath?: UpdateSystemConfigDtoLogoPath;
+};
+
+export type AuthSettingsDto = {
+  /**
+   * Stored sign-up preference. Public registration remains closed until verification and approval are available.
+   * @nullable
+   */
+  allowSignUp?: boolean | null;
+};
+
+export type MailProvider = (typeof MailProvider)[keyof typeof MailProvider];
+
+export const MailProvider = {
+  smtp: 'smtp',
+  resend: 'resend',
+  sendgrid: 'sendgrid',
+  postmark: 'postmark',
+  mailgun: 'mailgun',
+  ses: 'ses',
+  brevo: 'brevo',
+  gmail: 'gmail',
+} as const;
+
+export type MailServerSettingsDto = {
+  /** @nullable */
+  enabled?: boolean | null;
+  provider?: MailProvider | null;
+  /** @nullable */
+  host?: string | null;
+  /** @nullable */
+  port?: number | null;
+  /**
+   * Implicit TLS, usually port 465; off means STARTTLS
+   * @nullable
+   */
+  secure?: boolean | null;
+  /** @nullable */
+  username?: string | null;
+  /**
+   * Write-only password or API key, stored encrypted. Leave out or empty to keep the saved one.
+   * @nullable
+   */
+  password?: string | null;
+  /** Read-only: whether a password is saved */
+  readonly hasPassword?: boolean;
+  /** @nullable */
+  fromEmail?: string | null;
+  /**
+   * Defaults to the system name
+   * @nullable
+   */
+  fromName?: string | null;
+};
+
+export type SystemSettingsDto = {
+  /** @nullable */
+  auth?: AuthSettingsDto | null;
+  /** @nullable */
+  mailServer?: MailServerSettingsDto | null;
+};
+
+export type SendTestMailDto = {
+  to: string;
 };
 
 export type LogoPresignRequestDto = {
@@ -1339,6 +1713,8 @@ export type PortsResultDto = {
 export type ToolCategorySpec = {
   name: ToolCategory;
   targetTypes: TargetType[];
+  inputs?: DataKind[];
+  produces?: DataKind[];
 };
 
 export type ToolType = (typeof ToolType)[keyof typeof ToolType];
@@ -1394,6 +1770,7 @@ export const VulnerabilityDismissalReason = {
   false_positive: 'false_positive',
   used_in_test: 'used_in_test',
   wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
 } as const;
 
 export type VulnerabilitySeverity =
@@ -1485,6 +1862,8 @@ export type VulnerabilityDismissal = {
   userId: string;
   reason: VulnerabilityDismissalReason;
   comment: string;
+  /** Expiry of a timed risk acceptance */
+  expiresAt?: string;
   user: User;
   vulnerability: Vulnerability;
 };
@@ -1574,6 +1953,14 @@ export type JobHistoryResponseDto = {
   createdAt: string;
   updatedAt: string;
   totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  /**
+   * Percentage of jobs completed, failed, or cancelled. 100 means all jobs have settled.
+   * @minimum 0
+   * @maximum 100
+   */
+  progress: number;
   status: JobHistoryResponseDtoStatus;
   workflowName: string;
   jobHistoryName: string;
@@ -1666,6 +2053,19 @@ export type JobHistoryDetailResponseDto = {
   /** How the run was started: by a user (manual) or by a schedule */
   jobRunType?: JobHistoryDetailResponseDtoJobRunType;
   activeJobsCount: number;
+  /**
+   * Estimated seconds remaining for an active workflow run, or null when unavailable.
+   * @nullable
+   */
+  etaSeconds: number | null;
+  /**
+   * Latest nonblank error message from a visible failed job in a closed run, or null when unavailable.
+   * @maxLength 500
+   * @nullable
+   */
+  failureReason: string | null;
+  /** Whether the caller can attempt a retry from the recorded scope. The retry operation validates current availability. */
+  retryAvailable: boolean;
 };
 
 export type JobHistoryWorkflowResponseDto = {
@@ -1675,6 +2075,11 @@ export type JobHistoryWorkflowResponseDto = {
   workflowName?: string;
   content?: WorkflowContent;
   steps: WorkflowStepStatusDto[];
+};
+
+export type RetryRunResponseDto = {
+  message: string;
+  jobHistoryId: string;
 };
 
 export type PickToolIdName = {
@@ -2372,9 +2777,35 @@ export type AddToolToWorkspaceDto = {
   toolId: string;
 };
 
+export type InstalledToolIdentityDto = {
+  /** The id of the resource */
+  id: string;
+  name: string;
+};
+
+export type IdQueryParamDto = {
+  /** The id of the resource */
+  id: string;
+};
+
+export type InstallToolResponseDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  tool: InstalledToolIdentityDto;
+  workspace: IdQueryParamDto;
+  isEnabled: boolean;
+};
+
 export type InstallToolDto = {
   /** The ID of the tool */
   toolId: string;
+};
+
+export type UninstallToolResponseDto = {
+  message: string;
+  toolId: string;
+  toolName: string;
 };
 
 export type GetManyToolDto = {
@@ -2394,6 +2825,8 @@ export type ConnectorCategoryDtoInputsSchema = { [key: string]: unknown };
 export type ConnectorCategoryDto = {
   name: ToolCategory;
   targetTypes: TargetType[];
+  inputs?: DataKind[];
+  produces?: DataKind[];
   /** JSON Schema of the inputs Argus passes to the connector for this category. */
   inputsSchema?: ConnectorCategoryDtoInputsSchema;
 };
@@ -2668,6 +3101,45 @@ export type GetVulnerabilitiesStatisticsResponseDto = {
   data: VulnerabilityStatisticsDto[];
 };
 
+export type VulnerabilityTimelineEventDtoType =
+  (typeof VulnerabilityTimelineEventDtoType)[keyof typeof VulnerabilityTimelineEventDtoType];
+
+export const VulnerabilityTimelineEventDtoType = {
+  detected: 'detected',
+  status_changed: 'status_changed',
+  dismissed: 'dismissed',
+  reopened: 'reopened',
+  risk_expired: 'risk_expired',
+} as const;
+
+export type VulnerabilityTimelineEventDtoDismissalReason =
+  (typeof VulnerabilityTimelineEventDtoDismissalReason)[keyof typeof VulnerabilityTimelineEventDtoDismissalReason];
+
+export const VulnerabilityTimelineEventDtoDismissalReason = {
+  false_positive: 'false_positive',
+  used_in_test: 'used_in_test',
+  wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
+} as const;
+
+export type VulnerabilityTimelineEventDto = {
+  id: string;
+  type: VulnerabilityTimelineEventDtoType;
+  occurredAt: string;
+  /** @nullable */
+  fromStatus: string | null;
+  /** @nullable */
+  toStatus: string | null;
+  /** @nullable */
+  jobHistoryId: string | null;
+  dismissalReason?: VulnerabilityTimelineEventDtoDismissalReason;
+  expiresAt?: string;
+};
+
+export type VulnerabilityTimelineResponseDto = {
+  data: VulnerabilityTimelineEventDto[];
+};
+
 export type AnalyzeVulnerabilityDto = {
   /** Force rerun analysis even if already analyzed */
   forceRerun?: boolean;
@@ -2680,6 +3152,7 @@ export const BulkDismissVulnerabilitiesDtoReason = {
   false_positive: 'false_positive',
   used_in_test: 'used_in_test',
   wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
 } as const;
 
 export type BulkDismissVulnerabilitiesDto = {
@@ -2687,6 +3160,8 @@ export type BulkDismissVulnerabilitiesDto = {
   reason: BulkDismissVulnerabilitiesDtoReason;
   /** @nullable */
   comment: string | null;
+  /** Required for risk acceptance only */
+  expiresAt?: string;
 };
 
 export type BulkReopenVulnerabilitiesDto = {
@@ -3180,6 +3655,7 @@ export const SubagentResponseDtoStatus = {
   in_progress: 'in_progress',
   completed: 'completed',
   failed: 'failed',
+  cancelled: 'cancelled',
 } as const;
 
 export type SubagentResponseDto = {
@@ -3305,6 +3781,7 @@ export const SubagentDetailResponseDtoStatus = {
   in_progress: 'in_progress',
   completed: 'completed',
   failed: 'failed',
+  cancelled: 'cancelled',
 } as const;
 
 export type SubagentDetailResponseDto = {
@@ -4388,6 +4865,13 @@ export type AssetGroupToolInput = {
   configProfileId?: string;
   /** Category to run the tool in (default: its first) */
   category?: ToolCategory;
+  input?: DataKind[];
+  /**
+   * Pipeline stage. Tools in one stage run in parallel; later stages wait. Default 1.
+   * @minimum 1
+   * @maximum 20
+   */
+  stage?: number;
 };
 
 export type CreateAssetGroupDto = {
@@ -4437,6 +4921,558 @@ export type GetManyAssetDto = {
 export type UpdateAssetGroupWorkflowDto = {
   /** 5-field cron expression (UTC) or "disabled" to turn scheduling off */
   schedule: string;
+};
+
+export type ProjectViewDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  hexColor?: string;
+  assetGroupWorkflows?: AssetGroupWorkflow[];
+  totalAssets: number;
+  /** @nullable */
+  lastRunAt?: string | null;
+  /** @nullable */
+  readonly description: string | null;
+  readonly autoAddAssets: boolean;
+};
+
+export type GetManyProjectViewDtoDto = {
+  data: ProjectViewDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
+export type WorkflowTemplateJobDto = {
+  id: string;
+  run: string;
+  needs: string[];
+};
+
+export type WorkflowTemplateDto = {
+  filePath: string;
+  name: string;
+  jobs: WorkflowTemplateJobDto[];
+};
+
+export type CreatedProjectWorkflowDtoSchedule =
+  (typeof CreatedProjectWorkflowDtoSchedule)[keyof typeof CreatedProjectWorkflowDtoSchedule];
+
+export const CreatedProjectWorkflowDtoSchedule = {
+  disabled: 'disabled',
+} as const;
+
+export type CreatedProjectWorkflowDto = {
+  /** Project workflow binding ID */
+  id: string;
+  /** Project-owned workflow ID */
+  workflowId: string;
+  name: string;
+  schedule: CreatedProjectWorkflowDtoSchedule;
+};
+
+export type CreateProjectWorkflowDto = {
+  /**
+   * File path from the workspace template catalog
+   * @maxLength 255
+   */
+  template: string;
+  /**
+   * Defaults to the template name
+   * @maxLength 120
+   */
+  name?: string;
+};
+
+export type CreateProjectDto = {
+  /**
+   * Name of the project
+   * @maxLength 120
+   */
+  name: string;
+  /** Hex color of the asset group */
+  hexColor?: string;
+  /** Array of asset (host) IDs to add to the group */
+  hostIds?: string[];
+  /** Cron schedule for the group workflow (e.g. "0 0 *\/3 * *"). Requires toolIds. */
+  schedule?: string;
+  /** Tool IDs used to build the group workflow. When provided, a workflow is created and assigned to the group. */
+  toolIds?: string[];
+  /** Per-tool config inputs for the group workflow. When provided, overrides toolIds — each entry specifies a tool ID plus optional inline config or a config profile reference. */
+  tools?: AssetGroupToolInput[];
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  description?: string | null;
+  autoAddAssets?: boolean;
+};
+
+export type ScopePreviewResultDto = {
+  /**
+   * Selected rule assets union owned manual members
+   * @minimum 0
+   */
+  total: number;
+  /**
+   * Assets selected by include rules after exclusions
+   * @minimum 0
+   */
+  ruleAssets: number;
+  /** Per original input row: include matches, or include matches removed by an exclusion */
+  perRule: number[];
+};
+
+export type ProjectScopeRuleMode =
+  (typeof ProjectScopeRuleMode)[keyof typeof ProjectScopeRuleMode];
+
+export const ProjectScopeRuleMode = {
+  include: 'include',
+  exclude: 'exclude',
+} as const;
+
+export type ProjectScopeRuleType =
+  (typeof ProjectScopeRuleType)[keyof typeof ProjectScopeRuleType];
+
+export const ProjectScopeRuleType = {
+  target: 'target',
+  hostname: 'hostname',
+  cidr: 'cidr',
+  asset: 'asset',
+} as const;
+
+export type ScopeRuleInputDto = {
+  mode: ProjectScopeRuleMode;
+  type: ProjectScopeRuleType;
+  /**
+   * Target/asset UUID, hostname pattern with * wildcards, or IPv4/IPv6 CIDR
+   * @maxLength 255
+   */
+  value: string;
+};
+
+export type ScopePreviewDto = {
+  /** @maxItems 100 */
+  rules: ScopeRuleInputDto[];
+  /** Include the owned manual members of this project */
+  projectId?: string;
+};
+
+export type ScopeRuleDto = {
+  id: string;
+  mode: ProjectScopeRuleMode;
+  type: ProjectScopeRuleType;
+  value: string;
+  /** Owned target/asset name, or the stored rule value */
+  label: string;
+  /**
+   * Include matches, or include matches removed by this exclusion
+   * @minimum 0
+   */
+  matched: number;
+};
+
+export type ProjectScopeDto = {
+  rules: ScopeRuleDto[];
+  /** Saved preference for automatic asset membership */
+  autoAddAssets: boolean;
+  /**
+   * Current owned members with rule provenance
+   * @minimum 0
+   */
+  ruleAssets: number;
+  /**
+   * Current owned members with manual provenance
+   * @minimum 0
+   */
+  manualAssets: number;
+};
+
+export type ScopeSyncResultDto = {
+  /** @minimum 0 */
+  added: number;
+  /** @minimum 0 */
+  removed: number;
+};
+
+export type ReplaceScopeRulesDto = {
+  /** @maxItems 100 */
+  rules: ScopeRuleInputDto[];
+  autoAddAssets?: boolean;
+};
+
+export type ProjectAssetsChangedDto = {
+  message: string;
+  /** @minimum 0 */
+  count: number;
+};
+
+export type AddProjectAssetsDto = {
+  /** Array of asset IDs to add */
+  assetIds: string[];
+};
+
+export type RemoveProjectAssetsDto = {
+  /**
+   * Asset IDs to remove
+   * @maxItems 1000
+   */
+  assetIds: string[];
+};
+
+export type ProjectAssetSource =
+  (typeof ProjectAssetSource)[keyof typeof ProjectAssetSource];
+
+export const ProjectAssetSource = {
+  manual: 'manual',
+  rule: 'rule',
+} as const;
+
+export type ProjectAssetRuleDto = {
+  id: string;
+  type: ProjectScopeRuleType;
+  value: string;
+  label: string;
+};
+
+export type ProjectAssetScanDto = {
+  runId: string;
+  createdAt: string;
+};
+
+export type ProjectAssetDto = {
+  id: string;
+  value: string;
+  targetId: string;
+  targetValue: string;
+  targetType: TargetType;
+  source: ProjectAssetSource;
+  /** @nullable */
+  rule: ProjectAssetRuleDto | null;
+  /** When the asset joined the project */
+  addedAt: string;
+  /** Open findings linked to this project */
+  vulnerabilities: SeverityCountsDto;
+  /** @nullable */
+  lastScan: ProjectAssetScanDto | null;
+};
+
+export type GetManyProjectAssetDtoDto = {
+  data: ProjectAssetDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
+export type ProjectRunDtoJobRunType =
+  (typeof ProjectRunDtoJobRunType)[keyof typeof ProjectRunDtoJobRunType];
+
+export const ProjectRunDtoJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type ProjectRunDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  isCompleted: boolean;
+  jobRunType: ProjectRunDtoJobRunType;
+  /** @nullable */
+  projectWorkflowId: string | null;
+  workflowName: string;
+  status: JobStatus;
+  /** @minimum 0 */
+  scopeSize: number;
+  /** @minimum 0 */
+  stepsTotal: number;
+  /** @minimum 0 */
+  stepsDone: number;
+  /** @minimum 0 */
+  stepsFailed: number;
+  /** @minimum 0 */
+  newVulnerabilities: number;
+  /** @minimum 0 */
+  recurringVulnerabilities: number;
+};
+
+export type GetManyProjectRunDtoDto = {
+  data: ProjectRunDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
+export type ProjectFindingSightingDto = {
+  /** @nullable */
+  runId: string | null;
+  at: string;
+};
+
+export type ProjectFindingDtoSeverity =
+  (typeof ProjectFindingDtoSeverity)[keyof typeof ProjectFindingDtoSeverity];
+
+export const ProjectFindingDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+/**
+ * Dismissal state. Archived findings without a dismissal can be returned with status=all.
+ */
+export type ProjectFindingDtoStatus =
+  (typeof ProjectFindingDtoStatus)[keyof typeof ProjectFindingDtoStatus];
+
+export const ProjectFindingDtoStatus = {
+  open: 'open',
+  dismissed: 'dismissed',
+} as const;
+
+export type ProjectFindingDtoProvenance =
+  (typeof ProjectFindingDtoProvenance)[keyof typeof ProjectFindingDtoProvenance];
+
+export const ProjectFindingDtoProvenance = {
+  new: 'new',
+  recurring: 'recurring',
+  not_seen: 'not_seen',
+} as const;
+
+export type ProjectFindingDto = {
+  id: string;
+  name: string;
+  severity: ProjectFindingDtoSeverity;
+  /** @nullable */
+  cveId: string[] | null;
+  /** @nullable */
+  affectedUrl: string | null;
+  assetId: string;
+  assetValue: string;
+  /** @nullable */
+  toolName: string | null;
+  /** Dismissal state. Archived findings without a dismissal can be returned with status=all. */
+  status: ProjectFindingDtoStatus;
+  provenance: ProjectFindingDtoProvenance;
+  /** @minimum 0 */
+  timesSeen: number;
+  firstSeen: ProjectFindingSightingDto;
+  lastSeen: ProjectFindingSightingDto;
+};
+
+export type ProjectFindingProvenanceCountsDto = {
+  /** @minimum 0 */
+  all: number;
+  /** @minimum 0 */
+  new: number;
+  /** @minimum 0 */
+  recurring: number;
+  /** @minimum 0 */
+  notSeen: number;
+};
+
+export type ProjectFindingsResponseDto = {
+  data: ProjectFindingDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+  /** Counts under every filter except provenance */
+  provenanceCounts: ProjectFindingProvenanceCountsDto;
+  /** Counts under every filter except severity */
+  severityCounts: SeverityCountsDto;
+};
+
+export type ProjectFindingTimelineRunDtoSighting =
+  (typeof ProjectFindingTimelineRunDtoSighting)[keyof typeof ProjectFindingTimelineRunDtoSighting];
+
+export const ProjectFindingTimelineRunDtoSighting = {
+  seen: 'seen',
+  missed: 'missed',
+  unknown: 'unknown',
+} as const;
+
+export type ProjectFindingTimelineRunDto = {
+  id: string;
+  createdAt: string;
+  workflowName: string;
+  sighting: ProjectFindingTimelineRunDtoSighting;
+};
+
+export type ProjectFindingTimelineDto = {
+  vulnerability: ProjectFindingDto;
+  runs: ProjectFindingTimelineRunDto[];
+};
+
+export type ProjectOverviewRunRefDtoJobRunType =
+  (typeof ProjectOverviewRunRefDtoJobRunType)[keyof typeof ProjectOverviewRunRefDtoJobRunType];
+
+export const ProjectOverviewRunRefDtoJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type ProjectOverviewRunRefDtoStatus =
+  (typeof ProjectOverviewRunRefDtoStatus)[keyof typeof ProjectOverviewRunRefDtoStatus];
+
+export const ProjectOverviewRunRefDtoStatus = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  skipped: 'skipped',
+} as const;
+
+export type ProjectOverviewRunRefDto = {
+  id: string;
+  createdAt: string;
+  workflowName: string;
+  jobRunType: ProjectOverviewRunRefDtoJobRunType;
+  status: ProjectOverviewRunRefDtoStatus;
+};
+
+export type ProjectOverviewActivityDtoKind =
+  (typeof ProjectOverviewActivityDtoKind)[keyof typeof ProjectOverviewActivityDtoKind];
+
+export const ProjectOverviewActivityDtoKind = {
+  run: 'run',
+  audit: 'audit',
+  dismissed: 'dismissed',
+} as const;
+
+export type ProjectOverviewActivityDtoChange =
+  (typeof ProjectOverviewActivityDtoChange)[keyof typeof ProjectOverviewActivityDtoChange];
+
+export const ProjectOverviewActivityDtoChange = {
+  settings: 'settings',
+  assetsadded: 'assets.added',
+  assetsdiscovered: 'assets.discovered',
+  assetsremoved: 'assets.removed',
+  scope: 'scope',
+  workflowadded: 'workflow.added',
+  workflowupdated: 'workflow.updated',
+  workflowremoved: 'workflow.removed',
+  triggers: 'triggers',
+} as const;
+
+export type ProjectOverviewActivityDtoJobRunType =
+  (typeof ProjectOverviewActivityDtoJobRunType)[keyof typeof ProjectOverviewActivityDtoJobRunType];
+
+export const ProjectOverviewActivityDtoJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type ProjectOverviewActivityDtoRunStatus =
+  (typeof ProjectOverviewActivityDtoRunStatus)[keyof typeof ProjectOverviewActivityDtoRunStatus];
+
+export const ProjectOverviewActivityDtoRunStatus = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  skipped: 'skipped',
+} as const;
+
+export type ProjectOverviewActivityDtoReason =
+  (typeof ProjectOverviewActivityDtoReason)[keyof typeof ProjectOverviewActivityDtoReason];
+
+export const ProjectOverviewActivityDtoReason = {
+  false_positive: 'false_positive',
+  used_in_test: 'used_in_test',
+  wont_fix: 'wont_fix',
+} as const;
+
+export type ProjectOverviewActivityDto = {
+  kind: ProjectOverviewActivityDtoKind;
+  /** Run ID, audit action or dismissal */
+  ref: string;
+  at: string;
+  actorName?: string;
+  change?: ProjectOverviewActivityDtoChange;
+  workflowName?: string;
+  jobRunType?: ProjectOverviewActivityDtoJobRunType;
+  runStatus?: ProjectOverviewActivityDtoRunStatus;
+  reason?: ProjectOverviewActivityDtoReason;
+  /** @minimum 0 */
+  added?: number;
+  /** @minimum 0 */
+  removed?: number;
+  /** @minimum 1 */
+  count?: number;
+  /** @minimum 0 */
+  scopeSize?: number;
+  /** @minimum 0 */
+  newVulnerabilities?: number;
+  /** @minimum 0 */
+  recurringVulnerabilities?: number;
+};
+
+export type ProjectOverviewDtoLastRun = {
+  id: string;
+  createdAt: string;
+  workflowName: string;
+  jobRunType: 'manual' | 'scheduled';
+  status:
+    | 'pending'
+    | 'in_progress'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+    | 'skipped';
+} | null;
+
+export type ProjectOverviewDto = {
+  /** @minimum 0 */
+  totalAssets: number;
+  /** @minimum 0 */
+  newAssets: number;
+  /** @minimum 0 */
+  workflows: number;
+  openVulnerabilities: SeverityCountsDto;
+  /** @minimum 0 */
+  newVulnerabilities: number;
+  /** @maxItems 5 */
+  newVulnerabilityRuns: ProjectOverviewRunRefDto[];
+  lastRun: ProjectOverviewDtoLastRun;
+  /**
+   * @minItems 8
+   * @maxItems 8
+   */
+  weekly: ProjectOverviewWeekDto[];
+  /** @maxItems 15 */
+  activity: ProjectOverviewActivityDto[];
+};
+
+export type UpdateProjectDto = {
+  /**
+   * Name of the project
+   * @maxLength 120
+   */
+  name?: string;
+  /**
+   * Hex color of the asset group
+   * @pattern ^#[0-9a-fA-F]{6}$
+   */
+  hexColor?: string;
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  description?: string | null;
+  autoAddAssets?: boolean;
 };
 
 export type CreateFirstAdminDto = {
@@ -4663,6 +5699,138 @@ export type GenerateVulReportBodyDto = {
   minSeverity?: GenerateVulReportBodyDtoMinSeverity;
 };
 
+export type ArtifactListCreatorDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  image: string | null;
+};
+
+export type ArtifactListItemDtoSource =
+  (typeof ArtifactListItemDtoSource)[keyof typeof ArtifactListItemDtoSource];
+
+export const ArtifactListItemDtoSource = {
+  upload: 'upload',
+  agent: 'agent',
+} as const;
+
+/**
+ * Stored file access mode.
+ */
+export type ArtifactListItemDtoShareType =
+  (typeof ArtifactListItemDtoShareType)[keyof typeof ArtifactListItemDtoShareType];
+
+export const ArtifactListItemDtoShareType = {
+  private: 'private',
+  shared: 'shared',
+  public: 'public',
+} as const;
+
+export type ArtifactListItemDto = {
+  id: string;
+  name: string;
+  mimeType: string;
+  /** @minimum 0 */
+  sizeBytes: number;
+  source: ArtifactListItemDtoSource;
+  /** Stored file access mode. */
+  shareType: ArtifactListItemDtoShareType;
+  /** @nullable */
+  createdBy: ArtifactListCreatorDto | null;
+  isOwner: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GetManyArtifactListItemDtoDto = {
+  data: ArtifactListItemDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
+export type ArtifactUsageDto = {
+  /**
+   * Effective workspace quota in bytes
+   * @minimum 0
+   */
+  quotaBytes: number;
+  /**
+   * Bytes used by ready files
+   * @minimum 0
+   */
+  usedBytes: number;
+  /**
+   * Bytes reserved for pending uploads
+   * @minimum 0
+   */
+  reservedBytes: number;
+  /**
+   * Maximum size of one file in bytes
+   * @minimum 0
+   */
+  maxFileBytes: number;
+};
+
+export type ArtifactDownloadDto = {
+  /** Signed URL for the attachment */
+  url: string;
+  /** Lifetime of the signed URL in seconds */
+  expiresIn: number;
+};
+
+export type AddArtifactSharesResultDto = {
+  /** Current workspace recipients matched, including existing shares. */
+  shared: number;
+  /** Distinct addresses that did not match an eligible recipient. */
+  skipped: number;
+};
+
+export type AddArtifactSharesDto = {
+  /** @maxItems 50 */
+  emails: string[];
+};
+
+export type UpdateArtifactAccessDtoShareType =
+  (typeof UpdateArtifactAccessDtoShareType)[keyof typeof UpdateArtifactAccessDtoShareType];
+
+export const UpdateArtifactAccessDtoShareType = {
+  private: 'private',
+  shared: 'shared',
+  public: 'public',
+} as const;
+
+export type UpdateArtifactAccessDto = {
+  shareType: UpdateArtifactAccessDtoShareType;
+};
+
+export type ArtifactFolderDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  parentFolderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ArtifactFolderPathItemDto = {
+  id: string;
+  name: string;
+};
+
+export type ArtifactFolderDetailDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  parentFolderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Breadcrumb from the root folder to this folder. */
+  path: ArtifactFolderPathItemDto[];
+};
+
 export type PresignUploadRequestDto = {
   /** Original file name of the object */
   fileName: string;
@@ -4794,6 +5962,14 @@ export type TargetsControllerGetTargetsInWorkspaceParams = {
   limit?: number;
   sortBy?: string;
   sortOrder?: string;
+  /**
+   * When true, only targets with open critical findings. Requires vulnerability read access.
+   */
+  hasCritical?: boolean;
+  /**
+   * When true, only targets never discovered or last discovered more than 30 days ago.
+   */
+  stale?: boolean;
   value?: string;
   /**
    * Filter by target type (DOMAIN, CIDR, or IP)
@@ -4819,6 +5995,35 @@ export type TargetsControllerGetTargetRepositoriesParams = {
    * true → only scanned repositories, false → only skipped ones
    */
   isEnabled?: boolean;
+};
+
+export type TargetsControllerGetTargetRunsParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+   * Only unfinished runs from the last seven days that are pending or in progress
+   */
+  active?: boolean;
+};
+
+export type TargetsControllerGetTargetChangesParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  kind?: TargetChangeKind;
 };
 
 export type WorkspacesControllerGetWorkspacesParams = {
@@ -5510,6 +6715,115 @@ export type AssetGroupControllerGetAssetsNotInAssetGroupParams = {
   sortOrder?: string;
 };
 
+export type ProjectsControllerGetManyParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: string;
+  targetIds?: string[];
+};
+
+export type ProjectsControllerGetAssetsParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: string;
+  source?: ProjectAssetSource;
+};
+
+export type ProjectsControllerGetAssetCandidatesParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: string;
+};
+
+export type ProjectsControllerGetRunsParams = {
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  projectWorkflowId?: string;
+  jobRunType?: ProjectsControllerGetRunsJobRunType;
+};
+
+export type ProjectsControllerGetRunsJobRunType =
+  (typeof ProjectsControllerGetRunsJobRunType)[keyof typeof ProjectsControllerGetRunsJobRunType];
+
+export const ProjectsControllerGetRunsJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+} as const;
+
+export type ProjectsControllerGetFindingsParams = {
+  /**
+   * Literal search without NUL characters
+   * @maxLength 200
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  severity?: ProjectsControllerGetFindingsSeverityItem[];
+  provenance?: ProjectsControllerGetFindingsProvenance;
+  /**
+   * Open excludes archived and dismissed findings
+   */
+  status?: ProjectsControllerGetFindingsStatus;
+  assetId?: string;
+  /**
+   * Seen in this run
+   */
+  jobHistoryId?: string;
+  /**
+   * Seen in a run of this project workflow
+   */
+  projectWorkflowId?: string;
+};
+
+export type ProjectsControllerGetFindingsSeverityItem =
+  (typeof ProjectsControllerGetFindingsSeverityItem)[keyof typeof ProjectsControllerGetFindingsSeverityItem];
+
+export const ProjectsControllerGetFindingsSeverityItem = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type ProjectsControllerGetFindingsProvenance =
+  (typeof ProjectsControllerGetFindingsProvenance)[keyof typeof ProjectsControllerGetFindingsProvenance];
+
+export const ProjectsControllerGetFindingsProvenance = {
+  new: 'new',
+  recurring: 'recurring',
+  not_seen: 'not_seen',
+} as const;
+
+export type ProjectsControllerGetFindingsStatus =
+  (typeof ProjectsControllerGetFindingsStatus)[keyof typeof ProjectsControllerGetFindingsStatus];
+
+export const ProjectsControllerGetFindingsStatus = {
+  open: 'open',
+  dismissed: 'dismissed',
+  all: 'all',
+} as const;
+
 export type AdminUsersControllerGetUsersParams = {
   search?: string;
   page?: number;
@@ -5618,6 +6932,65 @@ export const ReportsControllerPreviewVulReportMinSeverity = {
   LOW: 'LOW',
   INFO: 'INFO',
 } as const;
+
+export type ArtifactsControllerGetManyParams = {
+  /**
+   * Case-insensitive literal substring of the file name.
+   * @maxLength 255
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 1000000
+   */
+  page?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  sortBy?: ArtifactsControllerGetManySortBy;
+  sortOrder?: ArtifactsControllerGetManySortOrder;
+  scope?: ArtifactsControllerGetManyScope;
+  /**
+   * In mine scope, an owned folder UUID or root for files outside folders. Omit to list across folders.
+   */
+  parentFolderId?: string;
+};
+
+export type ArtifactsControllerGetManySortBy =
+  (typeof ArtifactsControllerGetManySortBy)[keyof typeof ArtifactsControllerGetManySortBy];
+
+export const ArtifactsControllerGetManySortBy = {
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  name: 'name',
+  sizeBytes: 'sizeBytes',
+} as const;
+
+export type ArtifactsControllerGetManySortOrder =
+  (typeof ArtifactsControllerGetManySortOrder)[keyof typeof ArtifactsControllerGetManySortOrder];
+
+export const ArtifactsControllerGetManySortOrder = {
+  ASC: 'ASC',
+  DESC: 'DESC',
+} as const;
+
+export type ArtifactsControllerGetManyScope =
+  (typeof ArtifactsControllerGetManyScope)[keyof typeof ArtifactsControllerGetManyScope];
+
+export const ArtifactsControllerGetManyScope = {
+  mine: 'mine',
+  shared: 'shared',
+  all: 'all',
+} as const;
+
+export type ArtifactFoldersControllerGetManyParams = {
+  /**
+   * Parent folder ID. Omit for the workspace root.
+   */
+  parentFolderId?: string;
+};
 
 export type StorageControllerPresignDownloadParams = {
   bucket: string;
@@ -11067,6 +12440,162 @@ export function useTargetsControllerGetTargetsInWorkspace<
 }
 
 /**
+ * Counts across the selected workspace, with finding counts gated by vulnerability read access.
+ * @summary Get target summary
+ */
+export const targetsControllerGetTargetsSummary = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<TargetSummaryDto>(
+    { url: `/api/targets/summary`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getTargetsControllerGetTargetsSummaryQueryKey = () => {
+  return [`/api/targets/summary`] as const;
+};
+
+export const getTargetsControllerGetTargetsSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getTargetsControllerGetTargetsSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>
+  > = ({ signal }) =>
+    targetsControllerGetTargetsSummary(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetsSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>
+>;
+export type TargetsControllerGetTargetsSummaryQueryError = unknown;
+
+export function useTargetsControllerGetTargetsSummary<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetsSummary<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetsSummary<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target summary
+ */
+
+export function useTargetsControllerGetTargetsSummary<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetsSummary>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getTargetsControllerGetTargetsSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
  * Exports all targets in a workspace to a CSV file containing value, type (DOMAIN or CIDR), last discovered date, and creation date for reporting and analysis purposes.
  * @summary Export targets to CSV
  */
@@ -11604,6 +13133,957 @@ export function useTargetsControllerGetTargetRepositories<
   queryKey: DataTag<QueryKey, TData, TError>;
 } {
   const queryOptions = getTargetsControllerGetTargetRepositoriesQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Returns workspace-scoped asset and service counts, discovery insights, and the most common service ports, technologies, and primary HTTP status codes.
+ * @summary Get target overview
+ */
+export const targetsControllerGetTargetOverview = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<TargetOverviewDto>(
+    { url: `/api/targets/${id}/overview`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getTargetsControllerGetTargetOverviewQueryKey = (id: string) => {
+  return [`/api/targets/${id}/overview`] as const;
+};
+
+export const getTargetsControllerGetTargetOverviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getTargetsControllerGetTargetOverviewQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>
+  > = ({ signal }) =>
+    targetsControllerGetTargetOverview(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetOverviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>
+>;
+export type TargetsControllerGetTargetOverviewQueryError = unknown;
+
+export function useTargetsControllerGetTargetOverview<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetOverview<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetOverview<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target overview
+ */
+
+export function useTargetsControllerGetTargetOverview<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetOverviewQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Lists runs scoped to or scanning the target, newest first, with job counts for that target.
+ * @summary Get target run history
+ */
+export const targetsControllerGetTargetRuns = (
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyTargetRunDtoDto>(
+    { url: `/api/targets/${id}/runs`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getTargetsControllerGetTargetRunsInfiniteQueryKey = (
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+) => {
+  return [
+    'infinite',
+    `/api/targets/${id}/runs`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getTargetsControllerGetTargetRunsQueryKey = (
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+) => {
+  return [`/api/targets/${id}/runs`, ...(params ? [params] : [])] as const;
+};
+
+export const getTargetsControllerGetTargetRunsInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getTargetsControllerGetTargetRunsInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    QueryKey,
+    TargetsControllerGetTargetRunsParams['page']
+  > = ({ signal, pageParam }) =>
+    targetsControllerGetTargetRuns(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TError,
+    TData,
+    QueryKey,
+    TargetsControllerGetTargetRunsParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetRunsInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+>;
+export type TargetsControllerGetTargetRunsInfiniteQueryError = unknown;
+
+export function useTargetsControllerGetTargetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | TargetsControllerGetTargetRunsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target run history
+ */
+
+export function useTargetsControllerGetTargetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TargetsControllerGetTargetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetRunsInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getTargetsControllerGetTargetRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getTargetsControllerGetTargetRunsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+  > = ({ signal }) =>
+    targetsControllerGetTargetRuns(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+>;
+export type TargetsControllerGetTargetRunsQueryError = unknown;
+
+export function useTargetsControllerGetTargetRuns<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | TargetsControllerGetTargetRunsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetRuns<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetRuns<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target run history
+ */
+
+export function useTargetsControllerGetTargetRuns<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetRunsQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Lists discovered assets and services, and findings with vulnerability read access, newest first.
+ * @summary Get target discovery changes
+ */
+export const targetsControllerGetTargetChanges = (
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyTargetChangeDtoDto>(
+    { url: `/api/targets/${id}/changes`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getTargetsControllerGetTargetChangesInfiniteQueryKey = (
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+) => {
+  return [
+    'infinite',
+    `/api/targets/${id}/changes`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getTargetsControllerGetTargetChangesQueryKey = (
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+) => {
+  return [`/api/targets/${id}/changes`, ...(params ? [params] : [])] as const;
+};
+
+export const getTargetsControllerGetTargetChangesInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getTargetsControllerGetTargetChangesInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    QueryKey,
+    TargetsControllerGetTargetChangesParams['page']
+  > = ({ signal, pageParam }) =>
+    targetsControllerGetTargetChanges(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TError,
+    TData,
+    QueryKey,
+    TargetsControllerGetTargetChangesParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetChangesInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+>;
+export type TargetsControllerGetTargetChangesInfiniteQueryError = unknown;
+
+export function useTargetsControllerGetTargetChangesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | TargetsControllerGetTargetChangesParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetChangesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetChangesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target discovery changes
+ */
+
+export function useTargetsControllerGetTargetChangesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TargetsControllerGetTargetChangesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData,
+        QueryKey,
+        TargetsControllerGetTargetChangesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetChangesInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getTargetsControllerGetTargetChangesQueryOptions = <
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getTargetsControllerGetTargetChangesQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+  > = ({ signal }) =>
+    targetsControllerGetTargetChanges(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type TargetsControllerGetTargetChangesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+>;
+export type TargetsControllerGetTargetChangesQueryError = unknown;
+
+export function useTargetsControllerGetTargetChanges<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | TargetsControllerGetTargetChangesParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetChanges<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+          TError,
+          Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useTargetsControllerGetTargetChanges<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get target discovery changes
+ */
+
+export function useTargetsControllerGetTargetChanges<
+  TData = Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: TargetsControllerGetTargetChangesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof targetsControllerGetTargetChanges>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getTargetsControllerGetTargetChangesQueryOptions(
     id,
     params,
     options,
@@ -16947,6 +19427,351 @@ export const useSystemConfigsControllerUpdateConfig = <
 };
 
 /**
+ * Retrieves admin feature settings with defaults. Mail credentials are redacted.
+ * @summary Get system settings
+ */
+export const systemConfigsControllerGetSettings = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<SystemSettingsDto>(
+    { url: `/api/admin/system-configs/settings`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getSystemConfigsControllerGetSettingsQueryKey = () => {
+  return [`/api/admin/system-configs/settings`] as const;
+};
+
+export const getSystemConfigsControllerGetSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getSystemConfigsControllerGetSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>
+  > = ({ signal }) =>
+    systemConfigsControllerGetSettings(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type SystemConfigsControllerGetSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>
+>;
+export type SystemConfigsControllerGetSettingsQueryError = unknown;
+
+export function useSystemConfigsControllerGetSettings<
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+          TError,
+          Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useSystemConfigsControllerGetSettings<
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+          TError,
+          Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useSystemConfigsControllerGetSettings<
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get system settings
+ */
+
+export function useSystemConfigsControllerGetSettings<
+  TData = Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof systemConfigsControllerGetSettings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getSystemConfigsControllerGetSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Merges supplied fields into stored settings. Omitted or null fields retain their value; an empty password retains the saved credential. Saving these preferences does not activate public registration or send email.
+ * @summary Update system settings
+ */
+export const systemConfigsControllerUpdateSettings = (
+  systemSettingsDto: NonReadonly<SystemSettingsDto>,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    {
+      url: `/api/admin/system-configs/settings`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: systemSettingsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getSystemConfigsControllerUpdateSettingsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+    TError,
+    { data: NonReadonly<SystemSettingsDto> },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+  TError,
+  { data: NonReadonly<SystemSettingsDto> },
+  TContext
+> => {
+  const mutationKey = ['systemConfigsControllerUpdateSettings'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+    { data: NonReadonly<SystemSettingsDto> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return systemConfigsControllerUpdateSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SystemConfigsControllerUpdateSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>
+>;
+export type SystemConfigsControllerUpdateSettingsMutationBody =
+  NonReadonly<SystemSettingsDto>;
+export type SystemConfigsControllerUpdateSettingsMutationError = unknown;
+
+/**
+ * @summary Update system settings
+ */
+export const useSystemConfigsControllerUpdateSettings = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+      TError,
+      { data: NonReadonly<SystemSettingsDto> },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof systemConfigsControllerUpdateSettings>>,
+  TError,
+  { data: NonReadonly<SystemSettingsDto> },
+  TContext
+> => {
+  return useMutation(
+    getSystemConfigsControllerUpdateSettingsMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Sends a branded test message through the saved mail configuration. Requires a platform administrator.
+ * @summary Send a test email
+ */
+export const systemConfigsControllerSendTestMail = (
+  sendTestMailDto: SendTestMailDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    {
+      url: `/api/admin/system-configs/settings/mail-server/test`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: sendTestMailDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getSystemConfigsControllerSendTestMailMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+    TError,
+    { data: SendTestMailDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+  TError,
+  { data: SendTestMailDto },
+  TContext
+> => {
+  const mutationKey = ['systemConfigsControllerSendTestMail'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+    { data: SendTestMailDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return systemConfigsControllerSendTestMail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SystemConfigsControllerSendTestMailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>
+>;
+export type SystemConfigsControllerSendTestMailMutationBody = SendTestMailDto;
+export type SystemConfigsControllerSendTestMailMutationError = void;
+
+/**
+ * @summary Send a test email
+ */
+export const useSystemConfigsControllerSendTestMail = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+      TError,
+      { data: SendTestMailDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof systemConfigsControllerSendTestMail>>,
+  TError,
+  { data: SendTestMailDto },
+  TContext
+> => {
+  return useMutation(
+    getSystemConfigsControllerSendTestMailMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * Removes the system logo and reverts to default avatar
  * @summary Remove system logo
  */
@@ -19544,7 +22369,7 @@ export const useJobsRegistryControllerCancelJob = <
 };
 
 /**
- * Cancels every job of a run that has not reached a terminal state and stops the workflow from spawning further steps
+ * Cancels an open run and stops the workflow from spawning further steps.
  * @summary Cancel a job history
  */
 export const jobsRegistryControllerCancelJobHistory = (
@@ -19563,7 +22388,7 @@ export const jobsRegistryControllerCancelJobHistory = (
 };
 
 export const getJobsRegistryControllerCancelJobHistoryMutationOptions = <
-  TError = unknown,
+  TError = void,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -19604,13 +22429,13 @@ export type JobsRegistryControllerCancelJobHistoryMutationResult = NonNullable<
   Awaited<ReturnType<typeof jobsRegistryControllerCancelJobHistory>>
 >;
 
-export type JobsRegistryControllerCancelJobHistoryMutationError = unknown;
+export type JobsRegistryControllerCancelJobHistoryMutationError = void;
 
 /**
  * @summary Cancel a job history
  */
 export const useJobsRegistryControllerCancelJobHistory = <
-  TError = unknown,
+  TError = void,
   TContext = unknown,
 >(
   options?: {
@@ -19631,6 +22456,98 @@ export const useJobsRegistryControllerCancelJobHistory = <
 > => {
   return useMutation(
     getJobsRegistryControllerCancelJobHistoryMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Starts a new manual run from the current workflow and recorded target or project asset scope.
+ * @summary Retry a closed run
+ */
+export const jobsRegistryControllerRetryJobHistory = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<RetryRunResponseDto>(
+    {
+      url: `/api/jobs-registry/histories/${id}/re-run`,
+      method: 'POST',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getJobsRegistryControllerRetryJobHistoryMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['jobsRegistryControllerRetryJobHistory'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return jobsRegistryControllerRetryJobHistory(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type JobsRegistryControllerRetryJobHistoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>
+>;
+
+export type JobsRegistryControllerRetryJobHistoryMutationError = void;
+
+/**
+ * @summary Retry a closed run
+ */
+export const useJobsRegistryControllerRetryJobHistory = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof jobsRegistryControllerRetryJobHistory>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getJobsRegistryControllerRetryJobHistoryMutationOptions(options),
     queryClient,
   );
 };
@@ -25248,7 +28165,7 @@ export const toolsControllerInstallTool = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<WorkspaceTool>(
+  return orvalClient<InstallToolResponseDto>(
     {
       url: `/api/tools/install`,
       method: 'POST',
@@ -25342,7 +28259,7 @@ export const toolsControllerUninstallTool = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<DefaultMessageResponseDto>(
+  return orvalClient<UninstallToolResponseDto>(
     {
       url: `/api/tools/uninstall`,
       method: 'POST',
@@ -30641,6 +33558,222 @@ export function useVulnerabilitiesControllerGetVulnerabilityById<
 }
 
 /**
+ * Returns up to 500 detection and status events, newest first.
+ * @summary Get vulnerability timeline
+ */
+export const vulnerabilitiesControllerGetVulnerabilityTimeline = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<VulnerabilityTimelineResponseDto>(
+    { url: `/api/vulnerabilities/${id}/timeline`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerGetVulnerabilityTimelineQueryKey = (
+  id: string,
+) => {
+  return [`/api/vulnerabilities/${id}/timeline`] as const;
+};
+
+export const getVulnerabilitiesControllerGetVulnerabilityTimelineQueryOptions =
+  <
+    TData = Awaited<
+      ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+    >,
+    TError = unknown,
+  >(
+    id: string,
+    options?: {
+      query?: Partial<
+        UseQueryOptions<
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >,
+          TError,
+          TData
+        >
+      >;
+      request?: SecondParameter<typeof orvalClient>;
+    },
+  ) => {
+    const { query: queryOptions, request: requestOptions } = options ?? {};
+
+    const queryKey =
+      queryOptions?.queryKey ??
+      getVulnerabilitiesControllerGetVulnerabilityTimelineQueryKey(id);
+
+    const queryFn: QueryFunction<
+      Awaited<
+        ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+      >
+    > = ({ signal }) =>
+      vulnerabilitiesControllerGetVulnerabilityTimeline(
+        id,
+        requestOptions,
+        signal,
+      );
+
+    return {
+      queryKey,
+      queryFn,
+      enabled: id !== null && id !== undefined,
+      ...queryOptions,
+    } as UseQueryOptions<
+      Awaited<
+        ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+      >,
+      TError,
+      TData
+    > & { queryKey: DataTag<QueryKey, TData, TError> };
+  };
+
+export type VulnerabilitiesControllerGetVulnerabilityTimelineQueryResult =
+  NonNullable<
+    Awaited<
+      ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+    >
+  >;
+export type VulnerabilitiesControllerGetVulnerabilityTimelineQueryError =
+  unknown;
+
+export function useVulnerabilitiesControllerGetVulnerabilityTimeline<
+  TData = Awaited<
+    ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+  >,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+        >,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useVulnerabilitiesControllerGetVulnerabilityTimeline<
+  TData = Awaited<
+    ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+  >,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+        >,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+          >
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useVulnerabilitiesControllerGetVulnerabilityTimeline<
+  TData = Awaited<
+    ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+  >,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+        >,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get vulnerability timeline
+ */
+
+export function useVulnerabilitiesControllerGetVulnerabilityTimeline<
+  TData = Awaited<
+    ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+  >,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<
+          ReturnType<typeof vulnerabilitiesControllerGetVulnerabilityTimeline>
+        >,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getVulnerabilitiesControllerGetVulnerabilityTimelineQueryOptions(
+      id,
+      options,
+    );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
  * Initiates an AI-powered analysis of a specific security vulnerability to provide detailed insights and recommendations.
  * @summary Analyze a vulnerability
  */
@@ -34555,7 +37688,7 @@ export const useAgentsControllerStreamMessage = <
 };
 
 /**
- * Aborts the in-progress agent run of a conversation. Use this instead of dropping the stream connection, which now lets the run finish in the background.
+ * Aborts the in-progress agent run of a conversation and cancels its pending and running subagents. Use this instead of dropping the stream connection, which now lets the run finish in the background.
  * @summary Stop the active response
  */
 export const agentsControllerStopConversation = (
@@ -42229,6 +45362,3541 @@ export const useAssetGroupControllerRunGroupWorkflowScheduler = <
 };
 
 /**
+ * @summary List projects
+ */
+export const projectsControllerGetMany = (
+  params?: ProjectsControllerGetManyParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyProjectViewDtoDto>(
+    { url: `/api/projects`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetManyInfiniteQueryKey = (
+  params?: ProjectsControllerGetManyParams,
+) => {
+  return ['infinite', `/api/projects`, ...(params ? [params] : [])] as const;
+};
+
+export const getProjectsControllerGetManyQueryKey = (
+  params?: ProjectsControllerGetManyParams,
+) => {
+  return [`/api/projects`, ...(params ? [params] : [])] as const;
+};
+
+export const getProjectsControllerGetManyInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>,
+    ProjectsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ProjectsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetManyInfiniteQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>,
+    QueryKey,
+    ProjectsControllerGetManyParams['page']
+  > = ({ signal, pageParam }) =>
+    projectsControllerGetMany(
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return { queryKey, queryFn, ...queryOptions } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>,
+    TError,
+    TData,
+    QueryKey,
+    ProjectsControllerGetManyParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetManyInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetMany>>
+>;
+export type ProjectsControllerGetManyInfiniteQueryError = unknown;
+
+export function useProjectsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>,
+    ProjectsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params: undefined | ProjectsControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetManyParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetMany>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>,
+    ProjectsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ProjectsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetManyParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetMany>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>,
+    ProjectsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ProjectsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List projects
+ */
+
+export function useProjectsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>,
+    ProjectsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ProjectsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetManyInfiniteQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getProjectsControllerGetManyQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ProjectsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetManyQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>
+  > = ({ signal }) => projectsControllerGetMany(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetMany>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetManyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetMany>>
+>;
+export type ProjectsControllerGetManyQueryError = unknown;
+
+export function useProjectsControllerGetMany<
+  TData = Awaited<ReturnType<typeof projectsControllerGetMany>>,
+  TError = unknown,
+>(
+  params: undefined | ProjectsControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetMany<
+  TData = Awaited<ReturnType<typeof projectsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ProjectsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetMany<
+  TData = Awaited<ReturnType<typeof projectsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ProjectsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List projects
+ */
+
+export function useProjectsControllerGetMany<
+  TData = Awaited<ReturnType<typeof projectsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ProjectsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetManyQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create project
+ */
+export const projectsControllerCreate = (
+  createProjectDto: CreateProjectDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectViewDto>(
+    {
+      url: `/api/projects`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createProjectDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerCreate>>,
+    TError,
+    { data: CreateProjectDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerCreate>>,
+  TError,
+  { data: CreateProjectDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerCreate'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerCreate>>,
+    { data: CreateProjectDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return projectsControllerCreate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerCreate>>
+>;
+export type ProjectsControllerCreateMutationBody = CreateProjectDto;
+export type ProjectsControllerCreateMutationError = unknown;
+
+/**
+ * @summary Create project
+ */
+export const useProjectsControllerCreate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerCreate>>,
+      TError,
+      { data: CreateProjectDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerCreate>>,
+  TError,
+  { data: CreateProjectDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerCreateMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Default workspace workflows with tool names and dependency outlines.
+ * @summary Workflow templates
+ */
+export const projectsControllerGetWorkflowTemplates = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<WorkflowTemplateDto[]>(
+    { url: `/api/projects/workflow-templates`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetWorkflowTemplatesQueryKey = () => {
+  return [`/api/projects/workflow-templates`] as const;
+};
+
+export const getProjectsControllerGetWorkflowTemplatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetWorkflowTemplatesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>
+  > = ({ signal }) =>
+    projectsControllerGetWorkflowTemplates(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetWorkflowTemplatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>
+>;
+export type ProjectsControllerGetWorkflowTemplatesQueryError = unknown;
+
+export function useProjectsControllerGetWorkflowTemplates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetWorkflowTemplates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetWorkflowTemplates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Workflow templates
+ */
+
+export function useProjectsControllerGetWorkflowTemplates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflowTemplates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getProjectsControllerGetWorkflowTemplatesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create a project workflow from a default template
+ */
+export const projectsControllerCreateWorkflow = (
+  id: string,
+  createProjectWorkflowDto: CreateProjectWorkflowDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<CreatedProjectWorkflowDto>(
+    {
+      url: `/api/projects/${id}/workflows`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createProjectWorkflowDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerCreateWorkflowMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+    TError,
+    { id: string; data: CreateProjectWorkflowDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+  TError,
+  { id: string; data: CreateProjectWorkflowDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerCreateWorkflow'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+    { id: string; data: CreateProjectWorkflowDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerCreateWorkflow(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerCreateWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>
+>;
+export type ProjectsControllerCreateWorkflowMutationBody =
+  CreateProjectWorkflowDto;
+export type ProjectsControllerCreateWorkflowMutationError = unknown;
+
+/**
+ * @summary Create a project workflow from a default template
+ */
+export const useProjectsControllerCreateWorkflow = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+      TError,
+      { id: string; data: CreateProjectWorkflowDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+  TError,
+  { id: string; data: CreateProjectWorkflowDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerCreateWorkflowMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Preview scope rules
+ */
+export const projectsControllerPreviewScope = (
+  scopePreviewDto: ScopePreviewDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ScopePreviewResultDto>(
+    {
+      url: `/api/projects/scope-preview`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: scopePreviewDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerPreviewScopeMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+    TError,
+    { data: ScopePreviewDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+  TError,
+  { data: ScopePreviewDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerPreviewScope'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+    { data: ScopePreviewDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return projectsControllerPreviewScope(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerPreviewScopeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerPreviewScope>>
+>;
+export type ProjectsControllerPreviewScopeMutationBody = ScopePreviewDto;
+export type ProjectsControllerPreviewScopeMutationError = unknown;
+
+/**
+ * @summary Preview scope rules
+ */
+export const useProjectsControllerPreviewScope = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+      TError,
+      { data: ScopePreviewDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerPreviewScope>>,
+  TError,
+  { data: ScopePreviewDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerPreviewScopeMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Get project scope rules
+ */
+export const projectsControllerGetScopeRules = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectScopeDto>(
+    { url: `/api/projects/${id}/scope-rules`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetScopeRulesQueryKey = (id: string) => {
+  return [`/api/projects/${id}/scope-rules`] as const;
+};
+
+export const getProjectsControllerGetScopeRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetScopeRulesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetScopeRules>>
+  > = ({ signal }) =>
+    projectsControllerGetScopeRules(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetScopeRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetScopeRules>>
+>;
+export type ProjectsControllerGetScopeRulesQueryError = unknown;
+
+export function useProjectsControllerGetScopeRules<
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetScopeRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetScopeRules<
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetScopeRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetScopeRules<
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get project scope rules
+ */
+
+export function useProjectsControllerGetScopeRules<
+  TData = Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetScopeRules>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetScopeRulesQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Replace project scope rules
+ */
+export const projectsControllerReplaceScopeRules = (
+  id: string,
+  replaceScopeRulesDto: ReplaceScopeRulesDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ScopeSyncResultDto>(
+    {
+      url: `/api/projects/${id}/scope-rules`,
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      data: replaceScopeRulesDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerReplaceScopeRulesMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+    TError,
+    { id: string; data: ReplaceScopeRulesDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+  TError,
+  { id: string; data: ReplaceScopeRulesDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerReplaceScopeRules'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+    { id: string; data: ReplaceScopeRulesDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerReplaceScopeRules(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerReplaceScopeRulesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>
+>;
+export type ProjectsControllerReplaceScopeRulesMutationBody =
+  ReplaceScopeRulesDto;
+export type ProjectsControllerReplaceScopeRulesMutationError = unknown;
+
+/**
+ * @summary Replace project scope rules
+ */
+export const useProjectsControllerReplaceScopeRules = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+      TError,
+      { id: string; data: ReplaceScopeRulesDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerReplaceScopeRules>>,
+  TError,
+  { id: string; data: ReplaceScopeRulesDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerReplaceScopeRulesMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Add assets to project
+ */
+export const projectsControllerAddAssets = (
+  id: string,
+  addProjectAssetsDto: AddProjectAssetsDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectAssetsChangedDto>(
+    {
+      url: `/api/projects/${id}/assets`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: addProjectAssetsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerAddAssetsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+    TError,
+    { id: string; data: AddProjectAssetsDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+  TError,
+  { id: string; data: AddProjectAssetsDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerAddAssets'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+    { id: string; data: AddProjectAssetsDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerAddAssets(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerAddAssetsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerAddAssets>>
+>;
+export type ProjectsControllerAddAssetsMutationBody = AddProjectAssetsDto;
+export type ProjectsControllerAddAssetsMutationError = unknown;
+
+/**
+ * @summary Add assets to project
+ */
+export const useProjectsControllerAddAssets = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+      TError,
+      { id: string; data: AddProjectAssetsDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerAddAssets>>,
+  TError,
+  { id: string; data: AddProjectAssetsDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerAddAssetsMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Remove assets from project
+ */
+export const projectsControllerRemoveAssets = (
+  id: string,
+  removeProjectAssetsDto: RemoveProjectAssetsDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectAssetsChangedDto>(
+    {
+      url: `/api/projects/${id}/assets`,
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      data: removeProjectAssetsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerRemoveAssetsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+    TError,
+    { id: string; data: RemoveProjectAssetsDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+  TError,
+  { id: string; data: RemoveProjectAssetsDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerRemoveAssets'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+    { id: string; data: RemoveProjectAssetsDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerRemoveAssets(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerRemoveAssetsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerRemoveAssets>>
+>;
+export type ProjectsControllerRemoveAssetsMutationBody = RemoveProjectAssetsDto;
+export type ProjectsControllerRemoveAssetsMutationError = unknown;
+
+/**
+ * @summary Remove assets from project
+ */
+export const useProjectsControllerRemoveAssets = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+      TError,
+      { id: string; data: RemoveProjectAssetsDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerRemoveAssets>>,
+  TError,
+  { id: string; data: RemoveProjectAssetsDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerRemoveAssetsMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Project assets
+ */
+export const projectsControllerGetAssets = (
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyProjectAssetDtoDto>(
+    { url: `/api/projects/${id}/assets`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetAssetsInfiniteQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+) => {
+  return [
+    'infinite',
+    `/api/projects/${id}/assets`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetAssetsQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+) => {
+  return [`/api/projects/${id}/assets`, ...(params ? [params] : [])] as const;
+};
+
+export const getProjectsControllerGetAssetsInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+    ProjectsControllerGetAssetsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetAssetsInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+    QueryKey,
+    ProjectsControllerGetAssetsParams['page']
+  > = ({ signal, pageParam }) =>
+    projectsControllerGetAssets(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+    TError,
+    TData,
+    QueryKey,
+    ProjectsControllerGetAssetsParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetAssetsInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetAssets>>
+>;
+export type ProjectsControllerGetAssetsInfiniteQueryError = unknown;
+
+export function useProjectsControllerGetAssetsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+    ProjectsControllerGetAssetsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetAssetsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+    ProjectsControllerGetAssetsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+    ProjectsControllerGetAssetsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project assets
+ */
+
+export function useProjectsControllerGetAssetsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+    ProjectsControllerGetAssetsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetAssetsInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getProjectsControllerGetAssetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetAssetsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>
+  > = ({ signal }) =>
+    projectsControllerGetAssets(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetAssetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetAssets>>
+>;
+export type ProjectsControllerGetAssetsQueryError = unknown;
+
+export function useProjectsControllerGetAssets<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetAssetsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssets>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssets<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssets>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssets<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project assets
+ */
+
+export function useProjectsControllerGetAssets<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssets>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetAssetsQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Asset candidates
+ */
+export const projectsControllerGetAssetCandidates = (
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyAssetDto>(
+    {
+      url: `/api/projects/${id}/assets/candidates`,
+      method: 'GET',
+      params,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerGetAssetCandidatesInfiniteQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+) => {
+  return [
+    'infinite',
+    `/api/projects/${id}/assets/candidates`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetAssetCandidatesQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+) => {
+  return [
+    `/api/projects/${id}/assets/candidates`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetAssetCandidatesInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetAssetCandidatesInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    QueryKey,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  > = ({ signal, pageParam }) =>
+    projectsControllerGetAssetCandidates(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    TError,
+    TData,
+    QueryKey,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetAssetCandidatesInfiniteQueryResult =
+  NonNullable<Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>>;
+export type ProjectsControllerGetAssetCandidatesInfiniteQueryError = unknown;
+
+export function useProjectsControllerGetAssetCandidatesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetAssetCandidatesParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetCandidatesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetCandidatesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Asset candidates
+ */
+
+export function useProjectsControllerGetAssetCandidatesInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    ProjectsControllerGetAssetCandidatesParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetAssetCandidatesParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getProjectsControllerGetAssetCandidatesInfiniteQueryOptions(
+      id,
+      params,
+      options,
+    );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getProjectsControllerGetAssetCandidatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetAssetCandidatesQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>
+  > = ({ signal }) =>
+    projectsControllerGetAssetCandidates(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetAssetCandidatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>
+>;
+export type ProjectsControllerGetAssetCandidatesQueryError = unknown;
+
+export function useProjectsControllerGetAssetCandidates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetAssetCandidatesParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetCandidates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetAssetCandidates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Asset candidates
+ */
+
+export function useProjectsControllerGetAssetCandidates<
+  TData = Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetAssetCandidatesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetAssetCandidates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetAssetCandidatesQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Attributed runs, newest first, with step and finding counts.
+ * @summary Project runs
+ */
+export const projectsControllerGetRuns = (
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyProjectRunDtoDto>(
+    { url: `/api/projects/${id}/runs`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetRunsInfiniteQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+) => {
+  return [
+    'infinite',
+    `/api/projects/${id}/runs`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetRunsQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+) => {
+  return [`/api/projects/${id}/runs`, ...(params ? [params] : [])] as const;
+};
+
+export const getProjectsControllerGetRunsInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetRunsInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    QueryKey,
+    ProjectsControllerGetRunsParams['page']
+  > = ({ signal, pageParam }) =>
+    projectsControllerGetRuns(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    TError,
+    TData,
+    QueryKey,
+    ProjectsControllerGetRunsParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetRunsInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetRuns>>
+>;
+export type ProjectsControllerGetRunsInfiniteQueryError = unknown;
+
+export function useProjectsControllerGetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetRunsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project runs
+ */
+
+export function useProjectsControllerGetRunsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    ProjectsControllerGetRunsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetRunsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetRunsInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getProjectsControllerGetRunsQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetRunsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>
+  > = ({ signal }) =>
+    projectsControllerGetRuns(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetRunsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetRuns>>
+>;
+export type ProjectsControllerGetRunsQueryError = unknown;
+
+export function useProjectsControllerGetRuns<
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetRunsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetRuns<
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetRuns>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetRuns<
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project runs
+ */
+
+export function useProjectsControllerGetRuns<
+  TData = Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetRunsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetRuns>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetRunsQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Attributed findings with sightings, provenance and filter counts.
+ * @summary Project findings
+ */
+export const projectsControllerGetFindings = (
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectFindingsResponseDto>(
+    {
+      url: `/api/projects/${id}/vulnerabilities`,
+      method: 'GET',
+      params,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerGetFindingsInfiniteQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+) => {
+  return [
+    'infinite',
+    `/api/projects/${id}/vulnerabilities`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetFindingsQueryKey = (
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+) => {
+  return [
+    `/api/projects/${id}/vulnerabilities`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getProjectsControllerGetFindingsInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetFindingsInfiniteQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    QueryKey,
+    ProjectsControllerGetFindingsParams['page']
+  > = ({ signal, pageParam }) =>
+    projectsControllerGetFindings(
+      id,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    TError,
+    TData,
+    QueryKey,
+    ProjectsControllerGetFindingsParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetFindingsInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetFindings>>
+>;
+export type ProjectsControllerGetFindingsInfiniteQueryError = unknown;
+
+export function useProjectsControllerGetFindingsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetFindingsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project findings
+ */
+
+export function useProjectsControllerGetFindingsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    ProjectsControllerGetFindingsParams['page']
+  >,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData,
+        QueryKey,
+        ProjectsControllerGetFindingsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetFindingsInfiniteQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getProjectsControllerGetFindingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetFindingsQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>
+  > = ({ signal }) =>
+    projectsControllerGetFindings(id, params, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetFindingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetFindings>>
+>;
+export type ProjectsControllerGetFindingsQueryError = unknown;
+
+export function useProjectsControllerGetFindings<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params: undefined | ProjectsControllerGetFindingsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindings<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindings<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project findings
+ */
+
+export function useProjectsControllerGetFindings<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+  TError = unknown,
+>(
+  id: string,
+  params?: ProjectsControllerGetFindingsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetFindingsQueryOptions(
+    id,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Project runs with confirmed, missed or unknown sightings for a finding.
+ * @summary Project finding timeline
+ */
+export const projectsControllerGetFindingTimeline = (
+  id: string,
+  vulnerabilityId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectFindingTimelineDto>(
+    {
+      url: `/api/projects/${id}/vulnerabilities/${vulnerabilityId}/timeline`,
+      method: 'GET',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerGetFindingTimelineQueryKey = (
+  id: string,
+  vulnerabilityId: string,
+) => {
+  return [
+    `/api/projects/${id}/vulnerabilities/${vulnerabilityId}/timeline`,
+  ] as const;
+};
+
+export const getProjectsControllerGetFindingTimelineQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetFindingTimelineQueryKey(id, vulnerabilityId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>
+  > = ({ signal }) =>
+    projectsControllerGetFindingTimeline(
+      id,
+      vulnerabilityId,
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled:
+      id !== null &&
+      id !== undefined &&
+      vulnerabilityId !== null &&
+      vulnerabilityId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetFindingTimelineQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>
+>;
+export type ProjectsControllerGetFindingTimelineQueryError = unknown;
+
+export function useProjectsControllerGetFindingTimeline<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingTimeline<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingTimeline<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project finding timeline
+ */
+
+export function useProjectsControllerGetFindingTimeline<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+  TError = unknown,
+>(
+  id: string,
+  vulnerabilityId: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingTimeline>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetFindingTimelineQueryOptions(
+    id,
+    vulnerabilityId,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Project counts, weekly finding trends, run summaries and recent activity.
+ * @summary Project overview
+ */
+export const projectsControllerGetOverview = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectOverviewDto>(
+    { url: `/api/projects/${id}/overview`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetOverviewQueryKey = (id: string) => {
+  return [`/api/projects/${id}/overview`] as const;
+};
+
+export const getProjectsControllerGetOverviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetOverviewQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetOverview>>
+  > = ({ signal }) => projectsControllerGetOverview(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetOverviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetOverview>>
+>;
+export type ProjectsControllerGetOverviewQueryError = unknown;
+
+export function useProjectsControllerGetOverview<
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetOverview>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetOverview<
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetOverview>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetOverview<
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project overview
+ */
+
+export function useProjectsControllerGetOverview<
+  TData = Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetOverview>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetOverviewQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Get project by ID
+ */
+export const projectsControllerGetById = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectViewDto>(
+    { url: `/api/projects/${id}`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetByIdQueryKey = (id: string) => {
+  return [`/api/projects/${id}`] as const;
+};
+
+export const getProjectsControllerGetByIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetByIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetById>>
+  > = ({ signal }) => projectsControllerGetById(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetById>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetByIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetById>>
+>;
+export type ProjectsControllerGetByIdQueryError = unknown;
+
+export function useProjectsControllerGetById<
+  TData = Awaited<ReturnType<typeof projectsControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetById<
+  TData = Awaited<ReturnType<typeof projectsControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetById<
+  TData = Awaited<ReturnType<typeof projectsControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get project by ID
+ */
+
+export function useProjectsControllerGetById<
+  TData = Awaited<ReturnType<typeof projectsControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetByIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Update project
+ */
+export const projectsControllerUpdate = (
+  id: string,
+  updateProjectDto: UpdateProjectDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectViewDto>(
+    {
+      url: `/api/projects/${id}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateProjectDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerUpdateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerUpdate>>,
+    TError,
+    { id: string; data: UpdateProjectDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerUpdate>>,
+  TError,
+  { id: string; data: UpdateProjectDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerUpdate'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerUpdate>>,
+    { id: string; data: UpdateProjectDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerUpdate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerUpdate>>
+>;
+export type ProjectsControllerUpdateMutationBody = UpdateProjectDto;
+export type ProjectsControllerUpdateMutationError = unknown;
+
+/**
+ * @summary Update project
+ */
+export const useProjectsControllerUpdate = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerUpdate>>,
+      TError,
+      { id: string; data: UpdateProjectDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerUpdate>>,
+  TError,
+  { id: string; data: UpdateProjectDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerUpdateMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Delete project
+ */
+export const projectsControllerDelete = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/projects/${id}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerDeleteMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerDelete>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerDelete>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerDelete'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerDelete>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return projectsControllerDelete(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerDelete>>
+>;
+
+export type ProjectsControllerDeleteMutationError = unknown;
+
+/**
+ * @summary Delete project
+ */
+export const useProjectsControllerDelete = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerDelete>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerDelete>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerDeleteMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * Creates the first admin user in the system. Refused once an admin exists.
  * @summary Creates the first admin user in the system.
  */
@@ -46227,6 +52895,1725 @@ export const useReportsControllerDeleteReport = <
     queryClient,
   );
 };
+
+/**
+ * Lists ready files in the selected workspace. Scope mine lists owned files. Scope shared lists other creators’ files shared with the current member. Scope all also requires artifact.manage.
+ * @summary List workspace files
+ */
+export const artifactsControllerGetMany = (
+  params?: ArtifactsControllerGetManyParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyArtifactListItemDtoDto>(
+    { url: `/api/artifacts`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerGetManyInfiniteQueryKey = (
+  params?: ArtifactsControllerGetManyParams,
+) => {
+  return ['infinite', `/api/artifacts`, ...(params ? [params] : [])] as const;
+};
+
+export const getArtifactsControllerGetManyQueryKey = (
+  params?: ArtifactsControllerGetManyParams,
+) => {
+  return [`/api/artifacts`, ...(params ? [params] : [])] as const;
+};
+
+export const getArtifactsControllerGetManyInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getArtifactsControllerGetManyInfiniteQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    QueryKey,
+    ArtifactsControllerGetManyParams['page']
+  > = ({ signal, pageParam }) =>
+    artifactsControllerGetMany(
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return { queryKey, queryFn, ...queryOptions } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    TError,
+    TData,
+    QueryKey,
+    ArtifactsControllerGetManyParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetManyInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetMany>>
+>;
+export type ArtifactsControllerGetManyInfiniteQueryError = unknown;
+
+export function useArtifactsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params: undefined | ArtifactsControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List workspace files
+ */
+
+export function useArtifactsControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    ArtifactsControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        ArtifactsControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetManyInfiniteQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getArtifactsControllerGetManyQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerGetManyQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>
+  > = ({ signal }) =>
+    artifactsControllerGetMany(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetManyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetMany>>
+>;
+export type ArtifactsControllerGetManyQueryError = unknown;
+
+export function useArtifactsControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params: undefined | ArtifactsControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List workspace files
+ */
+
+export function useArtifactsControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: ArtifactsControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetManyQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Returns quota, used and reserved bytes, and the per-file limit. Requires artifact.read.
+ * @summary Get workspace storage usage
+ */
+export const artifactsControllerGetUsage = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactUsageDto>(
+    { url: `/api/artifacts/usage`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerGetUsageQueryKey = () => {
+  return [`/api/artifacts/usage`] as const;
+};
+
+export const getArtifactsControllerGetUsageQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerGetUsageQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetUsage>>
+  > = ({ signal }) => artifactsControllerGetUsage(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetUsageQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetUsage>>
+>;
+export type ArtifactsControllerGetUsageQueryError = unknown;
+
+export function useArtifactsControllerGetUsage<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetUsage>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetUsage<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetUsage>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetUsage<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get workspace storage usage
+ */
+
+export function useArtifactsControllerGetUsage<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetUsage>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetUsageQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Returns metadata for a ready file in the selected workspace. Owners, named current members of shared files, and artifact.manage holders can read metadata.
+ * @summary Get workspace file metadata
+ */
+export const artifactsControllerGetById = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactListItemDto>(
+    { url: `/api/artifacts/${id}`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerGetByIdQueryKey = (id: string) => {
+  return [`/api/artifacts/${id}`] as const;
+};
+
+export const getArtifactsControllerGetByIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerGetByIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetById>>
+  > = ({ signal }) => artifactsControllerGetById(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetById>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetByIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetById>>
+>;
+export type ArtifactsControllerGetByIdQueryError = void;
+
+export function useArtifactsControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get workspace file metadata
+ */
+
+export function useArtifactsControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetByIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Updates the access-mode selection for a ready file owned by the caller in the selected workspace.
+ * @summary Update the stored access mode of a workspace file
+ */
+export const artifactsControllerUpdateAccess = (
+  id: string,
+  updateArtifactAccessDto: UpdateArtifactAccessDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactListItemDto>(
+    {
+      url: `/api/artifacts/${id}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateArtifactAccessDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getArtifactsControllerUpdateAccessMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+    TError,
+    { id: string; data: UpdateArtifactAccessDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+  TError,
+  { id: string; data: UpdateArtifactAccessDto },
+  TContext
+> => {
+  const mutationKey = ['artifactsControllerUpdateAccess'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+    { id: string; data: UpdateArtifactAccessDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return artifactsControllerUpdateAccess(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArtifactsControllerUpdateAccessMutationResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>
+>;
+export type ArtifactsControllerUpdateAccessMutationBody =
+  UpdateArtifactAccessDto;
+export type ArtifactsControllerUpdateAccessMutationError = void;
+
+/**
+ * @summary Update the stored access mode of a workspace file
+ */
+export const useArtifactsControllerUpdateAccess = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+      TError,
+      { id: string; data: UpdateArtifactAccessDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof artifactsControllerUpdateAccess>>,
+  TError,
+  { id: string; data: UpdateArtifactAccessDto },
+  TContext
+> => {
+  return useMutation(
+    getArtifactsControllerUpdateAccessMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Hides a ready file immediately and releases its quota after storage cleanup. Requires file read access and either ownership with artifact.write or artifact.manage.
+ * @summary Delete a workspace file
+ */
+export const artifactsControllerRemove = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/artifacts/${id}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerRemoveMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof artifactsControllerRemove>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof artifactsControllerRemove>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['artifactsControllerRemove'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof artifactsControllerRemove>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return artifactsControllerRemove(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArtifactsControllerRemoveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerRemove>>
+>;
+
+export type ArtifactsControllerRemoveMutationError = void;
+
+/**
+ * @summary Delete a workspace file
+ */
+export const useArtifactsControllerRemove = <TError = void, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof artifactsControllerRemove>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof artifactsControllerRemove>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getArtifactsControllerRemoveMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Returns a five-minute attachment URL for a ready file in the selected workspace to its owner or a named current member when the file is shared.
+ * @summary Get a workspace file download URL
+ */
+export const artifactsControllerDownload = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactDownloadDto>(
+    { url: `/api/artifacts/${id}/download`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerDownloadQueryKey = (id: string) => {
+  return [`/api/artifacts/${id}/download`] as const;
+};
+
+export const getArtifactsControllerDownloadQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerDownloadQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerDownload>>
+  > = ({ signal }) => artifactsControllerDownload(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerDownload>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerDownloadQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerDownload>>
+>;
+export type ArtifactsControllerDownloadQueryError = void;
+
+export function useArtifactsControllerDownload<
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerDownload>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerDownload>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerDownload<
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerDownload>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerDownload>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerDownload<
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get a workspace file download URL
+ */
+
+export function useArtifactsControllerDownload<
+  TData = Awaited<ReturnType<typeof artifactsControllerDownload>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerDownload>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerDownloadQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Lists current workspace members recorded as recipients of a ready file created by the caller.
+ * @summary List recipients for an owned workspace file
+ */
+export const artifactsControllerGetShares = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactListCreatorDto[]>(
+    { url: `/api/artifacts/${id}/shares`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerGetSharesQueryKey = (id: string) => {
+  return [`/api/artifacts/${id}/shares`] as const;
+};
+
+export const getArtifactsControllerGetSharesQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactsControllerGetSharesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactsControllerGetShares>>
+  > = ({ signal }) => artifactsControllerGetShares(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactsControllerGetSharesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerGetShares>>
+>;
+export type ArtifactsControllerGetSharesQueryError = void;
+
+export function useArtifactsControllerGetShares<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetShares>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetShares<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+          TError,
+          Awaited<ReturnType<typeof artifactsControllerGetShares>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactsControllerGetShares<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List recipients for an owned workspace file
+ */
+
+export function useArtifactsControllerGetShares<
+  TData = Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactsControllerGetShares>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactsControllerGetSharesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Adds current members of the selected workspace to the share list of a ready file owned by the caller.
+ * @summary Add workspace file recipients
+ */
+export const artifactsControllerAddShares = (
+  id: string,
+  addArtifactSharesDto: AddArtifactSharesDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<AddArtifactSharesResultDto>(
+    {
+      url: `/api/artifacts/${id}/shares`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: addArtifactSharesDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getArtifactsControllerAddSharesMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+    TError,
+    { id: string; data: AddArtifactSharesDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+  TError,
+  { id: string; data: AddArtifactSharesDto },
+  TContext
+> => {
+  const mutationKey = ['artifactsControllerAddShares'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+    { id: string; data: AddArtifactSharesDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return artifactsControllerAddShares(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArtifactsControllerAddSharesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerAddShares>>
+>;
+export type ArtifactsControllerAddSharesMutationBody = AddArtifactSharesDto;
+export type ArtifactsControllerAddSharesMutationError = void;
+
+/**
+ * @summary Add workspace file recipients
+ */
+export const useArtifactsControllerAddShares = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+      TError,
+      { id: string; data: AddArtifactSharesDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof artifactsControllerAddShares>>,
+  TError,
+  { id: string; data: AddArtifactSharesDto },
+  TContext
+> => {
+  return useMutation(
+    getArtifactsControllerAddSharesMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Removes a recipient record from a ready file owned by the caller, including a former workspace member.
+ * @summary Remove a workspace file recipient
+ */
+export const artifactsControllerRemoveShare = (
+  id: string,
+  userId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/artifacts/${id}/shares/${userId}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getArtifactsControllerRemoveShareMutationOptions = <
+  TError = void,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+    TError,
+    { id: string; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  const mutationKey = ['artifactsControllerRemoveShare'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+    { id: string; userId: string }
+  > = (props) => {
+    const { id, userId } = props ?? {};
+
+    return artifactsControllerRemoveShare(id, userId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ArtifactsControllerRemoveShareMutationResult = NonNullable<
+  Awaited<ReturnType<typeof artifactsControllerRemoveShare>>
+>;
+
+export type ArtifactsControllerRemoveShareMutationError = void;
+
+/**
+ * @summary Remove a workspace file recipient
+ */
+export const useArtifactsControllerRemoveShare = <
+  TError = void,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+      TError,
+      { id: string; userId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof artifactsControllerRemoveShare>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  return useMutation(
+    getArtifactsControllerRemoveShareMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Lists folders owned by the caller directly under the selected parent or at the workspace root.
+ * @summary List personal artifact folders
+ */
+export const artifactFoldersControllerGetMany = (
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactFolderDto[]>(
+    { url: `/api/artifact-folders`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getArtifactFoldersControllerGetManyQueryKey = (
+  params?: ArtifactFoldersControllerGetManyParams,
+) => {
+  return [`/api/artifact-folders`, ...(params ? [params] : [])] as const;
+};
+
+export const getArtifactFoldersControllerGetManyQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getArtifactFoldersControllerGetManyQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>
+  > = ({ signal }) =>
+    artifactFoldersControllerGetMany(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactFoldersControllerGetManyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>
+>;
+export type ArtifactFoldersControllerGetManyQueryError = void;
+
+export function useArtifactFoldersControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params: undefined | ArtifactFoldersControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactFoldersControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactFoldersControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List personal artifact folders
+ */
+
+export function useArtifactFoldersControllerGetMany<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+  TError = void,
+>(
+  params?: ArtifactFoldersControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactFoldersControllerGetManyQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Returns an owned folder and its breadcrumb in the selected workspace.
+ * @summary Get a personal artifact folder
+ */
+export const artifactFoldersControllerGetById = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ArtifactFolderDetailDto>(
+    { url: `/api/artifact-folders/${id}`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getArtifactFoldersControllerGetByIdQueryKey = (id: string) => {
+  return [`/api/artifact-folders/${id}`] as const;
+};
+
+export const getArtifactFoldersControllerGetByIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getArtifactFoldersControllerGetByIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof artifactFoldersControllerGetById>>
+  > = ({ signal }) =>
+    artifactFoldersControllerGetById(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ArtifactFoldersControllerGetByIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof artifactFoldersControllerGetById>>
+>;
+export type ArtifactFoldersControllerGetByIdQueryError = void;
+
+export function useArtifactFoldersControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof artifactFoldersControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactFoldersControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof artifactFoldersControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useArtifactFoldersControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get a personal artifact folder
+ */
+
+export function useArtifactFoldersControllerGetById<
+  TData = Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+  TError = void,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof artifactFoldersControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getArtifactFoldersControllerGetByIdQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
 /**
  * Server-Sent Events stream of the current user's notification pushes plus, when the X-Workspace-Id header is sent, the allowlisted events of that workspace. Each message is a JSON ClientEvent `{ id, type, time, resourceType, resourceId, joinKeyId? }` (`joinKeyId` only on `worker.joined` from a one-time join key); a `ping` event is sent periodically as a heartbeat.

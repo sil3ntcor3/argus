@@ -1,3 +1,4 @@
+import { isPendingApproval } from '../utils';
 import Page from '@/components/common/page';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +8,7 @@ import { useParams } from '@tanstack/react-router';
 import {
   Ban,
   CircleCheck,
+  Clock,
   MailCheck,
   MailWarning,
   ShieldCheck,
@@ -52,7 +54,12 @@ export default function UserDetail() {
                 {user.role === 'admin' ? <ShieldCheck /> : <UserIcon />}
                 {user.role}
               </Badge>
-              {user.banned ? (
+              {isPendingApproval(user) ? (
+                <Badge variant="outline" className="gap-1">
+                  <Clock />
+                  Pending approval
+                </Badge>
+              ) : user.banned ? (
                 <Badge variant="destructive" className="gap-1">
                   <Ban />
                   Banned

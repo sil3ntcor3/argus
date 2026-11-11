@@ -539,7 +539,7 @@ export const VulnReportDocument: React.FC<VulnReportDocumentProps> = ({
           systemName={data.systemName}
           classification={data.classification}
         />
-        {i === 0 && <SectionHeader number="05" title="All Vulnerabilities" />}
+        {i === 0 && <SectionHeader number="05" title="Active Vulnerabilities" />}
         <VulnItem
           severity={vuln.severity}
           name={vuln.name}
@@ -577,8 +577,8 @@ export const VulnReportDocument: React.FC<VulnReportDocumentProps> = ({
           systemName={data.systemName}
           classification={data.classification}
         />
-        <SectionHeader number="05" title="All Vulnerabilities" />
-        <Text style={styles.noData}>No vulnerabilities found</Text>
+        <SectionHeader number="05" title="Active Vulnerabilities" />
+        <Text style={styles.noData}>No active vulnerabilities to list</Text>
       </Page>
     )}
 

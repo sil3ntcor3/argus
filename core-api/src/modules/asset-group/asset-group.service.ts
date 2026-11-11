@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository, type EntityManager } from 'typeorm';
 import { JobsRegistryService } from '../jobs-registry/jobs-registry.service';
 import { Tool } from '../tools/entities/tools.entity';
 import {
@@ -19,6 +19,7 @@ import {
   getSensitiveFields,
 } from '../tools/validators/tool-config-profiles.crypto';
 import { resolveToolCategory } from '../tools/tool-categories';
+import { resolveStepInputs } from '../tools/tool-io';
 import { ToolsService } from '../tools/tools.service';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
 import { Workflow } from '../workflows/entities/workflow.entity';
@@ -31,6 +32,12 @@ import { AssetGroup } from './entities/asset-groups.entity';
 import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
 import { AssetGroupWorkflowService } from './asset-group-workflow.service';
 import { AssetGroupAssetService } from './asset-group-asset.service';
+import { isGroupOwnedWorkflow } from './workflow-ownership';
+import { buildPipelineJobs } from './pipeline';
+
+type ProjectMetadataInput = Partial<
+  Pick<AssetGroup, 'description' | 'autoAddAssets'>
+>;
 
 @Injectable()
 export class AssetGroupService {
@@ -55,9 +62,11 @@ export class AssetGroupService {
   /**
    * Retrieves all asset groups with optional filtering and pagination
    */
+  /** Canonical reads use project provenance; legacy callers keep workflow-wide runs. */
   async getManyAssetGroups(
     query: GetAllAssetGroupsQueryDto,
     workspaceId: string,
+    projectScoped = false,
   ) {
     try {
       const { page, limit, sortBy, sortOrder } = query;
@@ -94,24 +103,33 @@ export class AssetGroupService {
         (subQuery) =>
           subQuery
             .select('COUNT(aga_sub.id)', 'count')
-            .from('assets_group_assets', 'aga_sub')
-            .where('aga_sub."assetGroupId" = assetGroup.id'),
+            .from('project_assets', 'aga_sub')
+            .where('aga_sub."projectId" = assetGroup.id'),
         'totalAssets',
       );
 
       // Add latest job history run time subquery so the list can both
       // return lastRunAt and sort by it (via the select alias).
       queryBuilder.addSelect(
-        (subQuery) =>
-          subQuery
+        (subQuery) => {
+          const runs = subQuery
             .select('MAX(jh."createdAt")', 'lastRunAt')
-            .from('job_histories', 'jh')
+            .from('job_histories', 'jh');
+          if (projectScoped) {
+            return runs
+              .innerJoin('workflows', 'run_workflow', 'run_workflow.id = jh."workflowId"')
+              .where(
+                'jh."projectId" = assetGroup.id AND run_workflow."workspaceId" = :workspaceId',
+              );
+          }
+          return runs
             .innerJoin(
-              'asset_group_workflows',
+              'project_workflows',
               'agw_sub',
               'agw_sub."workflowId" = jh."workflowId"',
             )
-            .where('agw_sub."assetGroupId" = assetGroup.id'),
+            .where('agw_sub."projectId" = assetGroup.id');
+        },
         'lastRunAt',
       );
 
@@ -123,10 +141,14 @@ export class AssetGroupService {
           : sortBy === 'totalAssets'
             ? '"totalAssets"'
             : `assetGroup.${sortBy}`;
-      queryBuilder
-        .orderBy(orderColumn, sortOrder)
-        .offset(offset)
-        .limit(limit);
+      if (projectScoped && sortBy === 'lastRunAt') {
+        queryBuilder
+          .orderBy(orderColumn, sortOrder, 'NULLS LAST')
+          .addOrderBy('assetGroup.id', 'ASC');
+      } else {
+        queryBuilder.orderBy(orderColumn, sortOrder);
+      }
+      queryBuilder.offset(offset).limit(limit);
 
       const results: {
         entities: AssetGroup[];
@@ -165,10 +187,12 @@ export class AssetGroupService {
    * Fetches a specific asset group by its unique identifier,
    * including the workflows assigned to it and the latest run
    * so the detail view does not need additional requests.
+   * Canonical callers opt into persisted project and binding provenance.
    */
   async getAssetGroupById(
     id: string,
     workspaceId: string,
+    projectScoped = false,
   ): Promise<AssetGroup> {
     try {
       const assetGroup = await this.assetGroupRepo.findOne({
@@ -189,8 +213,12 @@ export class AssetGroupService {
           ?.map((agw) => agw.workflow?.id)
           .filter((workflowId): workflowId is string => Boolean(workflowId)) ??
         [];
-      const lastRunByWorkflow =
-        await this.workflowService.getLastRunForWorkflows(workflowIds);
+      const lastRunByWorkflow = projectScoped
+        ? await this.workflowService.getLastRunForWorkflows(workflowIds, {
+            id: assetGroup.id,
+            workspaceId,
+          })
+        : await this.workflowService.getLastRunForWorkflows(workflowIds);
 
       for (const agw of assetGroup.assetGroupWorkflows ?? []) {
         agw.lastRun = agw.workflow
@@ -212,6 +240,18 @@ export class AssetGroupService {
 
       assetGroup.totalAssets = parseInt(counted?.totalAssets ?? '') || 0;
 
+      if (projectScoped) {
+        const [{ lastRunAt }] = await this.assetGroupRepo.manager.query<
+          { lastRunAt: Date | null }[]
+        >(
+          `SELECT MAX(jh."createdAt") AS "lastRunAt" FROM job_histories jh
+           JOIN workflows w ON w.id = jh."workflowId"
+           WHERE jh."projectId" = $1 AND w."workspaceId" = $2`,
+          [assetGroup.id, workspaceId],
+        );
+        assetGroup.lastRunAt = lastRunAt;
+      }
+
       return assetGroup;
     } catch (error) {
       this.logger.error(
@@ -225,7 +265,11 @@ export class AssetGroupService {
   /**
    * Creates a new asset group
    */
-  async create(createAssetGroupDto: CreateAssetGroupDto, workspaceId: string) {
+  async create(
+    createAssetGroupDto: CreateAssetGroupDto,
+    workspaceId: string,
+    metadata?: ProjectMetadataInput,
+  ) {
     try {
       // Validate the workspace exists
       const workspace = await this.assetGroupRepo.manager.findOneBy(Workspace, {
@@ -265,6 +309,12 @@ export class AssetGroupService {
       const assetGroup = this.assetGroupRepo.create({
         name: createAssetGroupDto.name,
         hexColor: createAssetGroupDto.hexColor,
+        ...(metadata
+          ? {
+              description: metadata.description?.trim() || null,
+              autoAddAssets: metadata.autoAddAssets ?? true,
+            }
+          : {}),
         workspace: { id: workspaceId },
       });
 
@@ -294,7 +344,7 @@ export class AssetGroupService {
         // half-created group: remove any workflows (and their BullMQ
         // schedulers) created before the failure, then the group itself.
         // The DB-level FKs cascade the join rows and asset rows.
-        await this.rollbackCreatedGroup(savedAssetGroup.id);
+        await this.rollbackCreatedGroup(savedAssetGroup.id, workspaceId);
         throw error;
       }
 
@@ -311,7 +361,7 @@ export class AssetGroupService {
    * were created for the group, and finally the group itself. Join rows
    * and asset associations are removed by the DB-level cascades.
    */
-  private async rollbackCreatedGroup(groupId: string): Promise<void> {
+  private async rollbackCreatedGroup(groupId: string, workspaceId: string): Promise<void> {
     try {
       const groupWorkflows = await this.assetGroupWorkflowRepo.find({
         where: { assetGroup: { id: groupId } },
@@ -325,12 +375,9 @@ export class AssetGroupService {
           .map((jobId) => this.scanScheduleQueue.removeJobScheduler(jobId)),
       );
 
-      const workflowIds = groupWorkflows
-        .map((agw) => agw.workflow?.id)
-        .filter((workflowId): workflowId is string => Boolean(workflowId));
-      if (workflowIds.length > 0) {
-        await this.workflowRepo.delete(workflowIds);
-      }
+      await this.workflowRepo.manager.transaction((manager) =>
+        this.deleteOwnedWorkflows(groupId, workspaceId, groupWorkflows, manager),
+      );
 
       const savedAssetGroup = await this.assetGroupRepo.findOne({
         where: { id: groupId },
@@ -349,6 +396,46 @@ export class AssetGroupService {
         `Failed to rollback asset group creation: ${message}`,
         stack,
       );
+    }
+  }
+
+  private async deleteOwnedWorkflows(
+    groupId: string,
+    workspaceId: string,
+    bindings: AssetGroupWorkflow[],
+    manager: EntityManager,
+  ): Promise<void> {
+    const ids = bindings
+      .filter((binding) => isGroupOwnedWorkflow(binding.workflow, groupId))
+      .map((binding) => binding.workflowId);
+    if (ids.length === 0) return;
+
+    const workflows = manager.getRepository(Workflow);
+    // Lock before checking references: attaching a workflow takes a foreign-key
+    // lock, so a concurrent attachment cannot slip between this check/delete.
+    const locked = await workflows
+      .createQueryBuilder('workflow')
+      .select(['workflow.id', 'workflow.filePath', 'workflow.isCanDelete'])
+      .where({ id: In(ids), workspace: { id: workspaceId } })
+      .orderBy('workflow.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getMany();
+    const candidates = locked
+      .filter((workflow) => isGroupOwnedWorkflow(workflow, groupId))
+      .map((workflow) => workflow.id);
+    if (candidates.length === 0) return;
+
+    const references = await manager.getRepository(AssetGroupWorkflow).find({
+      where: { workflowId: In(candidates), assetGroupId: Not(groupId) },
+      select: { workflowId: true },
+    });
+    const reused = new Set(references.map((binding) => binding.workflowId));
+    const deletable = candidates.filter((id) => !reused.has(id));
+    if (deletable.length > 0) {
+      await workflows.delete({
+        id: In(deletable),
+        workspace: { id: workspaceId },
+      });
     }
   }
 
@@ -408,12 +495,13 @@ export class AssetGroupService {
       }
     }
 
-    // A category the tool does not declare would fail every scheduled run.
+    // Invalid categories or input kinds would fail every scheduled run.
     for (const tool of tools) {
-      const category = inputByToolId.get(tool.id!)?.category;
-      if (!category) continue;
+      const input = inputByToolId.get(tool.id!);
+      if (!input?.category && !input?.input?.length) continue;
       try {
-        resolveToolCategory(tool, category);
+        const spec = resolveToolCategory(tool, input?.category);
+        resolveStepInputs(tool.name, spec, input?.input);
       } catch (error) {
         throw new BadRequestException((error as Error).message);
       }
@@ -425,11 +513,10 @@ export class AssetGroupService {
     const workflowName = `Group Workflow - ${groupId}`;
     const workflow = this.workflowRepo.create({
       name: workflowName,
-      // Canonicalized on write: `jobs` is a map keyed by tool name with no
-      // `needs`, so every selected tool is a root and they run in parallel.
+      // Omitted stages remain parallel roots; populated stages form barriers.
       content: normalizeWorkflowContent({
         on: { schedule, target: [] },
-        jobs: Object.fromEntries(
+        jobs: buildPipelineJobs(
           tools.map((tool) => {
             const input = inputByToolId.get(tool.id!);
             let config = input?.config;
@@ -439,17 +526,16 @@ export class AssetGroupService {
               const sensitiveFields = getSensitiveFields(schema);
               config = encryptInlineConfig(config, sensitiveFields, dek);
             }
-            return [
-              tool.name,
-              {
-                run: tool.name,
-                ...(input?.category ? { category: input.category } : {}),
-                ...(config ? { config } : {}),
-                ...(input?.configProfileId
-                  ? { configProfileId: input.configProfileId }
-                  : {}),
-              },
-            ];
+            return {
+              run: tool.name,
+              stage: input?.stage,
+              ...(input?.category ? { category: input.category } : {}),
+              ...(input?.input?.length ? { input: input.input } : {}),
+              ...(config ? { config } : {}),
+              ...(input?.configProfileId
+                ? { configProfileId: input.configProfileId }
+                : {}),
+            };
           }),
         ),
         name: workflowName,
@@ -471,37 +557,46 @@ export class AssetGroupService {
     workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
     try {
-      const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id, workspace: { id: workspaceId } },
-        relations: { assetGroupWorkflows: { workflow: true } },
+      await this.assetGroupRepo.manager.transaction(async (manager) => {
+        // Match workspace deletion's parent-to-child lock order.
+        await manager.query(
+          'SELECT id FROM workspaces WHERE id = $1 FOR KEY SHARE',
+          [workspaceId],
+        );
+        // A workflow creator holds the same project row lock until it saves the
+        // binding. Read assignments after the lock so that committed clones are
+        // included in the owned workflow cleanup. Allow foreign-key checks
+        // from in-flight runs while waiting for their workflow locks.
+        const [project] = await manager.query<{ id: string }[]>(
+          'SELECT id FROM projects WHERE id = $1 AND "workspaceId" = $2 FOR NO KEY UPDATE',
+          [id, workspaceId],
+        );
+        const groups = manager.getRepository(AssetGroup);
+        const assetGroup = project
+          ? await groups.findOne({
+              where: { id: project.id },
+              relations: { assetGroupWorkflows: { workflow: true } },
+            })
+          : null;
+        if (!assetGroup) {
+          throw new NotFoundException(`Asset group with ID "${id}" not found`);
+        }
+
+        const groupWorkflows = assetGroup.assetGroupWorkflows ?? [];
+        await Promise.all(
+          groupWorkflows
+            .map((binding) => binding.jobId)
+            .filter((jobId): jobId is string => Boolean(jobId))
+            .map((jobId) => this.scanScheduleQueue.removeJobScheduler(jobId)),
+        );
+        await this.deleteOwnedWorkflows(
+          assetGroup.id,
+          workspaceId,
+          groupWorkflows,
+          manager,
+        );
+        await groups.remove(assetGroup);
       });
-
-      if (!assetGroup) {
-        throw new NotFoundException(`Asset group with ID "${id}" not found`);
-      }
-
-      // Cancel the BullMQ repeat schedulers so no new runs are queued
-      // for the group's workflows while the group is being deleted.
-      const groupWorkflows = assetGroup.assetGroupWorkflows ?? [];
-      await Promise.all(
-        groupWorkflows
-          .map((agw) => agw.jobId)
-          .filter((jobId): jobId is string => Boolean(jobId))
-          .map((jobId) => this.scanScheduleQueue.removeJobScheduler(jobId)),
-      );
-
-      // Delete the group's workflows. The DB-level FK cascades remove the
-      // asset_group_workflows join rows and every job history + job that
-      // was created for this group (job_histories -> jobs -> job_error_log).
-      const workflowIds = groupWorkflows
-        .map((agw) => agw.workflow?.id)
-        .filter((workflowId): workflowId is string => Boolean(workflowId));
-      if (workflowIds.length > 0) {
-        await this.workflowRepo.delete(workflowIds);
-      }
-
-      // Delete the asset group itself
-      await this.assetGroupRepo.remove(assetGroup);
 
       return {
         message: `Asset group "${id}" successfully deleted`,
@@ -519,6 +614,7 @@ export class AssetGroupService {
     id: string,
     updateAssetGroupDto: UpdateAssetGroupDto,
     workspaceId: string,
+    metadata?: ProjectMetadataInput,
   ): Promise<AssetGroup> {
     try {
       // Find the asset group
@@ -541,6 +637,10 @@ export class AssetGroupService {
       }
 
       // Save the updated asset group
+      if (metadata?.description !== undefined)
+        assetGroup.description = metadata.description?.trim() || null;
+      if (metadata?.autoAddAssets !== undefined)
+        assetGroup.autoAddAssets = metadata.autoAddAssets;
       const updatedAssetGroup = await this.assetGroupRepo.save(assetGroup);
 
       return updatedAssetGroup;

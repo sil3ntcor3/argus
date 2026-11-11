@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type {
   LanguageModel,
+  PrepareStepFunction,
   StepResult,
   TextStreamPart,
   ToolSet,
@@ -66,6 +67,7 @@ import {
 } from './shared/conversation-metadata';
 import { DEFAULT_MAX_STEPS, stepLimit } from './shared/step-limit';
 import { TokenCounter } from './shared/token-counter';
+import type { BrowserScreenshotEvent } from './tools/remote-execute.tool';
 import {
   addSteps,
   addWait,
@@ -184,8 +186,44 @@ interface StreamTextOptions {
    * so it can detect the cut-off and continue, and true only for the final one.
    */
   forceSummaryOnLimit?: boolean;
+  /**
+   * Called before every step but the first: subagent results that finished
+   * since, as a prompt to hand the model, or undefined when there are none.
+   */
+  takeSubagentResults?: () => Promise<string | undefined>;
+  /** A receiving model step completed, including any injected results. */
+  onSubagentResultsConsumed?: () => void;
   /** Receives the token/timing stats of this streamText call (also on abort) */
   onStats?: (stats: StatsAccumulator) => void;
+}
+
+/**
+ * Hands results that arrive mid-run to the model as a user message before
+ * its next step, so it never polls for them. The SDK carries a step's
+ * messages into the following steps, so each result is added once.
+ */
+export function withStepResults<
+  T extends { prepareStep?: PrepareStepFunction<ToolSet> },
+>(
+  limit: T,
+  takeResults?: () => Promise<string | undefined>,
+): T & { prepareStep?: PrepareStepFunction<ToolSet> } {
+  if (!takeResults) return limit;
+  const prepareStep: PrepareStepFunction<ToolSet> = async (options) => {
+    const base = (await limit.prepareStep?.(options)) ?? {};
+    // The first step's prompt already ends with a user message
+    if (options.stepNumber === 0) return base;
+    const results = await takeResults();
+    if (!results) return base;
+    return {
+      ...base,
+      messages: [
+        ...(base.messages ?? options.messages),
+        { role: 'user', content: results },
+      ],
+    };
+  };
+  return { ...limit, prepareStep };
 }
 
 /** A finished step: its content is kept in stream order */
@@ -354,22 +392,30 @@ export class AgentsCompletionsService {
   }
 
   /**
-   * Aborts the active run of a conversation. Returns false if there is none.
-   * The run stays registered (so `running` stays true) until it has saved
-   * its stopped state; clearActiveRun removes it then.
+   * Aborts the active run of a conversation and cancels its pending and
+   * running subagents, also when the run itself already ended. Returns false
+   * if there was nothing to stop. The run stays registered (so `running`
+   * stays true) until it has saved its stopped state; clearActiveRun removes
+   * it then.
    */
-  stopRun(conversationId: string): boolean {
+  async stopRun(conversationId: string): Promise<boolean> {
     const controller = this.activeRuns.get(conversationId);
-    if (!controller || controller.signal.aborted) return false;
-    controller.abort();
-    // A user stop leaves no step running: reset the in_progress step back to
-    // pending so the todo list stops spinning (the live stream is closing, so
-    // the client reflects this optimistically / on its next load). Matches the
-    // error path, and lets a later message resume the step.
-    this.resetTodosOnError(conversationId).catch((err) =>
-      this.logger.error('Failed to reset todos on stop', err),
-    );
-    return true;
+    const aborted = !!controller && !controller.signal.aborted;
+    if (aborted) {
+      // First, so the run queues no subagent after the cancel below
+      controller.abort();
+      // A user stop leaves no step running: reset the in_progress step back
+      // to pending so the todo list stops spinning (the live stream is
+      // closing, so the client reflects this optimistically / on its next
+      // load). Matches the error path, and lets a later message resume the
+      // step.
+      this.resetTodosOnError(conversationId).catch((err) =>
+        this.logger.error('Failed to reset todos on stop', err),
+      );
+    }
+    const cancelled =
+      await this.subagents.cancelForConversation(conversationId);
+    return aborted || cancelled > 0;
   }
 
   /**
@@ -1188,8 +1234,8 @@ export class AgentsCompletionsService {
   }
 
   /**
-   * dispatch_subagent / get_subagent_result, AGENT mode only. They only
-   * read or queue, but stay gated so PLAN mode blocks them.
+   * dispatch_subagent / get_subagent_result / wait_for_subagents, AGENT only.
+   * They read, queue or wait, but stay gated so PLAN mode blocks them.
    */
   private getSubagentTools(
     agentMode: AgentMode,
@@ -1765,9 +1811,12 @@ export class AgentsCompletionsService {
       ...(tools
         ? {
             tools,
-            ...stepLimit(llmConfig.maxSteps ?? DEFAULT_MAX_STEPS, {
-              forceSummary: options.forceSummaryOnLimit ?? true,
-            }),
+            ...withStepResults(
+              stepLimit(llmConfig.maxSteps ?? DEFAULT_MAX_STEPS, {
+                forceSummary: options.forceSummaryOnLimit ?? true,
+              }),
+              options.takeSubagentResults,
+            ),
           }
         : {}),
       // Enable reasoning/thinking via provider-specific options
@@ -1841,6 +1890,7 @@ export class AgentsCompletionsService {
       },
       // A step ended (its tool results are in): save it right away
       onStepEnd: (step) => {
+        options.onSubagentResultsConsumed?.();
         completedSteps.push(step);
         live = { segments: [] };
         progressDirty = true;
@@ -2136,6 +2186,9 @@ export class AgentsCompletionsService {
     // Subagent results in the prompt of the iteration being run; released
     // back to "undelivered" if that iteration fails or is aborted
     let pendingDeliveryIds = [...(options.deliveredSubagentIds ?? [])];
+    // prepareStep can claim results before a provider setup failure. The SDK
+    // may still end using prior steps; only a receiving step acknowledges them.
+    let unreceivedStepDeliveryIds: string[] = [];
     let subagentRounds = 0;
     let subagentWaitBudgetMs = SUBAGENT_WAIT_BUDGET_MS;
     // Only subagents dispatched in this turn are waited for; results of
@@ -2153,6 +2206,24 @@ export class AgentsCompletionsService {
         if (!pendingDeliveryIds.includes(id)) pendingDeliveryIds.push(id);
       };
     }
+
+    // Results that finish while an iteration runs reach it at its next step;
+    // the iteration owns them like the ones injected into its prompt
+    const takeSubagentResults = async (): Promise<string | undefined> => {
+      try {
+        const rows = await this.subagents.takeUndelivered(conversationId);
+        if (rows.length === 0) return undefined;
+        const message = this.subagents.formatResultsMessage(rows);
+        const ids = rows.map((r) => r.id);
+        pendingDeliveryIds.push(...ids);
+        unreceivedStepDeliveryIds.push(...ids);
+        deliveredResults.push(message);
+        return message;
+      } catch (err) {
+        this.logger.error('Failed to take subagent results', err);
+        return undefined;
+      }
+    };
 
     const releasePendingDelivery = async () => {
       if (pendingDeliveryIds.length === 0) return;
@@ -2270,11 +2341,7 @@ export class AgentsCompletionsService {
 
       // The page after each browser command, for the live Browser panel.
       // Transient: never part of the saved message.
-      const onBrowserScreenshot = (data: {
-        toolCallId: string;
-        command: string;
-        image: string;
-      }) => {
+      const onBrowserScreenshot = (data: BrowserScreenshotEvent) => {
         if (controllerClosed) return;
         controller.enqueue({
           type: 'data-browser-screenshot',
@@ -2337,6 +2404,10 @@ export class AgentsCompletionsService {
           } as unknown as UIMessageChunk);
         },
       );
+
+      // Subagent browser pages share the conversation's live view.
+      const unsubscribeSubagentScreenshots =
+        this.subagents.subscribeScreenshots(conversationId, onBrowserScreenshot);
 
       // Emit initial conversation-created event
       controller.enqueue({
@@ -2403,6 +2474,15 @@ export class AgentsCompletionsService {
                 // continue; force a wrap-up only on the last allowed pass.
                 forceSummaryOnLimit:
                   !continuesPlan || iteration === MAX_SAFETY_ITERATIONS - 1,
+                // Only Agent mode has subagents
+                ...(isAgentMode
+                  ? {
+                      takeSubagentResults,
+                      onSubagentResultsConsumed: () => {
+                        unreceivedStepDeliveryIds = [];
+                      },
+                    }
+                  : {}),
                 onStats: (stats) => {
                   turnAcc = mergeStats(turnAcc, stats);
                 },
@@ -2470,8 +2550,9 @@ export class AgentsCompletionsService {
           }
 
           if (abortSignal?.aborted || controllerClosed) break;
-          // This iteration's prompt consumed the injected subagent results
-          pendingDeliveryIds = [];
+          // Retain claims whose receiving step never completed. A continuation
+          // replays them; if the turn ends here, finally releases their delivery.
+          pendingDeliveryIds = [...unreceivedStepDeliveryIds];
 
           // Auto-continue while a plan has pending steps (Agent or Plan
           // mode), or once background subagents hand their results back
@@ -2489,7 +2570,7 @@ export class AgentsCompletionsService {
             const delivered = await awaitSubagents();
             if (delivered) {
               newResults = delivered.message;
-              pendingDeliveryIds = delivered.ids;
+              pendingDeliveryIds.push(...delivered.ids);
             } else if (continuesPlan && hitStepLimit) {
               // The step cap cut the model off mid-work and there is no pending
               // plan step to drive a follow-up: tell it to carry on so the task
@@ -2521,7 +2602,7 @@ export class AgentsCompletionsService {
               }
               stalledIterations = 0;
               newResults = delivered.message;
-              pendingDeliveryIds = delivered.ids;
+              pendingDeliveryIds.push(...delivered.ids);
             } else {
               // Synthesized "continue" message (NOT saved to DB — memory only)
               // Include specific pending step IDs to help LLM resume correctly
@@ -2539,7 +2620,7 @@ export class AgentsCompletionsService {
                 await this.subagents.takeUndelivered(conversationId);
               if (ready.length > 0) {
                 newResults = this.subagents.formatResultsMessage(ready);
-                pendingDeliveryIds = ready.map((r) => r.id);
+                pendingDeliveryIds.push(...ready.map((r) => r.id));
               }
             }
           }
@@ -2592,6 +2673,7 @@ export class AgentsCompletionsService {
         }
       } finally {
         unsubscribeSubagents();
+        unsubscribeSubagentScreenshots();
         // A placeholder no iteration finished (stopped mid-iteration or
         // between iterations, or every retry failed) must not stay
         // 'streaming'

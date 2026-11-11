@@ -3,6 +3,8 @@ import type { ColumnDef } from '@tanstack/react-table';
 
 import { CodeBlock } from '@/components/common/code-block';
 import Page from '@/components/common/page';
+import { WorkflowFileSheet } from '@/components/common/workflow-file-sheet';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
@@ -15,22 +17,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import JobStatusBadge from '@/components/ui/job-status';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
+import { OpenLink } from '@/components/ui/open-link';
 import ToolLogo from '@/components/ui/tool-logo';
+import { RetryRunDialog } from './components/retry-run-dialog';
+import { RunProgress } from './components/run-progress';
 import RunWorkflowGraph from './components/run-workflow-graph';
 import { useBugReportUrl } from '@/hooks/use-bug-report-url';
 import { usePermission } from '@/hooks/usePermission';
+import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { useRunWorkflow } from '@/hooks/use-run-workflow';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
 import type {
+  JobHistoryDetailResponseDto,
   JobListItemDto,
   WorkflowStepStatusDto,
 } from '@/services/apis/gen/queries';
@@ -45,6 +43,7 @@ import {
 } from '@/services/apis/gen/queries';
 import type { BugReport } from '@/utils/bug-report-url';
 import { useQueryClient } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
 import dayjs from 'dayjs';
 import {
   ArrowRight,
@@ -54,19 +53,33 @@ import {
   ChevronRight,
   Clock,
   MoreHorizontal,
-  Code2,
   TriangleAlert,
 } from 'lucide-react';
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 
 const NO_STEPS: WorkflowStepStatusDto[] = [];
+const RUN_REFRESH_MS = 1000;
+
+function isActiveJobStatus(status?: string): boolean {
+  return status === JobStatus.pending || status === JobStatus.in_progress;
+}
+
+function isRunPollingBlocked(error: unknown): boolean {
+  const status = isAxiosError(error) ? error.response?.status : undefined;
+  return status === 401 || status === 403 || status === 404;
+}
+
+function runHasActiveJobs(run?: JobHistoryDetailResponseDto): boolean {
+  // Some runs have active job rows without a corresponding step or tool.
+  if ((run?.activeJobsCount ?? 0) > 0) return true;
+  const steps = run?.steps ?? NO_STEPS;
+  if (steps.length > 0) {
+    return steps.some(
+      (step) => step.status === 'pending' || step.status === 'dispatched',
+    );
+  }
+  return run?.tools?.some((tool) => isActiveJobStatus(tool.status)) ?? false;
+}
 
 const formatDate = (value?: string) =>
   value && dayjs(value).isValid()
@@ -225,14 +238,14 @@ const JobDetailPanel = memo(function JobDetailPanel({
             </span>
             {bugReportUrl && (
               <Button asChild size="sm" variant="outline">
-                <a
+                <OpenLink
                   href={bugReportUrl}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
                   <Bug />
                   Report bug
-                </a>
+                </OpenLink>
               </Button>
             )}
           </div>
@@ -261,7 +274,11 @@ export default function Runs() {
   const { id: jobHistoryId } = useParams({ strict: false });
   const queryClient = useQueryClient();
 
-  const { hasPermission } = usePermission();
+  const permission = usePermission();
+  const { hasPermission } = permission;
+  const {
+    state: { selectedWorkspaceId },
+  } = useWorkspaceState();
   const { mutate: deleteJobMutate } = useJobsRegistryControllerDeleteJob();
   const { mutate: cancelJobMutate } = useJobsRegistryControllerCancelJob();
   const {
@@ -277,7 +294,6 @@ export default function Runs() {
     isUpdateSearchQueryParam: false,
   });
 
-  const hasActiveJobsRef = useRef(false);
   const [isCodeOpen, setCodeOpen] = useState(false);
   // Fetched only while the sheet is open: the YAML view is a one-off peek at
   // the definition, not something the run page needs while it is closed.
@@ -286,36 +302,22 @@ export default function Runs() {
     { enabled: isCodeOpen },
   );
 
-  const { data: jobHistoryDetail } =
-    useJobsRegistryControllerGetJobHistoryDetail(jobHistoryId || '', {
-      query: {
-        // Poll only while any tool in this run is still active.
-        // The function form is evaluated lazily by React Query, so it always
-        // reads the latest value without re-creating the query config.
-        refetchInterval: () => (hasActiveJobsRef.current ? 1000 : false),
-      },
-    });
+  const {
+    data: jobHistoryDetail,
+    error: runError,
+    isFetchedAfterMount,
+  } = useJobsRegistryControllerGetJobHistoryDetail(jobHistoryId || '', {
+    query: {
+      refetchOnMount: 'always',
+      refetchInterval: (query) =>
+        !isRunPollingBlocked(query.state.error) &&
+        runHasActiveJobs(query.state.data)
+          ? RUN_REFRESH_MS
+          : false,
+    },
+  });
 
-  // Check if any tools are still active via API status. Workflow runs carry
-  // their own per-step state; runs created before the engine only have tools.
-  const hasActiveJobs = useMemo(() => {
-    const steps = jobHistoryDetail?.steps ?? [];
-    if (steps.length > 0) {
-      return steps.some(
-        (step) => step.status === 'pending' || step.status === 'dispatched',
-      );
-    }
-    const tools = jobHistoryDetail?.tools || [];
-    return tools.some(
-      (tool) =>
-        tool.status === JobStatus.pending ||
-        tool.status === JobStatus.in_progress,
-    );
-  }, [jobHistoryDetail?.steps, jobHistoryDetail?.tools]);
-
-  useEffect(() => {
-    hasActiveJobsRef.current = hasActiveJobs;
-  }, [hasActiveJobs]);
+  const hasActiveJobs = runHasActiveJobs(jobHistoryDetail);
 
   const {
     data: paginatedJobsData,
@@ -332,7 +334,19 @@ export default function Runs() {
     },
     {
       query: {
-        refetchInterval: hasActiveJobs ? 1000 : false,
+        refetchInterval: (query) => {
+          if (
+            isRunPollingBlocked(runError) ||
+            isRunPollingBlocked(query.state.error)
+          ) {
+            return false;
+          }
+          // The summary can settle before the table receives the final status.
+          const tableHasActiveJobs = query.state.data?.data.some((job) =>
+            isActiveJobStatus(job.status),
+          );
+          return hasActiveJobs || tableHasActiveJobs ? RUN_REFRESH_MS : false;
+        },
       },
     },
   );
@@ -504,8 +518,21 @@ export default function Runs() {
         'Job History Detail'
       }
       action={
-        activeJobsCount > 0 &&
-        hasPermission('job.write') && (
+        jobHistoryId &&
+        selectedWorkspaceId &&
+        isFetchedAfterMount &&
+        jobHistoryDetail?.retryAvailable === true &&
+        activeJobsCount === 0 &&
+        !runError &&
+        !permission.isLoading &&
+        !permission.error &&
+        hasPermission('job.write') ? (
+          <RetryRunDialog
+            key={`${selectedWorkspaceId}:${jobHistoryId}`}
+            runId={jobHistoryId}
+            workspaceId={selectedWorkspaceId}
+          />
+        ) : activeJobsCount > 0 && hasPermission('job.write') && (
           <ConfirmDialog
             title="Cancel this run?"
             description={`Stops the ${activeJobsCount} job(s) still pending or running and prevents the workflow from starting any further step. Jobs that already finished keep their result.`}
@@ -524,6 +551,23 @@ export default function Runs() {
         )
       }
     >
+      {jobHistoryDetail && (
+        <RunProgress
+          steps={steps}
+          tools={jobHistoryDetail.tools}
+          activeJobsCount={activeJobsCount}
+          etaSeconds={runError ? null : jobHistoryDetail.etaSeconds}
+        />
+      )}
+      {!runError && activeJobsCount === 0 && jobHistoryDetail?.failureReason && (
+        <Alert variant="destructive" className="mb-4">
+          <TriangleAlert aria-hidden="true" />
+          <AlertTitle>Latest job failure</AlertTitle>
+          <AlertDescription className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {jobHistoryDetail.failureReason}
+          </AlertDescription>
+        </Alert>
+      )}
       {/* Workflow steps (DAG) — falls back to the tool list for runs created
           before the workflow engine existed. */}
       {steps.length ? (
@@ -531,36 +575,14 @@ export default function Runs() {
           <CardContent className="px-2 py-2 md:px-4">
             <div className="mb-3 flex items-center justify-between gap-2">
               <CardTitle>Workflow</CardTitle>
-              <Sheet open={isCodeOpen} onOpenChange={setCodeOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm">
-                    <Code2 className="h-4 w-4" />
-                    View workflow
-                  </Button>
-                </SheetTrigger>
-                <SheetContent
-                  side="right"
-                  className="w-full gap-0 overflow-y-auto sm:max-w-2xl"
-                >
-                  <SheetHeader>
-                    <SheetTitle>Workflow definition</SheetTitle>
-                    <SheetDescription>
-                      The workflow this run was created from.
-                    </SheetDescription>
-                  </SheetHeader>
-                  <div className="px-4 pb-4">
-                    {isLoadingWorkflow ? (
-                      <Skeleton className="h-72 w-full" />
-                    ) : runWorkflow?.yaml ? (
-                      <CodeBlock language="yaml" showLine value={runWorkflow.yaml} />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        This run has no workflow attached.
-                      </p>
-                    )}
-                  </div>
-                </SheetContent>
-              </Sheet>
+              <WorkflowFileSheet
+                yaml={runWorkflow?.yaml ?? ''}
+                description="The workflow this run was created from."
+                open={isCodeOpen}
+                onOpenChange={setCodeOpen}
+                isLoading={isLoadingWorkflow}
+                emptyMessage="This run has no workflow attached."
+              />
             </div>
             <RunWorkflowGraph
               steps={steps}

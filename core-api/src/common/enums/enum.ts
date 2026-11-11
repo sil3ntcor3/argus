@@ -51,6 +51,24 @@ export enum ToolCategory {
   URL_DISCOVERY = 'url_discovery',
 }
 
+/** The data a workflow step consumes or produces, independent of its category. */
+export enum DataKind {
+  /** The primary domain or IP supplied when the target was created. */
+  TARGET = 'target',
+  /** A discovered hostname or IP address. */
+  HOST = 'host',
+  /** An open port addressed as host:port. */
+  SERVICE = 'service',
+  /** A live HTTP(S) service, including its scheme and port. */
+  WEB = 'web',
+  /** A discovered URL, including its path. */
+  URL = 'url',
+  /** A repository belonging to a Git organization target. */
+  REPOSITORY = 'repository',
+  /** A finding; currently an output kind only. */
+  VULNERABILITY = 'vulnerability',
+}
+
 /**
  * Enum representing job statuses
  */
@@ -300,6 +318,8 @@ export enum IntegrationType {
  * matching sink together, never one without the other.
  */
 export enum EventBusGroup {
+  /** Keeps rule-based project membership current after discovery. */
+  Projects = 'projects',
   /** Materializes the stream into `audit_events`; strictly ordered. */
   Audit = 'audit',
   /** Read models. */
@@ -328,4 +348,34 @@ export enum AgentCommandApprovalStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
+}
+
+export enum ProjectScopeRuleMode {
+  INCLUDE = 'include',
+  EXCLUDE = 'exclude',
+}
+
+export enum ProjectScopeRuleType {
+  TARGET = 'target',
+  HOSTNAME = 'hostname',
+  CIDR = 'cidr',
+  ASSET = 'asset',
+}
+
+export enum ProjectAssetSource {
+  MANUAL = 'manual',
+  RULE = 'rule',
+}
+
+/** Scalar activity discriminator for canonical project.updated events. */
+export enum ProjectChange {
+  SETTINGS = 'settings',
+  ASSETS_ADDED = 'assets.added',
+  ASSETS_DISCOVERED = 'assets.discovered',
+  ASSETS_REMOVED = 'assets.removed',
+  SCOPE = 'scope',
+  WORKFLOW_ADDED = 'workflow.added',
+  WORKFLOW_UPDATED = 'workflow.updated',
+  WORKFLOW_REMOVED = 'workflow.removed',
+  TRIGGERS = 'triggers',
 }

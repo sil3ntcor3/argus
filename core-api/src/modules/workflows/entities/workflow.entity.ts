@@ -1,5 +1,5 @@
 import { BaseEntity } from '@/common/entities/base.entity';
-import { ToolCategory } from '@/common/enums/enum';
+import { DataKind, ToolCategory } from '@/common/enums/enum';
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
 import { User } from '@/modules/auth/entities/user.entity';
 import { JobHistory } from '@/modules/jobs-registry/entities/job-history.entity';
@@ -16,7 +16,7 @@ import {
   IsUUID,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   Column,
   Entity,
@@ -60,6 +60,18 @@ export class WorkflowJob {
   @IsOptional()
   @IsEnum(ToolCategory)
   category?: ToolCategory;
+
+  /** Ordered input preference; omitted uses the tool's declared inputs. */
+  @ApiProperty({
+    required: false, enum: DataKind, enumName: 'DataKind', isArray: true,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? [value] : value,
+  )
+  @IsArray()
+  @IsEnum(DataKind, { each: true })
+  input?: DataKind[];
 
   /**
    * Ids of the jobs that must reach a terminal state before this one is

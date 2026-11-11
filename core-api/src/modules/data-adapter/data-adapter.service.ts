@@ -21,6 +21,7 @@ import { IssuesService } from '../issues/issues.service';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { EventBridgeService } from '../event-bridge/publishing/event-bridge.service';
 import type {
+  AssetDiscoveredPayload,
   DetectedVulnerability,
   VulnerabilityDetectedPayload,
 } from '../event-bridge/contracts/event-payloads';
@@ -28,6 +29,12 @@ import { StorageService } from '../storage/storage.service';
 import { Vulnerability } from '../vulnerabilities/entities/vulnerability.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import { DataAdapterInput } from './data-adapter.interface';
+import {
+  lockFindingScannerSourceParents,
+  recordFindingScannerSightings,
+} from './finding-scanner-sightings';
+import { recordProjectFindingSightings } from './project-finding-sightings';
+import { serviceForUrl } from './url-owner';
 
 /**
  * Convert a protobuf Timestamp ({seconds, nanos}) to a Date.
@@ -520,6 +527,18 @@ export class DataAdapterService {
       const workspaceConfigs =
         await this.workspaceService.getWorkspaceConfigValue(workspaceId!);
 
+      // A DNS refresh RETURNs updated rows too. Identify existing values before
+      // writing, with one bound array even for a large discovery batch.
+      const batchValues = uniqueData.map((asset) => asset.value);
+      const existingValues = new Set(
+        batchValues.length
+          ? (await queryRunner.manager.query<{ value: string }[]>(
+              `SELECT value FROM assets WHERE "targetId" = $1 AND value = ANY($2::varchar[])`,
+              [targetId, batchValues],
+            )).map((row) => row.value)
+          : [],
+      );
+
       // Insert Assets. Default: orIgnore (re-runs are idempotent; subdomain
       // rows are only ever created). replaceDnsRecords: orUpdate on
       // (value, targetId) so existing rows' dnsRecords are refreshed while
@@ -576,6 +595,23 @@ export class DataAdapterService {
       await this.syncDnsFacets(queryRunner.manager, dnsWrites);
 
       await queryRunner.commitTransaction();
+      const discoveredIds = uniqueData
+        .filter((asset) => !existingValues.has(asset.value))
+        .map((asset) => idByValue.get(asset.value))
+        .filter((id): id is string => !!id);
+      if (workspaceId && discoveredIds.length > 0) {
+        // Consumers must see both the asset rows and their DNS facets.
+        await this.eventBridge.publishSafely(EVENT_CATALOG.asset.discovered, {
+          workspaceId,
+          outcome: 'success',
+          resourceType: 'asset',
+          payload: {
+            targetId,
+            ...(opts?.jobHistoryId ? { jobHistoryId: opts.jobHistoryId } : {}),
+            assetIds: discoveredIds,
+          } satisfies AssetDiscoveredPayload,
+        });
+      }
       return insertedIds.size;
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -780,7 +816,7 @@ export class DataAdapterService {
    * URL discovery data normalization: one row per unique URL, attached to the
    * job's AssetService and JobHistory. Deduped in-app (Set) and DB-level
    * (unique constraint + orIgnore) so worker retries / workflow re-runs are
-   * idempotent.
+   * idempotent. Host-wide jobs attach each URL to a service on that asset.
    */
   public async urlDiscovery({
     data,
@@ -791,9 +827,17 @@ export class DataAdapterService {
     await queryRunner.startTransaction();
 
     try {
-      if (!job.assetServiceId) {
+      const hostServices = job.assetServiceId || !job.asset?.id
+        ? []
+        : await queryRunner.manager.getRepository(AssetService).find({
+            where: { assetId: job.asset.id },
+            select: { id: true, port: true },
+          });
+      const ownerOf = (url: string): string | undefined =>
+        job.assetServiceId ?? serviceForUrl(url, job.asset?.value ?? '', hostServices);
+      if (!job.assetServiceId && hostServices.length === 0) {
         this.logger.warn(
-          `urlDiscovery: job ${job.id} has no assetServiceId — skipping`,
+          `urlDiscovery: job ${job.id} has no service to attach URLs to — skipping`,
         );
         await queryRunner.commitTransaction();
         return;
@@ -825,7 +869,7 @@ export class DataAdapterService {
             .values(
               batch.map((url) => ({
                 url,
-                assetServiceId: job.assetServiceId,
+                assetServiceId: ownerOf(url),
                 jobHistoryId: job.jobHistory.id,
               })),
             )
@@ -935,6 +979,13 @@ export class DataAdapterService {
         });
         const vulnValues = { ...vuln } as unknown as Record<string, string | number | boolean | object | null>;
         delete vulnValues.id;
+        // Lifecycle metadata belongs to Argus, never to the result payload.
+        delete vulnValues.detectionStatus;
+        delete vulnValues.timesDetected;
+        delete vulnValues.resurfacedCount;
+        delete vulnValues.missedScans;
+        delete vulnValues.fixedAt;
+        delete vulnValues.lastScannerObservedAt;
         return {
           ...vulnValues,
           ...normalizeCodeFields(vulnValues),
@@ -952,13 +1003,17 @@ export class DataAdapterService {
           modificationDate: normalizeTimestamp(vulnValues.modificationDate),
           firstDetectedDate: now,
           lastSeenDate: now,
+          // Replace or clear coverage from the server's saved job only.
+          scanScopeKey: job.findingScanScopeKey ?? null,
         };
       });
 
-      // Deduplicate based on fingerprint
+      await lockFindingScannerSourceParents(manager, job.id);
+
+      // Deduplicate and acquire finding locks in one order across concurrent batches.
       const uniqueValues = Array.from(
         new Map(values.map((v) => [v.fingerprint, v])).values(),
-      );
+      ).sort((a, b) => a.fingerprint.localeCompare(b.fingerprint));
 
       // Pre-check: load the stored rows for the fingerprints about to be
       // upserted, both to avoid notifications for updated vulns and to reuse
@@ -1015,12 +1070,17 @@ export class DataAdapterService {
           .values(chunk)
           .orUpdate({
             conflict_target: ['fingerprint'],
-            overwrite: [...RESCAN_OVERWRITE_COLUMNS],
+            overwrite: [...RESCAN_OVERWRITE_COLUMNS, 'scanScopeKey'],
           })
           .returning('*')
           .execute();
         insertedVulnerabilities.push(...(result.raw as Vulnerability[]));
       }
+
+      const findingIds = insertedVulnerabilities.map((finding) => finding.id);
+      // Check prior project observations before this callback can create one.
+      await recordFindingScannerSightings(manager, job.id, findingIds);
+      await recordProjectFindingSightings(manager, job.id, findingIds);
 
       // Only send notifications for truly new vulnerabilities,
       // not for existing ones that were just updated

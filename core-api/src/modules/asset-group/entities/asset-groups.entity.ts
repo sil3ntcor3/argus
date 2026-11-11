@@ -1,6 +1,6 @@
 import { BaseEntity } from '@/common/entities/base.entity';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
 import {
   Column,
@@ -15,7 +15,7 @@ import { AssetGroupAsset } from './asset-groups-assets.entity';
 import { AssetGroupWorkflow } from './asset-groups-workflows.entity';
 
 @Unique(['name', 'workspace'])
-@Entity('asset_groups')
+@Entity('projects')
 export class AssetGroup extends BaseEntity {
   @ApiProperty()
   @IsString()
@@ -35,6 +35,19 @@ export class AssetGroup extends BaseEntity {
   @Column({ nullable: true, default: '#78716C' }) // stone-500 tailwind css
   hexColor: string;
 
+  // Private entity fields; canonical project DTOs expose selected metadata.
+  @ApiHideProperty()
+  @Column({ type: 'text', nullable: true, select: false })
+  description: string | null;
+
+  @ApiHideProperty()
+  @Column({ default: true, select: false })
+  autoAddAssets: boolean;
+
+  @ApiHideProperty()
+  @Column({ type: 'timestamptz', nullable: true, select: false })
+  archivedAt: Date | null;
+
   @OneToMany(
     () => AssetGroupAsset,
     (assetGroupAsset) => assetGroupAsset.assetGroup,
@@ -53,4 +66,14 @@ export class AssetGroup extends BaseEntity {
 
   @ApiProperty({ type: String, format: 'date-time', nullable: true, required: false })
   lastRunAt?: Date | null;
+
+  // INSERT RETURNING can populate private defaults even with select:false.
+  toJSON(): Record<string, unknown> {
+    const response: Record<string, unknown> = {};
+    Object.assign(response, this);
+    for (const key of ['description', 'autoAddAssets', 'archivedAt']) {
+      delete response[key];
+    }
+    return response;
+  }
 }

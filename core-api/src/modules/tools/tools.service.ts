@@ -1,5 +1,4 @@
 import type { WrapperType } from '@/common/types/app.types';
-import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import { ToolCategory, WorkerScope, WorkerType } from '@/common/enums/enum';
 import { getManyResponse } from '@/utils/getManyResponse';
@@ -21,13 +20,14 @@ import { Vulnerability } from '../vulnerabilities/entities/vulnerability.entity'
 import { WorkersService } from '../workers/workers.service';
 import { CreateToolDto } from './dto/create-tool.dto';
 import { GetInstalledToolsDto } from './dto/get-installed-tools.dto';
-import { InstallToolDto } from './dto/install-tool.dto';
+import { InstallToolDto, UninstallToolResponseDto } from './dto/install-tool.dto';
 import { ToolsQueryDto } from './dto/tools-query.dto';
 import { AddToolToWorkspaceDto } from './dto/tools.dto';
 import { Tool } from './entities/tools.entity';
 import { ToolConfigProfile } from './entities/tool-config-profiles.entity';
 import { WorkspaceTool } from './entities/workspace_tools.entity';
 import { ConnectorRegistryService } from '../connectors/connector-registry.service';
+import { categorySpec } from './tool-categories';
 import { DEFAULT_TOOL_TARGET_TYPES } from './tool-target-types';
 
 /** WHERE fragment: the tool declares `category` among its categories. */
@@ -272,7 +272,8 @@ export class ToolsService {
   /**
    * Install a tool to a workspace, checking for duplicates before insertion.
    * @throws BadRequestException if the tool already exists in this workspace.
-   * @returns The newly created workspace-tool entry.
+   * @throws NotFoundException if the tool is no longer in the catalog.
+   * @returns The workspace-tool entry with the catalog id and name for auditing.
    */
   async installTool(
     dto: InstallToolDto,
@@ -292,9 +293,17 @@ export class ToolsService {
       );
     }
 
+    const tool = await this.toolsRepository.findOne({
+      where: { id: dto.toolId },
+      select: { id: true, name: true },
+    });
+    if (!tool) {
+      throw new NotFoundException(`Tool with ID "${dto.toolId}" not found.`);
+    }
+
     // Create and save the new workspace-tool entry
     const newWorkspaceTool = this.workspaceToolRepository.create({
-      tool: { id: dto.toolId },
+      tool,
       workspace: { id: workspaceId },
     });
     return this.workspaceToolRepository.save(newWorkspaceTool);
@@ -303,17 +312,18 @@ export class ToolsService {
   /**
    * Uninstall a tool from a workspace by removing the record from workspace_tools table.
    * @param dto The uninstall tool data containing toolId and workspaceId.
-   * @returns A boolean indicating success.
+   * @returns The success message and removed tool identity for auditing.
    */
   async uninstallTool(
     dto: InstallToolDto,
     workspaceId: string,
-  ): Promise<DefaultMessageResponseDto> {
+  ): Promise<UninstallToolResponseDto> {
     const existingEntry = await this.workspaceToolRepository.findOne({
       where: {
         tool: { id: dto.toolId },
         workspace: { id: workspaceId },
       },
+      relations: { tool: true },
     });
 
     if (!existingEntry) {
@@ -334,6 +344,8 @@ export class ToolsService {
 
     return {
       message: 'Tool uninstalled successfully.',
+      toolId: dto.toolId,
+      toolName: existingEntry.tool?.name ?? '',
     };
   }
 
@@ -750,10 +762,9 @@ export class ToolsService {
     const tool = this.toolsRepository.create({
       name: dto.name,
       description: dto.description,
-      categories: dto.categories.map((name) => ({
-        name,
-        targetTypes: [...DEFAULT_TOOL_TARGET_TYPES],
-      })),
+      categories: dto.categories.map((name) =>
+        categorySpec(name, [...DEFAULT_TOOL_TARGET_TYPES]),
+      ),
       // Set default values for other required fields
       type: WorkerType.PROVIDER, // or another appropriate default
       isOfficialSupport: false,

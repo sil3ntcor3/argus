@@ -1,5 +1,5 @@
 import { ToolCategory, WorkerType } from '@/common/enums/enum';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { Repository } from 'typeorm';
 import { And, ILike, In, Not } from 'typeorm';
@@ -752,6 +752,54 @@ describe('ToolsService — readiness flags', () => {
   });
 });
 
+describe('installTool — validates the catalog entry', () => {
+  let service: ToolsService;
+  let tools: ReturnType<typeof mockRepo>;
+  let installs: ReturnType<typeof mockRepo>;
+
+  beforeEach(() => {
+    tools = mockRepo();
+    installs = mockRepo();
+    tools.findOne.mockResolvedValue({ id: 'tool-1', name: 'nuclei' });
+    installs.findOne.mockResolvedValue(null);
+    installs.create.mockImplementation((value: Record<string, unknown>) => value);
+    installs.save.mockImplementation((value: Record<string, unknown>) => Promise.resolve({ id: 'install-1', ...value }));
+    service = new ToolsService(
+      tools as unknown as Repository<Tool>, installs as unknown as Repository<WorkspaceTool>,
+      {} as never, {} as never, mockWorkersService() as never, mockRepo() as never, {} as never,
+    );
+  });
+
+  it('rejects an unknown tool before creating or saving an installation', async () => {
+    tools.findOne.mockResolvedValue(null);
+    await expect(service.installTool({ toolId: 'missing' }, 'ws-1')).rejects.toThrow(
+      new NotFoundException('Tool with ID "missing" not found.'),
+    );
+    expect(installs.create).not.toHaveBeenCalled();
+    expect(installs.save).not.toHaveBeenCalled();
+  });
+
+  it('returns only the catalog identity needed to audit a successful installation', async () => {
+    const result = await service.installTool({ toolId: 'tool-1' }, 'ws-1');
+    expect(result).toEqual({ id: 'install-1', tool: { id: 'tool-1', name: 'nuclei' }, workspace: { id: 'ws-1' } });
+    expect(tools.findOne).toHaveBeenCalledWith({
+      where: { id: 'tool-1' }, select: { id: true, name: true },
+    });
+    expect(installs.findOne).toHaveBeenCalledWith({
+      where: { tool: { id: 'tool-1' }, workspace: { id: 'ws-1' } },
+    });
+  });
+
+  it('retains the existing duplicate error without attempting a second write', async () => {
+    installs.findOne.mockResolvedValue({ id: 'install-1' });
+    await expect(service.installTool({ toolId: 'tool-1' }, 'ws-1')).rejects.toThrow(
+      new BadRequestException('Tool already installed in this workspace.'),
+    );
+    expect(tools.findOne).not.toHaveBeenCalled();
+    expect(installs.save).not.toHaveBeenCalled();
+  });
+});
+
 describe('uninstallTool — cascades config profile deletion', () => {
   let service: ToolsService;
   let workspaceToolRepo: ReturnType<typeof mockRepo>;
@@ -783,16 +831,17 @@ describe('uninstallTool — cascades config profile deletion', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('removes the workspace_tools row AND deletes config profiles for the (workspace, tool) pair', async () => {
-    workspaceToolRepo.findOne.mockResolvedValue({ id: 'wt-1' });
+    workspaceToolRepo.findOne.mockResolvedValue({ id: 'wt-1', tool: { id: 'tool-001', name: 'nuclei' } });
 
     const result = await service.uninstallTool(
       { toolId: 'tool-001' },
       'ws-001',
     );
 
-    expect(result).toEqual({ message: 'Tool uninstalled successfully.' });
+    expect(result).toEqual({ message: 'Tool uninstalled successfully.', toolId: 'tool-001', toolName: 'nuclei' });
     expect(workspaceToolRepo.findOne).toHaveBeenCalledWith({
       where: { tool: { id: 'tool-001' }, workspace: { id: 'ws-001' } },
+      relations: { tool: true },
     });
     expect(workspaceToolRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(txManager.remove).toHaveBeenCalledTimes(1);
@@ -814,7 +863,7 @@ describe('uninstallTool — cascades config profile deletion', () => {
       'ws-002',
     );
 
-    expect(result).toEqual({ message: 'Tool uninstalled successfully.' });
+    expect(result).toEqual({ message: 'Tool uninstalled successfully.', toolId: 'tool-002', toolName: '' });
     expect(workspaceToolRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(txManager.delete).toHaveBeenCalledTimes(1);
     expect(txManager.delete).toHaveBeenCalledWith(ToolConfigProfile, {

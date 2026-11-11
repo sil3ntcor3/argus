@@ -1,5 +1,5 @@
 import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
-import { JobRunType, JobStatus, ToolCategory } from '@/common/enums/enum';
+import { DataKind, JobRunType, JobStatus, ToolCategory } from '@/common/enums/enum';
 import { JobDataResultType } from '@/common/types/app.types';
 import { Asset } from '@/modules/assets/entities/assets.entity';
 import { DiscoveredUrl } from '@/modules/assets/entities/discovered-url.entity';
@@ -43,6 +43,12 @@ export class GetNextJobResponseDto extends PickType(Job, [
 
 /** Extended result returned by getNextJob for connector-capable workers. */
 export interface GetNextJobResult extends GetNextJobResponseDto {
+  /** Generation for a first claim only, excluded from worker responses. */
+  claimedAt?: Date;
+  /** Absolute database time of the first claim, separate from its generation. */
+  scanClaimInstant?: Date;
+  /** Private dispatch snapshot, explicitly selected only for worker claims. */
+  inputs?: Record<string, string> | null;
   tool?: { id: string; name: string };
   workspaceId?: string;
   configProfileId?: string;
@@ -200,6 +206,8 @@ export class CreateJobs extends PickType(Job, [
   tool: Tool;
   /** Category to run; omitted → the tool's first category. */
   category?: ToolCategory;
+  /** Ordered subset of the tool's accepted inputs; omitted uses its defaults. */
+  input?: DataKind[];
   targetIds?: string[];
   assetIds?: string[];
   /**

@@ -4,15 +4,15 @@ import * as yaml from 'js-yaml';
 import { NotFoundException } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import type { Repository } from 'typeorm';
-import { TargetType } from '@/common/enums/enum';
+import { DataKind, DismissReason, TargetType } from '@/common/enums/enum';
 import type { AgentsCompletionsService } from '../agents/agents.completions';
+import type { User } from '../auth/entities/user.entity';
 import type { JobsRegistryService } from '../jobs-registry/jobs-registry.service';
 import type { WorkflowRunnerService } from '../jobs-registry/workflow-runner.service';
 import type { NotificationsService } from '../notifications/notifications.service';
 import type { Target } from '../targets/entities/target.entity';
 import type { ToolsService } from '../tools/tools.service';
 import type { WorkflowsService } from '../workflows/workflows.service';
-import type { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import type { Vulnerability } from './entities/vulnerability.entity';
 import { VulnerabilitiesService } from './vulnerabilities.service';
 
@@ -23,6 +23,8 @@ describe('VulnerabilitiesService', () => {
   let mockToolsService: { getToolByNames: jest.Mock };
   let mockTargetRepository: { find: jest.Mock };
   let mockWorkflowRunnerService: { startRun: jest.Mock };
+  let mockDismissQuery: jest.Mock;
+  let mockDismissals: { create: jest.Mock; save: jest.Mock };
 
   beforeEach(() => {
     mockJobRegistryService = { createNewJob: jest.fn() };
@@ -36,10 +38,20 @@ describe('VulnerabilitiesService', () => {
         ]),
     };
     mockWorkflowRunnerService = { startRun: jest.fn() };
+    mockDismissQuery = jest.fn();
+    mockDismissals = { create: jest.fn(), save: jest.fn() };
+    const manager = {
+      query: mockDismissQuery,
+      getRepository: () => mockDismissals,
+    };
+    const mockFindings = {
+      manager: {
+        transaction: (run: (tx: typeof manager) => Promise<unknown>) => run(manager),
+      },
+    };
 
     service = new VulnerabilitiesService(
-      {} as Repository<Vulnerability>,
-      {} as Repository<VulnerabilityDismissal>,
+      mockFindings as unknown as Repository<Vulnerability>,
       {} as Queue,
       mockJobRegistryService as unknown as JobsRegistryService,
       mockToolsService as unknown as ToolsService,
@@ -51,6 +63,38 @@ describe('VulnerabilitiesService', () => {
     );
   });
 
+  it('keeps private expiry storage out of the legacy dismissal response', async () => {
+    const fields = {
+      id: 'dismissal-1',
+      vulnerabilityId: 'finding-1',
+      userId: 'user-1',
+      reason: DismissReason.WONT_FIX,
+      comment: 'Existing response',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const entity = { ...fields };
+    mockDismissQuery
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: fields.vulnerabilityId }])
+      .mockResolvedValueOnce([]);
+    mockDismissals.create.mockReturnValue(entity);
+    mockDismissals.save.mockImplementationOnce(() => {
+      // TypeORM populates unset nullable columns when saving the entity.
+      Object.assign(entity, { expiresAt: null });
+      return Promise.resolve([entity]);
+    });
+
+    await expect(
+      service.bulkDismissVulnerabilities(
+        [fields.vulnerabilityId],
+        'workspace-1',
+        { id: fields.userId } as User,
+        { reason: fields.reason, comment: fields.comment },
+      ),
+    ).resolves.toEqual([fields]);
+  });
+
   it('scan forwards inline config from the workflow first job to createNewJob', async () => {
     const config = { severity: ['critical', 'high'] };
     mockToolsService.getToolByNames.mockResolvedValue([
@@ -59,7 +103,7 @@ describe('VulnerabilitiesService', () => {
     mockWorkflowRepository.findOne.mockResolvedValue({
       id: 'workflow-1',
       content: {
-        jobs: { vuls_scan: { name: 'Vuls Scan', run: 'nuclei', config } },
+        jobs: { vuls_scan: { name: 'Vuls Scan', run: 'nuclei', input: [DataKind.WEB, DataKind.HOST], config } },
       },
     });
 
@@ -69,6 +113,7 @@ describe('VulnerabilitiesService', () => {
     expect(mockJobRegistryService.createNewJob).toHaveBeenCalledWith(
       expect.objectContaining({
         config,
+        input: [DataKind.WEB, DataKind.HOST],
         targetIds: ['target-1'],
         workspaceId: 'ws-1',
       }),
@@ -213,11 +258,12 @@ describe('VulnerabilitiesService', () => {
       'vulnerability_scan_basic.yaml',
     );
     const doc = yaml.load(fs.readFileSync(templatePath, 'utf8')) as {
-      jobs: Record<string, { run: string; config?: { severity?: string[] } }>;
+      jobs: Record<string, { run: string; input?: string[]; config?: { severity?: string[] } }>;
     };
 
     const job = Object.values(doc.jobs).find((j) => j.run === 'nuclei');
     expect(job).toBeDefined();
+    expect(job!.input).toEqual([DataKind.WEB, DataKind.HOST]);
     // Full-coverage scan: nuclei must not skip any severity band.
     expect(new Set(job!.config?.severity)).toEqual(
       new Set(['info', 'low', 'medium', 'high', 'critical']),

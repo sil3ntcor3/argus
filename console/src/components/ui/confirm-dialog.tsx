@@ -22,8 +22,11 @@ interface ConfirmDialogProps {
   /** Controlled open state; the dialog manages its own state when omitted. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Restore focus for controlled dialogs opened without a trigger. */
+  onCloseAutoFocus?: React.ComponentProps<typeof DialogContent>['onCloseAutoFocus'];
   confirmText?: string;
   disabled?: boolean;
+  focusCancel?: boolean;
   cancelText?: string;
   typeToConfirm?: string | boolean;
 }
@@ -36,18 +39,22 @@ export const ConfirmDialog = ({
   trigger,
   open: controlledOpen,
   onOpenChange,
+  onCloseAutoFocus,
   confirmText = 'Confirm',
   disabled = false,
+  focusCancel = false,
   cancelText = 'Cancel',
   typeToConfirm,
 }: ConfirmDialogProps) => {
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
+  const [inputValue, setInputValue] = useState('');
+  const instructionId = React.useId();
   const setOpen = (next: boolean) => {
+    if (!next) setInputValue('');
     if (controlledOpen === undefined) setInternalOpen(next);
     onOpenChange?.(next);
   };
-  const [inputValue, setInputValue] = useState('');
 
   const confirmTextRequired =
     typeToConfirm === true
@@ -60,12 +67,10 @@ export const ConfirmDialog = ({
   const handleConfirm = () => {
     onConfirm();
     setOpen(false);
-    setInputValue('');
   };
 
   const handleCancel = () => {
     setOpen(false);
-    setInputValue('');
   };
 
   const isConfirmEnabled = showInput
@@ -108,7 +113,7 @@ export const ConfirmDialog = ({
           {clonedTrigger}
         </DialogTrigger>
       )}
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -116,10 +121,11 @@ export const ConfirmDialog = ({
         {children}
         {showInput && (
           <div className="space-y-4 py-4">
-            <p className="text-sm text-muted-foreground">
+            <p id={instructionId} className="text-sm text-muted-foreground">
               Please type "{confirmTextRequired}" to confirm this action.
             </p>
             <Input
+              aria-labelledby={instructionId}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               className="w-full"
@@ -128,13 +134,18 @@ export const ConfirmDialog = ({
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={handleCancel} disabled={disabled}>
+          <Button
+            variant="outline"
+            onClick={handleCancel}
+            disabled={disabled}
+            autoFocus={focusCancel && !showInput}
+          >
             {cancelText}
           </Button>
           <Button
             onClick={handleConfirm}
             disabled={!isConfirmEnabled}
-            autoFocus={!showInput}
+            autoFocus={!focusCancel && !showInput}
           >
             {confirmText}
           </Button>

@@ -112,6 +112,29 @@ describe('EventPublishInterceptor', () => {
     });
   });
 
+
+  describe('client IP attribution', () => {
+    const original = process.env.TRUSTED_PROXIES;
+    afterEach(() => {
+      if (original === undefined) delete process.env.TRUSTED_PROXIES;
+      else process.env.TRUSTED_PROXIES = original;
+    });
+    it.each([
+      ['', '198.51.100.9', '1.1.1.1', '198.51.100.9'],
+      ['172.16.0.0/12', '::ffff:172.19.0.5', '203.0.113.7, 172.19.0.7', '203.0.113.7'],
+      ['172.16.0.0/12', '198.51.100.9', '1.1.1.1', '198.51.100.9'],
+      ['172.16.0.0/12', '172.19.0.5', 'unknown, 172.19.0.7', '172.19.0.5'],
+    ])('uses the trusted socket/proxy chain (%s, %s)', async (trusted, peer, forwarded, expected) => {
+      process.env.TRUSTED_PROXIES = trusted;
+      await run({ event: EVENT_CATALOG.target.created }, { id: 't-1' }, makeRequest({
+        ip: '192.0.2.99',
+        socket: { remoteAddress: peer } as RequestWithMetadata['socket'],
+        headers: { 'x-forwarded-for': forwarded },
+      }));
+      expect(published().sourceIp).toBe(expected);
+    });
+  });
+
   describe('workspace resolution', () => {
     it('publishes with the request workspaceId', async () => {
       await run({ event: EVENT_CATALOG.target.created }, { id: 't-1' });
@@ -170,6 +193,20 @@ describe('EventPublishInterceptor', () => {
   });
 
   describe('envelope', () => {
+    it.each([false, true])('uses route resource attribution only when opted in (%s)', async (enabled) => {
+      await run({ event: EVENT_CATALOG.target.updated, ...{ resourceIdFromRoute: enabled } }, { added: 0 }, makeRequest({ params: { id: 'route-id' } }));
+      expect(published().resourceId).toBe(enabled ? 'route-id' : undefined);
+    });
+
+    it('prefers an explicit result ID over opted-in route attribution', async () => {
+      await run({ event: EVENT_CATALOG.target.updated, resourceId: () => 'result-id', ...{ resourceIdFromRoute: true } }, {}, makeRequest({ params: { id: 'route-id' } }));
+      expect(published().resourceId).toBe('result-id');
+    });
+
+    it('handles a missing route ID without inventing a resource', async () => {
+      await run({ event: EVENT_CATALOG.target.updated, ...{ resourceIdFromRoute: true } }, { count: 1 });
+      expect(published()).not.toHaveProperty('resourceId');
+    });
     it('carries outcome success on the happy path', async () => {
       await run({ event: EVENT_CATALOG.target.created }, { id: 't-1' });
       expect(published()).toMatchObject({ outcome: AuditOutcome.Success });

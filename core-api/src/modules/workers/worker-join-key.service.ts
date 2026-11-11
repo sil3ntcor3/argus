@@ -31,7 +31,7 @@ const MAX_KEY_LENGTH = 128;
  * by id without ever handling the secret again. Expiry is Redis' TTL; there
  * is no cleanup job.
  *
- * Cloud workers (`OASM_CLOUD_APIKEY`) never go through here.
+ * Cloud workers (`ARGUS_CLOUD_APIKEY`) never go through here.
  */
 @Injectable()
 export class WorkerJoinKeyService {

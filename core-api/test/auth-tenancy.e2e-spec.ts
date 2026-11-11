@@ -1,3 +1,5 @@
+import { User } from '@/modules/auth/entities/user.entity';
+import { randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 import * as request from 'supertest';
 import type { App } from 'supertest/types';
@@ -64,6 +66,25 @@ describe('Auth and tenancy matrix', () => {
       userIds: [userA.userId, userB.userId],
     });
     await closeTestApp(app.app);
+  });
+
+  it('rejects public registration without creating an account or session', async () => {
+    const email = `e2e-public-signup-${randomUUID()}@example.com`;
+    const res = await request(server)
+      .post('/api/auth/sign-up/email')
+      .send({ name: 'Public signup', email, password: 'Password123!' });
+    const createdUser = await dataSource.getRepository(User).findOneBy({ email });
+
+    try {
+      expect(res.status).toBe(403);
+      expect(res.headers['set-cookie']).toBeUndefined();
+      expect(createdUser).toBeNull();
+    } finally {
+      // A failing regression must clean up the account the old endpoint made.
+      if (createdUser) {
+        await cleanupE2eData(dataSource, { userIds: [createdUser.id] });
+      }
+    }
   });
 
   it('returns 401 for an unauthenticated request', async () => {

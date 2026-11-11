@@ -1,0 +1,147 @@
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import type { TargetInsightDto } from '@/services/apis/gen/queries';
+import { Link } from '@tanstack/react-router';
+
+type InsightTargetTab = 'assets' | 'settings' | 'vulnerabilities';
+
+const actions: Partial<
+  Record<
+    TargetInsightDto['kind'],
+    | { tab: InsightTargetTab; label: string; search?: { tab: 'tls' } }
+    | { tab: 'run'; label: string }
+  >
+> = {
+  critical_open: { tab: 'vulnerabilities', label: 'Review vulnerabilities' },
+  last_run_failed: { tab: 'run', label: 'Open run' },
+  tls_expiring: { tab: 'assets', label: 'See TLS', search: { tab: 'tls' } },
+  stale_scan: { tab: 'settings', label: 'Open discovery settings' },
+  new_assets: { tab: 'assets', label: 'See assets' },
+  no_schedule: { tab: 'settings', label: 'Configure schedule' },
+};
+const formatCount = new Intl.NumberFormat();
+const runIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Describes the discovery record without assuming a successful scan. */
+function describeInsight({ kind, count, days }: TargetInsightDto) {
+  switch (kind) {
+    case 'critical_open':
+      return count !== undefined && count > 0
+        ? `${formatCount.format(count)} open critical ${count === 1 ? 'vulnerability' : 'vulnerabilities'}.`
+        : undefined;
+    case 'last_run_failed':
+      return 'The latest target run failed.';
+    case 'tls_expiring': {
+      if (count === undefined || days === undefined) {
+        return 'TLS certificates need attention.';
+      }
+      const certificates = count === 1 ? 'certificate' : 'certificates';
+      const services = `${formatCount.format(count)} ${count === 1 ? 'service' : 'services'}`;
+      const expiry =
+        count === 1 ? 'has expired or expires' : 'have expired or expire';
+      return `The latest recorded TLS ${certificates} for ${services} ${expiry} within ${formatCount.format(days)} days.`;
+    }
+    case 'stale_scan':
+      return days === undefined
+        ? 'No discovery date recorded.'
+        : `The recorded discovery date is ${formatCount.format(days)} days old.`;
+    case 'new_assets': {
+      if (count === undefined) return 'New assets discovered.';
+      const assets = `${formatCount.format(count)} new ${count === 1 ? 'asset' : 'assets'}`;
+      return days === undefined
+        ? `${assets} discovered.`
+        : `${assets} in the last ${formatCount.format(days)} days.`;
+    }
+    case 'no_schedule':
+      return 'No discovery schedule.';
+    default:
+      return undefined;
+  }
+}
+
+/** Shows discovery insights and links to existing, permission-gated controls. */
+export function TargetInsightsPanel({
+  insights,
+  targetId,
+  canManageDiscovery,
+  canReadJobs,
+  canReadFindings,
+  onKeyboardNavigate,
+}: {
+  insights: TargetInsightDto[];
+  targetId: string;
+  canManageDiscovery: boolean;
+  canReadJobs: boolean;
+  canReadFindings: boolean;
+  onKeyboardNavigate: (tab: InsightTargetTab) => void;
+}) {
+  const rows = insights.flatMap((insight) => {
+    if (insight.kind === 'last_run_failed' && !canReadJobs) return [];
+    if (insight.kind === 'critical_open' && !canReadFindings) return [];
+    const description = describeInsight(insight);
+    const action = actions[insight.kind];
+    return description && action ? [{ insight, description, action }] : [];
+  });
+  if (!rows.length) return null;
+
+  return (
+    <section aria-label="Discovery insights">
+      <Card className="gap-3 p-4">
+        <h2 className="text-base font-semibold">Discovery insights</h2>
+        <ul role="list" className="divide-y">
+          {rows.map(({ insight, description, action }) => (
+            <li
+              key={insight.kind}
+              className="flex flex-wrap items-center justify-between gap-2 py-2"
+            >
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+                {insight.level === 'critical' && (
+                  <Badge variant="destructive">Critical</Badge>
+                )}
+                {insight.level === 'warning' && (
+                  <Badge variant="outline">Warning</Badge>
+                )}
+                <p>{description}</p>
+              </div>
+              {action.tab === 'run' &&
+                typeof insight.runId === 'string' &&
+                runIdPattern.test(insight.runId) && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/jobs/runs/$id" params={{ id: insight.runId }}>
+                      {action.label}
+                    </Link>
+                  </Button>
+                )}
+              {action.tab !== 'run' &&
+                (action.tab !== 'settings' || canManageDiscovery) && (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link
+                      to="/targets/$id/$tab"
+                      params={{ id: targetId, tab: action.tab }}
+                      search={action.search}
+                      onClick={(event) => {
+                        if (
+                          event.detail === 0 &&
+                          !event.defaultPrevented &&
+                          !event.altKey &&
+                          !event.ctrlKey &&
+                          !event.metaKey &&
+                          !event.shiftKey
+                        ) {
+                          onKeyboardNavigate(action.tab);
+                        }
+                      }}
+                    >
+                      {action.label}
+                    </Link>
+                  </Button>
+                )}
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </section>
+  );
+}

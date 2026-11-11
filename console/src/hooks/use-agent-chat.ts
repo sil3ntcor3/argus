@@ -2,11 +2,15 @@ import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import type { UIMessage } from 'ai';
 import type { AgentTodoItem } from '@/pages/agents/components/agent-todo-panel';
-import type { LiveBrowserScreenshot } from '@/pages/agents/components/browser-panel';
+import {
+  mergeBrowserScreenshot,
+  type LiveBrowserScreenshot,
+} from '@/pages/agents/components/browser-panel';
 import { isSubagentActive } from '@/pages/agents/components/subagents-panel';
 import { useLLMConfigs } from '@/hooks/use-llm-configs';
 import {
   agentsControllerStopConversation,
+  SubagentResponseDtoStatus,
   useAgentsControllerGetMessagesInfinite,
   type ConversationMetadataDto,
   type ConversationResponseDto,
@@ -181,8 +185,11 @@ interface UseAgentChatReturn {
     string,
     import('@/hooks/use-remote-execute-stream').RemoteExecuteStreamEvent[]
   >;
-  /** The page after the last browser command of a run seen live; never saved */
-  browserScreenshot: LiveBrowserScreenshot | null;
+  /**
+   * The page after the last browser command of each browser session (the
+   * main agent's and its subagents'), as seen live; never saved
+   */
+  browserScreenshots: LiveBrowserScreenshot[];
   onSendMessage: (content: string, options?: { agentMode?: string }) => void;
   onRetry: (() => void) | undefined;
   onStop: () => void;
@@ -306,17 +313,21 @@ function messagesSignature(messages: UIMessage[]): string {
 }
 
 /**
- * What to seed useChat with: the saved messages, minus a trailing assistant
- * that the server is still producing. Resuming replays that message from the
- * start, so seeding the database copy would show it twice.
+ * What to seed useChat with: the saved messages, minus the answers of the run
+ * the server is still producing. Resuming replays that run from its first
+ * chunk as one answer, so seeding its database copy (one message per
+ * continuation iteration, some already finished) would show them twice.
  */
 export function seedFromSaved(
   savedMessages: UIMessage[],
   pages: Array<{ data?: unknown[] } | unknown[]> | undefined,
 ): UIMessage[] {
-  const trailingInProgress =
-    isServerStreaming(pages) && savedMessages.at(-1)?.role === 'assistant';
-  return trailingInProgress ? savedMessages.slice(0, -1) : savedMessages;
+  if (!isServerRunning(pages)) return savedMessages;
+  const lastUser = savedMessages.findLastIndex((m) => m.role === 'user');
+  const seed = savedMessages.filter(
+    (m, i) => i <= lastUser || m.role !== 'assistant',
+  );
+  return seed.length === savedMessages.length ? savedMessages : seed;
 }
 
 function mapDbMessagesToUI(
@@ -444,8 +455,9 @@ export function useAgentChat({
     subagentsRef.current = subagents;
   }, [subagents]);
   const { appendEvent, eventsMap } = useRemoteExecuteStream();
-  const [browserScreenshot, setBrowserScreenshot] =
-    useState<LiveBrowserScreenshot | null>(null);
+  const [browserScreenshots, setBrowserScreenshots] = useState<
+    LiveBrowserScreenshot[]
+  >([]);
   // Parallel tool calls can each need approval, so keep a queue
   const [approvalQueue, setApprovalQueue] = useState<PendingApproval[]>([]);
   const pendingApproval = approvalQueue[0] ?? null;
@@ -719,7 +731,12 @@ export function useAgentChat({
         appendEvent(event);
       }
       if (data.type === 'data-browser-screenshot') {
-        setBrowserScreenshot(data.data as LiveBrowserScreenshot);
+        // Replaces the picture of its own session only
+        const shot = {
+          ...(data.data as LiveBrowserScreenshot),
+          receivedAt: Date.now(),
+        };
+        setBrowserScreenshots((prev) => mergeBrowserScreenshot(prev, shot));
       }
     },
   });
@@ -902,9 +919,12 @@ export function useAgentChat({
     };
   }, [conversationId, resumeStream]);
 
-  // Display chatMessages when available, otherwise fall back to savedMessages
+  // Display chatMessages when available, otherwise fall back to savedMessages.
+  // A run this page is not streaming (its resume failed or had nothing to
+  // replay) shows the polled database copy: chatMessages holds the seed, which
+  // leaves out the answer in progress for the replay to rebuild.
   const messages: UIMessage[] =
-    chatMessages.length > 0 ? chatMessages : savedMessages;
+    chatMessages.length > 0 && !isServerBusy ? chatMessages : savedMessages;
 
   const lastAssistantIdx = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -964,6 +984,22 @@ export function useAgentChat({
       prev.map((t) =>
         t.status === 'in_progress' ? { ...t, status: 'pending' } : t,
       ),
+    );
+    // The server cancels the run's subagents with it; the stream that would
+    // carry that update is closing, so reflect it here too
+    const stoppedAt = new Date().toISOString();
+    setSubagents((prev) =>
+      prev.some(isSubagentActive)
+        ? prev.map((s) =>
+            isSubagentActive(s)
+              ? {
+                  ...s,
+                  status: SubagentResponseDtoStatus.cancelled,
+                  completedAt: stoppedAt,
+                }
+              : s,
+          )
+        : prev,
     );
     // Dropping the stream no longer aborts the run (so navigating away keeps
     // it going); an explicit stop must tell the server to abort it.
@@ -1114,11 +1150,17 @@ export function useAgentChat({
     }
   }, [isStreaming, isRetrying]);
 
+  // Images belong to the conversation, not its history-loading state.
+  // Finishing a new chat's first turn must retain its live browser views.
+  useEffect(() => {
+    setBrowserScreenshots([]);
+  }, [conversationId]);
+
   // Fetch initial todos and agentMode for existing conversations
   useEffect(() => {
     // Subagents belong to one conversation: never show the previous one's
     setSubagents([]);
-    setBrowserScreenshot(null);
+
     if (!conversationId) {
       setTodos([]);
       setGoal(null);
@@ -1250,7 +1292,7 @@ export function useAgentChat({
     hasMoreMessages: hasNextPage ?? false,
     isLoadingMoreMessages: isFetchingNextPage,
     remoteExecuteEvents: eventsMap,
-    browserScreenshot,
+    browserScreenshots,
     onSendMessage: handleSendMessage,
     onRetry: onRetryAction,
     onStop: handleStop,

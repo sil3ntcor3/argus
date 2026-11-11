@@ -1,5 +1,5 @@
 import type { UserContextPayload } from '@/common/interfaces/app.interface';
-import { AuditOutcome, IntegrationType } from '@/common/enums/enum';
+import { AuditOutcome, CronSchedule, IntegrationType } from '@/common/enums/enum';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
@@ -11,6 +11,8 @@ import { AssetsService } from '../assets/assets.service';
 import type { Asset } from '../assets/entities/assets.entity';
 import type { AuditContext } from '../audit/audit.service';
 import { AuditService } from '../audit/audit.service';
+import { EventBridgeService } from '../event-bridge/publishing/event-bridge.service';
+import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { Integration } from '../integrations/entities/integration.entity';
 import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
@@ -29,10 +31,12 @@ describe('TargetsService', () => {
   let mockQueue: Partial<Queue>;
   let mockAuditService: { auditSafely: jest.Mock };
   let mockIntegrationRepository: { find: jest.Mock };
+  let mockEventBridge: { publishSafely: jest.Mock };
 
   beforeEach(async () => {
     mockTargetRepository = {
       findOneBy: jest.fn(),
+      existsBy: jest.fn(),
       upsert: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
@@ -69,7 +73,7 @@ describe('TargetsService', () => {
 
     mockQueue = {
       add: jest.fn(),
-      removeJobScheduler: jest.fn(),
+      removeJobScheduler: jest.fn().mockResolvedValue(true),
     } as any;
 
     mockAuditService = {
@@ -77,9 +81,11 @@ describe('TargetsService', () => {
     };
 
     mockIntegrationRepository = { find: jest.fn().mockResolvedValue([]) };
+    mockEventBridge = { publishSafely: jest.fn().mockResolvedValue('1-0') };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: EventBridgeService, useValue: mockEventBridge },
         TargetsService,
         {
           provide: getRepositoryToken(Target),
@@ -117,6 +123,36 @@ describe('TargetsService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('loads the workspace when registering unqueued schedules on startup', async () => {
+    const id = randomUUID();
+    const workspaceId = randomUUID();
+    const scanSchedule = CronSchedule.DAILY;
+    const query = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([{ id, workspaceId, scanSchedule }]),
+    };
+    (mockTargetRepository.createQueryBuilder as jest.Mock).mockReturnValue(query);
+    (mockQueue.add as jest.Mock).mockResolvedValue({
+      repeatJobKey: 'target-repeat',
+    });
+
+    await service.handleUpdateScanSchedule();
+
+    expect(query.select).toHaveBeenCalledWith(
+      expect.arrayContaining(['target.workspaceId']),
+    );
+    expect(mockQueue.add).toHaveBeenCalledWith(
+      id,
+      { id, workspaceId },
+      { repeat: { pattern: scanSchedule } },
+    );
+    expect(mockTargetRepository.update).toHaveBeenCalledWith(id, {
+      jobId: 'target-repeat',
+    });
   });
 
   describe('createMultipleTargets', () => {
@@ -229,6 +265,89 @@ describe('TargetsService', () => {
 
     afterEach(() => {
       jest.restoreAllMocks();
+    });
+
+    describe('initial asset discovery batches', () => {
+      it('reports the inserted asset IDs per target after commit and the existing creation events', async () => {
+        const created = [
+          {
+            id: randomUUID(),
+            value: 'primary.argus.test',
+            type: TargetType.DOMAIN,
+          },
+          { id: randomUUID(), value: '203.0.113.9', type: TargetType.IP },
+          { id: randomUUID(), value: '203.0.113.64/30', type: TargetType.CIDR },
+        ] as Target[];
+        const manager = createMockEntityManager({ createdTargets: created });
+        let committed = false;
+        (mockTargetRepository.manager as EntityManager).transaction = jest.fn(
+          async (callback: (manager: EntityManager) => Promise<unknown>) => {
+            const result = await callback(manager);
+            expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+            committed = true;
+            return result;
+          },
+        );
+        mockEventBridge.publishSafely.mockImplementation(() => {
+          expect(committed).toBe(true);
+          return Promise.resolve('1-0');
+        });
+        await service.createMultipleTargets(
+          { targets: created.map(({ value, type }) => ({ value, type })) },
+          workspaceId,
+          userContext,
+        );
+        expect(mockEventBridge.publishSafely).toHaveBeenCalledTimes(3);
+        const inserted = (
+          manager.createQueryBuilder() as unknown as { values: jest.Mock }
+        ).values.mock.calls
+          .slice(1)
+          .flatMap((call) => call[0] as { id: string; target: { id: string } }[]);
+        expect(inserted).toHaveLength(6);
+        for (const [name, data] of mockEventBridge.publishSafely.mock.calls) {
+          expect(name).toBe(EVENT_CATALOG.asset.discovered);
+          expect(data).toMatchObject({
+            workspaceId,
+            outcome: 'success',
+            resourceType: 'asset',
+          });
+          expect(data.payload.assetIds).toEqual(
+            inserted
+              .filter((row) => row.target.id === data.payload.targetId)
+              .map((row) => row.id),
+          );
+          expect(data.payload).not.toHaveProperty('jobHistoryId');
+        }
+        expect(
+          (mockEventEmitter.emit as jest.Mock).mock.invocationCallOrder.at(-1),
+        ).toBeLessThan(mockEventBridge.publishSafely.mock.invocationCallOrder[0]);
+      });
+      it('does not report staged IDs if committing the transaction fails', async () => {
+        const created = [
+          {
+            id: randomUUID(),
+            value: 'rollback.argus.test',
+            type: TargetType.DOMAIN,
+          },
+        ] as Target[];
+        const manager = createMockEntityManager({ createdTargets: created }),
+          failure = new Error('commit failed');
+        (mockTargetRepository.manager as EntityManager).transaction = jest.fn(
+          async (callback: (manager: EntityManager) => Promise<unknown>) => {
+            await callback(manager);
+            throw failure;
+          },
+        );
+        await expect(
+          service.createMultipleTargets(
+            { targets: [{ value: created[0].value }] },
+            workspaceId,
+            userContext,
+          ),
+        ).rejects.toBe(failure);
+        expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+        expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+      });
     });
 
     it('should create multiple targets successfully', async () => {
@@ -1272,6 +1391,7 @@ describe('TargetsService', () => {
         settings: { includeArchived: false, includeForks: true },
       });
       expect(assetInsert).not.toHaveBeenCalled();
+      expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
       expect(mockEventEmitter.emit).toHaveBeenCalledWith(
         'target.git_org.create',
         created[0],
@@ -1366,7 +1486,7 @@ describe('TargetsService', () => {
     });
   });
 
-  describe('source field in target queries', () => {
+  describe('target list queries', () => {
     const baseBuilder = () => ({
       innerJoin: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
@@ -1380,6 +1500,36 @@ describe('TargetsService', () => {
       offset: jest.fn().mockReturnThis(),
       getCount: jest.fn().mockResolvedValue(0),
       getRawMany: jest.fn().mockResolvedValue([]),
+    });
+
+    it('filters by open critical findings and last discovery before pagination', async () => {
+      const builder = baseBuilder();
+      (mockTargetRepository.createQueryBuilder as jest.Mock).mockReturnValue(
+        builder,
+      );
+      await service.getTargetsInWorkspace(
+        { page: 1, limit: 10, sortBy: 'value', hasCritical: true, stale: true },
+        'ws-1',
+      );
+      expect(builder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('v.severity = :criticalSeverity'),
+        { criticalSeverity: 'critical' },
+      );
+      expect(builder.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining("INTERVAL '30 days'"),
+      );
+    });
+
+    it('does not add predicates for false filters', async () => {
+      const builder = baseBuilder();
+      (mockTargetRepository.createQueryBuilder as jest.Mock).mockReturnValue(
+        builder,
+      );
+      await service.getTargetsInWorkspace(
+        { page: 1, limit: 10, sortBy: 'value', hasCritical: false, stale: false },
+        'ws-1',
+      );
+      expect(builder.andWhere).not.toHaveBeenCalled();
     });
 
     it('getTargetsInWorkspace select should include targets.source', async () => {
@@ -1663,6 +1813,77 @@ describe('TargetsService', () => {
         undefined,
       );
       (mockTargetRepository.delete as jest.Mock).mockResolvedValue({ affected: 1 });
+    });
+
+    it('removes the target scheduler after deleting the row', async () => {
+      (mockTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        id,
+        jobId: 'target-repeat',
+      });
+
+      await service.deleteTarget(id, workspaceId, userContext);
+
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith('target-repeat');
+    });
+
+    it('preserves the scheduler if deletion fails', async () => {
+      (mockTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        id,
+        jobId: 'target-repeat',
+      });
+      const failure = new Error('deletion failed');
+      (mockTargetRepository.delete as jest.Mock).mockRejectedValue(failure);
+
+      await expect(service.deleteTarget(id, workspaceId, userContext)).rejects.toBe(
+        failure,
+      );
+      expect(mockQueue.removeJobScheduler).not.toHaveBeenCalled();
+    });
+
+    it('reports a successful deletion if Redis cleanup must be retried', async () => {
+      (mockTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        id,
+        jobId: 'target-repeat',
+      });
+      (mockQueue.removeJobScheduler as jest.Mock).mockRejectedValue(
+        new Error('Redis temporarily unavailable'),
+      );
+
+      await expect(service.deleteTarget(id, workspaceId, userContext)).resolves.toEqual({
+        message: 'Target deleted successfully',
+      });
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith('target-repeat');
+    });
+
+    it('returns and records the deletion while Redis cleanup is still pending', async () => {
+      (mockTargetRepository.findOneBy as jest.Mock).mockResolvedValue({
+        id,
+        jobId: 'target-repeat',
+      });
+      (mockQueue.removeJobScheduler as jest.Mock).mockReturnValue(
+        new Promise(() => {}),
+      );
+
+      await expect(
+        service.deleteTarget(id, workspaceId, userContext, auditContext),
+      ).resolves.toEqual({ message: 'Target deleted successfully' });
+      expect(mockAuditService.auditSafely).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'target.deleted' }),
+      );
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith('target-repeat');
+    });
+
+    it('removes a repeat job only when its target is absent', async () => {
+      (mockTargetRepository.existsBy as jest.Mock)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      await expect(service.removeOrphanedDiscoverySchedule(id, 'target-repeat')).resolves.toBe(false);
+      expect(mockQueue.removeJobScheduler).not.toHaveBeenCalled();
+      await expect(service.removeOrphanedDiscoverySchedule(id, 'target-repeat')).resolves.toBe(true);
+      expect(mockTargetRepository.existsBy).toHaveBeenCalledWith({ id });
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledTimes(1);
+      expect(mockQueue.removeJobScheduler).toHaveBeenCalledWith('target-repeat');
     });
 
     it('writes a target.deleted audit event with the deleted target as before-changes', async () => {

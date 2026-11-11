@@ -39,6 +39,7 @@ describe('DataAdapterService', () => {
       connect: jest.fn(),
       startTransaction: jest.fn(),
       manager: {
+        query: jest.fn().mockResolvedValue([]),
         createQueryBuilder: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         addSelect: jest.fn().mockReturnThis(),
@@ -466,6 +467,104 @@ describe('DataAdapterService', () => {
         isAutoEnableAssetAfterDiscovered: isAutoEnable,
       });
     }
+
+    describe('committed discovery batches', () => {
+      const run = '11111111-1111-4111-8111-111111111111';
+      const batch = [
+        { value: 'old.argus.test', dnsRecords: {} },
+        { value: 'new.argus.test', dnsRecords: {} },
+      ];
+      const rows = [
+        { id: 'old-id', value: batch[0].value },
+        { id: 'new-id', value: batch[1].value },
+      ];
+      const seed = (existing: string[] = [batch[0].value]) => {
+        mockWorkspaceConfigs();
+        mockQueryRunner.manager.query.mockResolvedValueOnce(
+          existing.map((value) => ({ value })),
+        );
+        mockQueryRunner.manager.getRawMany.mockResolvedValue(rows);
+        mockQueryRunner.manager.execute.mockResolvedValue({
+          identifiers: rows.map((row) => ({ id: row.id })),
+          generatedMaps: [],
+          raw: [],
+        });
+      };
+      it('publishes one batch of new IDs after commit while retaining refresh counts and run provenance', async () => {
+        seed();
+        const count = await service.upsertAssetsByTargetId(
+          targetId,
+          [...batch, batch[1]],
+          undefined,
+          { replaceDnsRecords: true, jobHistoryId: run },
+        );
+        expect(count).toBe(2);
+        expect(mockEventBridge.publishSafely).toHaveBeenCalledTimes(1);
+        expect(mockEventBridge.publishSafely).toHaveBeenCalledWith(
+          EVENT_CATALOG.asset.discovered,
+          {
+            workspaceId: 'workspace-id',
+            outcome: 'success',
+            resourceType: 'asset',
+            payload: { targetId, assetIds: ['new-id'], jobHistoryId: run },
+          },
+        );
+        expect(
+          mockQueryRunner.commitTransaction.mock.invocationCallOrder[0],
+        ).toBeLessThan(mockEventBridge.publishSafely.mock.invocationCallOrder[0]);
+      });
+      it('omits absent run provenance and skips an inserted value whose ID cannot be resolved', async () => {
+        seed([]);
+        mockQueryRunner.manager.getRawMany.mockResolvedValue([rows[1]]);
+        await service.upsertAssetsByTargetId(targetId, batch);
+        expect(mockEventBridge.publishSafely).toHaveBeenCalledTimes(1);
+        expect(mockEventBridge.publishSafely.mock.calls[0][1].payload).toEqual({
+          targetId,
+          assetIds: ['new-id'],
+        });
+      });
+      it('does not rediscover rows returned by a DNS refresh', async () => {
+        seed(batch.map((row) => row.value));
+        expect(
+          await service.upsertAssetsByTargetId(targetId, batch, undefined, {
+            replaceDnsRecords: true,
+          }),
+        ).toBe(2);
+        expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+      });
+      it('skips the existing-value lookup and publication for an empty batch', async () => {
+        mockWorkspaceConfigs();
+        mockQueryRunner.manager.execute.mockResolvedValue({
+          identifiers: [],
+          generatedMaps: [],
+          raw: [],
+        });
+        expect(await service.upsertAssetsByTargetId(targetId, [])).toBe(0);
+        expect(mockQueryRunner.manager.query).not.toHaveBeenCalled();
+        expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+      });
+      it.each(['write', 'commit'])(
+        'does not publish when the transaction fails at %s',
+        async (phase) => {
+          seed();
+          const failure = new Error('injected ingest failure');
+          if (phase === 'write')
+            mockQueryRunner.manager.execute.mockRejectedValue(failure);
+          else mockQueryRunner.commitTransaction.mockRejectedValue(failure);
+          await expect(
+            service.upsertAssetsByTargetId(targetId, batch),
+          ).rejects.toBe(failure);
+          expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+          expect(mockQueryRunner.rollbackTransaction).toHaveBeenCalled();
+        },
+      );
+      it('does not emit an unattributable discovery when workspace resolution is absent', async () => {
+        seed();
+        mockWorkspacesService.getWorkspaceIdByTargetId.mockResolvedValue(undefined);
+        await service.upsertAssetsByTargetId(targetId, batch);
+        expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+      });
+    });
 
     it('should dedupe by value and return the inserted count (primary refresh skipped when apex absent)', async () => {
       const mockInsertResult = {
@@ -1246,6 +1345,7 @@ describe('DataAdapterService', () => {
 
     it('S2c: missing assetServiceId skips insert with warn, no throw', async () => {
       const noServiceJob = { ...mockJob, assetServiceId: undefined } as unknown as Job;
+      mockQueryRunner.manager.getRepository = jest.fn().mockReturnValue({ find: jest.fn().mockResolvedValue([]) });
       const warnSpy = jest
         .spyOn((service as any).logger, 'warn')
         .mockImplementation(() => undefined);
@@ -1259,6 +1359,26 @@ describe('DataAdapterService', () => {
 
       expect(mockQueryRunner.manager.insert).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalled();
+      expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
+      expect(mockQueryRunner.release).toHaveBeenCalled();
+    });
+
+    it('files host-wide URLs under the service on their port', async () => {
+      const find = jest.fn().mockResolvedValue([{ id: 's-443', port: 443 }, { id: 's-8443', port: 8443 }]);
+      mockQueryRunner.manager.getRepository = jest.fn().mockReturnValue({ find });
+      await service.urlDiscovery({ data: [{ url: 'https://example.com:8443/admin' }, { url: 'https://example.com/login' }] as any, job: { ...mockJob, assetServiceId: undefined } });
+      expect(find).toHaveBeenCalledWith({ where: { assetId: 'asset-id' }, select: { id: true, port: true } });
+      expect(mockQueryRunner.manager.values).toHaveBeenCalledWith([
+        { url: 'https://example.com:8443/admin', assetServiceId: 's-8443', jobHistoryId: 'history-id' },
+        { url: 'https://example.com/login', assetServiceId: 's-443', jobHistoryId: 'history-id' },
+      ]);
+    });
+
+    it('never looks up unrelated services when a host-wide job lacks its asset', async () => {
+      mockQueryRunner.manager.getRepository = jest.fn();
+      await service.urlDiscovery({ data: [{ url: 'https://example.com/a' }] as any, job: { ...mockJob, asset: undefined, assetServiceId: undefined } as unknown as Job });
+      expect(mockQueryRunner.manager.getRepository).not.toHaveBeenCalled();
+      expect(mockQueryRunner.manager.insert).not.toHaveBeenCalled();
       expect(mockQueryRunner.commitTransaction).toHaveBeenCalled();
       expect(mockQueryRunner.release).toHaveBeenCalled();
     });
@@ -1471,6 +1591,18 @@ describe('DataAdapterService', () => {
   });
 
   describe('vulnerabilities', () => {
+    it('propagates a provenance write failure before publishing a finding event', async () => {
+      const failure = new Error('provenance write failed');
+      mockDataSource.transaction.mockImplementation(async (callback: (manager: unknown) => Promise<unknown>) => callback(mockQueryRunner.manager));
+      mockQueryRunner.manager.execute.mockResolvedValue({ raw: [{ id: crypto.randomUUID() }] });
+      mockQueryRunner.manager.query.mockRejectedValueOnce(failure);
+      await expect(service.vulnerabilities({
+        data: [{ name: 'Argus provenance failure', severity: Severity.HIGH }] as Vulnerability[],
+        job: { ...mockJob, id: crypto.randomUUID() },
+      })).rejects.toThrow(failure);
+      expect(mockEventBridge.publishSafely).not.toHaveBeenCalled();
+    });
+
     const mockJob = {
       asset: {
         id: 'asset-id',
@@ -1518,7 +1650,8 @@ describe('DataAdapterService', () => {
       },
     ] as unknown as Vulnerability[];
 
-    it('should handle vulnerability data successfully', async () => {
+    const storedScopes = [null, 'a'.repeat(64)];
+    it.each(storedScopes)('uses only the saved job scope %s', async (findingScanScopeKey) => {
       mockDataSource.transaction.mockImplementation(
         async (callback: (manager: any) => Promise<any>) => {
           await callback(mockQueryRunner.manager);
@@ -1548,9 +1681,18 @@ describe('DataAdapterService', () => {
         mockQueryBuilder,
       );
 
+      const scannerLifecycle = {
+        detectionStatus: 'fixed' as const,
+        timesDetected: 20,
+        resurfacedCount: 3,
+        missedScans: 5,
+        scanScopeKey: 'untrusted',
+        fixedAt: new Date(),
+        lastScannerObservedAt: new Date('2099-01-01T00:00:00Z'),
+      };
       await service.vulnerabilities({
-        data: mockVulnerabilities,
-        job: mockJob,
+        data: [{ ...mockVulnerabilities[0], ...scannerLifecycle }],
+        job: { ...mockJob, findingScanScopeKey },
       });
 
       expect(mockDataSource.transaction).toHaveBeenCalled();
@@ -1563,8 +1705,19 @@ describe('DataAdapterService', () => {
       expect(mockQueryBuilder.getRawMany).toHaveBeenCalled();
       expect(mockQueryBuilder.insert).toHaveBeenCalled();
       expect(mockQueryBuilder.into).toHaveBeenCalledWith(Vulnerability);
-      expect(mockQueryBuilder.values).toHaveBeenCalled();
-      expect(mockQueryBuilder.orUpdate).toHaveBeenCalled();
+      const [finding] = mockQueryBuilder.values.mock.calls[0][0] as Vulnerability[];
+      expect(finding.name).toBe(mockVulnerabilities[0].name);
+      expect(finding.scanScopeKey).toBe(findingScanScopeKey);
+      for (const field of Object.keys(scannerLifecycle).filter(
+        key => key !== 'scanScopeKey',
+      )) {
+        expect(finding).not.toHaveProperty(field);
+      }
+      expect(mockQueryBuilder.orUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          overwrite: expect.arrayContaining(['scanScopeKey']),
+        }),
+      );
       expect(mockQueryBuilder.returning).toHaveBeenCalledWith('*');
       expect(mockQueryBuilder.execute).toHaveBeenCalled();
     });

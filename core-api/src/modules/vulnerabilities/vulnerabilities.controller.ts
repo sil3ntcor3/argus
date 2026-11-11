@@ -3,17 +3,21 @@ import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
+import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
   Body,
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { User } from '../auth/entities/user.entity';
 import { AnalyzeVulnerabilityDto } from './dto/analyze-vulnerability.dto';
@@ -27,6 +31,7 @@ import {
 } from './dto/get-vulnerability-statistics.dto';
 import { GetVulnerabilitiesQueryDto } from './dto/get-vulnerability.dto';
 import { ScanDto } from './dto/scan.dto';
+import { VulnerabilityTimelineResponseDto } from './dto/vulnerability-timeline.dto';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
@@ -117,6 +122,34 @@ export class VulnerabilitiesController {
   }
 
   @Doc({
+    summary: 'Get vulnerability timeline',
+    description: 'Returns up to 500 detection and status events, newest first.',
+    response: { serialization: VulnerabilityTimelineResponseDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('vulnerability.read')
+  @Get(':id/timeline')
+  @Header('Cache-Control', 'private, no-store')
+  getVulnerabilityTimeline(
+    @Param('id', ParseUUIDPipe) id: string,
+    @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+  ) {
+    const canReadJobs =
+      request.permissions?.some(
+        (permission) =>
+          permission === '*' ||
+          permission === 'job.read' ||
+          permission === 'job.write',
+      ) ?? false;
+    return this.vulnerabilitiesService.getVulnerabilityTimeline(
+      id,
+      workspaceId,
+      canReadJobs,
+    );
+  }
+
+  @Doc({
     summary: 'Analyze a vulnerability',
     description:
       'Initiates an AI-powered analysis of a specific security vulnerability to provide detailed insights and recommendations.',
@@ -174,6 +207,7 @@ export class VulnerabilitiesController {
     response: {
       serialization: VulnerabilityDismissal,
       isArray: true,
+      httpStatus: HttpStatus.CREATED,
     },
     request: {
       getWorkspaceId: true,
@@ -183,8 +217,8 @@ export class VulnerabilitiesController {
     // No before/after status is derivable decorator-only — the row carries the
     // bulk action and the affected count (plan §4 row 21: high-evidence event).
     metadata: (body) => {
-      const ids = (body as { ids?: string[] })?.ids;
-      return { action: 'dismiss', count: ids?.length ?? 0 };
+      const ids = (body as { ids?: unknown })?.ids;
+      return { action: 'dismiss', count: Array.isArray(ids) ? new Set(ids).size : 0 };
     },
   })
   @WorkspaceAccess('vulnerability.write')
@@ -220,11 +254,13 @@ export class VulnerabilitiesController {
   @Post('reopen')
   bulkReopenVulnerabilities(
     @WorkspaceId() workspaceId: string,
+    @UserContext() user: User,
     @Body() dto: BulkReopenVulnerabilitiesDto,
   ) {
     return this.vulnerabilitiesService.bulkReopenVulnerabilities(
       dto.ids,
       workspaceId,
+      user,
     );
   }
 }

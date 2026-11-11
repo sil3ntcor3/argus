@@ -1,10 +1,20 @@
 import {
+  ARTIFACT_BUCKET,
+  ARTIFACT_MAX_FILE_BYTES,
+  ARTIFACT_UPLOAD_TTL_SECONDS,
+  workspaceArtifactKey,
+  workspaceArtifactUploadKey,
+} from '@/common/constants/artifact-storage';
+import {
+  CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetBucketPolicyStatusCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  type HeadObjectCommandOutput,
   ListObjectsV2Command,
   PutBucketCorsCommand,
   PutBucketPolicyCommand,
@@ -12,9 +22,11 @@ import {
   PutPublicAccessBlockCommand,
   S3ServiceException,
 } from '@aws-sdk/client-s3';
+import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -24,6 +36,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isUUID } from 'class-validator';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
 import { DataSource } from 'typeorm';
@@ -35,6 +48,33 @@ import {
   StorageConfig,
 } from './storage.config';
 
+interface ArtifactLocation {
+  workspaceId: string;
+  artifactId: string;
+}
+
+interface ArtifactUploadInput extends ArtifactLocation {
+  contentType: string;
+  sizeBytes: number;
+}
+
+function validateArtifactLocation({ workspaceId, artifactId }: ArtifactLocation): void {
+  if (workspaceId.length !== 36 || artifactId.length !== 36 || !isUUID(workspaceId) || !isUUID(artifactId)) {
+    throw new BadRequestException('Invalid artifact location');
+  }
+}
+
+function validateArtifactUpload(input: ArtifactUploadInput): void {
+  validateArtifactLocation(input);
+  const { contentType, sizeBytes } = input;
+  if (contentType.length > 255 || contentType.trim() !== contentType || !/^[a-z0-9_.+-]+\/[a-z0-9_.+-]+$/i.test(contentType)) {
+    throw new BadRequestException('Invalid artifact content type');
+  }
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > ARTIFACT_MAX_FILE_BYTES) {
+    throw new BadRequestException('Invalid artifact size');
+  }
+}
+
 type BucketAccess =
   'public' | 'authenticated' | 'tenant' | 'private' | 'blocked';
 
@@ -45,6 +85,7 @@ const BUCKET_ACCESS = {
   'job-results': 'private',
   'cached-static': 'authenticated',
   reports: 'private',
+  [ARTIFACT_BUCKET]: 'private',
   default: 'blocked',
 } as const satisfies Record<string, BucketAccess>;
 
@@ -65,6 +106,18 @@ export function getHourBucketedSigningDate(now: Date = new Date()): Date {
   const bucketed = new Date(now);
   bucketed.setUTCMinutes(0, 0, 0);
   return bucketed;
+}
+
+/** Build an attachment header without allowing a filename to change its syntax. */
+export function attachmentDisposition(fileName: string): string {
+  // UTF-8 round-tripping replaces lone surrogates before URI encoding.
+  const name = Buffer.from(fileName, 'utf8').toString('utf8');
+  const fallback = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const encoded = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (character) => '%' + character.charCodeAt(0).toString(16).toUpperCase(),
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 /** Minimum clamped TTL that may use the hour-bucketed signing date (2h). */
@@ -520,6 +573,123 @@ export class StorageService implements OnModuleInit {
     };
   }
 
+  /**
+   * Private form for one allocated artifact's staging object. The form can
+   * overwrite that object until expiry, so it must never name the final key.
+   * Callers authorize the workspace and reserve quota before returning it.
+   */
+  public async getPresignedArtifactUpload(
+    input: ArtifactUploadInput,
+  ): Promise<{ url: string; fields: Record<string, string>; expiresAt: Date }> {
+    validateArtifactUpload(input);
+    const { workspaceId, artifactId, contentType, sizeBytes } = input;
+
+    // The SDK also pins Bucket, Key, and each field (including Content-Type)
+    // as exact conditions. This key never ends with its filename wildcard.
+    const { url, fields } = await createPresignedPost(this.rustFsClient.getPresignClient(), {
+      Bucket: ARTIFACT_BUCKET,
+      Key: workspaceArtifactUploadKey(workspaceId, artifactId),
+      Conditions: [['content-length-range', sizeBytes, sizeBytes]],
+      Fields: { 'Content-Type': contentType },
+      Expires: ARTIFACT_UPLOAD_TTL_SECONDS,
+    });
+    // Use the signed deadline, including the SDK's clock offset and rounding.
+    // Cleanup must not delete a pending record while its form is still valid.
+    const policy = JSON.parse(Buffer.from(fields.Policy, 'base64').toString('utf8')) as {
+      expiration?: unknown;
+    };
+    const expiresAt = new Date(typeof policy.expiration === 'string' ? policy.expiration : NaN);
+    if (!Number.isFinite(expiresAt.getTime())) {
+      throw new InternalServerErrorException('Invalid artifact upload deadline');
+    }
+    return { url: this.toBrowserUrl(url), fields, expiresAt };
+  }
+
+  /**
+   * Copy verified staging bytes into the server-owned key exactly once.
+   * A retry after the database transaction fails can recognize its prior
+   * copy without trusting or overwriting the now-replayable staging object.
+   */
+  public async publishArtifactUpload(input: ArtifactUploadInput): Promise<void> {
+    validateArtifactUpload(input);
+    const { workspaceId, artifactId, contentType, sizeBytes } = input;
+    const stagingKey = workspaceArtifactUploadKey(workspaceId, artifactId);
+    const finalKey = workspaceArtifactKey(workspaceId, artifactId);
+    const marker = artifactId.toLowerCase();
+    // Completion holds database locks; bound all requests and retries together.
+    const abortSignal = AbortSignal.timeout(15_000);
+
+    const alreadyPublished = async () => {
+      const final = await this.headArtifactObject(finalKey, abortSignal);
+      if (!final) return false;
+      if (final.Metadata?.['argus-artifact-id'] !== marker ||
+          final.ContentLength !== sizeBytes || final.ContentType !== contentType) {
+        throw new ConflictException('Unexpected file at the final artifact key');
+      }
+      return true;
+    };
+    if (await alreadyPublished()) return;
+
+    const staged = await this.headArtifactObject(stagingKey, abortSignal);
+    if (!staged) {
+      throw new NotFoundException('Artifact upload has not arrived');
+    }
+    if (staged.ContentLength !== sizeBytes || staged.ContentType !== contentType || !staged.ETag) {
+      throw new ConflictException('Artifact upload does not match the reservation');
+    }
+
+    try {
+      await this.rustFsClient.getClient().send(new CopyObjectCommand({
+        Bucket: ARTIFACT_BUCKET,
+        Key: finalKey,
+        CopySource: `${ARTIFACT_BUCKET}/${stagingKey}`,
+        CopySourceIfMatch: staged.ETag,
+        IfNoneMatch: '*',
+        MetadataDirective: 'REPLACE',
+        Metadata: { 'argus-artifact-id': marker },
+        ContentType: contentType,
+        CacheControl: 'private, no-store',
+      }), { abortSignal });
+    } catch (error: unknown) {
+      if (!(error instanceof S3ServiceException)) throw error;
+      const status = error.$metadata.httpStatusCode;
+      if (status !== 412 && !(status === 409 && error.name === 'ConditionalRequestConflict')) {
+        throw error;
+      }
+      // Another completion may have won the destination precondition.
+      // Otherwise the source changed; do not publish bytes we did not check.
+      if (!(await alreadyPublished())) {
+        throw new ConflictException('Artifact upload changed before completion');
+      }
+    }
+  }
+
+  /** Remove the two canonical keys of an expired upload or deleted file. */
+  public async deleteArtifactUploadObjects(location: ArtifactLocation): Promise<void> {
+    validateArtifactLocation(location);
+    const { workspaceId, artifactId } = location;
+    const client = this.rustFsClient.getClient();
+    const abortSignal = AbortSignal.timeout(15_000);
+    for (const Key of [workspaceArtifactUploadKey(workspaceId, artifactId), workspaceArtifactKey(workspaceId, artifactId)]) {
+      await client.send(new DeleteObjectCommand({ Bucket: ARTIFACT_BUCKET, Key }), { abortSignal });
+    }
+  }
+
+  private async headArtifactObject(
+    key: string, abortSignal: AbortSignal,
+  ): Promise<HeadObjectCommandOutput | undefined> {
+    try {
+      return await this.rustFsClient.getClient().send(new HeadObjectCommand({
+        Bucket: ARTIFACT_BUCKET, Key: key,
+      }), { abortSignal });
+    } catch (error: unknown) {
+      if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 404) {
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
   public async getPresignedDownloadUrl(opts: {
     bucket: string;
     key: string;
@@ -551,7 +721,7 @@ export class StorageService implements OnModuleInit {
       Bucket: bucket,
       Key: key,
       ResponseContentDisposition: fileName
-        ? 'attachment; filename="' + fileName + '"'
+        ? attachmentDisposition(fileName)
         : undefined,
       ResponseContentType: contentType || undefined,
     });
@@ -839,6 +1009,84 @@ export class StorageService implements OnModuleInit {
     }
 
     return files;
+  }
+
+  /** Fetch a bounded page without relying on a provider continuation token surviving deletions. */
+  public async listArtifactSweepPage(startAfter?: string) {
+    const prefix = 'workspaces/';
+    const page = await this.rustFsClient.getClient().send(new ListObjectsV2Command({
+      Bucket: ARTIFACT_BUCKET, Prefix: prefix, MaxKeys: 500, StartAfter: startAfter,
+    }), { abortSignal: AbortSignal.timeout(15_000) });
+    const objects = page.Contents ?? [];
+    const nextKey = page.IsTruncated ? objects.at(-1)?.Key : undefined;
+    if (page.IsTruncated && (!nextKey?.startsWith(prefix) ||
+        (startAfter && Buffer.compare(Buffer.from(nextKey), Buffer.from(startAfter)) <= 0))) {
+      throw new Error('Artifact staging listing did not advance');
+    }
+    return { objects, nextKey };
+  }
+
+  /** Delete exact keys already authorized by the bounded artifact sweep. */
+  public async deleteArtifactSweepObjects(keys: string[]): Promise<number> {
+    const result = await this.rustFsClient.getClient().send(new DeleteObjectsCommand({
+      Bucket: ARTIFACT_BUCKET,
+      Delete: {
+        Objects: keys.map(Key => ({ Key })),
+        Quiet: true,
+      },
+    }), { abortSignal: AbortSignal.timeout(15_000) });
+    return result.Errors?.length ?? 0;
+  }
+
+  /**
+   * Sweep one workspace's private artifact keys after its writers are stopped.
+   * Run this outside the database transaction; failed object deletes can be retried.
+   */
+  public async deleteWorkspaceArtifacts(
+    workspaceId: string,
+  ): Promise<{ deleted: number; failed: number }> {
+    if (workspaceId.length !== 36 || !isUUID(workspaceId)) {
+      throw new BadRequestException('Invalid workspace ID');
+    }
+
+    const bucket = ARTIFACT_BUCKET;
+    const prefix = `workspaces/${workspaceId.toLowerCase()}/`;
+    const client = this.rustFsClient.getClient();
+    const abortSignal = AbortSignal.timeout(30_000);
+    const seenTokens = new Set<string>();
+    let continuationToken: string | undefined;
+    let deleted = 0;
+    let failed = 0;
+
+    do {
+      const page = await client.send(new ListObjectsV2Command({
+        Bucket: bucket, Prefix: prefix, ContinuationToken: continuationToken,
+      }), { abortSignal });
+      const next = page.IsTruncated ? page.NextContinuationToken : undefined;
+      if (page.IsTruncated && (!next || seenTokens.has(next))) {
+        throw new Error('Workspace artifact listing did not advance');
+      }
+      if (next) seenTokens.add(next);
+
+      for (const { Key } of page.Contents ?? []) {
+        abortSignal.throwIfAborted();
+        // Do not send a delete for a key outside the requested workspace,
+        // even if an S3-compatible provider returns it for this prefix.
+        if (!Key?.startsWith(prefix)) {
+          failed++;
+          continue;
+        }
+        try {
+          await client.send(new DeleteObjectCommand({ Bucket: bucket, Key }), { abortSignal });
+          deleted++;
+        } catch {
+          failed++;
+        }
+      }
+      continuationToken = next;
+    } while (continuationToken);
+
+    return { deleted, failed };
   }
 
   public async deleteFile(

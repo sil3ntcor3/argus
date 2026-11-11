@@ -3,6 +3,7 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
+import { finishMenuLink } from './open-link-menu';
 
 function DropdownMenu({
   ...props
@@ -32,6 +33,7 @@ function DropdownMenuTrigger({
 function DropdownMenuContent({
   className,
   sideOffset = 4,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
@@ -44,6 +46,10 @@ function DropdownMenuContent({
           className,
         )}
         {...props}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          finishMenuLink(event.currentTarget);
+        }}
       />
     </DropdownMenuPrimitive.Portal>
   );

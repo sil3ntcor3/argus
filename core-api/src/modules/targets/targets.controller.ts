@@ -15,7 +15,9 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -33,13 +35,42 @@ import {
   TargetRepositoryDto,
   UpdateTargetDto,
 } from './dto/targets.dto';
+import {
+  GetTargetChangesQueryDto,
+  TargetChangeDto,
+} from './dto/target-changes.dto';
+import { TargetOverviewDto } from './dto/target-overview.dto';
+import { GetTargetRunsQueryDto, TargetRunDto } from './dto/target-runs.dto';
+import { TargetSummaryDto } from './dto/target-summary.dto';
 import { Target } from './entities/target.entity';
+import { TargetChangesService } from './target-changes.service';
+import { TargetOverviewService } from './target-overview.service';
+import { TargetRunHistoryService } from './target-run-history.service';
+import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
+
+function canReadTargetData(
+  permissions: RequestWithMetadata['permissions'],
+  domain: 'vulnerability' | 'job' | 'project',
+) {
+  return (
+    permissions?.some(
+      (key) =>
+        key === '*' ||
+        key === `${domain}.read` ||
+        key === `${domain}.write`,
+    ) ?? false
+  );
+}
 
 @Controller('targets')
 export class TargetsController {
   constructor(
     private readonly targetsService: TargetsService,
+    private readonly targetSummaryService: TargetSummaryService,
+    private readonly targetOverviewService: TargetOverviewService,
+    private readonly targetRunHistoryService: TargetRunHistoryService,
+    private readonly targetChangesService: TargetChangesService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -96,8 +127,37 @@ export class TargetsController {
   getTargetsInWorkspace(
     @Query() query: GetManyWorkspaceQueryParamsDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+    @Res({ passthrough: true }) response: NodeResponse,
   ) {
+    if (query.hasCritical) {
+      response.setHeader('Cache-Control', 'private, no-store');
+      if (!canReadTargetData(request.permissions, 'vulnerability')) {
+        throw new ForbiddenException(
+          'Filtering by critical findings requires vulnerability read access',
+        );
+      }
+    }
     return this.targetsService.getTargetsInWorkspace(query, workspaceId);
+  }
+
+  @Doc({
+    summary: 'Get target summary',
+    description: 'Counts across the selected workspace, with finding counts gated by vulnerability read access.',
+    response: { serialization: TargetSummaryDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('target.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get('summary')
+  getTargetsSummary(
+    @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+  ) {
+    return this.targetSummaryService.getSummary(
+      workspaceId,
+      canReadTargetData(request.permissions, 'vulnerability'),
+    );
   }
 
   @Doc({
@@ -176,6 +236,74 @@ export class TargetsController {
     @WorkspaceId() workspaceId: string,
   ) {
     return this.targetsService.getTargetRepositories(id, workspaceId, query);
+  }
+
+  @Doc({
+    summary: 'Get target overview',
+    description:
+      'Returns workspace-scoped asset and service counts, discovery insights, and the most common service ports, technologies, and primary HTTP status codes.',
+    response: { serialization: TargetOverviewDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('target.read', 'asset.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/overview')
+  getTargetOverview(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+  ) {
+    return this.targetOverviewService.getOverview(id, workspaceId, {
+      jobs: canReadTargetData(request.permissions, 'job'),
+      findings: canReadTargetData(request.permissions, 'vulnerability'),
+      projects: canReadTargetData(request.permissions, 'project'),
+    });
+  }
+
+  @Doc({
+    summary: 'Get target run history',
+    description:
+      'Lists runs scoped to or scanning the target, newest first, with job counts for that target.',
+    response: { serialization: GetManyResponseDto(TargetRunDto) },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('target.read', 'job.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/runs')
+  getTargetRuns(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @Query() query: GetTargetRunsQueryDto,
+    @Req() request: RequestWithMetadata,
+  ) {
+    return this.targetRunHistoryService.list(id, workspaceId, query, {
+      projects: canReadTargetData(request.permissions, 'project'),
+      findings: canReadTargetData(request.permissions, 'vulnerability'),
+    });
+  }
+
+  @Doc({
+    summary: 'Get target discovery changes',
+    description:
+      'Lists discovered assets and services, and findings with vulnerability read access, newest first.',
+    response: { serialization: GetManyResponseDto(TargetChangeDto) },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('target.read', 'asset.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/changes')
+  getTargetChanges(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @Query() query: GetTargetChangesQueryDto,
+    @Req() request: RequestWithMetadata,
+  ) {
+    return this.targetChangesService.list(
+      id,
+      workspaceId,
+      query,
+      canReadTargetData(request.permissions, 'vulnerability'),
+    );
   }
 
   @Doc({

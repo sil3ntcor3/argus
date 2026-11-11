@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { streamText } from 'ai';
 import {
   AgentsSubagentsService,
+  SUBAGENT_HEARTBEAT_MS,
   SUBAGENT_MAX_ACTIVE_PER_CONVERSATION,
   SUBAGENT_TRANSCRIPT_FIELD_MAX_CHARS,
   subagentToolNames,
@@ -137,7 +138,7 @@ describe('AgentsSubagentsService', () => {
   let service: AgentsSubagentsService;
   let repo: Record<string, jest.Mock> & { manager: { transaction: jest.Mock } };
   let conversationRepo: Record<string, unknown>;
-  let agentTool: { getTools: jest.Mock };
+  let agentTool: { getTools: jest.Mock; getMemoryTools: jest.Mock };
   let agentsConfig: Record<string, jest.Mock>;
   let definitions: { listSubagents: jest.Mock };
   let skillRepo: { findOne: jest.Mock; find: jest.Mock };
@@ -176,6 +177,7 @@ describe('AgentsSubagentsService', () => {
       manager: { transaction: jest.fn(() => Promise.resolve(null)) },
     };
     agentTool = {
+      getMemoryTools: jest.fn(),
       getTools: jest.fn(() =>
         Object.fromEntries(
           [
@@ -186,6 +188,13 @@ describe('AgentsSubagentsService', () => {
         ),
       ),
     };
+    agentTool.getMemoryTools = jest.fn(() =>
+      Object.fromEntries(
+        ['stm_write', 'stm_read', 'stm_list', 'ltm_write', 'ltm_read', 'ltm_delete'].map(
+          (name) => [name, { description: name, execute: jest.fn() }],
+        ),
+      ),
+    );
     definitions = {
       listSubagents: jest.fn(() => Promise.resolve([definition()])),
     };
@@ -278,6 +287,44 @@ describe('AgentsSubagentsService', () => {
     expect(Object.keys(call.tools).sort()).toEqual([...READ_ONLY_TOOLS].sort());
   });
 
+  it("sends its browser pages to the conversation's live view, labelled with the run", async () => {
+    (streamText as jest.Mock).mockReturnValue(
+      streamResult({ text: 'ok', steps: [] }),
+    );
+    const shots: unknown[] = [];
+    const other = jest.fn();
+    const unsubscribeOther = service.subscribeScreenshots('c2', other);
+    const unsubscribe = service.subscribeScreenshots('c1', (shot) =>
+      shots.push(shot),
+    );
+    await (service as unknown as { run: (j: unknown) => Promise<void> }).run({
+      id: 's1',
+      conversationId: 'c1',
+      name: 'researcher',
+      task: 't',
+    });
+
+    const emitter = agentTool.getTools.mock.calls[0][2] as {
+      emit: (event: string, data: unknown) => void;
+    };
+    const shot = {
+      toolCallId: 't1',
+      command: 'browser open x',
+      image: 'jpg',
+      browserSessionId: 'b-' + 'a'.repeat(32),
+    };
+    emitter.emit('browser-screenshot', shot);
+    expect(shots).toEqual([
+      { ...shot, subagent: { id: 's1', name: 'researcher' } },
+    ]);
+
+    expect(other).not.toHaveBeenCalled();
+    unsubscribeOther();
+    unsubscribe();
+    emitter.emit('browser-screenshot', shot);
+    expect(shots).toHaveLength(1);
+  });
+
   it('gives a built-in subagent its declared write/exec tools even in a non-auto conversation', async () => {
     // Default conversation has no AUTO mode; the default definition() is
     // built-in with execute_remote_command declared
@@ -298,6 +345,117 @@ describe('AgentsSubagentsService', () => {
     expect(Object.keys(call.tools)).toEqual(
       expect.arrayContaining(['inspect_issue', 'execute_remote_command']),
     );
+  });
+
+  describe('declared short-term memory', () => {
+    const job = { id: 's1', conversationId: 'c1', name: 'researcher', task: 't' };
+
+    const run = async () => {
+      (streamText as jest.Mock).mockReturnValue(
+        streamResult({ text: 'ok', steps: [] }),
+      );
+      await (service as unknown as { run: (j: unknown) => Promise<void> }).run(
+        job,
+      );
+      return ((streamText as jest.Mock).mock.calls[0][0].tools ?? {}) as Record<
+        string,
+        unknown
+      >;
+    };
+
+    it('supplies declared STM tools with the parent workspace, owner and conversation', async () => {
+      definitions.listSubagents.mockResolvedValue([
+        definition({
+          metadata: {
+            tools: [
+              'inspect_issue',
+              'stm_write',
+              'stm_read',
+              'stm_list',
+              'ltm_write',
+              'ltm_read',
+              'ltm_delete',
+            ],
+          },
+        }),
+      ]);
+      // Enabling LTM must not make it available to a background subagent.
+      agentsConfig.find.mockResolvedValue({ memoryEnabled: true });
+      expect(Object.keys(await run()).sort()).toEqual([
+        'inspect_issue',
+        'stm_list',
+        'stm_read',
+        'stm_write',
+      ]);
+      expect(agentTool.getMemoryTools).toHaveBeenCalledWith('w1', 'u1', 'c1');
+    });
+
+    it('does not supply unrequested or unknown memory tools', async () => {
+      definitions.listSubagents.mockResolvedValue([
+        definition({
+          metadata: {
+            tools: ['stm_read', 'stm_missing'],
+          },
+        }),
+      ]);
+      expect(Object.keys(await run())).toEqual(['stm_read']);
+    });
+
+    it('respects disabled STM tools while long-term memory is off', async () => {
+      agentsConfig.find.mockResolvedValue({
+        memoryEnabled: false,
+        disabledTools: ['stm_write'],
+      });
+      definitions.listSubagents.mockResolvedValue([
+        definition({
+          metadata: {
+            tools: ['stm_read', 'stm_write'],
+          },
+        }),
+      ]);
+      expect(Object.keys(await run())).toEqual(['stm_read']);
+    });
+
+    it.each(['manual', 'plan'])(
+      'keeps custom %s subagents within their existing read-only allowlist',
+      async (approvalMode) => {
+        (conversationRepo.findOne as jest.Mock).mockResolvedValue({
+          id: 'c1',
+          workspaceId: 'w1',
+          createdBy: 'u1',
+          llmConfigId: 'l1',
+          approvalMode,
+        });
+        definitions.listSubagents.mockResolvedValue([
+          definition({
+            isBuiltin: false,
+            metadata: {
+              tools: ['inspect_issue', 'stm_write', 'stm_read', 'ltm_read'],
+            },
+          }),
+        ]);
+        expect(Object.keys(await run())).toEqual(['inspect_issue']);
+      },
+    );
+
+    it('supplies declared STM tools to an AUTO custom subagent', async () => {
+      (conversationRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'c1',
+        workspaceId: 'w1',
+        createdBy: 'u1',
+        llmConfigId: 'l1',
+        approvalMode: 'auto',
+      });
+      definitions.listSubagents.mockResolvedValue([
+        definition({
+          isBuiltin: false,
+          metadata: {
+            tools: ['stm_write'],
+          },
+        }),
+      ]);
+      expect(Object.keys(await run())).toEqual(['stm_write']);
+    });
   });
 
   it('offers a subagent only the skills it declares, through load_skill', async () => {
@@ -440,6 +598,148 @@ describe('AgentsSubagentsService', () => {
         sortOrder: 3,
       });
     });
+
+    it('queues nothing once the dispatching run was stopped', async () => {
+      const stopped = new AbortController();
+      stopped.abort();
+      await expect(
+        service.dispatch(ctx, 'researcher', 'task', stopped.signal),
+      ).rejects.toThrow('The run was stopped');
+      expect(tx.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancel', () => {
+    const run = (job: object) =>
+      (service as unknown as { run: (j: unknown) => Promise<void> }).run(job);
+    const job = {
+      id: 's1',
+      conversationId: 'c1',
+      name: 'researcher',
+      task: 't',
+    };
+    /** A run that only ends when its abort signal fires. */
+    const hangUntilAborted = (opts: { abortSignal: AbortSignal }) => {
+      const aborted = new Promise<never>((_, reject) =>
+        opts.abortSignal.addEventListener('abort', () =>
+          reject(new Error('aborted')),
+        ),
+      );
+      aborted.catch(() => {});
+      return { steps: aborted, text: aborted };
+    };
+    const untilStreaming = async () => {
+      while ((streamText as jest.Mock).mock.calls.length === 0) {
+        await new Promise((r) => setImmediate(r));
+      }
+    };
+    /** Writes that move the row out of in_progress (done, failed, requeued) */
+    const statusWrites = () =>
+      (repo.query.mock.calls as unknown[][]).filter((c) =>
+        /result = \$3|error = \$3|"startedAt" = NULL/.test(String(c[0])),
+      );
+
+    it('cancels the active rows of the conversation under its lock', async () => {
+      tx.query = jest.fn((): Promise<unknown> =>
+        Promise.resolve([[{ id: 's1' }, { id: 's2' }], 2]),
+      );
+      await expect(service.cancelForConversation('c1')).resolves.toBe(2);
+      expect(tx.findOne).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          where: { id: 'c1' },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+      const [sql, params] = tx.query.mock.calls[0];
+      expect(String(sql)).toContain('status IN ($3, $4)');
+      expect(params).toEqual([
+        'c1',
+        SubagentStatus.CANCELLED,
+        SubagentStatus.PENDING,
+        SubagentStatus.IN_PROGRESS,
+      ]);
+
+      tx.query.mockResolvedValueOnce([[], 0]);
+      await expect(service.cancelForConversation('c1')).resolves.toBe(0);
+    });
+
+    it('aborts a run of this instance and leaves its row cancelled', async () => {
+      (streamText as jest.Mock).mockImplementationOnce(hangUntilAborted);
+      tx.query = jest.fn((): Promise<unknown> =>
+        Promise.resolve([[{ id: 's1' }], 1]),
+      );
+      const running = run(job);
+      await untilStreaming();
+
+      await service.cancelForConversation('c1');
+      await running;
+      // Neither completed, failed nor requeued
+      expect(statusWrites()).toHaveLength(0);
+      expect(Logger.prototype.error).not.toHaveBeenCalled();
+    });
+
+    it('does not store a run aborted after its first step as completed', async () => {
+      // The SDK resolves with the partial run when aborted after a step
+      (streamText as jest.Mock).mockImplementationOnce(
+        (opts: { abortSignal: AbortSignal }) => {
+          const steps = new Promise((resolve) =>
+            opts.abortSignal.addEventListener('abort', () =>
+              resolve([{ toolCalls: [] }]),
+            ),
+          );
+          return { steps, text: Promise.resolve('partial') };
+        },
+      );
+      const running = run(job);
+      await untilStreaming();
+      await service.onModuleDestroy();
+      await running;
+      const writes = statusWrites();
+      expect(writes).toHaveLength(1);
+      // Shut down mid-run: back to the queue
+      expect(String(writes[0][0])).toContain('"startedAt" = NULL');
+      expect(writes[0][1]).toEqual(
+        expect.arrayContaining(['s1', SubagentStatus.PENDING]),
+      );
+    });
+
+    it('requeues shutdown while the final text is still resolving', async () => {
+      let finishText!: (value: string) => void;
+      (streamText as jest.Mock).mockImplementationOnce(() => ({
+        steps: Promise.resolve([{ toolCalls: [] }]),
+        text: new Promise<string>((resolve) => { finishText = resolve; }),
+      }));
+      const running = run(job);
+      await untilStreaming();
+      await new Promise((resolve) => setImmediate(resolve));
+      await service.onModuleDestroy();
+      finishText('partial after abort');
+      await running;
+      expect(statusWrites()).toHaveLength(1);
+      expect(String(statusWrites()[0][0])).toContain('"startedAt" = NULL');
+    });
+
+    it('stops a run whose row was cancelled elsewhere at its heartbeat', async () => {
+      jest.useFakeTimers();
+      try {
+        (streamText as jest.Mock).mockImplementationOnce(hangUntilAborted);
+        const running = run(job);
+        await jest.advanceTimersByTimeAsync(0);
+        expect(streamText).toHaveBeenCalled();
+        // The heartbeat finds no running row (the default query mock)
+        await jest.advanceTimersByTimeAsync(SUBAGENT_HEARTBEAT_MS);
+        expect((streamText as jest.Mock).mock.calls[0][0].abortSignal.aborted).toBe(true);
+        await running;
+        const heartbeat = repo.query.mock.calls.find((c) =>
+          String(c[0]).includes('RETURNING id'),
+        );
+        expect(heartbeat?.[1]).toEqual(['s1', SubagentStatus.IN_PROGRESS]);
+        expect(statusWrites()).toHaveLength(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 
   it('runs a claimed custom subagent with read-only tools in a non-auto conversation', async () => {
@@ -472,7 +772,7 @@ describe('AgentsSubagentsService', () => {
     expect(agentTool.getTools).toHaveBeenCalledWith(
       'w1',
       'agent',
-      undefined,
+      expect.anything(),
       'c1',
       undefined,
     );
@@ -696,6 +996,7 @@ describe('AgentsSubagentsService', () => {
     expect(Object.keys(tools)).toEqual([
       'dispatch_subagent',
       'get_subagent_result',
+      'wait_for_subagents',
     ]);
 
     repo.findOne.mockResolvedValueOnce({
@@ -721,6 +1022,187 @@ describe('AgentsSubagentsService', () => {
     );
     // The running iteration owns the read (released if it never completes)
     expect(onResultRead).toHaveBeenCalledWith('s1');
+  });
+
+  describe('waiting for results', () => {
+    const ctx = (onResultRead = jest.fn()) => ({
+      conversationId: 'c1',
+      workspaceId: 'w1',
+      userId: 'u1',
+      onResultRead,
+    });
+    type Execute = (input: object, options: unknown) => Promise<unknown>;
+
+    it('get_subagent_result answers a running subagent at once and says not to poll', async () => {
+      const onResultRead = jest.fn();
+      const tools = service.createTools(ctx(onResultRead));
+      repo.findOne.mockResolvedValueOnce({
+        id: 's1',
+        name: 'researcher',
+        status: SubagentStatus.IN_PROGRESS,
+        result: null,
+        error: null,
+        deliveredAt: null,
+      });
+
+      await expect(
+        (tools.get_subagent_result.execute as Execute)({ id: 's1' }, {}),
+      ).resolves.toMatchObject({
+        status: SubagentStatus.IN_PROGRESS,
+        note: expect.stringContaining('wait_for_subagents'),
+      });
+      expect(repo.query).not.toHaveBeenCalled();
+      expect(onResultRead).not.toHaveBeenCalled();
+    });
+
+    it('wait_for_subagents hands back finished results and lists the running ones', async () => {
+      const onResultRead = jest.fn();
+      const tools = service.createTools(ctx(onResultRead));
+      repo.query.mockResolvedValueOnce([
+        [
+          {
+            id: 's1',
+            name: 'recon',
+            status: SubagentStatus.COMPLETED,
+            result: 'found 3 hosts',
+            error: null,
+            sortOrder: 0,
+          },
+        ],
+        1,
+      ]);
+      repo.find.mockResolvedValueOnce([
+        { id: 's2', name: 'researcher', status: SubagentStatus.IN_PROGRESS },
+      ]);
+
+      await expect(
+        (tools.wait_for_subagents.execute as Execute)({}, {}),
+      ).resolves.toEqual({
+        results: [
+          {
+            id: 's1',
+            name: 'recon',
+            status: SubagentStatus.COMPLETED,
+            result: 'found 3 hosts',
+            error: null,
+          },
+        ],
+        running: [
+          { id: 's2', name: 'researcher', status: SubagentStatus.IN_PROGRESS },
+        ],
+      });
+      expect(onResultRead).toHaveBeenCalledWith('s1');
+      expect(repo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ conversationId: 'c1' }),
+        }),
+      );
+    });
+
+    it('releases ready results if the running-status lookup fails', async () => {
+      const tools = service.createTools(ctx());
+      repo.query.mockResolvedValueOnce([[{ id: 's1', sortOrder: 0 }], 1]);
+      repo.find.mockRejectedValueOnce(new Error('status query failed'));
+
+      await expect((tools.wait_for_subagents.execute as Execute)({}, {}))
+        .rejects.toThrow('status query failed');
+
+      expect(repo.query).toHaveBeenLastCalledWith(
+        expect.stringContaining('"deliveredAt" = NULL'), [['s1']],
+      );
+    });
+
+    it('wait_for_subagents returns at once when nothing is running', async () => {
+      const tools = service.createTools(ctx());
+
+      await expect(
+        (tools.wait_for_subagents.execute as Execute)({}, {}),
+      ).resolves.toEqual({
+        results: [],
+        running: [],
+        note: expect.stringContaining('No subagent is running'),
+      });
+    });
+
+    it('wakes on the status event of a finished subagent', async () => {
+      repo.query
+        .mockResolvedValueOnce([[], 0])
+        .mockResolvedValueOnce([[{ id: 's1', sortOrder: 0 }], 1]);
+      repo.count.mockResolvedValueOnce(1);
+      const started = Date.now();
+
+      const waiting = service.waitForResults('c1', 60_000);
+      await new Promise((r) => setImmediate(r));
+      (service as unknown as { notify: (id: string) => void }).notify('c1');
+
+      await expect(waiting).resolves.toMatchObject([{ id: 's1' }]);
+      // The event, not the 2s re-poll, ended the wait
+      expect(Date.now() - started).toBeLessThan(1_000);
+    });
+
+    it('does not claim ready results after Stop already aborted the run', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      repo.query.mockResolvedValueOnce([[{ id: 's1', sortOrder: 0 }], 1]);
+
+      await expect(service.waitForResults('c1', 60_000, controller.signal))
+        .resolves.toEqual([]);
+      expect(repo.query).not.toHaveBeenCalled();
+    });
+
+    it('releases a claim when Stop arrives during its database request', async () => {
+      const controller = new AbortController();
+      const release = jest.spyOn(service, 'releaseDelivery');
+      jest.spyOn(service, 'takeUndelivered').mockImplementationOnce(() => {
+        controller.abort();
+        return Promise.resolve([{ id: 's1' }] as never);
+      });
+
+      await expect(service.waitForResults('c1', 60_000, controller.signal))
+        .resolves.toEqual([]);
+      expect(release).toHaveBeenCalledWith(['s1']);
+    });
+
+    it('aborts an event wait and removes its listener', async () => {
+      repo.count.mockResolvedValue(1);
+      const controller = new AbortController();
+      const events = (service as unknown as {
+        events: { listenerCount: (key: string) => number };
+      }).events;
+      const waiting = service.waitForResults('c1', 60_000, controller.signal);
+      await new Promise((r) => setImmediate(r));
+      expect(events.listenerCount('updated:c1')).toBe(1);
+
+      controller.abort();
+
+      await expect(waiting).resolves.toEqual([]);
+      expect(events.listenerCount('updated:c1')).toBe(0);
+    });
+
+    it('finds results from another instance on the bounded database recheck', async () => {
+      jest.useFakeTimers();
+      try {
+        repo.query.mockResolvedValueOnce([[], 0])
+          .mockResolvedValueOnce([[{ id: 's1', sortOrder: 0 }], 1]);
+        repo.count.mockResolvedValue(1);
+        const waiting = service.waitForResults('c1', 60_000);
+        await jest.advanceTimersByTimeAsync(2_000);
+        await expect(waiting).resolves.toMatchObject([{ id: 's1' }]);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('stops waiting on timeout or abort', async () => {
+      repo.count.mockResolvedValue(1);
+      await expect(service.waitForResults('c1', 0)).resolves.toEqual([]);
+
+      const controller = new AbortController();
+      controller.abort();
+      await expect(
+        service.waitForResults('c1', 60_000, controller.signal),
+      ).resolves.toEqual([]);
+    });
   });
 
   it('requeues or fails stale runs in a single statement', async () => {

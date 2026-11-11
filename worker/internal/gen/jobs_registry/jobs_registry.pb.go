@@ -632,8 +632,12 @@ type VulnerabilitiesResultRequest struct {
 	Error           bool                   `protobuf:"varint,3,opt,name=error,proto3" json:"error,omitempty"`
 	Raw             *string                `protobuf:"bytes,4,opt,name=raw,proto3,oneof" json:"raw,omitempty"`
 	Vulnerabilities *VulnerabilityList     `protobuf:"bytes,5,opt,name=vulnerabilities,proto3" json:"vulnerabilities,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// True only after an error-free connector Done; partial and legacy results omit it.
+	CoverageComplete *bool `protobuf:"varint,6,opt,name=coverage_complete,json=coverageComplete,proto3,oneof" json:"coverage_complete,omitempty"`
+	// Immutable image configuration ID reported by the actual connector container.
+	ConnectorImageId *string `protobuf:"bytes,7,opt,name=connector_image_id,json=connectorImageId,proto3,oneof" json:"connector_image_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *VulnerabilitiesResultRequest) Reset() {
@@ -699,6 +703,20 @@ func (x *VulnerabilitiesResultRequest) GetVulnerabilities() *VulnerabilityList {
 		return x.Vulnerabilities
 	}
 	return nil
+}
+
+func (x *VulnerabilitiesResultRequest) GetCoverageComplete() bool {
+	if x != nil && x.CoverageComplete != nil {
+		return *x.CoverageComplete
+	}
+	return false
+}
+
+func (x *VulnerabilitiesResultRequest) GetConnectorImageId() string {
+	if x != nil && x.ConnectorImageId != nil {
+		return *x.ConnectorImageId
+	}
+	return ""
 }
 
 type ScreenshotResultRequest struct {
@@ -2074,14 +2092,18 @@ const file_jobs_registry_proto_rawDesc = "" +
 	"\x05error\x18\x03 \x01(\bR\x05error\x12\x15\n" +
 	"\x03raw\x18\x04 \x01(\tH\x00R\x03raw\x88\x01\x01\x123\n" +
 	"\anumbers\x18\x05 \x01(\v2\x19.jobs_registry.NumberListR\anumbersB\x06\n" +
-	"\x04_raw\"\xd3\x01\n" +
+	"\x04_raw\"\xe5\x02\n" +
 	"\x1cVulnerabilitiesResultRequest\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x15\n" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\bR\x05error\x12\x15\n" +
 	"\x03raw\x18\x04 \x01(\tH\x00R\x03raw\x88\x01\x01\x12J\n" +
-	"\x0fvulnerabilities\x18\x05 \x01(\v2 .jobs_registry.VulnerabilityListR\x0fvulnerabilitiesB\x06\n" +
-	"\x04_raw\"\x82\x01\n" +
+	"\x0fvulnerabilities\x18\x05 \x01(\v2 .jobs_registry.VulnerabilityListR\x0fvulnerabilities\x120\n" +
+	"\x11coverage_complete\x18\x06 \x01(\bH\x01R\x10coverageComplete\x88\x01\x01\x121\n" +
+	"\x12connector_image_id\x18\a \x01(\tH\x02R\x10connectorImageId\x88\x01\x01B\x06\n" +
+	"\x04_rawB\x14\n" +
+	"\x12_coverage_completeB\x15\n" +
+	"\x13_connector_image_id\"\x82\x01\n" +
 	"\x17ScreenshotResultRequest\x12\x1b\n" +
 	"\tworker_id\x18\x01 \x01(\tR\bworkerId\x12\x15\n" +
 	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x14\n" +

@@ -285,8 +285,9 @@ This builds and starts console, core API, worker, Postgres, Redis, Geo-IP proxy,
 
 Notes:
 
-- Set `WORKER_API_KEY` in `worker/.env` to the key the API expects.
-- On native Linux the worker needs the Docker socket group: `task docker-compose` detects `WORKER_DOCKER_GID` automatically. Raw `docker compose up` needs `WORKER_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock) docker compose up -d --build`.
+- Set `ARGUS_CLOUD_APIKEY` in `core-api/.env`. Compose uses it as the API key for global worker joins and passes the same value to the worker as `WORKER_API_KEY`. For a standalone worker, set `WORKER_API_KEY` in its own environment.
+- If using external S3-compatible storage, dedicate the private `artifacts` bucket to one Argus database. API replicas may share it, but separate installations and test databases must use separate storage because Argus removes staging uploads that have no matching database row.
+- On native Linux the worker needs the Docker socket group: `task docker-compose` detects `WORKER_DOCKER_GID` automatically. Raw `docker compose up` needs `WORKER_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock) docker compose --env-file ./core-api/.env up -d --build`.
 - The socket mount is root-equivalent — only run trusted connector images.
 - Pre-built images: `sil3ntcor3/argus-console`, `sil3ntcor3/argus-api`, `sil3ntcor3/argus-worker` on Docker Hub.
 

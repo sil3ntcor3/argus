@@ -12,6 +12,11 @@ includes:
     dir: ./worker
 
 tasks:
+  security:docker-build:
+    desc: Build the API image locally for security-port verification without publishing
+    cmds:
+      - docker buildx build --load --platform {{.PLATFORM | default "linux/arm64"}} --tag argus-security-api:local --file core-api/Dockerfile .
+
   # Development environment setup and start
   # Starts both API and console development servers with hot-reload enabled
   # Environment: development mode
@@ -191,16 +196,17 @@ tasks:
     cmds:
       - node scripts/sync-tool-manifest.mjs
 
-  # Cut a release: validate, run the checks, tag, push — CI does the rest
+  # Cut a release: validate, check, stamp package versions, tag, and push
   #
   #   task release -- v0.9.0            # the `--` is required, see below
-  #   task release VERSION=v0.9.0
+  #   task release version=v0.9.0       # VERSION= still works
+  #   task release -- patch             # or minor / major, from the newest tag
   #   task release -- v0.9.0 --dry-run
   #   task release -- v0.9.0 --skip-checks
   #   task release VERSION=v0.9.0 MESSAGE="Release v0.9.0" SKIP_CHECKS=1
   #
   # go-task reads a bare `task release v0.9.0` as a request for a task named
-  # `v0.9.0` and fails, so the separator (or the VERSION= form) is mandatory.
+  # `v0.9.0` and fails, so the separator (or the version= form) is mandatory.
   # Both are forwarded to scripts/release.mjs, which also accepts the env vars.
   #
   # Everything downstream keys off the tag: build-release.yml triggers on
@@ -208,14 +214,17 @@ tasks:
   # images and the draft release. The draft is published by hand afterwards —
   # the workflow deliberately does not publish it.
   release:
-    desc: Tag a release and push it, kicking off build-release.yml
-    preconditions:
-      - sh: test -n "{{.VERSION}}{{.CLI_ARGS}}"
-        msg: 'Version is required: task release -- v0.9.0'
+    desc: Stamp package versions and atomically push the release commit and tag
     env:
+      RELEASE_VERSION: '{{.version | default .VERSION}}'
       RELEASE_MESSAGE: '{{.MESSAGE}}'
       RELEASE_DRY_RUN: '{{.DRY_RUN}}'
       RELEASE_SKIP_CHECKS: '{{.SKIP_CHECKS}}'
       RELEASE_BRANCH: '{{.BRANCH}}'
     cmds:
-      - node scripts/release.mjs {{.VERSION}} {{.CLI_ARGS}}
+      - node scripts/release.mjs {{.CLI_ARGS}}
+
+  release:test:
+    desc: Check release behavior against disposable local Git repositories
+    cmds:
+      - node --test scripts/release.test.mjs

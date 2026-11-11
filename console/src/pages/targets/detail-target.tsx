@@ -1,23 +1,33 @@
+import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
 import { Button } from '@/components/ui/button';
 import JobStatusBadge from '@/components/ui/job-status';
+import { usePermission } from '@/hooks/usePermission';
 import {
   JobStatus,
   TargetType,
   useTargetsControllerGetTargetById,
 } from '@/services/apis/gen/queries';
-import { getRouteApi, useNavigate, useParams } from '@tanstack/react-router';
+import {
+  getRouteApi,
+  Link,
+  Navigate,
+  useNavigate,
+  useParams,
+} from '@tanstack/react-router';
 import dayjs from 'dayjs';
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import AssetProvider from '../assets/context/asset-context';
 import { DiscoverUrlsDialog } from '../assets/components/discover-urls-dialog';
 import { ListAssets } from '../assets/list-assets';
 import { FastScanDialog } from '../vulnerabilities/components/fast-scan-dialog';
-import { ListVulnerabilities } from '../vulnerabilities/list-vulnerabilitys';
-import VulnerabilitiesStatistic from '../vulnerabilities/vulnerabilites-statistic';
+import { VulnerabilitiesView } from '../vulnerabilities/vulnerabilities-view';
 import AssetsDiscovering from './assets-discovering';
 import { GitOrgDetail } from './git-org-detail';
+import { TargetActivityTab } from './components/target-activity-tab';
+import { TargetChangesPanel } from './components/target-changes-panel';
+import { TargetOverviewTab } from './components/target-overview-tab';
 import { TargetSwitcher } from './components/target-switcher';
 import SettingTarget from './setting-target';
 
@@ -25,8 +35,20 @@ const routeApi = getRouteApi('/_authed/targets/$id/$tab');
 
 export function DetailTarget() {
   const { id, tab } = useParams({ from: '/_authed/targets/$id/$tab' });
-  const { animation } = routeApi.useSearch();
+  const { animation, tab: inventoryTab } = routeApi.useSearch();
+  const permission = usePermission();
   const navigate = useNavigate({ from: '/targets/$id/$tab' });
+  const sectionNav = useRef<HTMLElement>(null);
+  const keyboardDestination = useRef<string>(null);
+  useEffect(() => {
+    const destination = keyboardDestination.current;
+    keyboardDestination.current = null;
+    if (destination === tab && document.activeElement === document.body) {
+      sectionNav.current
+        ?.querySelector<HTMLAnchorElement>('[aria-current="page"]')
+        ?.focus();
+    }
+  }, [tab]);
 
   const {
     data: target,
@@ -36,20 +58,6 @@ export function DetailTarget() {
   } = useTargetsControllerGetTargetById(id || '', {
     query: { enabled: !!id, refetchInterval: 5000 },
   });
-
-  // Vulnerabilities used to be its own path tab; it now lives in the asset tab
-  // row (`?tab=vulnerabilities`). Git orgs still use the path tab.
-  const isLegacyVulnPath =
-    !!target && target.type !== TargetType.GIT_ORG && tab === 'vulnerabilities';
-  useEffect(() => {
-    if (!isLegacyVulnPath) return;
-    navigate({
-      to: '/targets/$id/$tab',
-      params: { id, tab: 'inventory' },
-      search: { tab: 'vulnerabilities' },
-      replace: true,
-    });
-  }, [isLegacyVulnPath, id, navigate]);
 
   if (isLoading) {
     return (
@@ -79,6 +87,44 @@ export function DetailTarget() {
     return <GitOrgDetail target={target} tab={tab} refetch={refetch} />;
   }
 
+  const legacyInventory = tab === 'inventory' || tab === 'asset-services';
+  const legacyFindings = inventoryTab === 'vulnerabilities';
+  if (legacyInventory || legacyFindings) {
+    return (
+      <Navigate
+        from="/targets/$id/$tab"
+        to="/targets/$id/$tab"
+        params={{ id, tab: legacyFindings ? 'vulnerabilities' : 'assets' }}
+        search={(previous) => ({
+          ...previous,
+          ...(legacyFindings ? { tab: undefined } : {}),
+        })}
+        replace
+      />
+    );
+  }
+
+  const activeTab =
+    tab === 'overview' ||
+    tab === 'vulnerabilities' ||
+    tab === 'activity' ||
+    tab === 'settings'
+      ? tab
+      : 'assets';
+  const canReadAssets = !permission.error && permission.hasPermission('asset.read');
+  const canReadJobs = !permission.error && permission.hasPermission('job.read');
+  const canCancelRuns = !permission.error && permission.hasPermission('job.write');
+  const canReadFindings =
+    !permission.error && permission.hasPermission('vulnerability.read');
+  const canReadProjects =
+    !permission.error &&
+    (permission.hasPermission('project.read') ||
+      permission.hasPermission('group.read'));
+  const canReadActivity = canReadAssets || canReadJobs;
+  const canChangeTarget = permission.hasPermission('target.write');
+  const scanning = target.status !== JobStatus.completed;
+  const scanTarget = { id: target.id, value: target.value };
+
   return (
     <Page
       permission="target.read"
@@ -99,10 +145,10 @@ export function DetailTarget() {
                 const showAnimation =
                   target.status === JobStatus.pending ||
                   target.status === JobStatus.in_progress;
-                navigate({
-                  search: {
-                    animation: showAnimation ? 'true' : undefined,
-                  },
+                void navigate({
+                  to: '/targets/$id/$tab',
+                  params: { id, tab: 'assets' },
+                  search: { animation: showAnimation ? 'true' : undefined },
                   replace: true,
                 });
               }}
@@ -112,54 +158,157 @@ export function DetailTarget() {
             <p className="text-muted-foreground hidden md:block">
               {dayjs(target.lastDiscoveredAt).fromNow()}
             </p>
-            <SettingTarget target={target} refetch={refetch} />
           </div>
         </div>
       }
     >
-      {animation &&
-        (target.status === JobStatus.in_progress ||
-          target.status === JobStatus.pending) && (
-          <AssetsDiscovering targetId={target.id} />
-        )}
-      <AssetProvider
-        targetId={target.id}
-        refetchInterval={
-          target.status === JobStatus.in_progress ? 1000 : 30 * 1000
-        }
-      >
-        <ListAssets
-          urlsActions={
-            // URL discovery only accepts domain targets.
-            target.type === TargetType.DOMAIN ? (
-              <DiscoverUrlsDialog
+      <div className="space-y-4">
+        <nav
+          ref={sectionNav}
+          aria-label="Target sections"
+          className="flex flex-wrap gap-2"
+        >
+          {[
+            ...(canReadAssets ? [{ value: 'overview', label: 'Overview' }] : []),
+            { value: 'assets', label: 'Assets' },
+            { value: 'vulnerabilities', label: 'Vulnerabilities' },
+            ...(canReadActivity ? [{ value: 'activity', label: 'Activity' }] : []),
+            ...(canChangeTarget
+              ? [{ value: 'settings', label: 'Settings' }]
+              : []),
+          ].map(({ value, label }) => (
+            <Button
+              key={value}
+              asChild
+              size="sm"
+              variant={activeTab === value ? 'secondary' : 'ghost'}
+            >
+              <Link
+                from="/targets/$id/$tab"
+                to="/targets/$id/$tab"
+                params={{ id, tab: value }}
+                search={
+                  activeTab === value
+                    ? true
+                    : (previous) => ({ ...previous, tab: undefined })
+                }
+                aria-current={activeTab === value ? 'page' : undefined}
+              >
+                {label}
+              </Link>
+            </Button>
+          ))}
+        </nav>
+        {activeTab === 'overview' ? (
+          canReadAssets ? (
+            <TargetOverviewTab
+              targetId={target.id}
+              canManageDiscovery={canChangeTarget}
+              canReadJobs={canReadJobs}
+              onKeyboardNavigate={(destination) => {
+                keyboardDestination.current = destination;
+              }}
+              onAccessDenied={permission.refetch}
+              canReadFindings={canReadFindings}
+              canReadProjects={canReadProjects}
+              canCancelRuns={canCancelRuns}
+            />
+          ) : (
+            <AccessDenied />
+          )
+        ) : activeTab === 'activity' ? (
+          canReadActivity ? (
+            <div
+              className={
+                canReadJobs && canReadAssets
+                  ? 'grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'
+                  : undefined
+              }
+            >
+              {canReadJobs && (
+                <TargetActivityTab
+                  key={`runs-${target.id}`}
+                  targetId={target.id}
+                  canReadProjects={canReadProjects}
+                  canReadFindings={canReadFindings}
+                  canCancelRuns={canCancelRuns}
+                  onAccessDenied={permission.refetch}
+                />
+              )}
+              {canReadAssets && (
+                <TargetChangesPanel
+                  key={`changes-${target.id}`}
+                  targetId={target.id}
+                  canReadFindings={canReadFindings}
+                  onAccessDenied={permission.refetch}
+                />
+              )}
+            </div>
+          ) : (
+            <AccessDenied />
+          )
+        ) : activeTab === 'settings' ? (
+          canChangeTarget ? (
+            <SettingTarget
+              key={target.id}
+              inline
+              target={target}
+              refetch={refetch}
+              scanActions={
+                <>
+                  {permission.hasPermission('vulnerability.write') && (
+                    <FastScanDialog target={scanTarget} disabled={scanning} />
+                  )}
+                  {target.type === TargetType.DOMAIN &&
+                    permission.hasPermission('asset.write') && (
+                      <DiscoverUrlsDialog
+                        target={scanTarget}
+                        disabled={scanning}
+                      />
+                    )}
+                </>
+              }
+            />
+          ) : (
+            <AccessDenied />
+          )
+        ) : activeTab === 'vulnerabilities' ? (
+          <VulnerabilitiesView
+            targetId={target.id}
+            actions={
+              <FastScanDialog
                 target={{ id: target.id, value: target.value }}
                 disabled={target.status !== JobStatus.completed}
               />
-            ) : null
-          }
-          extraTabs={[
-            {
-              value: 'vulnerabilities',
-              text: 'Vulnerabilities',
-              tab: (
-                <div className="flex flex-col gap-5">
-                  <VulnerabilitiesStatistic targetId={target.id} />
-                  <ListVulnerabilities
-                    targetId={target.id}
-                    actions={
-                      <FastScanDialog
-                        target={{ id: target.id, value: target.value }}
-                        disabled={target.status !== JobStatus.completed}
-                      />
-                    }
-                  />
-                </div>
-              ),
-            },
-          ]}
-        />
-      </AssetProvider>
+            }
+          />
+        ) : (
+          <>
+            {animation &&
+              (target.status === JobStatus.in_progress ||
+                target.status === JobStatus.pending) && (
+                <AssetsDiscovering targetId={target.id} />
+              )}
+            <AssetProvider
+              targetId={target.id}
+              refetchInterval={
+                target.status === JobStatus.in_progress ? 1000 : 30 * 1000
+              }
+            >
+              <ListAssets
+                urlsActions={
+                  target.type === TargetType.DOMAIN ? (
+                    <DiscoverUrlsDialog
+                      target={{ id: target.id, value: target.value }}
+                      disabled={target.status !== JobStatus.completed}
+                    />
+                  ) : null
+                }
+              />
+            </AssetProvider>
+          </>
+        )}
+      </div>
     </Page>
   );
 }

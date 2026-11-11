@@ -51,7 +51,7 @@ function CircleBadge({
   color,
   selected,
   severityRing,
-  size = 'size-14',
+  size = 'size-[56px]',
 }: {
   icon?: LucideIcon;
   text: string;
@@ -96,7 +96,7 @@ function PillBadge({
 }) {
   return (
     <div
-      className="flex h-7 max-w-[110px] items-center gap-1 rounded-lg px-2.5 text-white shadow-sm transition-shadow group-hover:shadow-md"
+      className="flex h-[28px] max-w-[110px] items-center gap-1 rounded-lg px-2.5 text-white shadow-sm transition-shadow group-hover:shadow-md"
       style={{
         backgroundColor: color,
         ...(selected
@@ -180,7 +180,7 @@ function GraphNodeComponentImpl({ data, id, selected }: NodeProps) {
             text={truncatedLabel.slice(0, 4)}
             color={color}
             selected={selected}
-            size="size-6"
+            size="size-[24px]"
           />
         );
       case 'asset':
@@ -271,7 +271,7 @@ function GraphNodeComponentImpl({ data, id, selected }: NodeProps) {
         )}
       </div>
       {showLabelBelow && labelVisible && (
-        <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 max-w-[110px] -translate-x-1/2 text-center text-[10px] font-medium leading-tight text-foreground/80">
+        <div className="pointer-events-none absolute left-1/2 top-full z-10 mt-[4px] w-max max-w-[110px] -translate-x-1/2 truncate text-center text-[10px] font-medium leading-tight text-foreground/80">
           {truncatedLabel}
         </div>
       )}

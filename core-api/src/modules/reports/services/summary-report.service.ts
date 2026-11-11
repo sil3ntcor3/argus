@@ -7,7 +7,10 @@ import { AssetService } from '@/modules/assets/entities/asset-services.entity';
 import { AssetTag } from '@/modules/assets/entities/asset-tags.entity';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { StatisticService } from '@/modules/statistic/statistic.service';
-import { openVulnerabilityCondition } from '@/modules/vulnerabilities/open-vulnerability';
+import {
+  activeDismissalCondition,
+  openVulnerabilityCondition,
+} from '@/modules/vulnerabilities/open-vulnerability';
 import { Severity, VulnerabilityAnalyzeStatus, JobStatus } from '@/common/enums/enum';
 import type { TargetType } from '@/modules/targets/entities/target.entity';
 import type { ReportData } from '../types/report-data.type';
@@ -273,7 +276,11 @@ export class SummaryReportService {
       .leftJoin('v.asset', 'asset')
       .leftJoin('asset.target', 'target')
       .leftJoin('target.workspace', 'workspace')
-      .leftJoin('v.vulnerabilityDismissal', 'dismissal')
+      .leftJoin(
+        'v.vulnerabilityDismissal',
+        'dismissal',
+        activeDismissalCondition('dismissal'),
+      )
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere('v.isArchived = :isArchived', { isArchived: false })
       .andWhere('dismissal.id IS NOT NULL')
@@ -334,7 +341,11 @@ export class SummaryReportService {
       .leftJoinAndSelect('v.asset', 'asset')
       .leftJoin('asset.target', 'target')
       .leftJoin('target.workspace', 'workspace')
-      .leftJoinAndSelect('v.vulnerabilityDismissal', 'dismissal')
+      .leftJoinAndSelect(
+        'v.vulnerabilityDismissal',
+        'dismissal',
+        activeDismissalCondition('dismissal'),
+      )
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere('dismissal.id IS NOT NULL')
       .orderBy('dismissal.createdAt', 'DESC')
@@ -498,7 +509,7 @@ export class SummaryReportService {
       )
       .addSelect('COUNT(v.id)', 'total')
       .where('workspace.id = :workspaceId', { workspaceId })
-      .andWhere('v.isArchived = :isArchived', { isArchived: false })
+      .andWhere(openVulnerabilityCondition('v'))
       .groupBy('t.id')
       .addGroupBy('t.value')
       .addGroupBy('t.type')
@@ -566,7 +577,7 @@ export class SummaryReportService {
       .createQueryBuilder('t')
       .leftJoin('t.workspace', 'workspace')
       .leftJoin('t.assets', 'asset')
-      .leftJoin('asset.vulnerabilities', 'v')
+      .leftJoin('asset.vulnerabilities', 'v', openVulnerabilityCondition('v'))
       .select('t.value', 'identifier')
       .addSelect('t.createdAt', 'discovered')
       .addSelect('COUNT(v.id)', 'vulnCount')
@@ -599,7 +610,11 @@ export class SummaryReportService {
       .leftJoin('as.asset', 'asset')
       .leftJoin('asset.target', 'target')
       .leftJoin('target.workspace', 'workspace')
-      .leftJoin('asset.vulnerabilities', 'v', 'v.ports @> ARRAY["as".port::text]')
+      .leftJoin(
+        'asset.vulnerabilities',
+        'v',
+        `v.ports @> ARRAY["as".port::text] AND ${openVulnerabilityCondition('v')}`,
+      )
       .select('as.port', 'port')
       .addSelect('as.value', 'service')
       .addSelect('as.createdAt', 'discovered')

@@ -1,4 +1,5 @@
 import { createRootRouteWithContext, Outlet, Link } from '@tanstack/react-router';
+import { OpenLinkDialog } from '@/components/ui/open-link';
 import type { RouterContext } from '@/router';
 import { useWorkspaceSync } from '@/hooks/useWorkspaceSelector';
 import { usePermission } from '@/hooks/usePermission';
@@ -24,6 +25,7 @@ function RootComponent() {
     <>
       <RootBootstrap />
       <Outlet />
+      <OpenLinkDialog />
     </>
   );
 }

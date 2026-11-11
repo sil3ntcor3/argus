@@ -1,11 +1,11 @@
 // HeaderBar - Sticky header component without children wrapper
 
+import { CommandPalette } from '@/components/common/command-palette';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import AppLogo from '@/components/ui/app-logo';
 import { NavUser } from '@/components/ui/nav-user';
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
-import { SearchForm } from '../../ui/search-form';
 import { ThemeSwitch } from '@/components/ui/theme-switch-icon';
 import { cn } from '@/lib/utils';
 
@@ -15,7 +15,7 @@ interface HeaderBarProps {
 
 export function HeaderBar({ className }: HeaderBarProps) {
   const { isMobile } = useSidebar();
-  const { workspaces } = useWorkspaceSelector();
+  const { workspaces, selectedWorkspace } = useWorkspaceSelector();
   const isHasWorkspace = workspaces?.length > 0;
   return (
     <header
@@ -30,8 +30,8 @@ export function HeaderBar({ className }: HeaderBarProps) {
             <SidebarTrigger className="max-md:scale-125" />
             {isMobile && <AppLogo type="small" />}
           </div>
-          <div className="flex flex-1 justify-center">
-            <SearchForm className="w-full max-w-xl" />
+          <div className="flex flex-1 items-center justify-center">
+            {selectedWorkspace && <CommandPalette key={selectedWorkspace} />}
           </div>
           <div className="flex items-center gap-1">
             <ThemeSwitch />

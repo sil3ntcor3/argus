@@ -158,6 +158,8 @@ func Start(ctx context.Context, cfg *config.Config, events chan<- TuiEvent) {
 
 	pollLoop := func(pollerCtx, sessionCtx context.Context) {
 		policy := newPollPolicy()
+		// Keep a hint-armed claim scheduled even if more hints arrive before it fires.
+		nudged := false
 		hadJobCh := make(chan bool, 64)
 		timer := time.NewTimer(policy.backoff)
 		defer timer.Stop()
@@ -278,10 +280,20 @@ func Start(ctx context.Context, cfg *config.Config, events chan<- TuiEvent) {
 				if !wasFlowing && policy.flowing() {
 					resetTimer(pollRefillDelay)
 				}
+			case <-grpcClient.JobsAvailable():
+				if !nudged && !policy.flowing() {
+					nudged = true
+					resetTimer(pollRefillDelay)
+				}
 			case <-timer.C:
+				nudged = false
 				drainFeedback()
 				if sessionCtx == nil || sessionCtx.Err() != nil {
 					resetTimer(pollMaxBackoff)
+					continue
+				}
+				if len(semaphore) == cap(semaphore) {
+					resetTimer(pollBusyDelay) // Busy slots are distinct from an empty claim.
 					continue
 				}
 				// One batched claim fills EVERY free slot. The old cadence

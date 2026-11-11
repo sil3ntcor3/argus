@@ -48,7 +48,7 @@ func TestAgentToolFailsFastWhenPoolExhausted(t *testing.T) {
 	pool := execution.NewPoolManager(0, 1, 0)
 	pool.SetResourceBudget(1000, 1<<30)
 	mgr.SetPool(pool)
-	img := "ghcr.io/oasm-platform/connector-nmap:7.97"
+	img := "ghcr.io/sil3ntcor3/connector-nmap:7.97"
 	cpu, mem := "1000m", "512Mi"
 
 	// Occupy the whole node budget.

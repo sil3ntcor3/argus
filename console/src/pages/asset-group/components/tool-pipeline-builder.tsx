@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ToolLogo } from '@/components/ui/tool-logo';
 import { Input } from '@/components/ui/input';
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field';
 import {
   Popover,
   PopoverAnchor,
@@ -30,6 +31,7 @@ import {
   useToolConfigProfilesControllerList,
   type Tool,
   type ToolCategory,
+  type DataKind,
 } from '@/services/apis/gen/queries';
 import {
   CheckIcon,
@@ -48,10 +50,15 @@ import {
   useState,
 } from 'react';
 import { toast } from 'sonner';
+import { capabilityOf, pipelineHint } from './tool-io';
+import { ToolIOInfo, ToolInputSelect } from './tool-input-fields';
 
-/** A single tool entry in the pipeline. The pipeline is an unordered set — the tools all run at once. */
+/** A selected tool, including saved stage and input preferences. */
 export interface PipelineToolEntry {
   toolId: string;
+  jobId?: string;
+  stage?: number;
+  input?: DataKind[];
   config?: Record<string, unknown>;
   configProfileId?: string;
   /** Category to run the tool in; omitted → the tool's first. */
@@ -61,7 +68,7 @@ export interface PipelineToolEntry {
 interface ToolPipelineBuilderProps {
   /** Full tool objects (with type / hasConfigProfile / isReady / logoUrl). */
   tools: Tool[];
-  /** The selected entries. Order is presentation only; they run in parallel. */
+  /** Entries run by stage; order within a stage is presentation only. */
   value: PipelineToolEntry[];
   onChange: (next: PipelineToolEntry[]) => void;
   disabled?: boolean;
@@ -196,6 +203,7 @@ const ToolProfileSelect = memo(function ToolProfileSelect({
       disabled={disabled}
     >
       <SelectTrigger
+        aria-label="Configuration profile"
         size="sm"
         className="w-full"
         title={orphan ? `Linked profile ${value} was deleted` : undefined}
@@ -266,11 +274,12 @@ const PipelineToolLogo = memo(
     {
       tool: Tool;
       added: boolean;
+      stage?: number;
       disabled?: boolean;
       onClick: (tool: Tool) => void;
     }
   >(function PipelineToolLogo(
-    { tool, added, disabled, onClick, ...rest },
+    { tool, added, stage, disabled, onClick, ...rest },
     ref,
   ) {
     return (
@@ -318,17 +327,14 @@ const PipelineToolLogo = memo(
       <span className="text-center text-xs font-medium capitalize">
         {tool.name}
       </span>
+      {added && <span className="text-xs text-muted-foreground">Stage {stage ?? 1}</span>}
       </button>
     );
   }),
 );
 
 /**
- * Action panel for a selected tool: config profile, inline config, remove.
- *
- * There is no ordering control: the selected tools are saved as jobs without
- * `needs`, so they all run at once, and the map key order is not preserved by
- * jsonb anyway — a "move up" here would snap back on the next refetch.
+ * Action panel for a selected tool: stage, config profile, inline config, remove.
  */
 const SelectedToolPanel = memo(function SelectedToolPanel({
   tool,
@@ -340,6 +346,7 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
   onRemove,
   onOpenSheet,
   onProfilesLoaded,
+  ioHint,
 }: {
   tool: Tool;
   entry: PipelineToolEntry;
@@ -350,12 +357,14 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
   onRemove: (id: string) => void;
   onOpenSheet: (toolId: string) => void;
   onProfilesLoaded: (toolId: string, ids: string[]) => void;
+  ioHint?: string;
 }) {
   const orphan = isProfileOrphan(entry, knownProfileIds);
   const custom = hasInlineConfig(entry);
   const linked = !!entry.configProfileId && !orphan;
   const usesDefault = !custom && !linked ? getBackendHasProfile(tool) : false;
   const toolLabel = tool.name;
+  const capability = capabilityOf(tool, entry.category);
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
@@ -382,12 +391,35 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
         {usesDefault && <Badge variant="soft">Using default</Badge>}
 
       </div>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor={`pipeline-stage-${tool.id}`}>Pipeline stage</FieldLabel>
+          <Select
+            value={String(entry.stage ?? 1)}
+            onValueChange={(value) => onPatchEntry(tool.id, { stage: Number(value) })}
+            disabled={disabled}
+          >
+            <SelectTrigger id={`pipeline-stage-${tool.id}`} size="sm" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 20 }, (_, index) => index + 1).map((stage) => (
+                <SelectItem key={stage} value={String(stage)}>Stage {stage}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldDescription>Tools in one stage run together; later stages wait.</FieldDescription>
+        </Field>
+      </FieldGroup>
       {tool.categories && tool.categories.length > 1 && (
         <Select
           value={entry.category ?? tool.categories[0].name}
-          onValueChange={(value) =>
-            onPatchEntry(tool.id, { category: value as ToolCategory })
-          }
+          onValueChange={(value) => {
+            const category = value as ToolCategory;
+            const accepted = capabilityOf(tool, category)?.inputs;
+            const incompatible = entry.input?.some((kind) => accepted && !accepted.includes(kind));
+            onPatchEntry(tool.id, { category, ...(incompatible ? { input: undefined } : {}) });
+          }}
           disabled={disabled}
         >
           <SelectTrigger aria-label="Category" className="h-8">
@@ -402,6 +434,9 @@ const SelectedToolPanel = memo(function SelectedToolPanel({
           </SelectContent>
         </Select>
       )}
+      <ToolIOInfo capability={capability} input={entry.input} />
+      <ToolInputSelect id={`pipeline-input-${tool.id}`} accepted={capability?.inputs ?? []} value={entry.input} disabled={disabled} onChange={(input) => onPatchEntry(tool.id, { input })} />
+      {ioHint && <p className="rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">{ioHint}</p>}
       <ToolProfileSelect
         toolId={tool.id}
         value={entry.configProfileId}
@@ -478,6 +513,7 @@ const PendingToolPanel = memo(function PendingToolPanel({
           <X className="size-3.5" />
         </Button>
       </div>
+      <ToolIOInfo capability={capabilityOf(tool)} input={pending?.input} />
       <ToolProfileSelect
         toolId={tool.id}
         value={pending?.configProfileId as string | undefined}
@@ -638,6 +674,13 @@ function ToolPipelineBuilderComponent({
     () => new Map(value.map((e) => [e.toolId, e])),
     [value],
   );
+  const hintFor = useCallback((tool: Tool, entry: PipelineToolEntry) => {
+    const earlier = value.filter((other) => (other.stage ?? 1) < (entry.stage ?? 1)).flatMap((other) => {
+      const prior = byId.get(other.toolId);
+      return prior ? capabilityOf(prior, other.category)?.produces ?? [] : [];
+    });
+    return pipelineHint(entry.input?.length ? entry.input : capabilityOf(tool, entry.category)?.inputs ?? [], earlier);
+  }, [value, byId]);
   const filteredTools = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return tools;
@@ -768,6 +811,7 @@ function ToolPipelineBuilderComponent({
       <PipelineToolLogo
         tool={tool}
         added={added}
+        stage={entry?.stage}
         disabled={disabled}
         onClick={handleLogoClick}
       />
@@ -805,7 +849,9 @@ function ToolPipelineBuilderComponent({
           </div>
           <span className="text-xs text-muted-foreground">
             {value.length} selected
-            {value.length > 0 ? ' · runs in parallel' : ''}
+            {value.length > 0 && (new Set(value.map((entry) => entry.stage ?? 1)).size > 1
+              ? ` · ${new Set(value.map((entry) => entry.stage ?? 1)).size} stages`
+              : ' · runs in parallel')}
           </span>
         </div>
 
@@ -869,6 +915,7 @@ function ToolPipelineBuilderComponent({
                   <PipelineToolLogo
                     tool={tool}
                     added={added}
+                    stage={entry.stage}
                     disabled={disabled}
                     onClick={handleLogoClick}
                   />
@@ -877,6 +924,7 @@ function ToolPipelineBuilderComponent({
                   <SelectedToolPanel
                     tool={tool}
                     entry={entry}
+                    ioHint={hintFor(tool, entry)}
                     knownProfileIds={knownProfilesByTool[tool.id]}
                     disabled={disabled}
                     onClose={handleCloseActive}

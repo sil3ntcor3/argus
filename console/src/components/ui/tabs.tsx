@@ -2,6 +2,7 @@ import * as TabsPrimitive from '@radix-ui/react-tabs';
 import * as React from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 type QueryTabOptions = {
@@ -163,19 +164,47 @@ function TabsList({
   );
 }
 
+type TabsTriggerProps = React.ComponentProps<typeof TabsPrimitive.Trigger> &
+  (
+    | { asChild?: false; badge?: number | string; badgeClassName?: string }
+    | { badge?: never; badgeClassName?: never }
+  );
+
 function TabsTrigger({
+  badge,
+  badgeClassName,
+  children,
   className,
   ...props
-}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+}: TabsTriggerProps) {
+  const hasBadge = badge != null;
   return (
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "data-[state=active]:after:absolute data-[state=active]:after:bottom-0 data-[state=active]:after:left-1/2 data-[state=active]:after:-translate-x-1/2 data-[state=active]:after:h-0.5 data-[state=active]:after:w-5 data-[state=active]:after:bg-primary data-[state=active]:after:rounded-full data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring text-muted-foreground inline-flex h-[calc(100%-1px)] items-center justify-center gap-1.5 relative px-0 py-1 text-sm font-medium whitespace-nowrap focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 cursor-pointer hover:text-foreground transition-colors",
+        "data-[state=active]:after:absolute data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:bg-primary data-[state=active]:after:rounded-full data-[state=active]:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring text-muted-foreground inline-flex h-[calc(100%-1px)] items-center justify-center gap-1.5 relative px-0 py-1 text-sm font-medium whitespace-nowrap focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 cursor-pointer hover:text-foreground transition-colors",
+        hasBadge
+          ? 'data-[state=active]:after:inset-x-0'
+          : 'data-[state=active]:after:left-1/2 data-[state=active]:after:-translate-x-1/2 data-[state=active]:after:w-5',
         className,
       )}
       {...props}
-    />
+    >
+      {hasBadge ? (
+        <>
+          {children}{' '}
+          <Badge
+            data-slot="tabs-badge"
+            variant="secondary"
+            className={cn('tabular-nums', badgeClassName)}
+          >
+            {badge}
+          </Badge>
+        </>
+      ) : (
+        children
+      )}
+    </TabsPrimitive.Trigger>
   );
 }
 

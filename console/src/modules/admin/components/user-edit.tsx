@@ -1,3 +1,6 @@
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
+import { isPendingApproval } from '../utils';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -28,12 +31,13 @@ import {
 import {
   getAdminUsersControllerGetUserQueryKey,
   getAdminUsersControllerGetUsersQueryKey,
+  useSystemConfigsControllerGetSettings,
   type AdminUserDto,
 } from '@/services/apis/gen/queries';
 import { authClient, useSession } from '@/utils/authClient';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Ban, Loader2 } from 'lucide-react';
+import { Ban, Loader2, UserCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -485,6 +489,95 @@ function BanSection({ user, isSelf }: { user: AdminUserDto; isSelf: boolean }) {
   );
 }
 
+/** Pending signups use the existing unban operation after email eligibility is known. */
+function ApprovalSection({
+  user,
+  isSelf,
+}: {
+  user: AdminUserDto;
+  isSelf: boolean;
+}) {
+  const refreshUser = useRefreshUser(user.id);
+  const {
+    data: settings,
+    isLoading,
+    isError,
+    refetch,
+  } = useSystemConfigsControllerGetSettings();
+  const loading = !user.emailVerified && isLoading;
+  const unavailable =
+    !user.emailVerified &&
+    !isLoading &&
+    (isError || typeof settings?.mailServer?.enabled !== 'boolean');
+  const awaitingEmail =
+    !user.emailVerified && settings?.mailServer?.enabled === true;
+  const { mutate, isPending } = useMutation({
+    mutationFn: () => unwrap(authClient.admin.unbanUser({ userId: user.id })),
+    onSuccess: () => {
+      toast.success('User approved.');
+      return refreshUser();
+    },
+    onError: (error) => toast.error(error.message || 'Failed to approve user.'),
+  });
+  return (
+    <Card className="gap-4">
+      <CardHeader>
+        <CardTitle>Waiting for approval</CardTitle>
+        <CardDescription>
+          {user.name} signed up and can't sign in until the account is approved.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="text-sm">
+            <p className="font-medium">Approve account</p>
+            <p className="text-xs text-muted-foreground">
+              {isSelf
+                ? "You can't approve your own account."
+                : awaitingEmail
+                  ? "They haven't confirmed their email yet. You can approve once they do."
+                  : 'Let them sign in to the platform.'}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            disabled={
+              isPending || isSelf || loading || unavailable || awaitingEmail
+            }
+            onClick={() => mutate()}
+          >
+            {isPending ? (
+              <Loader2 className="animate-spin" data-icon="inline-start" />
+            ) : (
+              <UserCheck data-icon="inline-start" />
+            )}
+            Approve
+          </Button>
+        </div>
+        {loading && (
+          <Skeleton className="h-5 w-48" role="status">
+            <span className="sr-only">Loading approval settings</span>
+          </Skeleton>
+        )}
+        {unavailable && (
+          <Alert variant="destructive">
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+              Unable to load approval settings.
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void refetch()}
+              >
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 /** Editable settings of a user account, one form per concern. */
 export function UserEdit({ user }: { user: AdminUserDto }) {
   const { data: session } = useSession();
@@ -492,10 +585,13 @@ export function UserEdit({ user }: { user: AdminUserDto }) {
 
   return (
     <div className="space-y-4">
+      {isPendingApproval(user) && (
+        <ApprovalSection user={user} isSelf={isSelf} />
+      )}
       <ProfileForm user={user} />
       <RoleForm user={user} isSelf={isSelf} />
       <PasswordForm user={user} />
-      <BanSection user={user} isSelf={isSelf} />
+      {!isPendingApproval(user) && <BanSection user={user} isSelf={isSelf} />}
     </div>
   );
 }

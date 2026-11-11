@@ -22,6 +22,7 @@ import { EventBusGroup } from '@/common/enums/enum';
  * becoming a second, half-tested copy of the business rules.
  */
 export const SUBSCRIPTIONS = {
+  [EventBusGroup.Projects]: ['asset'],
   [EventBusGroup.Audit]: '*',
   [EventBusGroup.Projection]: [
     'vulnerability',

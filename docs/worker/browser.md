@@ -46,9 +46,12 @@ At each launch on a sandboxed worker, the worker checks that the browser really 
 After every command that runs in an open session (all but `close`), the worker captures the active tab's viewport as a JPEG, scaled to at most 1280 px wide (`browserSession.screenshot`). It sends the image as a `REMOTE_EXECUTE_RESULT_IMAGE` result before the command's EXIT. The image is a live view for the user only. It is never stored, and never reaches the model:
 
 1. Core publishes the image bytes as base64 on the command's Redis result channel. `RemoteExecuteService` returns the last image with the result but does not pass it to live terminal listeners.
-2. `execute_remote_command` keeps the image out of its result, and emits it as `browser-screenshot` on the run's emitter.
-3. The run streams it as a transient `data-browser-screenshot` chunk, which is not saved with the message. The stream buffer does not record it for replay either: `publishLive` hands it only to clients resuming at that moment.
-4. The console keeps the latest one in memory (`useAgentChat().browserScreenshot`), and the Browser tab of the chat side panel shows it. After a reload or a conversation switch, the tab stays empty until the next browser command.
+2. `execute_remote_command` keeps the image out of its result, and emits it as `browser-screenshot` on the run's emitter. Optional `browserSessionId` identifies the `-s b-<id>` / `--session b-<id>` argument (including quoted IDs) or the `session: b-<id>` line printed by `browser open`.
+3. Subagent runs use their own emitter. `AgentsSubagentsService.subscribeScreenshots` forwards their screenshots only to that conversation, adding `subagent: { id, name }`. Approval settings and the subagent tool allowlist still apply.
+4. The run streams main-agent and subagent images as transient `data-browser-screenshot` chunks. They are not saved with messages or recorded by the stream buffer for replay. Subscriptions are removed when the turn ends, fails, or is stopped.
+5. The console keeps the latest image per session in memory (`useAgentChat().browserScreenshots`, at most 8). Views stay in their first-seen order, labelled with the main agent or subagent name and session id. Updating a session replaces only its picture; exceeding the cap removes the least recently updated view. Legacy events without session metadata use one view per agent. Pictures survive turn completion and Stop, including a new conversation's first turn, and clear on reload or conversation switch.
+
+Subagent screenshots reach the console only while the conversation streams on the instance running the subagent, like its status updates.
 
 A failed capture only drops the picture; the command's result is unchanged.
 

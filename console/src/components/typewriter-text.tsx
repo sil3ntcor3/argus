@@ -21,9 +21,18 @@ export default function TypewriterText({
   const [currentIndex, setCurrentIndex] = useState(() =>
     Math.floor(Math.random() * texts.length),
   );
+  const [previousTexts, setPreviousTexts] = useState(texts);
+  if (texts !== previousTexts) {
+    setPreviousTexts(texts);
+    setDisplayText('');
+    setCharIndex(0);
+    setIsDeleting(false);
+    setCurrentIndex(Math.floor(Math.random() * texts.length));
+  }
 
   useEffect(() => {
     const currentText = texts[currentIndex];
+    if (currentText === undefined) return;
     let timeout: ReturnType<typeof setTimeout>;
 
     if (!isDeleting && charIndex < currentText.length) {
@@ -53,6 +62,8 @@ export default function TypewriterText({
 
     return () => clearTimeout(timeout);
   }, [charIndex, isDeleting, currentIndex, texts, typingSpeed, deletingSpeed, pauseDuration]);
+
+  if (texts.length === 0) return null;
 
   return (
     <p className={className}>

@@ -47,6 +47,8 @@ export const REMOTE_EXECUTE_KEEPALIVE_HEADER = 'x-remote-execute-keepalive';
  * `@UseGuards(McpGuard)` on all of their routes.
  */
 export const AUTH_IGNORE_ROUTERS = ['mcp'];
+/** Public signups wait for an administrator to unban the account. */
+export const PENDING_APPROVAL_REASON = 'Pending approval';
 export const WEBAPP_ANALYZER_SRC_URL =
   'https://raw.githubusercontent.com/oasm-platform/webappanalyzer/main/src';
 export const GET_WORKSPACE_MCP_TOOL_NAME = 'get_workspaces';

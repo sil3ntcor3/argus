@@ -15,12 +15,15 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as InitAdminRouteImport } from './routes/init-admin'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedReportsRouteImport } from './routes/_authed/reports'
 import { Route as AuthedSearchRouteImport } from './routes/_authed/search'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAboutRouteImport } from './routes/admin/about'
+import { Route as AdminAuthenticationRouteImport } from './routes/admin/authentication'
 import { Route as AdminBrandRouteImport } from './routes/admin/brand'
+import { Route as AdminMailServerRouteImport } from './routes/admin/mail-server'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as SettingsTabRouteImport } from './routes/settings/$tab'
@@ -38,6 +41,8 @@ import { Route as AuthedInternalNetworksIndexRouteImport } from './routes/_authe
 import { Route as AuthedInternalNetworksIdRouteImport } from './routes/_authed/internal-networks/$id'
 import { Route as AuthedInternalNetworksCreateRouteImport } from './routes/_authed/internal-networks/create'
 import { Route as AuthedJobsIndexRouteImport } from './routes/_authed/jobs/index'
+import { Route as AuthedProjectsIndexRouteImport } from './routes/_authed/projects/index'
+import { Route as AuthedProjectsCreateRouteImport } from './routes/_authed/projects/create'
 import { Route as AuthedProvidersIndexRouteImport } from './routes/_authed/providers/index'
 import { Route as AuthedProvidersCreateRouteImport } from './routes/_authed/providers/create'
 import { Route as AuthedTargetsIndexRouteImport } from './routes/_authed/targets/index'
@@ -61,6 +66,12 @@ import { Route as AuthedAistudioConversationsIndexRouteImport } from './routes/_
 import { Route as AuthedAistudioConversationsConversationIdRouteImport } from './routes/_authed/aistudio/conversations/$conversationId'
 import { Route as AuthedAssetsServicesIdRouteImport } from './routes/_authed/assets/services/$id'
 import { Route as AuthedJobsRunsIdRouteImport } from './routes/_authed/jobs/runs/$id'
+import { Route as AuthedProjectsIdIndexRouteImport } from './routes/_authed/projects/$id/index'
+import { Route as AuthedProjectsIdAssetsRouteImport } from './routes/_authed/projects/$id/assets'
+import { Route as AuthedProjectsIdFindingsRouteImport } from './routes/_authed/projects/$id/findings'
+import { Route as AuthedProjectsIdRunsRouteImport } from './routes/_authed/projects/$id/runs'
+import { Route as AuthedProjectsIdSettingsRouteImport } from './routes/_authed/projects/$id/settings'
+import { Route as AuthedProjectsIdWorkflowsRouteImport } from './routes/_authed/projects/$id/workflows'
 import { Route as AuthedProvidersIdIndexRouteImport } from './routes/_authed/providers/$id/index'
 import { Route as AuthedProvidersIdEditRouteImport } from './routes/_authed/providers/$id/edit'
 import { Route as AuthedTargetsIdIndexRouteImport } from './routes/_authed/targets/$id/index'
@@ -97,6 +108,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthedIndexRoute = AuthedIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -122,9 +138,19 @@ const AdminAboutRoute = AdminAboutRouteImport.update({
   path: '/about',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAuthenticationRoute = AdminAuthenticationRouteImport.update({
+  id: '/authentication',
+  path: '/authentication',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminBrandRoute = AdminBrandRouteImport.update({
   id: '/brand',
   path: '/brand',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminMailServerRoute = AdminMailServerRouteImport.update({
+  id: '/mail-server',
+  path: '/mail-server',
   getParentRoute: () => AdminRoute,
 } as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
@@ -214,6 +240,16 @@ const AuthedInternalNetworksCreateRoute =
 const AuthedJobsIndexRoute = AuthedJobsIndexRouteImport.update({
   id: '/jobs/',
   path: '/jobs/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedProjectsIndexRoute = AuthedProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedProjectsCreateRoute = AuthedProjectsCreateRouteImport.update({
+  id: '/projects/create',
+  path: '/projects/create',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedProvidersIndexRoute = AuthedProvidersIndexRouteImport.update({
@@ -336,6 +372,39 @@ const AuthedJobsRunsIdRoute = AuthedJobsRunsIdRouteImport.update({
   path: '/jobs/runs/$id',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedProjectsIdIndexRoute = AuthedProjectsIdIndexRouteImport.update({
+  id: '/projects/$id/',
+  path: '/projects/$id/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedProjectsIdAssetsRoute = AuthedProjectsIdAssetsRouteImport.update({
+  id: '/projects/$id/assets',
+  path: '/projects/$id/assets',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedProjectsIdFindingsRoute =
+  AuthedProjectsIdFindingsRouteImport.update({
+    id: '/projects/$id/findings',
+    path: '/projects/$id/findings',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedProjectsIdRunsRoute = AuthedProjectsIdRunsRouteImport.update({
+  id: '/projects/$id/runs',
+  path: '/projects/$id/runs',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedProjectsIdSettingsRoute =
+  AuthedProjectsIdSettingsRouteImport.update({
+    id: '/projects/$id/settings',
+    path: '/projects/$id/settings',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedProjectsIdWorkflowsRoute =
+  AuthedProjectsIdWorkflowsRouteImport.update({
+    id: '/projects/$id/workflows',
+    path: '/projects/$id/workflows',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedProvidersIdIndexRoute = AuthedProvidersIdIndexRouteImport.update({
   id: '/providers/$id/',
   path: '/providers/$id/',
@@ -376,10 +445,13 @@ export interface FileRoutesByFullPath {
   '/init-admin': typeof InitAdminRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/signup': typeof SignupRoute
   '/reports': typeof AuthedReportsRoute
   '/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
+  '/admin/authentication': typeof AdminAuthenticationRoute
   '/admin/brand': typeof AdminBrandRoute
+  '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
   '/settings/$tab': typeof SettingsTabRoute
   '/admin/': typeof AdminIndexRoute
@@ -392,6 +464,7 @@ export interface FileRoutesByFullPath {
   '/groups/create': typeof AuthedGroupsCreateRoute
   '/internal-networks/$id': typeof AuthedInternalNetworksIdRoute
   '/internal-networks/create': typeof AuthedInternalNetworksCreateRoute
+  '/projects/create': typeof AuthedProjectsCreateRoute
   '/providers/create': typeof AuthedProvidersCreateRoute
   '/targets/start-discovery': typeof AuthedTargetsStartDiscoveryRoute
   '/tools/$id': typeof AuthedToolsIdRoute
@@ -406,6 +479,7 @@ export interface FileRoutesByFullPath {
   '/integrations/': typeof AuthedIntegrationsIndexRoute
   '/internal-networks/': typeof AuthedInternalNetworksIndexRoute
   '/jobs/': typeof AuthedJobsIndexRoute
+  '/projects/': typeof AuthedProjectsIndexRoute
   '/providers/': typeof AuthedProvidersIndexRoute
   '/targets/': typeof AuthedTargetsIndexRoute
   '/tools/': typeof AuthedToolsIndexRoute
@@ -419,12 +493,18 @@ export interface FileRoutesByFullPath {
   '/aistudio/conversations/$conversationId': typeof AuthedAistudioConversationsConversationIdRoute
   '/assets/services/$id': typeof AuthedAssetsServicesIdRoute
   '/jobs/runs/$id': typeof AuthedJobsRunsIdRoute
+  '/projects/$id/assets': typeof AuthedProjectsIdAssetsRoute
+  '/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
+  '/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
+  '/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
+  '/projects/$id/workflows': typeof AuthedProjectsIdWorkflowsRoute
   '/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
   '/settings/members/permission-groups/new': typeof SettingsMembersPermissionGroupsNewRoute
   '/agents/$id/': typeof AuthedAgentsIdIndexRoute
   '/aistudio/conversations/': typeof AuthedAistudioConversationsIndexRoute
+  '/projects/$id/': typeof AuthedProjectsIdIndexRoute
   '/providers/$id/': typeof AuthedProvidersIdIndexRoute
   '/targets/$id/': typeof AuthedTargetsIdIndexRoute
 }
@@ -432,10 +512,13 @@ export interface FileRoutesByTo {
   '/$': typeof SplatRoute
   '/init-admin': typeof InitAdminRoute
   '/login': typeof LoginRoute
+  '/signup': typeof SignupRoute
   '/reports': typeof AuthedReportsRoute
   '/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
+  '/admin/authentication': typeof AdminAuthenticationRoute
   '/admin/brand': typeof AdminBrandRoute
+  '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
   '/settings/$tab': typeof SettingsTabRoute
   '/': typeof AuthedIndexRoute
@@ -449,6 +532,7 @@ export interface FileRoutesByTo {
   '/groups/create': typeof AuthedGroupsCreateRoute
   '/internal-networks/$id': typeof AuthedInternalNetworksIdRoute
   '/internal-networks/create': typeof AuthedInternalNetworksCreateRoute
+  '/projects/create': typeof AuthedProjectsCreateRoute
   '/providers/create': typeof AuthedProvidersCreateRoute
   '/targets/start-discovery': typeof AuthedTargetsStartDiscoveryRoute
   '/tools/$id': typeof AuthedToolsIdRoute
@@ -463,6 +547,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof AuthedIntegrationsIndexRoute
   '/internal-networks': typeof AuthedInternalNetworksIndexRoute
   '/jobs': typeof AuthedJobsIndexRoute
+  '/projects': typeof AuthedProjectsIndexRoute
   '/providers': typeof AuthedProvidersIndexRoute
   '/targets': typeof AuthedTargetsIndexRoute
   '/tools': typeof AuthedToolsIndexRoute
@@ -476,12 +561,18 @@ export interface FileRoutesByTo {
   '/aistudio/conversations/$conversationId': typeof AuthedAistudioConversationsConversationIdRoute
   '/assets/services/$id': typeof AuthedAssetsServicesIdRoute
   '/jobs/runs/$id': typeof AuthedJobsRunsIdRoute
+  '/projects/$id/assets': typeof AuthedProjectsIdAssetsRoute
+  '/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
+  '/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
+  '/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
+  '/projects/$id/workflows': typeof AuthedProjectsIdWorkflowsRoute
   '/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
   '/settings/members/permission-groups/new': typeof SettingsMembersPermissionGroupsNewRoute
   '/agents/$id': typeof AuthedAgentsIdIndexRoute
   '/aistudio/conversations': typeof AuthedAistudioConversationsIndexRoute
+  '/projects/$id': typeof AuthedProjectsIdIndexRoute
   '/providers/$id': typeof AuthedProvidersIdIndexRoute
   '/targets/$id': typeof AuthedTargetsIdIndexRoute
 }
@@ -493,10 +584,13 @@ export interface FileRoutesById {
   '/init-admin': typeof InitAdminRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/signup': typeof SignupRoute
   '/_authed/reports': typeof AuthedReportsRoute
   '/_authed/search': typeof AuthedSearchRoute
   '/admin/about': typeof AdminAboutRoute
+  '/admin/authentication': typeof AdminAuthenticationRoute
   '/admin/brand': typeof AdminBrandRoute
+  '/admin/mail-server': typeof AdminMailServerRoute
   '/invite/$token': typeof InviteTokenRoute
   '/settings/$tab': typeof SettingsTabRoute
   '/_authed/': typeof AuthedIndexRoute
@@ -510,6 +604,7 @@ export interface FileRoutesById {
   '/_authed/groups/create': typeof AuthedGroupsCreateRoute
   '/_authed/internal-networks/$id': typeof AuthedInternalNetworksIdRoute
   '/_authed/internal-networks/create': typeof AuthedInternalNetworksCreateRoute
+  '/_authed/projects/create': typeof AuthedProjectsCreateRoute
   '/_authed/providers/create': typeof AuthedProvidersCreateRoute
   '/_authed/targets/start-discovery': typeof AuthedTargetsStartDiscoveryRoute
   '/_authed/tools/$id': typeof AuthedToolsIdRoute
@@ -524,6 +619,7 @@ export interface FileRoutesById {
   '/_authed/integrations/': typeof AuthedIntegrationsIndexRoute
   '/_authed/internal-networks/': typeof AuthedInternalNetworksIndexRoute
   '/_authed/jobs/': typeof AuthedJobsIndexRoute
+  '/_authed/projects/': typeof AuthedProjectsIndexRoute
   '/_authed/providers/': typeof AuthedProvidersIndexRoute
   '/_authed/targets/': typeof AuthedTargetsIndexRoute
   '/_authed/tools/': typeof AuthedToolsIndexRoute
@@ -537,12 +633,18 @@ export interface FileRoutesById {
   '/_authed/aistudio/conversations/$conversationId': typeof AuthedAistudioConversationsConversationIdRoute
   '/_authed/assets/services/$id': typeof AuthedAssetsServicesIdRoute
   '/_authed/jobs/runs/$id': typeof AuthedJobsRunsIdRoute
+  '/_authed/projects/$id/assets': typeof AuthedProjectsIdAssetsRoute
+  '/_authed/projects/$id/findings': typeof AuthedProjectsIdFindingsRoute
+  '/_authed/projects/$id/runs': typeof AuthedProjectsIdRunsRoute
+  '/_authed/projects/$id/settings': typeof AuthedProjectsIdSettingsRoute
+  '/_authed/projects/$id/workflows': typeof AuthedProjectsIdWorkflowsRoute
   '/_authed/providers/$id/edit': typeof AuthedProvidersIdEditRoute
   '/_authed/targets/$id/$tab': typeof AuthedTargetsIdTabRoute
   '/settings/members/permission-groups/$permissionId': typeof SettingsMembersPermissionGroupsPermissionIdRoute
   '/settings/members/permission-groups/new': typeof SettingsMembersPermissionGroupsNewRoute
   '/_authed/agents/$id/': typeof AuthedAgentsIdIndexRoute
   '/_authed/aistudio/conversations/': typeof AuthedAistudioConversationsIndexRoute
+  '/_authed/projects/$id/': typeof AuthedProjectsIdIndexRoute
   '/_authed/providers/$id/': typeof AuthedProvidersIdIndexRoute
   '/_authed/targets/$id/': typeof AuthedTargetsIdIndexRoute
 }
@@ -555,10 +657,13 @@ export interface FileRouteTypes {
     | '/init-admin'
     | '/login'
     | '/settings'
+    | '/signup'
     | '/reports'
     | '/search'
     | '/admin/about'
+    | '/admin/authentication'
     | '/admin/brand'
+    | '/admin/mail-server'
     | '/invite/$token'
     | '/settings/$tab'
     | '/admin/'
@@ -571,6 +676,7 @@ export interface FileRouteTypes {
     | '/groups/create'
     | '/internal-networks/$id'
     | '/internal-networks/create'
+    | '/projects/create'
     | '/providers/create'
     | '/targets/start-discovery'
     | '/tools/$id'
@@ -585,6 +691,7 @@ export interface FileRouteTypes {
     | '/integrations/'
     | '/internal-networks/'
     | '/jobs/'
+    | '/projects/'
     | '/providers/'
     | '/targets/'
     | '/tools/'
@@ -598,12 +705,18 @@ export interface FileRouteTypes {
     | '/aistudio/conversations/$conversationId'
     | '/assets/services/$id'
     | '/jobs/runs/$id'
+    | '/projects/$id/assets'
+    | '/projects/$id/findings'
+    | '/projects/$id/runs'
+    | '/projects/$id/settings'
+    | '/projects/$id/workflows'
     | '/providers/$id/edit'
     | '/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
     | '/settings/members/permission-groups/new'
     | '/agents/$id/'
     | '/aistudio/conversations/'
+    | '/projects/$id/'
     | '/providers/$id/'
     | '/targets/$id/'
   fileRoutesByTo: FileRoutesByTo
@@ -611,10 +724,13 @@ export interface FileRouteTypes {
     | '/$'
     | '/init-admin'
     | '/login'
+    | '/signup'
     | '/reports'
     | '/search'
     | '/admin/about'
+    | '/admin/authentication'
     | '/admin/brand'
+    | '/admin/mail-server'
     | '/invite/$token'
     | '/settings/$tab'
     | '/'
@@ -628,6 +744,7 @@ export interface FileRouteTypes {
     | '/groups/create'
     | '/internal-networks/$id'
     | '/internal-networks/create'
+    | '/projects/create'
     | '/providers/create'
     | '/targets/start-discovery'
     | '/tools/$id'
@@ -642,6 +759,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/internal-networks'
     | '/jobs'
+    | '/projects'
     | '/providers'
     | '/targets'
     | '/tools'
@@ -655,12 +773,18 @@ export interface FileRouteTypes {
     | '/aistudio/conversations/$conversationId'
     | '/assets/services/$id'
     | '/jobs/runs/$id'
+    | '/projects/$id/assets'
+    | '/projects/$id/findings'
+    | '/projects/$id/runs'
+    | '/projects/$id/settings'
+    | '/projects/$id/workflows'
     | '/providers/$id/edit'
     | '/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
     | '/settings/members/permission-groups/new'
     | '/agents/$id'
     | '/aistudio/conversations'
+    | '/projects/$id'
     | '/providers/$id'
     | '/targets/$id'
   id:
@@ -671,10 +795,13 @@ export interface FileRouteTypes {
     | '/init-admin'
     | '/login'
     | '/settings'
+    | '/signup'
     | '/_authed/reports'
     | '/_authed/search'
     | '/admin/about'
+    | '/admin/authentication'
     | '/admin/brand'
+    | '/admin/mail-server'
     | '/invite/$token'
     | '/settings/$tab'
     | '/_authed/'
@@ -688,6 +815,7 @@ export interface FileRouteTypes {
     | '/_authed/groups/create'
     | '/_authed/internal-networks/$id'
     | '/_authed/internal-networks/create'
+    | '/_authed/projects/create'
     | '/_authed/providers/create'
     | '/_authed/targets/start-discovery'
     | '/_authed/tools/$id'
@@ -702,6 +830,7 @@ export interface FileRouteTypes {
     | '/_authed/integrations/'
     | '/_authed/internal-networks/'
     | '/_authed/jobs/'
+    | '/_authed/projects/'
     | '/_authed/providers/'
     | '/_authed/targets/'
     | '/_authed/tools/'
@@ -715,12 +844,18 @@ export interface FileRouteTypes {
     | '/_authed/aistudio/conversations/$conversationId'
     | '/_authed/assets/services/$id'
     | '/_authed/jobs/runs/$id'
+    | '/_authed/projects/$id/assets'
+    | '/_authed/projects/$id/findings'
+    | '/_authed/projects/$id/runs'
+    | '/_authed/projects/$id/settings'
+    | '/_authed/projects/$id/workflows'
     | '/_authed/providers/$id/edit'
     | '/_authed/targets/$id/$tab'
     | '/settings/members/permission-groups/$permissionId'
     | '/settings/members/permission-groups/new'
     | '/_authed/agents/$id/'
     | '/_authed/aistudio/conversations/'
+    | '/_authed/projects/$id/'
     | '/_authed/providers/$id/'
     | '/_authed/targets/$id/'
   fileRoutesById: FileRoutesById
@@ -732,6 +867,7 @@ export interface RootRouteChildren {
   InitAdminRoute: typeof InitAdminRoute
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRouteWithChildren
+  SignupRoute: typeof SignupRoute
   InviteTokenRoute: typeof InviteTokenRoute
 }
 
@@ -779,6 +915,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authed/': {
       id: '/_authed/'
       path: '/'
@@ -814,11 +957,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAboutRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/authentication': {
+      id: '/admin/authentication'
+      path: '/authentication'
+      fullPath: '/admin/authentication'
+      preLoaderRoute: typeof AdminAuthenticationRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/brand': {
       id: '/admin/brand'
       path: '/brand'
       fullPath: '/admin/brand'
       preLoaderRoute: typeof AdminBrandRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/mail-server': {
+      id: '/admin/mail-server'
+      path: '/mail-server'
+      fullPath: '/admin/mail-server'
+      preLoaderRoute: typeof AdminMailServerRouteImport
       parentRoute: typeof AdminRoute
     }
     '/invite/$token': {
@@ -938,6 +1095,20 @@ declare module '@tanstack/react-router' {
       path: '/jobs'
       fullPath: '/jobs/'
       preLoaderRoute: typeof AuthedJobsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/projects/': {
+      id: '/_authed/projects/'
+      path: '/projects'
+      fullPath: '/projects/'
+      preLoaderRoute: typeof AuthedProjectsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/projects/create': {
+      id: '/_authed/projects/create'
+      path: '/projects/create'
+      fullPath: '/projects/create'
+      preLoaderRoute: typeof AuthedProjectsCreateRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/providers/': {
@@ -1101,6 +1272,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedJobsRunsIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/projects/$id/': {
+      id: '/_authed/projects/$id/'
+      path: '/projects/$id'
+      fullPath: '/projects/$id/'
+      preLoaderRoute: typeof AuthedProjectsIdIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/projects/$id/assets': {
+      id: '/_authed/projects/$id/assets'
+      path: '/projects/$id/assets'
+      fullPath: '/projects/$id/assets'
+      preLoaderRoute: typeof AuthedProjectsIdAssetsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/projects/$id/findings': {
+      id: '/_authed/projects/$id/findings'
+      path: '/projects/$id/findings'
+      fullPath: '/projects/$id/findings'
+      preLoaderRoute: typeof AuthedProjectsIdFindingsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/projects/$id/runs': {
+      id: '/_authed/projects/$id/runs'
+      path: '/projects/$id/runs'
+      fullPath: '/projects/$id/runs'
+      preLoaderRoute: typeof AuthedProjectsIdRunsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/projects/$id/settings': {
+      id: '/_authed/projects/$id/settings'
+      path: '/projects/$id/settings'
+      fullPath: '/projects/$id/settings'
+      preLoaderRoute: typeof AuthedProjectsIdSettingsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/projects/$id/workflows': {
+      id: '/_authed/projects/$id/workflows'
+      path: '/projects/$id/workflows'
+      fullPath: '/projects/$id/workflows'
+      preLoaderRoute: typeof AuthedProjectsIdWorkflowsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/providers/$id/': {
       id: '/_authed/providers/$id/'
       path: '/providers/$id'
@@ -1158,6 +1371,7 @@ interface AuthedRouteChildren {
   AuthedGroupsCreateRoute: typeof AuthedGroupsCreateRoute
   AuthedInternalNetworksIdRoute: typeof AuthedInternalNetworksIdRoute
   AuthedInternalNetworksCreateRoute: typeof AuthedInternalNetworksCreateRoute
+  AuthedProjectsCreateRoute: typeof AuthedProjectsCreateRoute
   AuthedProvidersCreateRoute: typeof AuthedProvidersCreateRoute
   AuthedTargetsStartDiscoveryRoute: typeof AuthedTargetsStartDiscoveryRoute
   AuthedToolsIdRoute: typeof AuthedToolsIdRoute
@@ -1170,6 +1384,7 @@ interface AuthedRouteChildren {
   AuthedIntegrationsIndexRoute: typeof AuthedIntegrationsIndexRoute
   AuthedInternalNetworksIndexRoute: typeof AuthedInternalNetworksIndexRoute
   AuthedJobsIndexRoute: typeof AuthedJobsIndexRoute
+  AuthedProjectsIndexRoute: typeof AuthedProjectsIndexRoute
   AuthedProvidersIndexRoute: typeof AuthedProvidersIndexRoute
   AuthedTargetsIndexRoute: typeof AuthedTargetsIndexRoute
   AuthedToolsIndexRoute: typeof AuthedToolsIndexRoute
@@ -1181,10 +1396,16 @@ interface AuthedRouteChildren {
   AuthedAistudioConversationsConversationIdRoute: typeof AuthedAistudioConversationsConversationIdRoute
   AuthedAssetsServicesIdRoute: typeof AuthedAssetsServicesIdRoute
   AuthedJobsRunsIdRoute: typeof AuthedJobsRunsIdRoute
+  AuthedProjectsIdAssetsRoute: typeof AuthedProjectsIdAssetsRoute
+  AuthedProjectsIdFindingsRoute: typeof AuthedProjectsIdFindingsRoute
+  AuthedProjectsIdRunsRoute: typeof AuthedProjectsIdRunsRoute
+  AuthedProjectsIdSettingsRoute: typeof AuthedProjectsIdSettingsRoute
+  AuthedProjectsIdWorkflowsRoute: typeof AuthedProjectsIdWorkflowsRoute
   AuthedProvidersIdEditRoute: typeof AuthedProvidersIdEditRoute
   AuthedTargetsIdTabRoute: typeof AuthedTargetsIdTabRoute
   AuthedAgentsIdIndexRoute: typeof AuthedAgentsIdIndexRoute
   AuthedAistudioConversationsIndexRoute: typeof AuthedAistudioConversationsIndexRoute
+  AuthedProjectsIdIndexRoute: typeof AuthedProjectsIdIndexRoute
   AuthedProvidersIdIndexRoute: typeof AuthedProvidersIdIndexRoute
   AuthedTargetsIdIndexRoute: typeof AuthedTargetsIdIndexRoute
 }
@@ -1201,6 +1422,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedGroupsCreateRoute: AuthedGroupsCreateRoute,
   AuthedInternalNetworksIdRoute: AuthedInternalNetworksIdRoute,
   AuthedInternalNetworksCreateRoute: AuthedInternalNetworksCreateRoute,
+  AuthedProjectsCreateRoute: AuthedProjectsCreateRoute,
   AuthedProvidersCreateRoute: AuthedProvidersCreateRoute,
   AuthedTargetsStartDiscoveryRoute: AuthedTargetsStartDiscoveryRoute,
   AuthedToolsIdRoute: AuthedToolsIdRoute,
@@ -1213,6 +1435,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedIntegrationsIndexRoute: AuthedIntegrationsIndexRoute,
   AuthedInternalNetworksIndexRoute: AuthedInternalNetworksIndexRoute,
   AuthedJobsIndexRoute: AuthedJobsIndexRoute,
+  AuthedProjectsIndexRoute: AuthedProjectsIndexRoute,
   AuthedProvidersIndexRoute: AuthedProvidersIndexRoute,
   AuthedTargetsIndexRoute: AuthedTargetsIndexRoute,
   AuthedToolsIndexRoute: AuthedToolsIndexRoute,
@@ -1225,10 +1448,16 @@ const AuthedRouteChildren: AuthedRouteChildren = {
     AuthedAistudioConversationsConversationIdRoute,
   AuthedAssetsServicesIdRoute: AuthedAssetsServicesIdRoute,
   AuthedJobsRunsIdRoute: AuthedJobsRunsIdRoute,
+  AuthedProjectsIdAssetsRoute: AuthedProjectsIdAssetsRoute,
+  AuthedProjectsIdFindingsRoute: AuthedProjectsIdFindingsRoute,
+  AuthedProjectsIdRunsRoute: AuthedProjectsIdRunsRoute,
+  AuthedProjectsIdSettingsRoute: AuthedProjectsIdSettingsRoute,
+  AuthedProjectsIdWorkflowsRoute: AuthedProjectsIdWorkflowsRoute,
   AuthedProvidersIdEditRoute: AuthedProvidersIdEditRoute,
   AuthedTargetsIdTabRoute: AuthedTargetsIdTabRoute,
   AuthedAgentsIdIndexRoute: AuthedAgentsIdIndexRoute,
   AuthedAistudioConversationsIndexRoute: AuthedAistudioConversationsIndexRoute,
+  AuthedProjectsIdIndexRoute: AuthedProjectsIdIndexRoute,
   AuthedProvidersIdIndexRoute: AuthedProvidersIdIndexRoute,
   AuthedTargetsIdIndexRoute: AuthedTargetsIdIndexRoute,
 }
@@ -1238,7 +1467,9 @@ const AuthedRouteWithChildren =
 
 interface AdminRouteChildren {
   AdminAboutRoute: typeof AdminAboutRoute
+  AdminAuthenticationRoute: typeof AdminAuthenticationRoute
   AdminBrandRoute: typeof AdminBrandRoute
+  AdminMailServerRoute: typeof AdminMailServerRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminUsersIdRoute: typeof AdminUsersIdRoute
   AdminWorkspacesIdRoute: typeof AdminWorkspacesIdRoute
@@ -1248,7 +1479,9 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAboutRoute: AdminAboutRoute,
+  AdminAuthenticationRoute: AdminAuthenticationRoute,
   AdminBrandRoute: AdminBrandRoute,
+  AdminMailServerRoute: AdminMailServerRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminUsersIdRoute: AdminUsersIdRoute,
   AdminWorkspacesIdRoute: AdminWorkspacesIdRoute,
@@ -1285,6 +1518,7 @@ const rootRouteChildren: RootRouteChildren = {
   InitAdminRoute: InitAdminRoute,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRouteWithChildren,
+  SignupRoute: SignupRoute,
   InviteTokenRoute: InviteTokenRoute,
 }
 export const routeTree = rootRouteImport

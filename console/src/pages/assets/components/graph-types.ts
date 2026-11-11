@@ -16,6 +16,8 @@ export type GraphNodeData = {
   label: string;
   metadata?: Record<string, unknown>;
   clusterColor?: string;
+  /** View-injected: target family used for the decorative outline. */
+  familyId?: string;
   alert?: boolean;
   lastScannedAt?: string;
   /** Severity derived by the view from the linked statusCode node. */
@@ -90,7 +92,7 @@ export type LayoutInputEdge = {
   data?: GraphEdgeData;
 };
 
-/** Output node positioned by the layout pass, compatible with React Flow. */
+/** Positioned output using the center of the React Flow badge as its origin. */
 export type LayoutOutputNode = {
   id: string;
   type: NodeType;
@@ -110,17 +112,166 @@ export type LayoutOutputEdge = {
 export type LayoutResult = {
   nodes: LayoutOutputNode[];
   edges: LayoutOutputEdge[];
+  familyByNode?: ReadonlyMap<string, string>;
 };
 
-/** Approximate node bounding box used for layout spacing. */
-const NODE_BOX = 96;
+type GraphPoint = LayoutOutputNode['position'];
+
+const BADGE_HALF_HEIGHT: Record<NodeType, number> = {
+  target: 14,
+  asset: 14,
+  ip: 28,
+  service: 28,
+  technology: 14,
+  tls: 28,
+  statusCode: 12,
+};
+
+export const GRAPH_NODE_MAX_WIDTH = 110;
+const GRAPH_NODE_GAP = 14;
+
+export function nodeFootprint(type: NodeType) {
+  const up = BADGE_HALF_HEIGHT[type];
+  // A single 12.5px label line and 4px gap below the badge.
+  const down = type === 'target' || type === 'technology' ? up : up + 17;
+  return { up, down };
+}
+
+/** Preferred service positions in outward arcs with footprint clearance. */
+export function serviceFanPositions(
+  count: number,
+  center: GraphPoint,
+  direction: number,
+): GraphPoint[] {
+  const { up, down } = nodeFootprint('service');
+  const spacing = Math.ceil(
+    Math.hypot(
+      GRAPH_NODE_MAX_WIDTH + GRAPH_NODE_GAP,
+      up + down + GRAPH_NODE_GAP,
+    ),
+  );
+  const width = (2 * Math.PI) / 3;
+  const positions: GraphPoint[] = [];
+
+  for (let radius = 170; positions.length < count; radius += spacing) {
+    // Chord length bounds the distance between neighbors on an arc.
+    const angleGap = 2 * Math.asin(spacing / (2 * radius));
+    const capacity = Math.floor(width / angleGap) + 1;
+    const slots = Math.min(capacity, count - positions.length);
+    const step = Math.max(angleGap, Math.min(0.8, width / Math.max(1, slots - 1)));
+    for (let i = 0; i < slots; i++) {
+      const angle = direction + (i - (slots - 1) / 2) * step;
+      positions.push({
+        x: center.x + Math.cos(angle) * radius,
+        y: center.y + Math.sin(angle) * radius,
+      });
+    }
+  }
+  return positions;
+}
+
+/**
+ * Reserve room around each badge and its label. Existing nodes are
+ * obstacles, including when a user dragged two existing nodes together.
+ * New nodes try their preferred centers first and then nearby free spots.
+ */
+export function placeInFreeSpots(
+  nodes: LayoutOutputNode[],
+  fixedPositions: ReadonlyMap<string, GraphPoint>,
+): LayoutOutputNode[] {
+  const gap = GRAPH_NODE_GAP;
+  // GraphNode caps both pill and label widths at 110px. A cell is wider
+  // and taller than the maximum collision distance on either axis.
+  const minXGap = GRAPH_NODE_MAX_WIDTH + gap;
+  const cellSize = 128;
+  type Occupied = GraphPoint & ReturnType<typeof nodeFootprint>;
+  const grid = new Map<string, Occupied[]>();
+  let rightmostX = -Infinity;
+
+  const occupy = (point: GraphPoint, type: NodeType) => {
+    const key = `${Math.floor(point.x / cellSize)},${Math.floor(point.y / cellSize)}`;
+    const occupant = { ...point, ...nodeFootprint(type) };
+    const bucket = grid.get(key);
+    if (bucket) bucket.push(occupant);
+    else grid.set(key, [occupant]);
+    rightmostX = Math.max(rightmostX, point.x);
+  };
+
+  const collides = ({ x, y, up, down }: Occupied) => {
+    const cx = Math.floor(x / cellSize);
+    const cy = Math.floor(y / cellSize);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const bucket = grid.get(`${cx + dx},${cy + dy}`);
+        if (
+          bucket?.some(
+            (other) =>
+              Math.abs(x - other.x) < minXGap &&
+              y - up < other.y + other.down + gap &&
+              other.y - other.up < y + down + gap,
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  for (const node of nodes) {
+    const fixed = fixedPositions.get(node.id);
+    if (fixed) occupy(fixed, node.type);
+  }
+
+  const overflow: number[] = [];
+  const positioned = nodes.map((node, index) => {
+    const fixed = fixedPositions.get(node.id);
+    if (fixed) return { ...node, position: fixed };
+
+    const want = node.position;
+    const footprint = nodeFootprint(node.type);
+    const step = 24;
+    // Bound the work per node in dense neighborhoods.
+    for (let radius = 0; radius <= 480; radius += step) {
+      const samples = Math.max(1, Math.ceil((2 * Math.PI * radius) / step));
+      for (let i = 0; i < samples; i++) {
+        const angle = (2 * Math.PI * i) / samples;
+        const x = want.x + Math.cos(angle) * radius;
+        const y = want.y + Math.sin(angle) * radius;
+        if (!collides({ x, y, ...footprint })) {
+          const position = { x, y };
+          occupy(position, node.type);
+          return { ...node, position };
+        }
+      }
+    }
+    overflow.push(index);
+    return node;
+  });
+
+  // Put dense overflow into a compact grid beyond all reserved positions.
+  // Every cell fits the largest footprint and shares the same clearance.
+  if (overflow.length === 0) return positioned;
+
+  const columns = Math.ceil(Math.sqrt(overflow.length));
+  const rows = Math.ceil(overflow.length / columns);
+  const spillY = positioned[overflow[0]].position.y;
+  overflow.forEach((index, i) => {
+    const position = {
+      x: rightmostX + (1 + (i % columns)) * minXGap,
+      y: spillY + (Math.floor(i / columns) - (rows - 1) / 2) * minXGap,
+    };
+    positioned[index] = { ...positioned[index], position };
+  });
+  return positioned;
+}
 
 /**
  * Dedupe nodes by id and edges by (source, target) pair, dropping edges with
  * missing endpoints. Shared by both layout engines so switching modes never
  * changes the node/edge sets.
  */
-function dedupeGraph(graphData: {
+export function dedupeGraph(graphData: {
   nodes: LayoutInputNode[];
   edges: LayoutInputEdge[];
 }): { nodes: LayoutInputNode[]; edges: LayoutInputEdge[] } {
@@ -506,11 +657,7 @@ export function applyForceLayout(
     return {
       id: node.id,
       type: node.type,
-      // React Flow positions by top-left corner; NODE_BOX approximates size.
-      position: {
-        x: p.x + offsetX - NODE_BOX / 2,
-        y: p.y + offsetY - NODE_BOX / 2,
-      },
+      position: { x: p.x + offsetX, y: p.y + offsetY },
       data: node.data,
     };
   });
@@ -526,18 +673,14 @@ export function applyForceLayout(
 }
 
 /**
- * Hierarchical (layered) layout via dagre, the default graph arrangement.
- *
- * Edges are added without labels and only for layering purposes; the actual
- * edge visuals are applied later by the graph view. Positions are computed
- * for the ~96px NODE_BOX and converted from dagre's center-anchored
- * coordinates to React Flow's top-left anchored ones.
+ * Hierarchical layout with space for badges and their labels.
+ * Left-to-right ranks wrap into columns while retaining dagre's order.
  */
 export function applyDagreLayout(
   graphData: { nodes: LayoutInputNode[]; edges: LayoutInputEdge[] },
   options: { rankdir?: 'TB' | 'LR' | 'BT' | 'RL' } = {},
 ): LayoutResult {
-  const rankdir = options.rankdir ?? 'TB';
+  const rankdir = options.rankdir ?? 'LR';
 
   // ── Dedupe nodes / edges (shared with the force layout) ─────────────
   const { nodes, edges } = dedupeGraph(graphData);
@@ -546,14 +689,15 @@ export function applyDagreLayout(
   const g = new graphlib.Graph();
   g.setGraph({
     rankdir,
-    nodesep: 60,
-    ranksep: 140,
+    nodesep: 18,
+    ranksep: 220,
     marginx: 40,
     marginy: 40,
   });
   g.setDefaultEdgeLabel(() => ({}));
   for (const node of nodes) {
-    g.setNode(node.id, { width: NODE_BOX, height: NODE_BOX });
+    const { up, down } = nodeFootprint(node.type);
+    g.setNode(node.id, { width: GRAPH_NODE_MAX_WIDTH, height: up + down });
   }
   for (const edge of edges) {
     g.setEdge(edge.source, edge.target);
@@ -561,22 +705,17 @@ export function applyDagreLayout(
   dagreLayout(g, {});
 
   const positionedNodes: LayoutOutputNode[] = nodes.map((node) => {
-    const pos = g.node(node.id) as {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
+    const { x, y } = g.node(node.id) as GraphPoint;
+    const { up, down } = nodeFootprint(node.type);
     return {
       id: node.id,
       type: node.type,
-      position: {
-        x: pos.x - pos.width / 2,
-        y: pos.y - pos.height / 2,
-      },
+      // Dagre centers the footprint. React Flow centers only the badge.
+      position: { x, y: y - (down - up) / 2 },
       data: node.data,
     };
   });
+  if (rankdir === 'LR') wrapHierarchyRanks(positionedNodes);
 
   const positionedEdges: LayoutOutputEdge[] = edges.map((edge) => ({
     id: `e-${edge.source}-${edge.target}`,
@@ -586,4 +725,43 @@ export function applyDagreLayout(
   }));
 
   return { nodes: positionedNodes, edges: positionedEdges };
+}
+
+/** Wrap long left-to-right ranks into columns that fit in the viewport. */
+function wrapHierarchyRanks(nodes: LayoutOutputNode[]) {
+  const rowGap = 14;
+  const columnWidth = GRAPH_NODE_MAX_WIDTH + 28;
+  const rankGap = 200;
+  const ranks = new Map<number, LayoutOutputNode[]>();
+  for (const node of nodes) {
+    // Dagre places equal-width nodes at the same x within a rank.
+    const { x } = node.position;
+    const rank = ranks.get(x);
+    if (rank) rank.push(node);
+    else ranks.set(x, [node]);
+  }
+
+  let left = 0;
+  for (const [, rank] of [...ranks].sort(([a], [b]) => a - b)) {
+    rank.sort((a, b) => a.position.y - b.position.y);
+    const rows = Math.max(14, Math.ceil(Math.sqrt(rank.length * 2)));
+    const columns = Math.ceil(rank.length / rows);
+    for (let columnIndex = 0; columnIndex < columns; columnIndex++) {
+      const column = rank.slice(columnIndex * rows, (columnIndex + 1) * rows);
+      const footprints = column.map(({ type }) => nodeFootprint(type));
+      const height =
+        footprints.reduce((total, { up, down }) => total + up + down + rowGap, 0) -
+        rowGap;
+      let top = -height / 2;
+      column.forEach((node, i) => {
+        const { up, down } = footprints[i];
+        node.position = {
+          x: left + (columnIndex + 0.5) * columnWidth,
+          y: top + up,
+        };
+        top += up + down + rowGap;
+      });
+    }
+    left += columns * columnWidth + rankGap;
+  }
 }

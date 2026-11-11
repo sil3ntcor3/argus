@@ -1,6 +1,24 @@
 version: '3'
 
 tasks:
+  routes:
+    desc: Regenerate the route tree through the configured Vite plugins
+    cmds:
+      - >-
+        pnpm exec node --input-type=module -e
+        "import { resolveConfig } from 'vite'; await resolveConfig({}, 'build');"
+  e2e:install:
+    desc: Install the matching Chromium headless browser for local checks
+    cmds:
+      - pnpm exec playwright install --only-shell chromium
+  dev:security:
+    desc: Serve the console on a separate port for isolated security smoke checks
+    cmds:
+      - pnpm run dev --host 127.0.0.1 --port 55173 --strictPort --mode test
+    env:
+      NODE_ENV: 'development'
+      VITE_API_URL: 'http://127.0.0.1:56276'
+      VITE_STORAGE_URL: 'http://127.0.0.1:59000'
   # Development environment setup and start
   # Starts the development server with hot-reload enabled
   # Environment: development mode
@@ -31,6 +49,10 @@ tasks:
   test:run:
     cmds:
       - pnpm run test:run {{.CLI_ARGS}}
+  # Focused security-port browser checks against an already running isolated stack.
+  e2e:security:
+    cmds:
+      - pnpm exec playwright test --config e2e/playwright.security.config.ts {{.CLI_ARGS}}
   # API documentation generation
   # Generates API documentation after ensuring API server is ready
   # Waits for API server health check before generating docs

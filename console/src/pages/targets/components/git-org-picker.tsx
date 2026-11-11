@@ -16,15 +16,15 @@ import {
   TargetType,
   useIntegrationsControllerGetManyIntegrations,
   useIntegrationsControllerListOrganizations,
-  useTargetsControllerCreateMultipleTargets,
   type BulkTargetResultDto,
 } from '@/services/apis/gen/queries';
-import { useQueryClient } from '@tanstack/react-query';
+import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { AxiosError } from 'axios';
 import { Loader2Icon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { useCreateTargets } from '../use-create-targets';
 
 /**
  * Adds GitHub organizations/users or GitLab groups as GIT_ORG targets. The
@@ -32,7 +32,6 @@ import { toast } from 'sonner';
  * target is created its repositories are synced in as assets.
  */
 export function GitOrgPicker() {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [integrationId, setIntegrationId] = useState<string>();
   const [selected, setSelected] = useState<string[]>([]);
@@ -58,8 +57,7 @@ export function GitOrgPicker() {
     query: { enabled: !!activeIntegrationId, retry: false },
   });
 
-  const { mutate: createTargets, isPending } =
-    useTargetsControllerCreateMultipleTargets();
+  const { mutate: createTargets, isPending } = useCreateTargets();
 
   const toggle = (value: string, checked: boolean) =>
     setSelected((prev) =>
@@ -67,9 +65,11 @@ export function GitOrgPicker() {
     );
 
   const handleSubmit = () => {
-    if (!activeIntegrationId || selected.length === 0) return;
+    const workspaceId = getGlobalWorkspaceId();
+    if (!workspaceId || !activeIntegrationId || selected.length === 0) return;
     createTargets(
       {
+        workspaceId,
         data: {
           targets: selected.map((value) => ({
             value,
@@ -81,10 +81,10 @@ export function GitOrgPicker() {
       },
       {
         onSuccess: (res: BulkTargetResultDto) => {
+          if (workspaceId !== getGlobalWorkspaceId()) return;
           toast.success(
             `Added ${res.totalCreated} organization${res.totalCreated === 1 ? '' : 's'} — syncing repositories.`,
           );
-          queryClient.refetchQueries({ queryKey: ['targets'] });
           navigate({ to: '/targets', search: { page: 1, pageSize: 100 } });
         },
         onError: (error) => {

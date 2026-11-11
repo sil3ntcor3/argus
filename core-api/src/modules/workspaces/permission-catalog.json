@@ -31,10 +31,17 @@
     ]
   },
   {
+    "resource": "project",
+    "actions": [
+      { "action": "read", "description": "View projects" },
+      { "action": "write", "description": "Create and edit projects" }
+    ]
+  },
+  {
     "resource": "group",
     "actions": [
-      { "action": "read", "description": "View asset groups" },
-      { "action": "write", "description": "Create and edit asset groups" }
+      { "action": "read", "description": "View projects (legacy group.read alias)" },
+      { "action": "write", "description": "Create and edit projects (legacy group.write alias)" }
     ]
   },
   {
@@ -112,6 +119,14 @@
     "actions": [
       { "action": "read", "description": "View workers" },
       { "action": "write", "description": "Manage workers" }
+    ]
+  },
+  {
+    "resource": "artifact",
+    "actions": [
+      { "action": "read", "description": "View files you can access and workspace storage usage" },
+      { "action": "write", "description": "Upload, share, and delete your own files" },
+      { "action": "manage", "description": "View metadata and delete any workspace file without granting content access" }
     ]
   },
   {

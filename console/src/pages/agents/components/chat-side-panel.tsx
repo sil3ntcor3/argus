@@ -41,9 +41,12 @@ interface SidePanelData {
   subagents: SubagentResponseDto[];
   messages: UIMessage[];
   metadata: ConversationMetadataDto | null | undefined;
-  /** Live view of the agent's browser, streamed by the current run */
-  browserScreenshot?: LiveBrowserScreenshot | null;
+  /** Live view of each browser session, streamed by the current run */
+  browserScreenshots?: LiveBrowserScreenshot[];
 }
+
+/** Stable default, so the memo below does not rerun on every render */
+const NO_SCREENSHOTS: LiveBrowserScreenshot[] = [];
 
 /** Which tabs have something to show, e.g. to pick one when the panel opens */
 export function sidePanelContent({
@@ -52,12 +55,12 @@ export function sidePanelContent({
   subagents,
   messages,
   metadata,
-  browserScreenshot,
+  browserScreenshots,
 }: SidePanelData): Record<SidePanelTab, boolean> {
   return {
     plan: (todos?.length ?? 0) > 0 || !!goal,
     subagents: subagents.length > 0,
-    browser: !!browserScreenshot,
+    browser: (browserScreenshots?.length ?? 0) > 0,
     tools: extractToolCalls(messages).length > 0,
     stats: !!(metadata?.model || metadata?.lastTurn),
   };
@@ -68,26 +71,8 @@ function TabLabel({ children }: { children: ReactNode }) {
   return <span className="sr-only xl:not-sr-only">{children}</span>;
 }
 
-function TabCount({
-  children,
-  active = false,
-}: {
-  children: ReactNode;
-  active?: boolean;
-}) {
-  return (
-    <span
-      className={cn(
-        'rounded-full px-1.5 py-px text-[11px] font-medium tabular-nums',
-        active
-          ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400'
-          : 'bg-muted text-muted-foreground',
-      )}
-    >
-      {children}
-    </span>
-  );
-}
+/** Tab badge while something in that tab is still running */
+const RUNNING_BADGE = 'bg-sky-500/10 text-sky-600 dark:text-sky-400';
 
 function EmptyTab({
   icon: Icon,
@@ -141,7 +126,7 @@ export function ChatSidePanel({
   conversationId,
   onSelectToolCall,
   remoteExecuteEvents,
-  browserScreenshot,
+  browserScreenshots = NO_SCREENSHOTS,
   className,
 }: ChatSidePanelProps) {
   const has = useMemo(
@@ -152,9 +137,9 @@ export function ChatSidePanel({
         subagents,
         messages,
         metadata,
-        browserScreenshot,
+        browserScreenshots,
       }),
-    [todos, goal, subagents, messages, metadata, browserScreenshot],
+    [todos, goal, subagents, messages, metadata, browserScreenshots],
   );
   const completed = todos?.filter((t) => t.status === 'completed').length ?? 0;
   const running = subagents.filter(isSubagentActive).length;
@@ -181,36 +166,43 @@ export function ChatSidePanel({
           out */}
       <div className="flex h-14 shrink-0 items-center gap-3 border-b pl-5 pr-4 md:pr-6">
         <TabsList className="no-scrollbar h-full min-w-0 justify-start gap-4 overflow-x-auto xl:gap-6">
-          <TabsTrigger value="plan" title="Plan">
+          <TabsTrigger
+            value="plan"
+            title="Plan"
+            badge={todos?.length ? `${completed}/${todos.length}` : undefined}
+          >
             <ListChecks />
             <TabLabel>Plan</TabLabel>
-            {!!todos?.length && (
-              <TabCount>
-                {completed}/{todos.length}
-              </TabCount>
-            )}
           </TabsTrigger>
-          <TabsTrigger value="subagents" title="Subagents">
+          <TabsTrigger
+            value="subagents"
+            title="Subagents"
+            badge={running || subagents.length || undefined}
+            badgeClassName={running > 0 ? RUNNING_BADGE : undefined}
+          >
             <Network />
             <TabLabel>Subagents</TabLabel>
-            {subagents.length > 0 && (
-              <TabCount active={running > 0}>
-                {running > 0 ? running : subagents.length}
-              </TabCount>
-            )}
           </TabsTrigger>
-          <TabsTrigger value="browser" title="Browser">
+          <TabsTrigger
+            value="browser"
+            title="Browser"
+            badge={
+              browserScreenshots.length > 1 ? browserScreenshots.length : undefined
+            }
+          >
             <Globe />
             <TabLabel>Browser</TabLabel>
           </TabsTrigger>
-          <TabsTrigger value="tools" title="Tool calls">
+          <TabsTrigger
+            value="tools"
+            title="Tool calls"
+            badge={
+              toolCalls.length > 0 ? `${toolCallsDone}/${toolCalls.length}` : undefined
+            }
+            badgeClassName={toolCallsRunning > 0 ? RUNNING_BADGE : undefined}
+          >
             <Wrench />
             <TabLabel>Tool calls</TabLabel>
-            {toolCalls.length > 0 && (
-              <TabCount active={toolCallsRunning > 0}>
-                {toolCallsDone}/{toolCalls.length}
-              </TabCount>
-            )}
           </TabsTrigger>
           <TabsTrigger value="stats" title="Stats">
             <BarChart3 />
@@ -258,9 +250,9 @@ export function ChatSidePanel({
         )}
       </TabsContent>
       <TabsContent value="browser" className={contentClassName}>
-        {browserScreenshot ? (
+        {has.browser ? (
           <BrowserPanel
-            screenshot={browserScreenshot}
+            screenshots={browserScreenshots}
             toolCalls={toolCalls}
             onSelectToolCall={onSelectToolCall}
           />

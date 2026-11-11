@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { DataTable } from '@/components/ui/data-table';
 import { DatePickerWithRange } from '@/components/ui/date-picker-range';
 import JobStatusBadge from '@/components/ui/job-status';
+import { Progress } from '@/components/ui/progress';
 import { useServerDataTable } from '@/hooks/useServerDataTable';
 import {
   type JobHistoryResponseDto,
@@ -141,6 +142,45 @@ const JobsRegistryPage = () => {
         return (
           <div>
             <b>{row.original.totalJobs}</b> jobs
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'progress',
+      header: 'Progress',
+      enableSorting: false,
+      cell: ({ row }) => {
+        const { progress, failedJobs } = row.original;
+        if (progress == null) {
+          return (
+            <>
+              <span className="sr-only">Run progress unavailable</span>
+              <span aria-hidden className="text-muted-foreground">
+                —
+              </span>
+            </>
+          );
+        }
+
+        const failedLabel =
+          failedJobs > 0
+            ? `${failedJobs} failed job${failedJobs === 1 ? '' : 's'}`
+            : null;
+        return (
+          <div className="w-24 space-y-1">
+            <Progress
+              value={progress}
+              aria-label="Run progress"
+              aria-valuenow={progress}
+              aria-valuetext={
+                failedLabel ? `${progress}%, ${failedLabel}` : undefined
+              }
+            />
+            <div className="flex flex-wrap gap-x-1 text-xs text-muted-foreground tabular-nums">
+              <span>{progress}%</span>
+              {failedLabel && <span>{failedJobs} failed</span>}
+            </div>
           </div>
         );
       },

@@ -1,9 +1,11 @@
+import { WorkflowFileSheet, workflowYaml } from '@/components/common/workflow-file-sheet';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   ToolPipelineBuilder,
   type PipelineToolEntry,
 } from '@/pages/asset-group/components/tool-pipeline-builder';
+import { entriesFromContent, jobsFromEntries } from './pipeline-mapping';
 import { NoInstalledToolsState } from '@/pages/asset-group/components/no-installed-tools-state';
 import JobStatusBadge from '@/components/ui/job-status';
 import { useNavigate } from '@tanstack/react-router';
@@ -23,8 +25,6 @@ import { getLocalTimezone, getNextRun } from '@/lib/cron-schedule';
 import RunWorkflowButton from '@/pages/asset-group/components/run-workflow-button';
 import {
   AssetGroupLastRunDtoStatus,
-  ToolCategory,
-  ToolsControllerGetManyToolsType,
   type AssetGroupWorkflow as AssetGroupWorkflowRelation,
   useAssetGroupControllerAddManyWorkflows,
   useAssetGroupControllerRemoveManyWorkflows,
@@ -74,37 +74,24 @@ export default function AssetGroupWorkflow({
   const addWorkflowsMutation = useAssetGroupControllerAddManyWorkflows();
   const removeWorkflowsMutation = useAssetGroupControllerRemoveManyWorkflows();
 
-  // Tools rendered in the group workflow: providers + pipeline-capable
-  // categories (vulnerabilities, url_discovery, ports_scanner)
-  const toolProviders = useMemo(
-    () =>
-      workspaceToolsInstalled?.data?.filter(
-        (tool) =>
-          tool.type === ToolsControllerGetManyToolsType.provider ||
-          tool.categories?.some((c) =>
-            (
-              [
-                ToolCategory.vulnerabilities,
-                ToolCategory.url_discovery,
-                ToolCategory.ports_scanner,
-              ] as ToolCategory[]
-            ).includes(c.name),
-          ),
-      ) || [],
+  // Every installed category can participate in a staged pipeline.
+  const pipelineTools = useMemo(
+    () => workspaceToolsInstalled?.data ?? [],
     [workspaceToolsInstalled?.data],
   );
 
   const toolByName = useMemo(
-    () => new Map(toolProviders.map((tool) => [tool.name, tool])),
-    [toolProviders],
+    () => new Map(pipelineTools.map((tool) => [tool.name, tool])),
+    [pipelineTools],
   );
   const toolById = useMemo(
-    () => new Map(toolProviders.map((tool) => [tool.id, tool])),
-    [toolProviders],
+    () => new Map(pipelineTools.map((tool) => [tool.id, tool])),
+    [pipelineTools],
   );
 
   // Only one workflow per group is expected.
   const currentWorkflow = workflows[0];
+  const currentYaml = useMemo(() => workflowYaml(currentWorkflow?.workflow.content), [currentWorkflow?.workflow.content]);
   const workflowId = currentWorkflow?.id;
 
   const timezone = getLocalTimezone();
@@ -127,79 +114,25 @@ export default function AssetGroupWorkflow({
     [nextRun],
   );
 
-  // ---- Pipeline value derived from the workflow jobs map ----
-  // `jobs` is keyed by a unique job id (the tool name for group workflows) and
-  // a job without `needs` runs in parallel, so the map order is presentation
-  // only. Every mutation below writes the map back.
+  // Saved dependencies determine stages; map order is presentation only.
   const jobs = useMemo(
     () => currentWorkflow?.workflow.content?.jobs ?? {},
     [currentWorkflow],
   );
-  const jobsJson = useMemo(() => JSON.stringify(jobs), [jobs]);
   const pipeline: PipelineToolEntry[] = useMemo(() => {
-    // `Object.values`, not `Object.entries`: a workflow created before the
-    // map switch still stores `jobs` as an array, which the API still serves —
-    // its values are the job definitions either way.
-    const jobs = (currentWorkflow?.workflow.content?.jobs ?? {}) as Record<
-      string,
-      {
-        run?: string;
-        category?: ToolCategory;
-        config?: Record<string, unknown>;
-        configProfileId?: string;
-      }
-    >;
     const nameOf = (toolId: string) => toolById.get(toolId)?.name ?? toolId;
-    return Object.values(jobs)
-      .map((job) => {
-        const tool = job.run ? toolByName.get(job.run) : undefined;
-        return {
-          toolId: tool?.id ?? job.run ?? '',
-          ...(job.category ? { category: job.category } : {}),
-          ...(job.config
-            ? { config: job.config as Record<string, unknown> }
-            : {}),
-          ...(job.configProfileId
-            ? { configProfileId: job.configProfileId }
-            : {}),
-        };
-      })
-      // Sorted by tool name so the grid stays stable: `content` is stored as
-      // jsonb, which does not preserve the map's key order. Sorting on the tool
-      // name (not the map key) also keeps a legacy array-shaped `jobs` from
-      // sorting its index keys lexically, which puts "10" before "2".
-      .sort((a, b) => nameOf(a.toolId).localeCompare(nameOf(b.toolId)));
-    // jobsJson captures per-job config changes; the tool maps cover id mapping.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobsJson, toolByName, toolById]);
+    return entriesFromContent(jobs, toolByName).sort((a, b) =>
+      (a.stage ?? 1) - (b.stage ?? 1) || nameOf(a.toolId).localeCompare(nameOf(b.toolId)),
+    );
+  }, [jobs, toolByName, toolById]);
+  const hasRepeatedTools = new Set(pipeline.map((entry) => entry.toolId)).size < pipeline.length;
 
-  const toolNameOf = useCallback(
-    (entry: PipelineToolEntry): string =>
-      toolById.get(entry.toolId)?.name ?? entry.toolId,
-    [toolById],
-  );
-
-  /** Persist the full pipeline as a jobs map keyed by tool name (no needs → parallel). */
+  /** Persist edits while retaining saved dependencies and input preferences. */
   const persistPipeline = useCallback(async (next: PipelineToolEntry[]) => {
     const existingWorkflow = currentWorkflow?.workflow ?? null;
     try {
       setIsProcessing(true);
-      const jobs = Object.fromEntries(
-        next.map((entry) => {
-          const name = toolNameOf(entry);
-          return [
-            name,
-            {
-              run: name,
-              ...(entry.category ? { category: entry.category } : {}),
-              ...(entry.config ? { config: entry.config } : {}),
-              ...(entry.configProfileId
-                ? { configProfileId: entry.configProfileId }
-                : {}),
-            },
-          ];
-        }),
-      );
+      const jobs = jobsFromEntries(next, toolById, existingWorkflow?.content.jobs ?? {});
       if (existingWorkflow) {
         if (next.length === 0) {
           await removeWorkflowsMutation.mutateAsync({
@@ -246,7 +179,7 @@ export default function AssetGroupWorkflow({
     }
   }, [
     currentWorkflow,
-    toolNameOf,
+    toolById,
     removeWorkflowsMutation,
     deleteWorkflowMutation,
     updateWorkflowMutation,
@@ -265,9 +198,9 @@ export default function AssetGroupWorkflow({
 
   const handlePipelineChange = useCallback(
     (next: PipelineToolEntry[]) => {
-      if (!isProcessing) void persistPipeline(next);
+      if (!isProcessing && !hasRepeatedTools) void persistPipeline(next);
     },
-    [persistPipeline, isProcessing],
+    [persistPipeline, isProcessing, hasRepeatedTools],
   );
 
   // Disable the workflow schedule by submitting the "disabled" value
@@ -432,18 +365,26 @@ export default function AssetGroupWorkflow({
               remove it.
             </div>
           </div>
-          <RunWorkflowButton
-            id={workflowId}
-            disabled={
-              lastRun?.status ===
-                AssetGroupLastRunDtoStatus.pending ||
-              lastRun?.status ===
-                AssetGroupLastRunDtoStatus.in_progress
-            }
-            onSuccess={onRefetch}
-          />
+          <div className="flex items-center gap-2">
+            <WorkflowFileSheet yaml={currentYaml} description="The workflow currently configured for this group." />
+            <RunWorkflowButton
+              id={workflowId}
+              disabled={
+                lastRun?.status ===
+                  AssetGroupLastRunDtoStatus.pending ||
+                lastRun?.status ===
+                  AssetGroupLastRunDtoStatus.in_progress
+              }
+              onSuccess={onRefetch}
+            />
+          </div>
         </div>
         <div className="px-2 py-2 md:px-4">
+          {hasRepeatedTools && (
+            <p className="mb-3 text-sm text-muted-foreground">
+              This pipeline uses the same tool in multiple jobs. Individual job editing is not available here.
+            </p>
+          )}
           {isLoadingWorkspaceTools ? (
             <div
               className="flex min-h-40 items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground"
@@ -452,14 +393,14 @@ export default function AssetGroupWorkflow({
               <LoaderCircleIcon className="size-4 animate-spin" />
               Loading installed tools...
             </div>
-          ) : toolProviders.length === 0 ? (
+          ) : pipelineTools.length === 0 ? (
             <NoInstalledToolsState />
           ) : (
             <ToolPipelineBuilder
-              tools={toolProviders as Tool[]}
+              tools={pipelineTools as Tool[]}
               value={pipeline}
               onChange={handlePipelineChange}
-              disabled={isProcessing}
+              disabled={isProcessing || hasRepeatedTools}
             />
           )}
         </div>

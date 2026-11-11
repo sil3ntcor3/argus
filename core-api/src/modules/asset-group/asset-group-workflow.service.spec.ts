@@ -91,10 +91,10 @@ describe('AssetGroupWorkflowService — runGroupWorkflowScheduler', () => {
     service = module.get(AssetGroupWorkflowService);
   });
 
-  it('starts one run scoped to the group assets', async () => {
+  it.each([JobRunType.MANUAL, JobRunType.SCHEDULED])('starts a %s run with the group scope and exact binding', async (jobRunType) => {
     const result = await service.runGroupWorkflowScheduler(
       'agw-1',
-      JobRunType.SCHEDULED,
+      jobRunType,
       'workspace-1',
     );
 
@@ -102,8 +102,10 @@ describe('AssetGroupWorkflowService — runGroupWorkflowScheduler', () => {
       workflow,
       workspaceId: 'workspace-1',
       jobName: 'group-1',
-      jobRunType: JobRunType.SCHEDULED,
+      jobRunType,
       assetIds: ['asset-1', 'asset-2'],
+      projectId: 'group-1',
+      projectWorkflowId: 'agw-1',
     });
     expect(result.message).toContain('agw-1');
   });
@@ -131,6 +133,9 @@ describe('AssetGroupWorkflowService — runGroupWorkflowScheduler', () => {
     // Without this predicate any workspace member could start another tenant's
     // workflow against that tenant's assets.
     expect(andWhere).toHaveBeenCalledWith('workspace.id = :workspaceId', {
+      workspaceId: 'workspace-1',
+    });
+    expect(andWhere).toHaveBeenCalledWith('assetGroup.workspaceId = :workspaceId', {
       workspaceId: 'workspace-1',
     });
   });

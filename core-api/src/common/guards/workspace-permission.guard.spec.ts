@@ -115,6 +115,26 @@ describe('WorkspacePermissionGuard', () => {
     await expect(guard.canActivate(makeContext())).resolves.toBe(true);
   });
 
+  it.each([
+    ['artifact.read', true],
+    ['artifact.write', true],
+    ['artifact.manage', false],
+  ])('applies file read semantics to %s', async (permission, allowed) => {
+    mockRequest.headers = { 'X-Workspace-Id': workspaceId };
+    mockReflector.getAllAndOverride.mockReturnValue(['artifact.read']);
+    mockWorkspacesService.getMembershipWithPermissions.mockResolvedValue({
+      membership: { id: randomUUID() } as WorkspaceMembers,
+      permissionKeys: [permission],
+    });
+
+    const decision = guard.canActivate(makeContext());
+    if (allowed) {
+      await expect(decision).resolves.toBe(true);
+    } else {
+      await expect(decision).rejects.toThrow(ForbiddenException);
+    }
+  });
+
   it('should pass when the member holds both the write and read keys for a read requirement', async () => {
     mockRequest.headers = { 'X-Workspace-Id': workspaceId };
     mockReflector.getAllAndOverride.mockReturnValue(['member.read']);

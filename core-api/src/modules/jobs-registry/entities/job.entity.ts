@@ -4,7 +4,7 @@ import { AssetService } from '@/modules/assets/entities/asset-services.entity';
 import { Asset } from '@/modules/assets/entities/assets.entity';
 import { ToolConfigProfile } from '@/modules/tools/entities/tool-config-profiles.entity';
 import { Tool } from '@/modules/tools/entities/tools.entity';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import { Column, Entity, Index, JoinColumn, ManyToOne, OneToMany, Relation } from 'typeorm';
 import { JobErrorLog } from './job-error-log.entity';
 import { JobHistory } from './job-history.entity';
@@ -145,6 +145,29 @@ export class Job extends BaseEntity {
    */
   @Column({ type: 'jsonb', nullable: true })
   config?: Record<string, unknown> | null;
+
+  /**
+   * Resolved connector target (host, service or URL). Private to persistence
+   * and worker claims; legacy jobs and repositories keep this null. Repository
+   * credentials are resolved only at dispatch and must never be stored here.
+   */
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  inputs?: Record<string, string> | null;
+
+  /** Private digest of the actual vulnerability scan dispatch, when recorded. */
+  @ApiHideProperty()
+  @Column({ type: 'varchar', nullable: true, select: false })
+  findingScanScopeKey?: string | null;
+
+  /** Private instant associated with the recorded finding scan claim. */
+  @ApiHideProperty()
+  @Column({ type: 'timestamptz', nullable: true, select: false })
+  findingScanClaimedAt?: Date | null;
+
+  /** Private evidence of a completed finding scan; null means unknown. */
+  @ApiHideProperty()
+  @Column({ type: 'boolean', nullable: true, select: false })
+  findingScanCoverageComplete?: boolean | null;
 
   /**
    * The asset service this job belongs to.

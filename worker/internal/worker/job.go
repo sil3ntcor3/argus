@@ -26,10 +26,11 @@ import (
 // Stored in bridge map; accessed by processConnectorJob (Submit time) and
 // handleConnectorResult (completion time).
 type bridgeEntry struct {
-	jobID    string
-	category string
-	release  func() // semaphore release callback — called only by completion handler
-	image    string // image the execution ran (backoff bookkeeping)
+	jobID            string
+	category         string
+	release          func() // semaphore release callback — called only by completion handler
+	image            string // image the execution ran (backoff bookkeeping)
+	connectorImageID string
 }
 
 var (
@@ -205,8 +206,22 @@ func processJob(ctx context.Context, job *pb.Job, grpcClient *grpcclient.Client,
 	// Connector path: image-based execution via Docker runtime.
 	// processJob returns immediately after Submit; cleanup runs asynchronously
 	// in handleConnectorResult when the container exits or connector signals Done.
-	if img := job.GetImage(); img != "" && mgr != nil {
-		return processConnectorJob(ctx, job, grpcClient, events, mgr, proxy, releaseSem, startTime, category)
+	if img := job.GetImage(); img != "" {
+		if mgr != nil {
+			return processConnectorJob(ctx, job, grpcClient, events, mgr, proxy, releaseSem, startTime, category)
+		}
+		// The Docker runtime failed at startup (logged there); the legacy path
+		// would only report a missing command and hide that cause.
+		msg := fmt.Sprintf("container engine unavailable on this worker, cannot run %s: check the worker startup log for the Docker error (on native Linux, usually a docker.sock group mismatch)", img)
+		Emit(events, TuiEvent{
+			Type:     EventJobCompleted,
+			JobID:    job.Id,
+			Success:  false,
+			ErrorMsg: msg,
+			Duration: time.Since(startTime),
+		})
+		submitCategoryError(ctx, grpcClient, events, job.Id, category, msg)
+		return true, false
 	}
 
 	// Legacy path: command-based execution (screenshot or shell).
@@ -424,7 +439,7 @@ func submitCategoryResult(ctx context.Context, grpcClient *grpcclient.Client, jo
 	case "ports_scanner":
 		return grpcClient.SubmitPortsResult(ctx, jobID, isError, raw, nil)
 	case "vulnerabilities":
-		return grpcClient.SubmitVulnerabilitiesResult(ctx, jobID, isError, raw, nil)
+		return grpcClient.SubmitVulnerabilitiesResult(ctx, jobID, isError, raw, nil, false, "")
 	case "screenshot":
 		return grpcClient.SubmitScreenshotResult(ctx, jobID, isError, raw)
 	case "url_discovery":
@@ -764,13 +779,16 @@ func processConnectorJob(ctx context.Context, job *pb.Job, grpcClient *grpcclien
 		activeJobs[job.Id] = struct{}{}
 		activeJobsMu.Unlock()
 
+		// Keep the image identity before the execution can release its handle.
+		connectorImageID := mgr.ImageID(execID)
 		// Register bridge entry: links executionID → job for result routing.
 		bridgeMu.Lock()
 		bridge[execID] = &bridgeEntry{
-			jobID:    job.Id,
-			category: category,
-			release:  releaseSem,
-			image:    spec.Image,
+			jobID:            job.Id,
+			category:         category,
+			release:          releaseSem,
+			image:            spec.Image,
+			connectorImageID: connectorImageID,
 		}
 		bridgeMu.Unlock()
 
@@ -1142,7 +1160,7 @@ drain:
 				log.Warning("[%s] Connector stopped early (%s): submitted %d port(s) collected so far", entry.jobID, reason, len(ports))
 			}
 		} else {
-			if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns); err != nil {
+			if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns, false, entry.connectorImageID); err != nil {
 				log.ErrorE(fmt.Sprintf("[%s] Failed to submit partial vulnerabilities", entry.jobID), err)
 			} else {
 				log.Warning("[%s] Connector stopped early (%s): submitted %d finding(s) collected so far", entry.jobID, reason, len(vulns))
@@ -1169,7 +1187,7 @@ drain:
 	case entry.category == "vulnerabilities":
 		// Clean Done: submit the aggregated findings exactly once (raw is ""
 		// per contract — findings travel in the structured payload).
-		if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns); err != nil {
+		if err := grpcClient.SubmitVulnerabilitiesResult(ctx, entry.jobID, false, "", vulns, hadDone && !hasError, entry.connectorImageID); err != nil {
 			log.ErrorE(fmt.Sprintf("[%s] Failed to submit connector vulnerabilities", entry.jobID), err)
 		} else {
 			log.Info("[%s] connector vulnerabilities result submitted: exec=%s findings=%d", entry.jobID, execID, len(vulns))

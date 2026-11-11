@@ -11,6 +11,7 @@ import {
   useOnViewportChange,
   ReactFlowProvider,
   type Node,
+  type OnNodesChange,
   type Edge,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -32,8 +33,16 @@ import {
   type AssetGraphResponseDto,
 } from '@/services/apis/gen/queries';
 import {
+  applyClusterLayout,
+  getClusterFamilyMembership,
+} from './graph-cluster-layout';
+import {
+  applyDagreLayout,
   applyForceLayout,
+  placeInFreeSpots,
+  serviceFanPositions,
   CLUSTER_COLORS,
+  GRAPH_NODE_MAX_WIDTH,
   NODE_TYPE_COLORS,
   type LayoutInputNode,
   type LayoutInputEdge,
@@ -42,11 +51,20 @@ import {
 } from './graph-types';
 import { GraphNodeComponent, resolveNodeType } from './graph-node';
 import { GraphLegend } from './graph-legend';
+import { GraphFamilyOutlines } from './graph-family-outlines';
 import { GraphNodeSearch } from './graph-node-search';
 import AssetDetailSheet from './asset-detail-sheet';
 import GraphDetailSheet from './graph-detail-sheet';
 
 dayjs.extend(relativeTime);
+
+const NODE_ORIGIN: [number, number] = [0.5, 0.5];
+const GRAPH_LAYOUTS = {
+  Cluster: applyClusterLayout,
+  Hierarchy: applyDagreLayout,
+  Organic: applyForceLayout,
+};
+type GraphLayout = keyof typeof GRAPH_LAYOUTS;
 
 const nodeTypes = {
   target: GraphNodeComponent,
@@ -154,6 +172,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [layoutLocked, setLayoutLocked] = useState(false);
+  const [layoutMode, setLayoutMode] = useState<GraphLayout>('Cluster');
 
   // Domain nodes expand their child services on click: the per-asset
   // endpoint result is merged into the layout until toggled off again.
@@ -217,6 +236,18 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const draggedNodesRef = useRef(new Set<string>());
+  const handleNodesChange = useCallback<OnNodesChange<Node>>(
+    (changes) => {
+      for (const change of changes) {
+        if (change.type === 'position' && change.dragging) {
+          draggedNodesRef.current.add(change.id);
+        }
+      }
+      onNodesChange(changes);
+    },
+    [onNodesChange],
+  );
   const [selectedNode, setSelectedNode] = useState<SelectedGraphNode | null>(
     null,
   );
@@ -363,7 +394,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
       }
     }
 
-    // ── Layout: force-directed always. Positions are merged per node id:
+    // ── Layout: positions are merged per node id.
     // nodes already on canvas keep their position across polls (user
     // pan/zoom/drags survive refetches); only genuinely new nodes take the
     // freshly computed position. When the layout is locked, the engine is
@@ -374,6 +405,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
         ? nodesRef.current.map((n) => [n.id, n.position])
         : [],
     );
+    if (!preservePositionsRef.current) draggedNodesRef.current.clear();
     preservePositionsRef.current = true;
 
     const hasNewNodes = mergedNodes.some((n) => !prevPositions.has(n.id));
@@ -381,12 +413,39 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
       !layoutLocked || hasNewNodes || forceRecomputeRef.current;
     let layoutResult: LayoutResult | null = null;
     if (shouldRunLayout) {
-      layoutResult = applyForceLayout({ nodes: mergedNodes, edges: inputEdges });
+      // Cluster the inventory. Expanded services use the position of
+      // their owning domain and stay clear of already placed nodes.
+      layoutResult =
+        layoutMode === 'Cluster'
+          ? GRAPH_LAYOUTS.Cluster({ nodes: inputNodes, edges: baseEdges }, prevPositions)
+          : GRAPH_LAYOUTS[layoutMode]({ nodes: mergedNodes, edges: inputEdges });
       forceRecomputeRef.current = false;
     }
     const layoutPositionById = new Map(
       (layoutResult?.nodes ?? []).map((n) => [n.id, n.position]),
     );
+
+    // A newly wrapped column can move later hierarchy ranks. Reflow untouched
+    // inventory in that case, preserving explicit drags and locked positions.
+    const hierarchyRanksShifted =
+      layoutMode === 'Hierarchy' &&
+      !layoutLocked &&
+      inputNodes.some(({ id }) => !prevPositions.has(id)) &&
+      inputNodes.some(({ id }) => {
+        const prior = prevPositions.get(id);
+        const next = layoutPositionById.get(id);
+        return (
+          prior &&
+          next &&
+          !draggedNodesRef.current.has(id) &&
+          Math.abs(prior.x - next.x) >= GRAPH_NODE_MAX_WIDTH
+        );
+      });
+    const fixedPositions = hierarchyRanksShifted
+      ? new Map(
+          [...prevPositions].filter(([id]) => draggedNodesRef.current.has(id)),
+        )
+      : prevPositions;
 
     // ── Node colors: each target gets its own pastel palette color, each IP
     // a distinct golden-angle hue, and the rest of every domain family
@@ -439,47 +498,71 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
     const labelVisible = zoomRef.current >= LABEL_LOD_ZOOM;
     const glowEnabled = !reducedMotionRef.current && labelVisible;
 
-    // Expanded services hug their domain: pin each one on a small ring around
-    // the owning asset's current position instead of letting FR scatter them
-    // far from the node that was clicked.
-    const serviceRingById = new Map<string, { x: number; y: number }>();
-    {
-      const ringRadius = 130;
-      const angleStep = 2.399963229728653; // golden angle
-      const ringIndexByAsset = new Map<string, number>();
-      for (const edge of expandedEdges) {
-        if (edge.data?.type !== 'runs_on') continue;
-        const assetPos =
-          prevPositions.get(edge.source) ??
-          layoutPositionById.get(edge.source);
-        if (!assetPos) continue;
-        const idx = ringIndexByAsset.get(edge.source) ?? 0;
-        ringIndexByAsset.set(edge.source, idx + 1);
-        const angle = idx * angleStep;
-        serviceRingById.set(edge.target, {
-          x: assetPos.x + Math.cos(angle) * ringRadius,
-          y: assetPos.y + Math.sin(angle) * ringRadius,
-        });
+    const preferredNodes = mergedNodes.map((node, index) => ({
+      ...node,
+      position: layoutPositionById.get(node.id) ?? { x: 0, y: index * 24 },
+    }));
+    const servicesByAsset = new Map<string, string[]>();
+    for (const edge of expandedEdges) {
+      if (edge.data?.type !== 'runs_on' || fixedPositions.has(edge.target)) {
+        continue;
       }
+      const services = servicesByAsset.get(edge.source);
+      if (services) services.push(edge.target);
+      else servicesByAsset.set(edge.source, [edge.target]);
     }
 
-    const rfNodes: Node[] = mergedNodes.map((node, index) => {
-      const previous = prevPositions.get(node.id);
-      const fresh = layoutPositionById.get(node.id);
+    // Resolve inventory collisions first so a fresh service fans out from
+    // the visible domain and target centers. Existing services stay reserved.
+    const reserved = servicesByAsset.size
+      ? new Map(
+          placeInFreeSpots(
+            preferredNodes.filter(
+              (node) => node.type !== 'service' || fixedPositions.has(node.id),
+            ),
+            fixedPositions,
+          ).map(({ id, position }) => [id, position]),
+        )
+      : fixedPositions;
+    const targetByAsset = new Map(
+      baseEdges
+        .filter((edge) => edge.data?.type === 'belongs_to')
+        .map((edge) => [edge.target, edge.source]),
+    );
+    const serviceFanById = new Map<string, { x: number; y: number }>();
+    for (const [assetId, services] of servicesByAsset) {
+      const asset = reserved.get(assetId);
+      if (!asset) continue;
+      const target = reserved.get(targetByAsset.get(assetId) ?? '');
+      const direction = target
+        ? Math.atan2(asset.y - target.y, asset.x - target.x)
+        : 0;
+      serviceFanPositions(services.length, asset, direction).forEach(
+        (position, index) => serviceFanById.set(services[index], position),
+      );
+    }
+    const positionedNodes = placeInFreeSpots(
+      preferredNodes.map((node) => ({
+        ...node,
+        position: serviceFanById.get(node.id) ?? node.position,
+      })),
+      reserved,
+    );
+
+    const familyByNode =
+      layoutMode === 'Cluster'
+        ? layoutResult?.familyByNode ??
+          getClusterFamilyMembership({ nodes: inputNodes, edges: baseEdges })
+        : undefined;
+    const rfNodes: Node[] = positionedNodes.map((node, index) => {
       return {
         id: node.id,
         type: node.type,
-        position:
-          // The ring positions freshly-expanded services around their
-          // domain; once a node has been on canvas (or dragged) its own
-          // preserved position wins over the ring.
-          previous ??
-          serviceRingById.get(node.id) ??
-          fresh ??
-          { x: 0, y: index * 24 },
+        position: node.position,
         data: {
           ...node.data,
           clusterColor: colorById.get(node.id),
+          familyId: familyByNode?.get(node.id),
           alert: node.data.alert === true,
           severity:
             node.type === 'service' ? severityByService.get(node.id) : undefined,
@@ -499,7 +582,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
     setNodes(rfNodes);
     setEdges(rfEdges);
-  }, [graphData, layoutLocked, openDetailForNode, expandedServices, setNodes, setEdges]);
+  }, [graphData, layoutLocked, layoutMode, openDetailForNode, expandedServices, setNodes, setEdges]);
 
   useEffect(() => {
     applyLayout();
@@ -507,10 +590,16 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
   // ── Viewport fitting ──────────────────────────────────────────────────
   // fitView runs on first data arrival and whenever the target filter
-  // changes — NOT on periodic refetches, so the user's pan/zoom survives the
-  // 30s polls. Explicit user actions (f key, r key, double-click zoom,
-  // Reset View) call fitView directly below.
+  // or layout mode changes. Pan and zoom survive the 30s polls.
+  // The f and r keys, double-click zoom and Reset View fit directly.
   const fitRequestedRef = useRef(true);
+  const changeLayout = (mode: GraphLayout) => {
+    if (mode === layoutMode) return;
+    preservePositionsRef.current = false;
+    forceRecomputeRef.current = true;
+    fitRequestedRef.current = true;
+    setLayoutMode(mode);
+  };
 
   useEffect(() => {
     fitRequestedRef.current = true;
@@ -526,9 +615,11 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
     if (!fitRequestedRef.current) return;
     fitRequestedRef.current = false;
     requestAnimationFrame(() => {
-      fitView({ padding: 0.25 });
+      requestAnimationFrame(() => {
+        void fitView({ padding: 0.25 });
+      });
     });
-  }, [graphData, fitView]);
+  }, [graphData, fitView, layoutMode]);
 
   // ── LOD: labels hidden / glows disabled below zoom 0.5. Only touches node
   // data flags — never re-runs layout. Guarded so the node array only
@@ -585,7 +676,14 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
   const displayEdges = useMemo(() => {
     const focusId = hoveredNodeId ?? selectedNodeId;
-    if (!focusId) return edges;
+    if (!focusId) {
+      if (layoutMode !== 'Cluster') return edges;
+      return edges.map((edge) =>
+        edge.data?.type === 'belongs_to'
+          ? { ...edge, style: { ...edge.style, opacity: 0.18 } }
+          : edge,
+      );
+    }
     return edges.map((e) => {
       const baseOpacity =
         (e.style as { opacity?: number } | undefined)?.opacity ?? 0.55;
@@ -600,7 +698,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
         },
       };
     });
-  }, [edges, hoveredNodeId, selectedNodeId]);
+  }, [edges, hoveredNodeId, selectedNodeId, layoutMode]);
 
   const hoveredEdgeLabel = useMemo(() => {
     if (!hoveredEdgeId) return null;
@@ -722,7 +820,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-start gap-2">
+      <div className="flex flex-wrap items-center justify-start gap-2">
         {!targetId && (
           <TargetFilter
             value={filterTargetId}
@@ -730,6 +828,23 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           />
         )}
         <GraphNodeSearch nodes={nodes} onSelect={handleNodeSearchSelect} />
+        <div
+          role="group"
+          aria-label="Graph layout"
+          className="inline-flex rounded-md border p-0.5"
+        >
+          {(Object.keys(GRAPH_LAYOUTS) as GraphLayout[]).map((mode) => (
+            <Button
+              key={mode}
+              size="sm"
+              variant={mode === layoutMode ? 'secondary' : 'ghost'}
+              aria-pressed={mode === layoutMode}
+              onClick={() => changeLayout(mode)}
+            >
+              {mode}
+            </Button>
+          ))}
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -811,7 +926,8 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           nodes={displayNodes}
           edges={displayEdges}
           nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
+          nodeOrigin={NODE_ORIGIN}
+          onNodesChange={handleNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => {
             // Domain (asset) nodes toggle their child services instead of
@@ -840,7 +956,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           }}
           fitView
           fitViewOptions={{ padding: 0.25 }}
-          minZoom={0.1}
+          minZoom={layoutMode === 'Organic' ? 0.1 : 0.02}
           maxZoom={4}
           proOptions={{ hideAttribution: true }}
           colorMode={resolvedTheme}
@@ -848,6 +964,7 @@ function AssetGraphInner({ targetId }: AssetGraphProps) {
           onlyRenderVisibleElements={displayNodes.length > 500}
         >
           <Background color="var(--color-graph-edge)" bgColor="var(--color-graph-canvas)" />
+          {layoutMode === 'Cluster' && <GraphFamilyOutlines nodes={nodes} />}
           <Controls />
           {displayNodes.length >= 200 && (
             <MiniMap

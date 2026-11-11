@@ -33,6 +33,10 @@ Reviewers can't review large AI-generated diffs properly, so size is a hard cons
 4. **Check the diff size before declaring done:** `git diff --shortstat origin/main...HEAD` (this count includes generated files; CI excludes them). If you are over budget, tell the user and suggest where to cut. Don't quietly hand over an oversized change.
 5. **Never apply the `size/override` label yourself.** Only a maintainer decides that a large PR is acceptable.
 
+## Module Guides
+
+Read `core-api/src/modules/<name>/AGENTS.md` when it exists before changing a module. Add a guide for a new module. Update affected guides when changing routes, permissions, entities, queues, exports, cross-module wiring, or other invariants. Describe the behavior in the current Argus code and use exact file and symbol names.
+
 ## Repository Layout
 
 pnpm workspace (`pnpm-workspace.yaml`, `packageManager: pnpm@10.33.2`) with 2 Node packages + 1 Go service:
@@ -146,11 +150,11 @@ Migration location: `core-api/src/database/migrations/` (58 files, newest last).
 
 | File | Key vars |
 |---|---|
-| `core-api/.env` (from `example.env`) | `POSTGRES_*`, `REDIS_URL`, `PORT=6276`, `GRPC_PORT=16276`, `GEO_IP_URL`, `OASM_CLOUD_APIKEY`, `ENCRYPTION_KEYS` (comma-separated KEKs, **last = active**), `RUSTFS_ENDPOINT/ACCESS_KEY/SECRET_KEY`, `AUDIT_ARCHIVE_DIR`. Optional cloud-S3 knobs (`STORAGE_URL_BASE`, `S3_*`, `CORS_ALLOWED_ORIGINS`) default in `storage.config.ts` |
+| `core-api/.env` (from `example.env`) | `POSTGRES_*`, `REDIS_URL`, `PORT=6276`, `GRPC_PORT=16276`, `GEO_IP_URL`, `ARGUS_CLOUD_APIKEY`, `ENCRYPTION_KEYS` (comma-separated KEKs, **last = active**), `RUSTFS_ENDPOINT/ACCESS_KEY/SECRET_KEY`, `AUDIT_ARCHIVE_DIR`. Optional cloud-S3 knobs (`STORAGE_URL_BASE`, `S3_*`, `CORS_ALLOWED_ORIGINS`) default in `storage.config.ts` |
 | `console/.env` (from `example.env`) | `VITE_API_URL` (dev `http://localhost:6276`) |
 | `worker/.env` (from `.example.env`) | `WORKER_API_KEY`, `WORKER_MAX_CONCURRENCY`, `WORKER_GRPC_HOST/PORT`, plus `WORKER_MODE`, `WORKER_TOOL_PATH`, `WORKER_TOKEN_FILE`, `WORKER_CONNECTOR_ADDR`, `WORKER_CONNECTOR_ADDR_ALLOW_AUTODETECT`, `WORKER_NETWORK` |
 
-`ENCRYPTION_KEYS` semantics matter: the last key encrypts *and* decrypts, earlier keys are decrypt-only — reordering the list locks every encrypted column.
+`ENCRYPTION_KEYS`: the last key encrypts, earlier keys decrypt only. New data uses authenticated AES-256-GCM with stable key IDs; older CBC data stays readable. The original OASM default key value is a compatibility key and must never be rebranded. Outside development/test, startup validates both encryption and auth signing keys. The boot upgrade rewrites known encrypted stores, including inline workflow configs; retain all keys and a pre-upgrade database backup until verification is complete. See `docs/operations/security-port-rollout.md`.
 
 ## Architecture Patterns
 
@@ -194,6 +198,12 @@ Migration location: `core-api/src/database/migrations/` (58 files, newest last).
 - Since pre-commit is inert, **you** must run `task lint` and `task test` before declaring a change done.
 - Local CI rehearsal: `bash .github/scripts/test-local.sh <workflow>` (needs Docker + `act`).
 
+## Releases
+
+Run a real `task release` only when the user explicitly requests an Argus release. Preview the chosen version with `task release -- patch --dry-run` or `task release -- v0.13.0 --dry-run`. The preview fetches refs, can run checks, and prints the planned manifest edits, tag, and push.
+
+The task checks the release branch against origin and requires a clean checkout. A real run stamps the version in `core-api/package.json` and `console/package.json`, commits changed manifests as `chore(release): stamp v…`, and pushes the branch and annotated tag atomically with an exact branch lease. The tag starts the image and binary workflow and creates a draft GitHub release. See `task release -- --help` and `task release:test`.
+
 ## Docker
 
 `task docker-compose` = `docker compose --env-file ./core-api/.env up -d --build --force-recreate`.
@@ -215,7 +225,7 @@ Volumes worth knowing: `pgdata`, `redis-data`, `geoip-data`, `rustfs-data`, `wor
 6. **Generated code is read-only**: `console/src/services/apis/gen/`, `console/src/routeTree.gen.ts`, `worker/internal/gen/`, `.open-api/*`, `core-api/resources/connectors/manifest.json`.
 7. **`.open-api/` is generated *and* git-tracked** (it is **not** gitignored, contrary to older docs). core-api rewrites `open-api.json` on every boot, so it shows up as a modified file after any API start — that is expected. When the contract changes, commit the spec together with the regenerated console client.
 8. **Lint autofixes.** `task api:lint` runs with `--fix`; re-read files after linting instead of assuming your version survived.
-9. **`ENCRYPTION_KEYS` is order-sensitive** — the last key is the only one that encrypts.
+9. **Only the last `ENCRYPTION_KEYS` entry encrypts.** Append for rotation; retain older keys until all stored formats are verified. Old application images cannot read new GCM data.
 10. **`task lint` is sequential by design** (two type-aware ESLint processes exhaust RAM). Never run `api:lint` and `console:lint` in parallel/background.
 11. **RustFS/S3 (`RUSTFS_*`) is not optional** — it backs storage, PDF reports, *and* the worker tool registry (`BuiltinToolRegistry` serves the tool archives). Compose only waits for `rustfs` to be *started*, not healthy, so a slow first boot can fail the first worker tool download.
 12. **The worker needs the Docker socket**; without the right group id the daemon returns "permission denied" and API-version negotiation silently falls back to 1.24.

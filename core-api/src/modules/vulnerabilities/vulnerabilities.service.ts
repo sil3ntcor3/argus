@@ -18,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
+import { isISO8601 } from 'class-validator';
 import { In, Repository } from 'typeorm';
 import { AgentsCompletionsService } from '../agents/agents.completions';
 import { User } from '../auth/entities/user.entity';
@@ -27,7 +28,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Target } from '../targets/entities/target.entity';
 import { ToolsService } from '../tools/tools.service';
 import { WorkflowsService } from '../workflows/workflows.service';
-import { orderedJobEntries } from '../workflows/workflow-graph';
+import { normalizeInput, orderedJobEntries } from '../workflows/workflow-graph';
 import {
   GetVulnerabilitiesStatisticsQueryDto,
   VulnerabilityStatisticsDto,
@@ -36,9 +37,22 @@ import {
   GetVulnerabilitiesQueryDto,
   VulnerabilityStatus,
 } from './dto/get-vulnerability.dto';
-import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
+import {
+  TIMELINE_EVENT_TYPES,
+  type VulnerabilityTimelineEventDto,
+  type VulnerabilityTimelineResponseDto,
+} from './dto/vulnerability-timeline.dto';
+import { dismissFindings, type FindingDismissalInput } from './dismiss-findings';
 import { Vulnerability } from './entities/vulnerability.entity';
-import { openVulnerabilityCondition } from './open-vulnerability';
+import {
+  FINDING_DISMISS_REASONS,
+  RISK_ACCEPTED,
+} from './finding-dismissal-reason';
+import {
+  activeDismissalCondition,
+  openVulnerabilityCondition,
+} from './open-vulnerability';
+import { reopenFindings } from './reopen-findings';
 import { compileVulnerabilityFilter } from './vulnerability-filter';
 
 @Injectable()
@@ -48,8 +62,6 @@ export class VulnerabilitiesService {
   constructor(
     @InjectRepository(Vulnerability)
     private vulnerabilitiesRepository: Repository<Vulnerability>,
-    @InjectRepository(VulnerabilityDismissal)
-    private dismissRepo: Repository<VulnerabilityDismissal>,
     @InjectQueue(BullMQName.VULNERABILITY_ANALYSIS)
     private vulnerabilityAnalysisQueue: Queue,
     private jobRegistryService: JobsRegistryService,
@@ -110,6 +122,7 @@ export class VulnerabilitiesService {
         config: job?.config,
         configProfileId: job?.configProfileId,
         category: job?.category as ToolCategory | undefined,
+        input: normalizeInput(job?.input),
       });
     }
 
@@ -178,7 +191,11 @@ export class VulnerabilitiesService {
       .leftJoin('targets.workspace', 'workspaces')
       .leftJoinAndSelect('vulnerabilities.tool', 'tools')
       .leftJoin('vulnerabilities.jobHistory', 'jobHistory')
-      .leftJoinAndSelect('vulnerabilities.vulnerabilityDismissal', 'dismissal')
+      .leftJoinAndSelect(
+        'vulnerabilities.vulnerabilityDismissal',
+        'dismissal',
+        activeDismissalCondition('dismissal'),
+      )
       .where('workspaces.id = :workspaceId', { workspaceId })
       .skip((page - 1) * limit)
       .take(limit);
@@ -272,7 +289,12 @@ export class VulnerabilitiesService {
       .leftJoin('targets.workspace', 'workspaces')
       .leftJoinAndSelect('vulnerabilities.tool', 'tools')
       .leftJoin('vulnerabilities.jobHistory', 'jobHistory')
-      .leftJoinAndSelect('vulnerabilities.vulnerabilityDismissal', 'dismissal')
+      .leftJoinAndSelect(
+        'vulnerabilities.vulnerabilityDismissal',
+        'dismissal',
+        activeDismissalCondition('dismissal'),
+      )
+      .addSelect('dismissal.expiresAt')
       .leftJoinAndSelect('dismissal.user', 'user')
       .where('workspaces.id = :workspaceId', { workspaceId })
       .andWhere('vulnerabilities.id = :id', { id });
@@ -285,6 +307,10 @@ export class VulnerabilitiesService {
       );
     }
 
+    const dismissal = vulnerability.vulnerabilityDismissal;
+    if (dismissal && (dismissal.reason !== RISK_ACCEPTED || !dismissal.expiresAt)) {
+      delete dismissal.expiresAt;
+    }
     return vulnerability;
   }
 
@@ -355,6 +381,77 @@ export class VulnerabilitiesService {
     await this.vulnerabilitiesRepository.update({ id }, { isArchived });
   }
 
+  async getVulnerabilityTimeline(
+    id: string,
+    workspaceId: string,
+    canReadJobs: boolean,
+  ): Promise<VulnerabilityTimelineResponseDto> {
+    type TimelineRow =
+      | (Omit<VulnerabilityTimelineEventDto, 'dismissalReason' | 'expiresAt'> & {
+          rawReason: string | null;
+          rawExpiry: string | null;
+        })
+      | { id: null };
+    // An owned finding with no events still has one row; a missing or foreign
+    // finding has none. Both the finding and the event must be in scope.
+    const rows = await this.vulnerabilitiesRepository.manager.query<
+      TimelineRow[]
+    >(
+      `SELECT event.id, event.type, event."occurredAt",
+              CASE WHEN event.type IN ('detected', 'status_changed') THEN event."fromStatus" END AS "fromStatus",
+              CASE WHEN event.type IN ('detected', 'status_changed') THEN event."toStatus" END AS "toStatus",
+              CASE WHEN workflow."workspaceId" = target."workspaceId" THEN history.id END AS "jobHistoryId",
+              CASE event.type
+                WHEN 'dismissed' THEN event.data ->> 'reason'
+                WHEN 'reopened' THEN event.data ->> 'previousReason'
+                WHEN 'risk_expired' THEN 'risk_accepted'
+              END AS "rawReason",
+              CASE WHEN event.type IN ('dismissed', 'reopened', 'risk_expired')
+                THEN event.data ->> 'expiresAt'
+              END AS "rawExpiry"
+       FROM vulnerabilities AS finding
+       JOIN assets AS asset ON asset.id = finding."assetId"
+       JOIN targets AS target ON target.id = asset."targetId"
+       LEFT JOIN LATERAL (
+         SELECT id, type, "occurredAt", "fromStatus", "toStatus", "jobHistoryId", data
+         FROM vulnerability_events
+         WHERE "vulnerabilityId" = finding.id AND "workspaceId" = target."workspaceId"
+           AND type = ANY($4::varchar[])
+         ORDER BY "occurredAt" DESC, id DESC
+         LIMIT 500
+       ) AS event ON true
+       LEFT JOIN job_histories AS history
+         ON $3::boolean AND event.type IN ('detected', 'status_changed') AND history.id = event."jobHistoryId"
+       LEFT JOIN workflows AS workflow ON workflow.id = history."workflowId"
+       WHERE finding.id = $1 AND target."workspaceId" = $2
+       ORDER BY event."occurredAt" DESC, event.id DESC`,
+      [id, workspaceId, canReadJobs, TIMELINE_EVENT_TYPES],
+    );
+    if (rows.length === 0)
+      throw new NotFoundException('Vulnerability not found');
+    const data: VulnerabilityTimelineEventDto[] = [];
+    for (const row of rows) {
+      if (row.id === null) continue;
+      const { rawReason, rawExpiry, ...event } = row;
+      const dismissalReason = FINDING_DISMISS_REASONS.find(
+        (reason) => reason === rawReason,
+      );
+      const expiresAt =
+        dismissalReason === RISK_ACCEPTED &&
+        rawExpiry &&
+        /(?:Z|[+-]\d{2}:\d{2})$/.test(rawExpiry) &&
+        isISO8601(rawExpiry, { strict: true, strictSeparator: true })
+          ? new Date(rawExpiry)
+          : undefined;
+      data.push({
+        ...event,
+        ...(dismissalReason ? { dismissalReason } : {}),
+        ...(expiresAt && Number.isFinite(expiresAt.getTime()) ? { expiresAt } : {}),
+      });
+    }
+    return { data };
+  }
+
   /**
    * Builds the SQL CASE expression for severity ordering.
    *
@@ -380,74 +477,17 @@ export class VulnerabilitiesService {
     ids: string[],
     workspaceId: string,
     user: User,
-    dismiss: { reason: VulnerabilityDismissal['reason']; comment?: string },
+    dismiss: FindingDismissalInput,
   ) {
-    // Validate all vulnerabilities exist and belong to the workspace
-    const vulnerabilities = await this.vulnerabilitiesRepository.find({
-      where: {
-        id: In(ids),
-        asset: {
-          target: { workspaceId },
-        },
-      },
-    });
-
-    const foundIds = vulnerabilities.map((v) => v.id);
-    const notFoundIds = ids.filter((id) => !foundIds.includes(id));
-    if (notFoundIds.length > 0) {
-      throw new NotFoundException(
-        `Vulnerabilities not found: ${notFoundIds.join(', ')}`,
-      );
-    }
-
-    // Check which are already dismissed
-    const alreadyDismissed = await this.dismissRepo.find({
-      where: {
-        vulnerabilityId: In(ids),
-      },
-    });
-
-    if (alreadyDismissed.length > 0) {
-      throw new BadRequestException(
-        `Vulnerabilities already dismissed: ${alreadyDismissed.map((d) => d.vulnerabilityId).join(', ')}`,
-      );
-    }
-
-    // Create dismissal records for all
-    const dismissals = ids.map((id) =>
-      this.dismissRepo.create({
-        vulnerabilityId: id,
-        userId: user.id,
-        reason: dismiss.reason,
-        comment: dismiss.comment,
-      }),
+    return this.vulnerabilitiesRepository.manager.transaction((manager) =>
+      dismissFindings(manager, ids, workspaceId, user.id, dismiss),
     );
-
-    await this.dismissRepo.save(dismissals);
-    return dismissals;
   }
 
-  async bulkReopenVulnerabilities(ids: string[], workspaceId: string) {
-    const dismissals = await this.dismissRepo.find({
-      where: {
-        id: In(ids),
-        vulnerability: {
-          asset: {
-            target: { workspaceId },
-          },
-        },
-      },
-    });
-
-    const foundIds = dismissals.map((d) => d.id);
-    const notFoundIds = ids.filter((id) => !foundIds.includes(id));
-    if (notFoundIds.length > 0) {
-      throw new NotFoundException(
-        `Dismissed vulnerabilities not found: ${notFoundIds.join(', ')}`,
-      );
-    }
-
-    await this.dismissRepo.delete({ id: In(ids) });
+  async bulkReopenVulnerabilities(ids: string[], workspaceId: string, user: User) {
+    return this.vulnerabilitiesRepository.manager.transaction((manager) =>
+      reopenFindings(manager, ids, workspaceId, user.id),
+    );
   }
 
   async analyzeVulnerability(

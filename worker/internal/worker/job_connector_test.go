@@ -27,7 +27,7 @@ func TestHandleConnectorResultAggregatesVulnerabilityChunks(t *testing.T) {
 
 	execID := "exec-vuln-1"
 	bridgeMu.Lock()
-	bridge[execID] = &bridgeEntry{jobID: "job-vuln-1", category: "vulnerabilities", release: func() {}}
+	bridge[execID] = &bridgeEntry{jobID: "job-vuln-1", category: "vulnerabilities", release: func() {}, connectorImageID: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
 	bridgeMu.Unlock()
 	resultCh := make(chan connector.ResultMsg, 8)
 	proxy.Register(execID, resultCh)
@@ -68,8 +68,11 @@ func TestHandleConnectorResultAggregatesVulnerabilityChunks(t *testing.T) {
 	if got.jobID != "job-vuln-1" {
 		t.Fatalf("jobID: got %q, want job-vuln-1", got.jobID)
 	}
-	if got.isError {
-		t.Fatal("expected isError=false for a clean done")
+	if got.isError || got.coverageComplete == nil || !*got.coverageComplete {
+		t.Fatal("expected explicit complete coverage for a clean Done")
+	}
+	if got.connectorImageID != "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("expected actual connector image, got %q", got.connectorImageID)
 	}
 	if got.raw != "" {
 		t.Fatalf("expected raw \"\" for the aggregated submission, got %q", got.raw)
@@ -172,7 +175,7 @@ func TestHandleConnectorResultEmptyVulnerabilitiesSubmitsEmptyOnce(t *testing.T)
 	if len(results) != 1 {
 		t.Fatalf("expected exactly 1 submission for an empty clean done, got %d", len(results))
 	}
-	if results[0].isError || results[0].raw != "" || len(results[0].vulns) != 0 {
+	if results[0].isError || results[0].coverageComplete == nil || !*results[0].coverageComplete || results[0].raw != "" || len(results[0].vulns) != 0 {
 		t.Fatalf("expected clean empty submission, got %+v", results[0])
 	}
 }
@@ -357,7 +360,7 @@ func TestHandleConnectorResultErrorWithFindingsDeliversPartialSuccess(t *testing
 
 	execID := "exec-partial-1"
 	bridgeMu.Lock()
-	bridge[execID] = &bridgeEntry{jobID: "job-partial-1", category: "vulnerabilities", release: func() {}}
+	bridge[execID] = &bridgeEntry{jobID: "job-partial-1", category: "vulnerabilities", release: func() {}, connectorImageID: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
 	bridgeMu.Unlock()
 	resultCh := make(chan connector.ResultMsg, 4)
 	proxy.Register(execID, resultCh)
@@ -387,8 +390,11 @@ func TestHandleConnectorResultErrorWithFindingsDeliversPartialSuccess(t *testing
 		t.Fatalf("expected exactly 1 submission, got %d", len(results))
 	}
 	got := results[0]
-	if got.isError {
-		t.Fatal("isError must be false: results already in hand must be delivered as success")
+	if got.isError || got.coverageComplete != nil {
+		t.Fatal("partial findings must be delivered as success without complete coverage")
+	}
+	if got.connectorImageID != "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" {
+		t.Fatalf("expected actual connector image, got %q", got.connectorImageID)
 	}
 	if got.raw != "" {
 		t.Fatalf("expected raw \"\" for the partial submission, got %q", got.raw)
@@ -454,8 +460,8 @@ func TestHandleConnectorResultDisconnectWithFindingsDeliversPartialSuccess(t *te
 	if len(results) != 1 {
 		t.Fatalf("expected exactly 1 submission, got %d", len(results))
 	}
-	if results[0].isError {
-		t.Fatal("disconnect with findings must deliver them as success, not error")
+	if results[0].isError || results[0].coverageComplete != nil {
+		t.Fatal("disconnect must preserve findings without asserting complete coverage")
 	}
 	if len(results[0].vulns) != 1 {
 		t.Fatalf("expected the streamed finding preserved, got %d", len(results[0].vulns))
@@ -533,12 +539,12 @@ func TestHandleConnectorResultFailureCarriesContainerLogs(t *testing.T) {
 	mgr := execution.NewManager(fakeRT, 0)
 
 	// Logs is keyed on a Manager execution, so the exec must exist in Manager.
-	execID, err := mgr.Submit(context.Background(), execution.JobSpec{Tool: "nmap", Image: "ghcr.io/oasm-platform/connector-nmap:7.97"})
+	execID, err := mgr.Submit(context.Background(), execution.JobSpec{Tool: "nmap", Image: "ghcr.io/sil3ntcor3/connector-nmap:7.97"})
 	if err != nil {
 		t.Fatalf("mgr.Submit: %v", err)
 	}
 	bridgeMu.Lock()
-	bridge[execID] = &bridgeEntry{jobID: "job-log", category: "ports_scanner", release: func() {}, image: "ghcr.io/oasm-platform/connector-nmap:7.97"}
+	bridge[execID] = &bridgeEntry{jobID: "job-log", category: "ports_scanner", release: func() {}, image: "ghcr.io/sil3ntcor3/connector-nmap:7.97"}
 	bridgeMu.Unlock()
 	resultCh := make(chan connector.ResultMsg, 4)
 	proxy.Register(execID, resultCh)

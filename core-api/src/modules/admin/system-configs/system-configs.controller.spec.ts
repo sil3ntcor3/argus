@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import type { TestingModule } from '@nestjs/testing';
 import { Test } from '@nestjs/testing';
 import type { DataSource } from 'typeorm';
+import { MailService } from './mail.service';
 import { SystemConfigsController } from './system-configs.controller';
 import { SystemConfigsService } from './system-configs.service';
 
@@ -36,6 +37,8 @@ describe('SystemConfigsController', () => {
       'getConfig' | 'getRawLogoPath' | 'updateConfig' | 'removeLogo'
     >
   >;
+
+  const mailService = { sendTest: jest.fn() };
 
   beforeEach(async () => {
     const rustFsClient = { getClient: jest.fn(), getPresignClient: jest.fn() };
@@ -76,6 +79,7 @@ describe('SystemConfigsController', () => {
       providers: [
         { provide: SystemConfigsService, useValue: systemConfigsService },
         { provide: StorageService, useValue: storageService },
+        { provide: MailService, useValue: mailService },
       ],
     }).compile();
 
@@ -526,6 +530,20 @@ describe('SystemConfigsController', () => {
 
     it('restricts every endpoint to admins at class level', () => {
       expect(rolesOf(SystemConfigsController.prototype.getConfig)).toEqual([
+        Role.ADMIN,
+      ]);
+    });
+  });
+  describe('sendTestMail', () => {
+    it('uses the saved-mail service for the validated recipient', async () => {
+      mailService.sendTest.mockResolvedValue({ message: 'Test email sent' });
+      await expect(
+        controller.sendTestMail({ to: 'admin@example.com' }),
+      ).resolves.toEqual({ message: 'Test email sent' });
+      expect(mailService.sendTest).toHaveBeenCalledWith('admin@example.com');
+    });
+    it('requires the platform admin role', () => {
+      expect(rolesOf(SystemConfigsController.prototype.sendTestMail)).toEqual([
         Role.ADMIN,
       ]);
     });

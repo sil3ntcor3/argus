@@ -41,7 +41,14 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "web",
+            "host"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "configSchema": {
@@ -155,7 +162,14 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "url",
+            "web"
+          ],
+          "produces": [
+            "url"
+          ]
         }
       ],
       "agentTool": true,
@@ -301,7 +315,13 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "host"
+          ],
+          "produces": [
+            "url"
+          ]
         }
       ],
       "agentTool": true,
@@ -429,7 +449,13 @@
               "repository"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "repository"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "agentTool": true,
@@ -498,7 +524,13 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "host"
+          ],
+          "produces": [
+            "url"
+          ]
         }
       ],
       "agentTool": true,
@@ -679,7 +711,13 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "host"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "configSchema": {
@@ -781,7 +819,14 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "web",
+            "host"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "agentTool": true,
@@ -952,7 +997,13 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "host"
+          ],
+          "produces": [
+            "service"
+          ]
         },
         {
           "name": "vulnerabilities",
@@ -980,7 +1031,13 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "host"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "agentTool": true,
@@ -1072,7 +1129,14 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "host",
+            "web"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "agentTool": true,
@@ -1219,7 +1283,14 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "web",
+            "host"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "agentTool": true,
@@ -1335,7 +1406,13 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "host"
+          ],
+          "produces": [
+            "service"
+          ]
         }
       ],
       "agentTool": true,
@@ -1447,7 +1524,13 @@
               "repository"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "repository"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "agentTool": true,
@@ -1559,7 +1642,14 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "web",
+            "host"
+          ],
+          "produces": [
+            "vulnerability"
+          ]
         }
       ],
       "agentTool": true,
@@ -1829,7 +1919,14 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "web",
+            "host"
+          ],
+          "produces": [
+            "url"
+          ]
         }
       ],
       "agentTool": true,
@@ -1999,7 +2096,14 @@
               "target"
             ],
             "type": "object"
-          }
+          },
+          "inputs": [
+            "web",
+            "host"
+          ],
+          "produces": [
+            "url"
+          ]
         }
       ],
       "agentTool": true,

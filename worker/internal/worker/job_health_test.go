@@ -234,7 +234,7 @@ func TestHandleConnectorResultConnectorErrorDoesNotBackOffImage(t *testing.T) {
 	events := make(chan TuiEvent, 64)
 	proxy := connector.NewProxy()
 
-	image := "ghcr.io/oasm-platform/connector-wpscan:3.8.25"
+	image := "ghcr.io/sil3ntcor3/connector-wpscan:3.8.25"
 	backoff := execution.NewImageBackoff()
 	oldBackoff := swapImageBackoff(backoff)
 	defer func() { imageBackoff = oldBackoff }()

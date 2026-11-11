@@ -1,3 +1,5 @@
+import { WORKER_TOKEN_HEADER } from '@/common/constants/app.constants';
+import type { Metadata } from '@grpc/grpc-js';
 import { Public, WorkspaceId } from '@/common/decorators/app.decorator';
 import { WorkerTokenAuth } from '@/common/decorators/worker-token-auth.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
@@ -5,21 +7,31 @@ import { DefaultMessageResponseDto } from '@/common/dtos/default-message-respons
 import { GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
 import { Severity, ToolCategory } from '@/common/enums/enum';
+import { GrpcWorkerContext } from '@/common/guards/grpc-worker-context.service';
 import { GrpcWorkerTokenGuard } from '@/common/guards/grpc-worker-token.guard';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
+import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
 import {
   Body,
   Controller,
   Delete,
   Get,
+  HttpStatus,
   Logger,
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+} from '@nestjs/swagger';
 import { plainToInstance } from 'class-transformer';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
@@ -54,7 +66,9 @@ import {
   VulnerabilitiesResultDto,
   WorkerIdParams,
 } from './dto/jobs-registry.dto';
+import { RetryRunResponseDto } from './dto/retry-run-response.dto';
 import { JobsRegistryService } from './jobs-registry.service';
+import { WorkflowRunnerService } from './workflow-runner.service';
 
 /**
  * Packs a single JSON-ish value into a `google.protobuf.Value` wire object.
@@ -114,6 +128,8 @@ export class JobsRegistryController {
     private readonly connectorRegistry: ConnectorRegistryService,
     private readonly toolConfigProfilesService: ToolConfigProfilesService,
     private readonly integrationsService: IntegrationsService,
+    private readonly workflowRunnerService: WorkflowRunnerService,
+    private readonly grpcWorkerContext: GrpcWorkerContext,
   ) {}
 
   @WorkspaceAccess('job.read')
@@ -162,9 +178,15 @@ export class JobsRegistryController {
   @WorkerTokenAuth()
   @Public()
   @Get('/:workerId/next')
+  /** Legacy HTTP claims keep their existing response without private snapshots. */
   async getNextJob(@Param() { workerId }: WorkerIdParams) {
     const job = await this.jobsRegistryService.getNextJob(workerId);
-    return job;
+    if (!job) return job;
+    const response = { ...job };
+    delete response.inputs;
+    delete response.claimedAt;
+    delete response.scanClaimInstant;
+    return response;
   }
 
   @Doc({ summary: 'Updates the result of a job with the given worker ID.' })
@@ -327,8 +349,13 @@ export class JobsRegistryController {
   getJobHistoryDetail(
     @WorkspaceId() workspaceId: string,
     @Param('id') id: string,
+    @Req() request: RequestWithMetadata,
   ): Promise<JobHistoryDetailResponseDto> {
-    return this.jobsRegistryService.getJobHistoryDetail(workspaceId, id);
+    return this.jobsRegistryService.getJobHistoryDetail(
+      workspaceId,
+      id,
+      request.permissions ?? [],
+    );
   }
 
   @WorkspaceAccess('job.read')
@@ -396,7 +423,7 @@ export class JobsRegistryController {
   @Doc({
     summary: 'Cancel a job history',
     description:
-      'Cancels every job of a run that has not reached a terminal state and stops the workflow from spawning further steps',
+      'Cancels an open run and stops the workflow from spawning further steps.',
     response: {
       serialization: DefaultMessageResponseDto,
     },
@@ -404,12 +431,47 @@ export class JobsRegistryController {
       getWorkspaceId: true,
     },
   })
+  @ApiConflictResponse({
+    description: 'The workflow engine has already closed the run.',
+  })
   @Post('/histories/:id/cancel')
   cancelJobHistory(
     @WorkspaceId() workspaceId: string,
     @Param() params: IdQueryParamDto,
   ) {
     return this.jobsRegistryService.cancelJobHistory(workspaceId, params.id);
+  }
+
+  @WorkspaceAccess('job.write')
+  @Doc({
+    summary: 'Retry a closed run',
+    description:
+      'Starts a new manual run from the current workflow and recorded target or project asset scope.',
+    response: {
+      httpStatus: HttpStatus.CREATED,
+      serialization: RetryRunResponseDto,
+    },
+    request: { getWorkspaceId: true },
+  })
+  @ApiBadRequestResponse({
+    description: 'Unsupported scope, unavailable targets, or no runnable steps.',
+  })
+  @ApiForbiddenResponse({
+    description: 'Missing job write permission or project workflow launch permission.',
+  })
+  @ApiNotFoundResponse({ description: 'Run not found in this workspace.' })
+  @ApiConflictResponse({ description: 'The run is open or has active jobs.' })
+  @Post('/histories/:id/re-run')
+  retryJobHistory(
+    @WorkspaceId() workspaceId: string,
+    @Param() { id }: IdQueryParamDto,
+    @Req() request: RequestWithMetadata,
+  ): Promise<RetryRunResponseDto> {
+    return this.workflowRunnerService.retryRun(
+      workspaceId,
+      id,
+      request.permissions ?? [],
+    );
   }
 
   @WorkspaceAccess('job.delete')
@@ -440,7 +502,7 @@ export class JobsRegistryController {
       return { id: '', asset: {}, command: '' };
     }
 
-    return this.mapJobToGrpcJob(job);
+    return this.mapJobToGrpcJob(job, worker.id);
   }
 
   /**
@@ -464,7 +526,7 @@ export class JobsRegistryController {
     );
 
     const values = await Promise.all(
-      jobs.map((job) => this.mapJobToGrpcJob(job)),
+      jobs.map((job) => this.mapJobToGrpcJob(job, request.id)),
     );
 
     return { values };
@@ -475,7 +537,8 @@ export class JobsRegistryController {
    * `NextBatch` so the two paths can never drift apart.
    */
   /**
-   * Inputs of a connector job. A repository asset (GIT_ORG target) gets its
+   * Inputs of a connector job, preferring a stored non-repository target.
+   * A repository asset (GIT_ORG target) gets its
    * clone URL plus the integration's token, decrypted here for this dispatch
    * only — never persisted on the job. Without a usable integration the job
    * still runs, unauthenticated (public repositories).
@@ -489,7 +552,8 @@ export class JobsRegistryController {
       target?: { type?: string; integrationId?: string | null } | null;
     };
     if (!isRepositoryAsset(asset)) {
-      return buildConnectorInputs(asset);
+      // Planned service/URL targets survive dispatch; older jobs use the asset.
+      return job.inputs ?? buildConnectorInputs(asset);
     }
 
     const integrationId = asset.target?.integrationId;
@@ -520,6 +584,7 @@ export class JobsRegistryController {
 
   private async mapJobToGrpcJob(
     job: GetNextJobResult,
+    workerId: string,
   ): Promise<Record<string, unknown>> {
     // Connector path: tool metadata present → look up registry
     const connectorEntry = job.tool
@@ -528,6 +593,7 @@ export class JobsRegistryController {
 
     if (connectorEntry?.image) {
       let config: Record<string, unknown> | undefined;
+      let configResolved = true;
       try {
         config =
           await this.toolConfigProfilesService.resolveConfigForJob(
@@ -538,6 +604,7 @@ export class JobsRegistryController {
       } catch {
         // Never log decrypted payload — generic message only
         this.logger.warn('profile decrypt failed');
+        configResolved = false;
       }
 
       // Manifest resource limits — scheduling context for the worker runtime.
@@ -546,6 +613,16 @@ export class JobsRegistryController {
         job.tool!.name,
       );
 
+      const inputs = await this.resolveConnectorInputs(job);
+      if (configResolved && job.category === ToolCategory.VULNERABILITIES) {
+        await this.jobsRegistryService.recordFindingScanScope(
+          job,
+          workerId,
+          connectorEntry.image,
+          inputs,
+          config,
+        );
+      }
       const response: Record<string, unknown> = {
         id: job.id,
         asset: job.asset,
@@ -562,7 +639,7 @@ export class JobsRegistryController {
         memory: defaults.memory,
         timeout_seconds: defaults.timeoutSeconds,
         inputs: {
-          fields: packStructFields(await this.resolveConnectorInputs(job)),
+          fields: packStructFields(inputs),
         },
       };
 
@@ -708,13 +785,23 @@ export class JobsRegistryController {
     error,
     raw,
     vulnerabilities,
+    coverageComplete,
+    connectorImageId,
   }: {
     workerId: string;
     jobId: string;
     error: boolean;
     raw?: string;
     vulnerabilities?: { values: Vulnerability[] };
-  }): Promise<{ success: boolean }> {
+    coverageComplete?: boolean;
+    connectorImageId?: string;
+  }, metadata?: Metadata): Promise<{ success: boolean }> {
+    const token = metadata?.get(WORKER_TOKEN_HEADER)[0];
+    const trustedConnectorResult =
+      error === false &&
+      Array.isArray(vulnerabilities?.values) &&
+      typeof token === 'string' &&
+      this.grpcWorkerContext.getWorker(token)?.id === workerId;
     const dto = plainToInstance(VulnerabilitiesResultDto, {
       jobId,
       error,
@@ -728,6 +815,8 @@ export class JobsRegistryController {
       workerId,
       dto,
       ToolCategory.VULNERABILITIES,
+      trustedConnectorResult && coverageComplete === true ? true : undefined,
+      trustedConnectorResult ? connectorImageId : undefined,
     );
     return { success: !!result.jobId };
   }

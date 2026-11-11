@@ -64,6 +64,9 @@ type Client struct {
 	streamCancelMu sync.RWMutex
 	streamCancel   StreamCancelFunc
 
+	// jobsAvailable coalesces a burst of claimable-job hints into one pending wake-up.
+	jobsAvailable chan struct{}
+
 	// agentSandbox is advertised on RemoteExecuteSubscribe (x-agent-sandbox)
 	// when agent shell commands run in a per-session sandbox container.
 	agentSandbox atomic.Bool
@@ -75,6 +78,9 @@ type Client struct {
 func WithTLS() grpc.DialOption {
 	return grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12}))
 }
+
+// maxRecvMsgBytes mirrors the API's maxSendMessageLength in core-api/src/main.ts.
+const maxRecvMsgBytes = 64 * 1024 * 1024
 
 // NewClient validates the required configuration and creates a lazily-dialing
 // gRPC client for the core-api server. A worker token persisted by a previous
@@ -98,6 +104,8 @@ func NewClient(apiKey, grpcHost, toolPath string, logger Logger, dialOpts ...grp
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithPerRPCCredentials(auth),
+		// Batched job responses can exceed grpc-go's default receive limit.
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxRecvMsgBytes)),
 	}
 	opts = append(opts, dialOpts...)
 
@@ -120,6 +128,7 @@ func NewClient(apiKey, grpcHost, toolPath string, logger Logger, dialOpts ...grp
 		telemetryBaseDelay:   1 * time.Second,
 		telemetryMaxDelay:    30 * time.Second,
 		telemetryCallTimeout: 3 * time.Second,
+		jobsAvailable:        make(chan struct{}, 1),
 	}
 
 	c.tokenFile, c.tokenLock = claimTokenFile(resolveTokenFilePath(), logger)
@@ -228,6 +237,11 @@ func (c *Client) streamCancelHandler() StreamCancelFunc {
 	c.streamCancelMu.RLock()
 	defer c.streamCancelMu.RUnlock()
 	return c.streamCancel
+}
+
+// JobsAvailable notifies the poller that it may claim without waiting for idle backoff.
+func (c *Client) JobsAvailable() <-chan struct{} {
+	return c.jobsAvailable
 }
 
 // SetRunMode stores the worker run mode ("cli", "node", or "") which is

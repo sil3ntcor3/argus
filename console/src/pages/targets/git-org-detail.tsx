@@ -2,6 +2,7 @@ import Page from '@/components/common/page';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { OpenLink } from '@/components/ui/open-link';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import useDebounce from '@/hooks/use-debounce';
@@ -24,8 +25,7 @@ import {
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { FastScanDialog } from '../vulnerabilities/components/fast-scan-dialog';
-import { ListVulnerabilities } from '../vulnerabilities/list-vulnerabilitys';
-import VulnerabilitiesStatistic from '../vulnerabilities/vulnerabilites-statistic';
+import { VulnerabilitiesView } from '../vulnerabilities/vulnerabilities-view';
 import { TargetSwitcher } from './components/target-switcher';
 import SettingTarget from './setting-target';
 
@@ -47,7 +47,7 @@ export function GitOrgDetail({
 }: {
   target: Target;
   tab: string | undefined;
-  refetch: () => void;
+  refetch: () => Promise<unknown>;
 }) {
   const navigate = useNavigate({ from: '/targets/$id/$tab' });
   const activeTab = TABS.some((t) => t.value === tab) ? tab! : 'repositories';
@@ -123,9 +123,8 @@ export function GitOrgDetail({
         <TabsContent value="repositories" className="py-3">
           <RepositoriesTable targetId={target.id} />
         </TabsContent>
-        <TabsContent value="vulnerabilities" className="flex flex-col gap-5 py-3">
-          <VulnerabilitiesStatistic targetId={target.id} />
-          <ListVulnerabilities
+        <TabsContent value="vulnerabilities" className="py-3">
+          <VulnerabilitiesView
             targetId={target.id}
             actions={
               <FastScanDialog
@@ -220,7 +219,7 @@ function RepositoriesTable({ targetId }: { targetId: string }) {
                 <Badge variant="secondary">
                   {repo.private ? 'Private' : 'Public'}
                 </Badge>
-                <a
+                <OpenLink
                   href={repo.url}
                   target="_blank"
                   rel="noreferrer noopener"
@@ -228,7 +227,7 @@ function RepositoriesTable({ targetId }: { targetId: string }) {
                   className="text-muted-foreground hover:text-foreground"
                 >
                   <ExternalLink className="size-4" />
-                </a>
+                </OpenLink>
               </div>
             </li>
           ))}

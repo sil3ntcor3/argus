@@ -1,4 +1,5 @@
-import { ToolCategory } from '@/common/enums/enum';
+import { DataKind, ToolCategory } from '@/common/enums/enum';
+import { INPUT_KINDS } from '@/modules/tools/tool-io';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -6,11 +7,15 @@ import {
   ArrayUnique,
   IsArray,
   IsEnum,
+  IsIn,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { IsCronSchedule } from './cron-schedule.validator';
@@ -46,6 +51,25 @@ export class AssetGroupToolInput {
   @IsOptional()
   @IsEnum(ToolCategory)
   category?: ToolCategory;
+
+  /** Ordered subset of the tool's accepted data kinds. */
+  @ApiProperty({
+    required: false, enum: DataKind, enumName: 'DataKind', isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(INPUT_KINDS, { each: true })
+  input?: DataKind[];
+
+  @ApiProperty({
+    required: false, minimum: 1, maximum: 20,
+    description: 'Pipeline stage. Tools in one stage run in parallel; later stages wait. Default 1.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  stage?: number;
 }
 
 export class CreateAssetGroupDto {

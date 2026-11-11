@@ -255,7 +255,7 @@ message WorkerTelemetryResponse {
 // --- bidirectional worker stream (Connect) ---
 // The worker opens one long-lived stream on Connect. It carries the register
 // handshake and heartbeats up, and register responses, heartbeats acks and job
-// cancellations down. Identity, job pull and results deliberately keep their
+// cancellations and job hints down. Identity, job pull and results keep their
 // own RPCs; this stream only adds the push channel core-api lacked.
 
 message WorkerToCore {
@@ -270,8 +270,13 @@ message CoreToWorker {
     RegisterResponse register_resp  = 1;
     HeartbeatAck     heartbeat_ack  = 2;
     CancelRequest    cancel         = 3;
+    JobsAvailable    jobs_available = 4;
   }
 }
+
+// JobsAvailable hints that the worker should call NextBatch now. Claims and
+// authorization stay on NextBatch; a lost hint costs one fallback poll interval.
+message JobsAvailable {}
 
 // Register is the first frame on every connect. It carries the same identity
 // material as Join: an API key for a first-ever connect, or a persisted worker

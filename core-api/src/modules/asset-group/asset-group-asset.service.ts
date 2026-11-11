@@ -9,8 +9,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
+import type { EntityManager } from 'typeorm';
 import { Asset } from '../assets/entities/assets.entity';
+import { lockProjectScope } from '../projects/project-scope-sync';
+import { excludeMatchedScopeAssets } from '../projects/project-scope-exclusions';
 import { AssetGroupAsset } from './entities/asset-groups-assets.entity';
 import { AssetGroup } from './entities/asset-groups.entity';
 
@@ -29,30 +32,38 @@ export class AssetGroupAssetService {
   ) {}
 
   /**
-   * Associates multiple assets with the specified asset group
+   * Associates assets with a group; duplicate pairs are rejected atomically.
    */
   async addManyAssets(
     groupId: string,
     assetIds: string[],
     workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
+    return this.assetGroupRepo.manager.transaction((manager) =>
+      this.addAssetsInTransaction(groupId, assetIds, workspaceId, manager),
+    );
+  }
+
+  private async addAssetsInTransaction(
+    groupId: string,
+    assetIds: string[],
+    workspaceId: string,
+    manager: EntityManager,
+  ): Promise<DefaultMessageResponseDto> {
+    const assetRepo = manager.getRepository(Asset);
+    const assetGroupAssetRepo = manager.getRepository(AssetGroupAsset);
     try {
-      // Verify that the asset group exists
-      const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id: groupId, workspace: { id: workspaceId } },
-        relations: ['workspace'],
-      });
-      if (!assetGroup) {
+      // Read membership only after competing scope updates have committed.
+      await lockProjectScope(manager, groupId, workspaceId).catch((error: unknown) => {
+        if (!(error instanceof NotFoundException)) throw error;
         this.logger.warn(`Asset group with ID "${groupId}" not found`);
-        throw new NotFoundException(
-          `Asset group with ID "${groupId}" not found`,
-        );
-      }
+        throw new NotFoundException(`Asset group with ID "${groupId}" not found`);
+      });
 
       // Verify that all assets exist AND belong to the same workspace — a bare
       // findByIds would let a caller attach another tenant's assets to their own
       // group, and the group-assets listing only constrains the group's tenant.
-      const assets = await this.assetRepo.find({
+      const assets = await assetRepo.find({
         where: { id: In(assetIds), target: { workspaceId } },
       });
       if (assets.length !== assetIds.length) {
@@ -69,11 +80,12 @@ export class AssetGroupAssetService {
       }
 
       // Find existing associations to avoid duplicates
-      const existingAssociations = await this.assetGroupAssetRepo.find({
+      const existingAssociations = await assetGroupAssetRepo.find({
         where: {
           assetGroup: { id: groupId },
           asset: { id: In(assetIds) },
         },
+        relations: ['asset'],
       });
 
       const existingAssetIds = existingAssociations.map(
@@ -90,13 +102,32 @@ export class AssetGroupAssetService {
 
       // Create new associations
       const newAssociations = assetIds.map((assetId) =>
-        this.assetGroupAssetRepo.create({
+        assetGroupAssetRepo.create({
           assetGroup: { id: groupId },
           asset: { id: assetId },
         }),
       );
 
-      await this.assetGroupAssetRepo.save(newAssociations);
+      try {
+        await assetGroupAssetRepo.save(newAssociations);
+      } catch (error) {
+        // A concurrent request can insert the pair after the precheck.
+        const driverError: unknown =
+          error instanceof QueryFailedError ? error.driverError : undefined;
+        if (
+          typeof driverError === 'object' &&
+          driverError !== null &&
+          'code' in driverError &&
+          driverError.code === '23505' &&
+          'constraint' in driverError &&
+          driverError.constraint === 'UQ_pa_projectId_assetId'
+        ) {
+          throw new BadRequestException(
+            `One or more assets are already associated with asset group "${groupId}"`,
+          );
+        }
+        throw error;
+      }
 
       return {
         message: `${newAssociations.length} assets successfully added to asset group "${groupId}"`,
@@ -118,9 +149,22 @@ export class AssetGroupAssetService {
     assetIds: string[],
     workspaceId?: string,
   ): Promise<DefaultMessageResponseDto> {
+    return this.assetGroupRepo.manager.transaction((manager) =>
+      this.removeAssetsInTransaction(groupId, assetIds, workspaceId, manager),
+    );
+  }
+
+  private async removeAssetsInTransaction(
+    groupId: string,
+    assetIds: string[],
+    workspaceId: string | undefined,
+    manager: EntityManager,
+  ): Promise<DefaultMessageResponseDto> {
+    const assetGroupRepo = manager.getRepository(AssetGroup);
+    const assetGroupAssetRepo = manager.getRepository(AssetGroupAsset);
     try {
       // Validate group exists and belongs to the workspace
-      const assetGroup = await this.assetGroupRepo.findOne({
+      const assetGroup = await assetGroupRepo.findOne({
         where: { id: groupId },
         relations: ['workspace'],
       });
@@ -135,8 +179,23 @@ export class AssetGroupAssetService {
         );
       }
 
+      const owningWorkspaceId = assetGroup.workspace?.id;
+      if (owningWorkspaceId) {
+        await lockProjectScope(manager, assetGroup.id, owningWorkspaceId).catch((error: unknown) => {
+          if (!(error instanceof NotFoundException)) throw error;
+          throw new NotFoundException(`Asset group with ID "${groupId}" not found`);
+        });
+      } else {
+        // Trusted internal calls historically allow projects without a workspace.
+        const [locked] = await manager.query<{ id: string }[]>(
+          'SELECT id FROM projects WHERE id=$1 AND "workspaceId" IS NULL FOR UPDATE',
+          [assetGroup.id],
+        );
+        if (!locked) throw new NotFoundException(`Asset group with ID "${groupId}" not found`);
+      }
+
       // Find existing associations
-      const associations = await this.assetGroupAssetRepo.find({
+      const associations = await assetGroupAssetRepo.find({
         where: {
           assetGroup: { id: groupId },
           asset: { id: In(assetIds) },
@@ -161,8 +220,10 @@ export class AssetGroupAssetService {
         );
       }
 
-      // Remove the associations
-      await this.assetGroupAssetRepo.remove(associations);
+      if (owningWorkspaceId) {
+        await excludeMatchedScopeAssets(manager, assetGroup.id, owningWorkspaceId, assetIds);
+      }
+      await assetGroupAssetRepo.remove(associations);
 
       return {
         message: `${associations.length} assets successfully removed from asset group "${groupId}"`,
@@ -202,10 +263,10 @@ export class AssetGroupAssetService {
       // Build query using query builder to get assets associated with the asset group
       const queryBuilder = this.assetRepo
         .createQueryBuilder('asset')
-        .innerJoin('assets_group_assets', 'aga', 'aga.assetId = asset.id')
-        .innerJoin('asset_groups', 'ag', 'ag.id = aga.assetGroupId')
+        .innerJoin('project_assets', 'aga', 'aga.assetId = asset.id')
+        .innerJoin('projects', 'ag', 'ag.id = aga.projectId')
         .where(
-          'aga.assetGroupId = :assetGroupId AND ag.workspaceId = :workspaceId',
+          'aga.projectId = :assetGroupId AND ag.workspaceId = :workspaceId',
           {
             assetGroupId,
             workspaceId,
@@ -264,9 +325,9 @@ export class AssetGroupAssetService {
       const queryBuilder = this.assetRepo
         .createQueryBuilder('asset')
         .leftJoin(
-          'assets_group_assets',
+          'project_assets',
           'aga',
-          'aga.assetId = asset.id AND aga.assetGroupId = :assetGroupId',
+          'aga.assetId = asset.id AND aga.projectId = :assetGroupId',
           { assetGroupId },
         )
         .innerJoin(

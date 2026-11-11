@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ApiKeysModule } from './apikeys/apikeys.module';
 import { AssetGroupModule } from './asset-group/asset-group.module';
+import { ProjectsModule } from './projects/projects.module';
 import { AssetsModule } from './assets/assets.module';
 import { AuthModule } from './auth/auth.module';
 import { ConnectorsModule } from './connectors/connectors.module';
@@ -29,6 +30,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module';
 import { AgentsModule } from './agents/agents.module';
 import { RemoteExecuteModule } from './remote-execute/remote-execute.module';
 import { ReportsModule } from './reports/reports.module';
+import { ArtifactsModule } from './artifacts/artifacts.module';
 
 @Module({
   imports: [
@@ -53,12 +55,14 @@ import { ReportsModule } from './reports/reports.module';
     ProvidersModule,
     TemplatesModule,
     AssetGroupModule,
+    ProjectsModule,
     IssuesModule,
     AdminModule,
     InternalNetworksModule,
     AgentsModule,
     RemoteExecuteModule,
     ReportsModule,
+    ArtifactsModule,
     IntegrationsModule,
     ConnectorsModule,
     EventsModule,

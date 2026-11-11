@@ -58,3 +58,27 @@ describe('Tabs URL synchronization', () => {
     expect(screen.getByText('Monitoring content')).toBeInTheDocument();
   });
 });
+
+describe('TabsTrigger badge', () => {
+  it('includes zero and text badges in tab names and omits absent badges', async () => {
+    renderWithProviders(
+      <Tabs value="assets">
+        <TabsList>
+          <TabsTrigger value="assets" badge={0}>
+            Assets
+          </TabsTrigger>
+          <TabsTrigger value="plan" badge="3/5">
+            Plan
+          </TabsTrigger>
+          <TabsTrigger value="runs">Runs</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+
+    expect(
+      await screen.findByRole('tab', { name: 'Assets 0' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Plan 3/5' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Runs' })).toBeInTheDocument();
+  });
+});

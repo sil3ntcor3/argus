@@ -68,16 +68,14 @@ export function normalizeSchemaType(value: unknown): unknown {
   return value;
 }
 
+/** Load the image resource, falling back to the tracked fragment in a checkout. */
 function loadBetterAuthSpec(): BetterAuthSpec | null {
-  const betterAuthPath = path.join(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    '.open-api',
-    'better-auth.json',
-  );
-  if (!fs.existsSync(betterAuthPath)) return null;
+  const candidates = [
+    path.resolve(__dirname, '..', '..', 'resources', 'openapi', 'better-auth.json'),
+    path.resolve(__dirname, '..', '..', '..', '.open-api', 'better-auth.json'),
+  ];
+  const betterAuthPath = candidates.find((file) => fs.existsSync(file));
+  if (!betterAuthPath) return null;
   return JSON.parse(fs.readFileSync(betterAuthPath, 'utf-8')) as BetterAuthSpec;
 }
 
