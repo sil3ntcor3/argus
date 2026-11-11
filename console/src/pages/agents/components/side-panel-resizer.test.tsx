@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { useRef } from 'react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { Profiler, useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResizableSidePanel } from './side-panel-resizer';
 
@@ -27,6 +27,21 @@ function dividerAndPanel() {
   const divider = screen.getByRole('separator', { name: 'Resize side panel' });
   const panel = screen.getByRole('complementary');
   return { divider, panel };
+}
+
+function watchResize() {
+  let notify = () => {};
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        notify = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  return () => act(notify);
 }
 
 describe('ResizableSidePanel', () => {
@@ -104,5 +119,70 @@ describe('ResizableSidePanel', () => {
     fireEvent.pointerMove(divider, { clientX: 400 });
     fireEvent.pointerUp(divider, { clientX: 400 });
     expect(localStorage.getItem(widthKey)).toBe('900');
+  });
+
+  it('updates every pointer preview without React commits, including observer callbacks', () => {
+    const notify = watchResize();
+    vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(
+      function (this: HTMLElement) {
+        return { width: Number.parseFloat(this.style.width) || 500 } as DOMRect;
+      },
+    );
+    const commits = vi.fn();
+    render(
+      <Profiler id="split" onRender={commits}>
+        <Split />
+      </Profiler>,
+    );
+    const { divider, panel } = dividerAndPanel();
+    const count = commits.mock.calls.length;
+    Object.assign(divider, { setPointerCapture: vi.fn() });
+    fireEvent.pointerDown(divider, { button: 0, clientX: 900 });
+    for (const clientX of [880, 860, 840]) {
+      fireEvent.pointerMove(divider, { clientX });
+      notify();
+    }
+    expect(panel.style.width).toBe('560px');
+    expect(divider).toHaveAttribute('aria-valuenow', '560');
+    expect(commits).toHaveBeenCalledTimes(count);
+    expect(localStorage.getItem(widthKey)).toBeNull();
+    fireEvent.pointerUp(divider);
+    expect(localStorage.getItem(widthKey)).toBe('560');
+    expect(commits.mock.calls.length).toBeGreaterThan(count);
+  });
+
+  it('restores automatic sizing and ARIA after cancelling a default-width drag', () => {
+    render(<Split />);
+    const { divider, panel } = dividerAndPanel();
+    Object.assign(divider, { setPointerCapture: vi.fn() });
+    fireEvent.pointerDown(divider, { button: 0, clientX: 900 });
+    fireEvent.pointerMove(divider, { clientX: 800 });
+    fireEvent.pointerCancel(divider);
+    expect(panel.style.width).toBe('');
+    expect(panel.style.maxWidth).toBe('');
+    expect(divider).toHaveAttribute('aria-valuenow', '500');
+    expect(localStorage.getItem(widthKey)).toBeNull();
+  });
+
+  it('reclamps a live preview on container resize and ignores keyboard reset during the drag', () => {
+    const notify = watchResize();
+    render(<Split />);
+    const { divider, panel } = dividerAndPanel();
+    Object.assign(divider, { setPointerCapture: vi.fn() });
+    fireEvent.pointerDown(divider, { button: 0, clientX: 900 });
+    fireEvent.pointerMove(divider, { clientX: 0 });
+    rowWidth = 760;
+    notify();
+    expect(panel.style.width).toBe('340px');
+    expect(divider).toHaveAttribute('aria-valuemin', '304');
+    expect(divider).toHaveAttribute('aria-valuemax', '340');
+    expect(divider).toHaveAttribute('aria-valuenow', '340');
+    fireEvent.keyDown(divider, { key: 'ArrowRight' });
+    expect(localStorage.getItem(widthKey)).toBeNull();
+    fireEvent.keyDown(divider, { key: 'Enter' });
+    fireEvent.doubleClick(divider);
+    expect(panel.style.width).toBe('340px');
+    fireEvent.pointerUp(divider);
+    expect(localStorage.getItem(widthKey)).toBe('340');
   });
 });
