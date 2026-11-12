@@ -35,6 +35,7 @@ export interface DetectedVulnerability {
 
 /** `vulnerability.detected` — every NEW vulnerability one job produced. */
 export interface VulnerabilityDetectedPayload {
+  projectId?: string;
   jobId: string;
   targetId: string;
   assetId: string;
@@ -54,6 +55,14 @@ export interface ProjectAssetsAddedPayload {
   projectId: string;
   assetIds: string[];
   jobHistoryId?: string;
+}
+
+export interface ProjectRunCompletedPayload {
+  projectId: string;
+  projectWorkflowId: string;
+  workflowName: string;
+  jobHistoryId: string;
+  outcome: 'success' | 'failure';
 }
 
 /** `workflow.run.completed` — the run's asset deltas and unfinished steps. */
@@ -120,6 +129,7 @@ export interface VulnerabilityAnalysisCompletedPayload {
 export interface EventPayloadMap {
   'asset.discovered': AssetDiscoveredPayload;
   'project.assets.added': ProjectAssetsAddedPayload;
+  'project.run.completed': ProjectRunCompletedPayload;
   'vulnerability.detected': VulnerabilityDetectedPayload;
   'workflow.run.completed': WorkflowRunCompletedPayload;
   'vulnerability.analysis.completed': VulnerabilityAnalysisCompletedPayload;

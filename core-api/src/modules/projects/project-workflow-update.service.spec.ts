@@ -1,3 +1,4 @@
+import type { ProjectTriggerDefinitionService } from './project-trigger-definition.service';
 import { randomUUID } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 import type { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
@@ -56,6 +57,7 @@ describe('ProjectWorkflowUpdateService', () => {
       { transaction } as unknown as DataSource,
       { prepare } as unknown as ProjectWorkflowJobsService,
       { getDEK } as unknown as WorkspaceEncryptionService,
+        {} as ProjectTriggerDefinitionService,
     );
     return {
       service,

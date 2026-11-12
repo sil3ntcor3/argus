@@ -1,3 +1,4 @@
+import { ProjectTriggerConfigDto } from '@/modules/projects/dto/project-trigger-read.dto';
 import { BaseEntity } from '@/common/entities/base.entity';
 import { DataKind, ToolCategory } from '@/common/enums/enum';
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
@@ -47,6 +48,13 @@ export class On {
   })
   @IsOptional()
   schedule?: string | { cron: string }[];
+  @ApiProperty({ required: false, type: ProjectTriggerConfigDto })
+  'project.assets.added'?: ProjectTriggerConfigDto;
+  @ApiProperty({ required: false, type: ProjectTriggerConfigDto })
+  'project.run.completed'?: ProjectTriggerConfigDto;
+  @ApiProperty({ required: false, type: ProjectTriggerConfigDto })
+  'vulnerability.detected'?: ProjectTriggerConfigDto;
+
 }
 
 export class WorkflowJob {

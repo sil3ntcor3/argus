@@ -1,3 +1,4 @@
+import { ProjectWorkflowOnDto } from './project-workflow-on.dto';
 import {
   ApiPropertyOptional,
   PartialType,
@@ -20,4 +21,12 @@ export class UpdateProjectWorkflowDto extends PartialType(
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsObject()
   jobs?: Record<string, WorkflowJob>;
+  @ApiPropertyOptional({
+    type: ProjectWorkflowOnDto,
+    description:
+      'Replace managed project trigger definitions; omit to preserve',
+  })
+  @ValidateIf((_dto, value: unknown) => value !== undefined)
+  @IsObject()
+  on?: ProjectWorkflowOnDto;
 }

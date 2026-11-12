@@ -45,7 +45,7 @@ describe('ProjectTriggerDefinitionService', () => {
     } as unknown as DataSource);
     const create = (definition: unknown) =>
       service.createDisabled(projectId, workspaceId, bindingId, definition);
-    return { create, manager, workflow, query, transaction };
+    return { create, service, manager, workflow, query, transaction };
   }
 
   it('adds a normalized disabled row while preserving the graph, ciphertext and legacy target', async () => {
@@ -148,5 +148,23 @@ describe('ProjectTriggerDefinitionService', () => {
       create({ 'project.assets.added': true }),
     ).rejects.toMatchObject({ status: 400 });
     expect(manager.save).not.toHaveBeenCalled();
+  });  it('updates a cron in place without resetting its activation or history', async () => {
+    const { service, manager } = setup({ target: ['domain'], schedule: '0 6 * * *' });
+    const row = { id: randomUUID(), projectWorkflowId: bindingId, type: 'cron', cron: '0 6 * * *', event: null, config: {}, enabled: true, lastFiredAt: new Date() };
+    manager.find.mockResolvedValue([row]);
+    jest.spyOn(service, 'bindingOf').mockResolvedValue(bindingId);
+    const result = await service.update(projectId, workspaceId, row.id, { cron: '0 9 * * *' });
+    expect(result).toMatchObject({ ...row, cron: '0 9 * * *' });
+    expect(manager.save.mock.calls[0][1]).toMatchObject({ content: { on: { target: ['domain'], schedule: [{ cron: '0 9 * * *' }] } } });
   });
+  it('merges an event config patch and preserves unrelated definitions', async () => {
+    const { service, manager } = setup({ schedule: '0 6 * * *', 'project.assets.added': { maxAssets: 9, windowMinutes: 1 } });
+    const row = { id: randomUUID(), projectWorkflowId: bindingId, type: 'event', cron: null, event: 'project.assets.added', config: { maxAssets: 9, windowMinutes: 1 }, enabled: false };
+    manager.find.mockResolvedValue([row]);
+    jest.spyOn(service, 'bindingOf').mockResolvedValue(bindingId);
+    const result = await service.update(projectId, workspaceId, row.id, { config: { windowMinutes: 0 }, enabled: true });
+    expect(result).toMatchObject({ id: row.id, enabled: true, config: { maxAssets: 9, windowMinutes: 0 } });
+    expect(manager.save.mock.calls[0][1]).toMatchObject({ content: { on: { schedule: [{ cron: '0 6 * * *' }] } } });
+  });
+
 });

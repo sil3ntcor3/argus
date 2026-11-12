@@ -1,3 +1,4 @@
+import type { ProjectTriggerRuntimeService } from './project-trigger-runtime.service';
 import { randomUUID } from 'node:crypto';
 import type { CreateProjectTriggerDto } from './dto/project-trigger-create.dto';
 import type { ProjectTriggerDefinitionService } from './project-trigger-definition.service';
@@ -23,7 +24,7 @@ describe('ProjectTriggerCreateService', () => {
   const createDisabled = jest.fn();
   const service = new ProjectTriggerCreateService({
     createDisabled,
-  } as unknown as ProjectTriggerDefinitionService);
+  } as unknown as ProjectTriggerDefinitionService, { reconcile: () => Promise.resolve() } as unknown as ProjectTriggerRuntimeService);
   beforeEach(() => createDisabled.mockReset().mockResolvedValue(row));
   it.each([
     [{ type: 'cron', cron: '0 8 * * *' }, { schedule: '0 8 * * *' }],

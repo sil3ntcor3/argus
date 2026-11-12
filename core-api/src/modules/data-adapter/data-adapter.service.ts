@@ -1119,12 +1119,18 @@ export class DataAdapterService {
         //
         // One event for the whole batch, not one per vulnerability: a scan that
         // finds 200 issues must not push 200 notifications.
+        const [provenance] = await manager.query<{ projectId: string }[]>(
+          `SELECT p.id AS "projectId" FROM jobs j
+           JOIN job_histories h ON h.id=j."jobHistoryId" JOIN workflows w ON w.id=h."workflowId"
+           JOIN projects p ON p.id=h."projectId" AND p."workspaceId"=w."workspaceId"
+           WHERE j.id=$1 AND p."workspaceId"=$2`, [job.id, workspaceId]);
         await this.eventBridge.publishSafely(EVENT_CATALOG.vulnerability.detected, {
           workspaceId,
           outcome: 'success',
           resourceType: 'vulnerability',
           payload: {
             jobId: job.id,
+            ...(provenance?.projectId ? { projectId: provenance.projectId } : {}),
             targetId: job.asset.target.id,
             assetId: job.asset.id,
             assetValue: job.asset.value,

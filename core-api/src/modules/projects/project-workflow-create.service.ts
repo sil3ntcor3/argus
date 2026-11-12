@@ -1,3 +1,4 @@
+import { ProjectTriggerDefinitionService } from './project-trigger-definition.service';
 import { CronSchedule } from '@/common/enums/enum';
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
 import {
@@ -25,6 +26,7 @@ export class ProjectWorkflowCreateService {
     private readonly dataSource: DataSource,
     private readonly jobs: ProjectWorkflowJobsService,
     private readonly encryption: WorkspaceEncryptionService,
+    private readonly triggers: ProjectTriggerDefinitionService,
   ) {}
 
   async create(
@@ -131,6 +133,7 @@ export class ProjectWorkflowCreateService {
         schedule: CronSchedule.DISABLED,
         jobId: null,
       });
+      if (dto.on !== undefined) await this.triggers.replaceOn(manager, workflow, binding, dto.on);
       return {
         id: binding.id,
         workflowId: workflow.id,

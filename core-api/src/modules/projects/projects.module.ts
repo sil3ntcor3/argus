@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ProjectTriggerReadService } from './project-trigger-read.service';
 import { ProjectTriggerCreateService } from './project-trigger-create.service';
-import { ProjectTriggerDefinitionService } from './project-trigger-definition.service';
+import { ProjectTriggerRuntimeModule } from './project-trigger-runtime.module';
 import { AssetGroupModule } from '../asset-group/asset-group.module';
 import { ConnectorsModule } from '../connectors/connectors.module';
 import { ProjectWorkflowJobsService } from './project-workflow-jobs.service';
@@ -27,12 +27,11 @@ import { ProjectOverviewActivityService } from './project-overview-activity.serv
 import { ProjectOverviewReadService } from './project-overview-read.service';
 
 @Module({
-  imports: [AssetGroupModule, ProjectScopeModule, ConnectorsModule],
+  imports: [ProjectTriggerRuntimeModule, AssetGroupModule, ProjectScopeModule, ConnectorsModule],
   controllers: [ProjectsController],
   providers: [
     ProjectTriggerReadService,
     ProjectTriggerCreateService,
-    ProjectTriggerDefinitionService,
     ProjectOverviewReadService,
     ProjectOverviewActivityService,
     ProjectOverviewRunsService,

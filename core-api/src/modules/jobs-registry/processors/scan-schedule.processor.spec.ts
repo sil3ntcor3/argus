@@ -1,3 +1,4 @@
+import type { ProjectTriggerRuntimeService } from '@/modules/projects/project-trigger-runtime.service';
 import { JobRunType } from '@/common/enums/enum';
 import type { AssetGroupWorkflowService } from '@/modules/asset-group/asset-group-workflow.service';
 import type { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
@@ -103,6 +104,7 @@ describe('AssetGroupsScheduleConsumer', () => {
     jest.clearAllMocks();
     consumer = new AssetGroupsScheduleConsumer(
       mockAssetGroupWorkflowService as unknown as AssetGroupWorkflowService,
+      { fireCron: jest.fn().mockResolvedValue(undefined) } as unknown as ProjectTriggerRuntimeService,
     );
   });
 

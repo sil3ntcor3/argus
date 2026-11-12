@@ -63,7 +63,12 @@ function ProjectRunCard({
   canOpen: boolean;
 }) {
   const name = run.workflowName.trim() || 'Workflow run';
-  const trigger = run.jobRunType === 'scheduled' ? 'Scheduled' : 'Manual';
+  const trigger =
+    run.jobRunType === 'scheduled'
+      ? 'Scheduled'
+      : run.jobRunType === 'event'
+        ? 'Event'
+        : 'Manual';
   const started = startedAt.format(new Date(run.createdAt));
 
   return (
@@ -207,7 +212,9 @@ function ProjectRunList({
                 ...search,
                 page: 1,
                 trigger:
-                  value === 'manual' || value === 'scheduled'
+                  value === 'manual' ||
+                  value === 'scheduled' ||
+                  value === 'event'
                     ? value
                     : undefined,
               });
@@ -216,6 +223,7 @@ function ProjectRunList({
             <option value="">All triggers</option>
             <option value="manual">Manual</option>
             <option value="scheduled">Scheduled</option>
+            <option value="event">Event</option>
           </select>
         </label>
         <label className="flex w-fit items-center gap-2 text-sm">

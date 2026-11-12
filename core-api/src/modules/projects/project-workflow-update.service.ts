@@ -1,3 +1,4 @@
+import { ProjectTriggerDefinitionService } from './project-trigger-definition.service';
 import type { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
@@ -13,6 +14,7 @@ export class ProjectWorkflowUpdateService {
     private readonly dataSource: DataSource,
     private readonly jobs: ProjectWorkflowJobsService,
     private readonly encryption: WorkspaceEncryptionService,
+    private readonly triggers: ProjectTriggerDefinitionService,
   ) {}
 
   /** Update the project pipeline and name under the run-launch lock order. */
@@ -22,7 +24,7 @@ export class ProjectWorkflowUpdateService {
     bindingId: string,
     dto: UpdateProjectWorkflowDto,
   ): Promise<AssetGroupWorkflow> {
-    if (dto.name === undefined && dto.jobs === undefined)
+    if (dto.name === undefined && dto.jobs === undefined && dto.on === undefined)
       throw new BadRequestException('Provide a name or pipeline');
     const dek =
       dto.jobs !== undefined ? await this.encryption.getDEK(workspaceId) : null;
@@ -52,6 +54,7 @@ export class ProjectWorkflowUpdateService {
             : {}),
         },
       });
+      if (dto.on !== undefined) binding.workflow = await this.triggers.replaceOn(manager, binding.workflow, binding, dto.on);
       return binding;
     });
   }

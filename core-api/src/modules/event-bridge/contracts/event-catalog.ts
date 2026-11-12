@@ -177,6 +177,7 @@ export const EVENT_CATALOG = {
     created: { name: 'project.created', summary: 'Project created' },
     updated: { name: 'project.updated', summary: 'Project settings or scope changed' },
     deleted: { name: 'project.deleted', summary: 'Project deleted' },
+    run: { completed: { name: 'project.run.completed', summary: 'Project workflow run completed' } },
     assets: {
       added: {
         name: 'project.assets.added',

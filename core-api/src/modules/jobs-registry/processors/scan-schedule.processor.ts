@@ -1,3 +1,4 @@
+import { ProjectTriggerRuntimeService } from '@/modules/projects/project-trigger-runtime.service';
 import { BullMQName, JobRunType } from '@/common/enums/enum';
 import { AssetGroupWorkflowService } from '@/modules/asset-group/asset-group-workflow.service';
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
@@ -42,10 +43,11 @@ export class AssetsDiscoveryScheduleConsumer extends WorkerHost {
 @Processor(BullMQName.ASSET_GROUPS_WORKFLOW_SCHEDULE)
 export class AssetGroupsScheduleConsumer extends WorkerHost {
   private readonly logger = new Logger(AssetGroupsScheduleConsumer.name);
-  constructor(private assetGroupWorkflowService: AssetGroupWorkflowService) {
+  constructor(private assetGroupWorkflowService: AssetGroupWorkflowService, private readonly triggers: ProjectTriggerRuntimeService) {
     super();
   }
-  async process(job: Job<AssetGroupWorkflow>): Promise<void> {
+  async process(job: Job<AssetGroupWorkflow & { triggerId?: string; cron?: string }>): Promise<void> {
+    if (job.data.triggerId) { await this.triggers.fireCron(job.data.triggerId, job.id ?? String(job.timestamp), job.data.cron); return; }
     const assetGroupWorkflowId = job.data.id;
     try {
       // Internal scheduler: the binding id comes from our own queue, so the

@@ -1,3 +1,4 @@
+import { ProjectTriggerManageDialog } from './project-trigger-manage-dialog';
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
 import {
@@ -106,6 +107,21 @@ function WorkflowCard({
         bindingId={binding.id}
         workflowName={name}
         query={triggers}
+        actions={
+          editWorkspaceId && canRenameWorkflow(binding.workflow, projectId)
+            ? (trigger, focusAfterRemove) => (
+                <ProjectTriggerManageDialog
+                  key={`${editWorkspaceId}:${trigger.id}`}
+                  trigger={trigger}
+                  focusAfterRemove={focusAfterRemove}
+                  projectId={projectId}
+                  workspaceId={editWorkspaceId}
+                  workflowName={name}
+                  otherWorkflows={otherWorkflows}
+                />
+              )
+            : undefined
+        }
       />
       {(editWorkspaceId || definition || runWorkspaceId) && (
         <div className="flex flex-wrap gap-2">

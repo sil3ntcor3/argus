@@ -214,7 +214,7 @@ describe('Project workflow creation API (e2e)', () => {
           event: 'vulnerability.detected',
           config: { severity: ['unknown'] },
         },
-        { type: 'event', event: 'project.assets.added', enabled: true },
+        { type: 'event', event: 'project.assets.added', enabled: 'true' },
         { type: 'event', event: 'project.assets.added', extra: true },
         ...['__proto__', 'prototype', 'constructor'].flatMap((key) => [
           JSON.parse(

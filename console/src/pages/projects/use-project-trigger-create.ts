@@ -1,5 +1,8 @@
 import {
   type CreateProjectTriggerDto,
+  type UpdateProjectTriggerDto,
+  projectsControllerUpdateTrigger,
+  projectsControllerRemoveTrigger,
   getAssetGroupControllerGetByIdQueryKey,
   getProjectsControllerGetByIdQueryKey,
   getProjectsControllerGetTriggersQueryKey,
@@ -7,7 +10,11 @@ import {
   useProjectsControllerCreateTrigger,
 } from '@/services/apis/gen/queries';
 import { getGlobalWorkspaceId } from '@/utils/workspaceState';
-import { useIsMutating, useQueryClient } from '@tanstack/react-query';
+import {
+  useIsMutating,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 
 /** A response can be lost after the trigger and its file definition are saved. */
@@ -98,6 +105,85 @@ export function useProjectTriggerCreate(
     archived,
     isError: create.isError,
     reset: create.reset,
+    isLocked: () => client.isMutating(filter) > 0,
+  };
+}
+
+type ManageWrite = { triggerId: string } & (
+  { kind: 'update'; data: UpdateProjectTriggerDto } | { kind: 'remove' }
+);
+
+/** Management uses the creation lock too: one pending write per binding. */
+export function useProjectTriggerManage(
+  projectId: string,
+  bindingId: string,
+  workspaceId: string,
+  onSaved: () => void,
+) {
+  const client = useQueryClient();
+  const mutationKey = [
+    'create-project-trigger',
+    workspaceId,
+    projectId,
+    bindingId,
+  ];
+  const filter = { mutationKey, exact: true };
+  const working = useIsMutating(filter) > 0;
+  async function refresh() {
+    const paths: string[] = [
+      getProjectsControllerGetByIdQueryKey(projectId)[0],
+      getProjectsControllerGetTriggersQueryKey(projectId)[0],
+      getAssetGroupControllerGetByIdQueryKey(projectId)[0],
+    ];
+    await client.invalidateQueries({
+      predicate: ({ queryKey: [path] }) =>
+        typeof path === 'string' && paths.includes(path.toLowerCase()),
+      refetchType: getGlobalWorkspaceId() === workspaceId ? 'active' : 'none',
+    });
+  }
+  const mutation = useMutation({
+    mutationKey,
+    retry: false,
+    networkMode: 'always',
+    mutationFn: async (write: ManageWrite) => {
+      if (getGlobalWorkspaceId() !== workspaceId)
+        throw new Error('The selected workspace changed');
+      return write.kind === 'remove'
+        ? projectsControllerRemoveTrigger(projectId, write.triggerId)
+        : projectsControllerUpdateTrigger(
+            projectId,
+            write.triggerId,
+            write.data,
+          );
+    },
+    onSuccess: async () => {
+      await refresh();
+      if (getGlobalWorkspaceId() === workspaceId) onSaved();
+    },
+    onError: async (error) => {
+      if (uncertain(error)) await refresh();
+    },
+  });
+  const unknownOutcome = mutation.isError && uncertain(mutation.error);
+  async function save(write: ManageWrite) {
+    if (
+      unknownOutcome ||
+      client.isMutating(filter) ||
+      getGlobalWorkspaceId() !== workspaceId
+    )
+      return;
+    try {
+      await mutation.mutateAsync(write);
+    } catch {
+      /* The dialog renders the outcome. */
+    }
+  }
+  return {
+    save,
+    working,
+    unknownOutcome,
+    isError: mutation.isError,
+    reset: mutation.reset,
     isLocked: () => client.isMutating(filter) > 0,
   };
 }

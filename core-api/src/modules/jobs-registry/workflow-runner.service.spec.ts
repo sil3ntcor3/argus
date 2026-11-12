@@ -538,7 +538,7 @@ describe('WorkflowRunnerService', () => {
     it('persists project provenance supplied by a binding', async () => {
       await setup(createFakeDb());
       getToolByNames.mockResolvedValue([tool('naabu', ToolCategory.PORTS_SCANNER)]);
-      const provenance = { projectId: randomUUID(), projectWorkflowId: randomUUID() };
+      const provenance = { projectId: randomUUID(), projectWorkflowId: randomUUID(), triggerId: randomUUID(), causedByRunId: randomUUID(), chainDepth: 2 };
       await service.startRun({
         workflow: workflow([{ run: 'naabu' }]),
         workspaceId: 'workspace-1',

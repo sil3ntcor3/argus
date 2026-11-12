@@ -1,3 +1,6 @@
+/** A one-part symbol path works with EventEmitter2 wildcard mode without joining public events. */
+export const PROJECT_RUN_CLOSED = [Symbol('argus.project-run-closed')];
+
 import { isTriggerEvent } from './project-trigger-config';
 
 /** Caller supplies scoped job counts from the same authoritative completion snapshot. */
