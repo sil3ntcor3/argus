@@ -31,3 +31,7 @@ must preserve that data when updating a workflow's `on` block.
 The private synchronization planner takes one authorized binding's rows and
 validated definitions. It preserves runtime state, retains disabled duplicates,
 and returns a plan without applying persistence or scheduler operations.
+
+Private editor-input conversion keeps definitions separate from explicit state
+choices. The first duplicate entry wins, including an omitted state; callers
+retain existing runtime choices unless an override was explicitly supplied.
