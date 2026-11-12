@@ -55,3 +55,8 @@ The private definition writer atomically appends one validated definition and it
 disabled row under those locks. It rejects file/row duplicates, preserves legacy
 binding schedules and authored configuration, and rolls back both writes on failure.
 It has no HTTP entry point, scheduler registration or automatic synchronization.
+
+Generic workflow saves serialize workspace/workflow access and preserve the stored
+`on` block for project-bound workflows with trigger rows, including omitted fields
+from legacy clients. Other workflows retain their existing schedule-edit behavior.
+The public schedule type accepts a legacy string or a list of `{cron}` entries.

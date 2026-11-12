@@ -1,6 +1,6 @@
 import { DataKind, TargetType, ToolCategory } from '@/common/enums/enum';
 import type { Repository } from 'typeorm';
-import type { Tool } from '../tools/entities/tools.entity';
+import { Tool } from '../tools/entities/tools.entity';
 import type { Workflow } from './entities/workflow.entity';
 import type { CreateWorkflowDto } from './dto/create-workflow.dto';
 import {
@@ -65,8 +65,27 @@ describe('workflow input declarations', () => {
   const save = jest.fn((workflow: Workflow) => Promise.resolve(workflow));
   const findOne = jest.fn();
   const tools = { find: jest.fn() };
+  const query = {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    setLock: jest.fn().mockReturnThis(),
+    getOne: () => findOne() as Promise<Workflow | null>,
+  };
+  const manager = {
+    query: jest.fn().mockResolvedValue([]),
+    getRepository: (entity: unknown) =>
+      entity === Tool ? tools : { createQueryBuilder: () => query },
+    save: (_entity: unknown, workflow: Workflow) => save(workflow),
+  };
   const service = new WorkflowsService(
-    { save, findOne } as unknown as Repository<Workflow>,
+    {
+      save,
+      findOne,
+      manager: {
+        transaction: (fn: (m: typeof manager) => Promise<unknown>) =>
+          fn(manager),
+      },
+    } as unknown as Repository<Workflow>,
     tools as unknown as Repository<Tool>,
   );
   const workspace = { id: 'workspace' },

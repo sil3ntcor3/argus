@@ -11,11 +11,19 @@ import type { CreateWorkflowDto } from './dto/create-workflow.dto';
 import type { GetManyWorkflowsQueryDto } from './dto/get-many-workflows.dto';
 import { Workflow } from './entities/workflow.entity';
 import { WorkflowsService } from './workflows.service';
+import { randomUUID } from 'node:crypto';
 
 describe('WorkflowsService', () => {
   let service: WorkflowsService;
   let workflowRepository: Repository<Workflow>;
   const toolRepository = { find: jest.fn() };
+  const transactionTools = { find: jest.fn() };
+  const manager = {
+    query: jest.fn(),
+    getRepository: (entity: unknown) =>
+      entity === Tool ? transactionTools : workflowRepository,
+    save: (_entity: unknown, value: Workflow) => workflowRepository.save(value),
+  };
 
   const mockWorkflow = {
     id: '123e4567-e89b-12d3-a456-42614174000',
@@ -34,6 +42,8 @@ describe('WorkflowsService', () => {
 
   beforeEach(async () => {
     toolRepository.find.mockReset().mockResolvedValue([]);
+    transactionTools.find.mockReset().mockResolvedValue([]);
+    manager.query.mockReset().mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkflowsService,
@@ -47,6 +57,10 @@ describe('WorkflowsService', () => {
             update: jest.fn(),
             save: jest.fn(),
             remove: jest.fn(),
+            manager: {
+              transaction: (fn: (m: typeof manager) => Promise<unknown>) =>
+                fn(manager),
+            },
             createQueryBuilder: jest.fn(() => ({
               leftJoinAndSelect: jest.fn().mockReturnThis(),
               leftJoin: jest.fn().mockReturnThis(),
@@ -58,6 +72,8 @@ describe('WorkflowsService', () => {
               take: jest.fn().mockReturnThis(),
               getMany: jest.fn(),
               getManyAndCount: jest.fn(),
+              setLock: jest.fn().mockReturnThis(),
+              getOne: () => workflowRepository.findOne({}),
             })),
           },
         },
@@ -193,6 +209,65 @@ describe('WorkflowsService', () => {
   });
 
   describe('updateWorkflow', () => {
+    it.each(['managed', 'no rows', 'renamed'])(
+      'retains only project-managed trigger blocks: %s',
+      async (kind) => {
+        const project = randomUUID(),
+          workspace = randomUUID();
+        const workflow = {
+          ...mockWorkflow,
+          id: randomUUID(),
+          isCanDelete: false,
+          filePath:
+            kind === 'renamed'
+              ? 'workspace.yaml'
+              : `project-${project}-fixture.yaml`,
+          content: {
+            name: 'Original',
+            jobs: { scan: { run: 'httpx' } },
+            on: {
+              target: ['domain'],
+              schedule: '0 6 * * *',
+              'project.assets.added': { maxAssets: 7 },
+            },
+          },
+        };
+        jest
+          .spyOn(workflowRepository, 'findOne')
+          .mockResolvedValue(workflow as Workflow);
+        jest
+          .spyOn(workflowRepository, 'save')
+          .mockImplementation((w) => Promise.resolve(w as Workflow));
+        manager.query
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce(
+            kind === 'no rows' ? [] : [{ projectId: project }],
+          );
+        const originalOn = structuredClone(workflow.content.on);
+        const content = {
+          name: 'Updated',
+          jobs: { scan: { run: 'httpx', allowFailure: false } },
+          on: { schedule: '0 9 * * *' },
+        };
+        const saved = await service.updateWorkflow(
+          workflow.id,
+          { content },
+          { id: workspace },
+        );
+        expect(saved.content).toEqual({
+          ...content,
+          on: kind === 'no rows' ? content.on : originalOn,
+        });
+        expect(transactionTools.find).toHaveBeenCalled();
+        expect(toolRepository.find).not.toHaveBeenCalled();
+        expect(manager.query).toHaveBeenNthCalledWith(
+          2,
+          expect.stringContaining('project_workflow_triggers'),
+          [workflow.id, workspace],
+        );
+      },
+    );
+
     it('should update workflow properties', async () => {
       const updatedWorkflow = { ...mockWorkflow, name: 'Updated Workflow' };
       jest
