@@ -64,6 +64,7 @@ function WorkflowCard({
   hasAssets,
   focusAssignments,
   triggers,
+  otherWorkflows,
 }: {
   binding: AssetGroupWorkflow;
   canOpenRuns: boolean;
@@ -73,6 +74,7 @@ function WorkflowCard({
   hasAssets: boolean;
   focusAssignments: () => void;
   triggers: TriggerQuery;
+  otherWorkflows: string[];
 }) {
   const [sourceRequested, setSourceRequested] = useState(false);
   const name = projectWorkflowLabel(binding.workflow);
@@ -123,6 +125,7 @@ function WorkflowCard({
                 bindingId={binding.id}
                 workflowName={name}
                 workspaceId={editWorkspaceId}
+                otherWorkflows={otherWorkflows}
               />
             )}
           {runWorkspaceId && (
@@ -286,6 +289,9 @@ function WorkflowList({
               runWorkspaceId={runWorkspaceId}
               hasAssets={hasAssets}
               triggers={triggers}
+              otherWorkflows={bindings
+                .filter((other) => other.id !== binding.id && other.workflow)
+                .map((other) => projectWorkflowLabel(other.workflow))}
               focusAssignments={() => assignments.current?.focus()}
             />
           ))}
