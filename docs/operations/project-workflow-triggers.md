@@ -40,3 +40,9 @@ Private matching helpers select enabled, valid event rows by workflow/outcome or
 finding severity and return independent asset arrays. The caller still owns
 tenant/project scope and launch-time asset/type/cause/chain checks. Batch splitting rejects
 nonpositive or unsafe sizes. These helpers add no dispatcher or automatic runs.
+
+Private run eligibility requires authoritative closed-run and zero active/cancelled
+job evidence; graph steps alone cannot prove a run was not cancelled. Unknown or
+cancelled states suppress an outcome. Causal planning caps depth at three and
+excludes same-binding completion/finding loops, while retaining bounded discovery.
+Callers still validate tenant/project/run identity; no event publication is wired.
