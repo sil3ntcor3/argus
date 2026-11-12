@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout } from 'node:timers/promises';
-import { EntityManager } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
+import { dataSourceOptions } from '@/database/database-config';
+import { WorkflowsService } from '@/modules/workflows/workflows.service';
+import { Tool } from '@/modules/tools/entities/tools.entity';
 import { ConnectorRegistryService } from '@/modules/connectors/connector-registry.service';
 import { decryptInlineConfig } from '@/modules/tools/validators/tool-config-profiles.crypto';
 import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
-import { Workflow } from '@/modules/workflows/entities/workflow.entity';
+import { ProjectTriggerDefinitionService } from '@/modules/projects/project-trigger-definition.service';
+import { Workflow, type WorkflowContent } from '@/modules/workflows/entities/workflow.entity';
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
 import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
@@ -86,6 +90,205 @@ describe('Project workflow creation API (e2e)', () => {
     } finally {
       await closeTestApp(app?.app);
     }
+  });
+
+  describe('Generic saves with project triggers', () => {
+    const writer = () => new ProjectTriggerDefinitionService(app.dataSource);
+    async function triggerFixture(managed = true) {
+      const { body } = await post({ jobs: { probe: { run: 'httpx' } } }).expect(
+        201,
+      );
+      const content = {
+        name: body.name as string,
+        jobs: { probe: { run: 'httpx' } },
+        on: { target: ['domain'], schedule: '0 6 * * *' },
+      };
+      await app.dataSource.query('UPDATE workflows SET content=$1 WHERE id=$2', [
+        JSON.stringify(content),
+        body.workflowId,
+      ]);
+      if (managed) {
+        await writer().createDisabled(projectId, owner.workspace.id, body.id, {
+          schedule: '0 8 * * *',
+        });
+        await writer().createDisabled(projectId, owner.workspace.id, body.id, {
+          'project.assets.added': { maxAssets: 7 },
+        });
+      }
+      const [saved] = await app.dataSource.query<{ content: WorkflowContent }[]>(
+        'SELECT content FROM workflows WHERE id=$1',
+        [body.workflowId],
+      );
+      return {
+        binding: body.id as string,
+        workflow: body.workflowId as string,
+        content: saved.content,
+      };
+    }
+    const genericSave = (id: string, content: object, headers = owner.headers) =>
+      request(app.server)
+        .patch('/api/workflows/' + id)
+        .set(headers)
+        .send({ content });
+    it.each([false, true])(
+      'preserves the complete managed block when omitted=%s',
+      async (omit) => {
+        const f = await triggerFixture();
+        const content = {
+          ...f.content,
+          jobs: { probe: { run: 'httpx', allowFailure: false } },
+        };
+        if (omit) {
+          await request(app.server)
+            .patch('/api/workflows/' + f.workflow)
+            .set(owner.headers)
+            .send({ filePath: randomUUID() + '.yaml' })
+            .expect(200);
+          delete content.on;
+        }
+        const { body } = await genericSave(f.workflow, content).expect(200);
+        expect(body.content).toEqual({ jobs: content.jobs, on: f.content.on });
+        expect(
+          (
+            await app.dataSource.query(
+              'SELECT content FROM workflows WHERE id=$1',
+              [f.workflow],
+            )
+          )[0].content,
+        ).toEqual(body.content);
+        expect(
+          await app.dataSource.query(
+            'SELECT enabled FROM project_workflow_triggers WHERE "projectWorkflowId"=$1',
+            [f.binding],
+          ),
+        ).toEqual([{ enabled: false }, { enabled: false }]);
+        await genericSave(f.workflow, content, {
+          ...other.headers,
+          'X-Workspace-Id': owner.workspace.id,
+        }).expect(403);
+      },
+    );
+    it('validates with the transaction connection when the pool has one slot', async () => {
+      const f = await triggerFixture();
+      const db = new DataSource({
+        ...dataSourceOptions,
+        cache: false,
+        migrationsRun: false,
+        synchronize: false,
+        installExtensions: false,
+        extra: { max: 1, connectionTimeoutMillis: 500 },
+      });
+      await db.initialize();
+      try {
+        const service = new WorkflowsService(
+          db.getRepository(Workflow),
+          db.getRepository(Tool),
+        );
+        const saved = await service.updateWorkflow(
+          f.workflow,
+          {
+            content: {
+              ...f.content,
+              jobs: { probe: { run: 'httpx', allowFailure: false } },
+            },
+          },
+          { id: owner.workspace.id },
+        );
+        expect(saved.content.on).toEqual(f.content.on);
+      } finally {
+        await db.destroy();
+      }
+    });
+    it('keeps ordinary workflow schedule edits working', async () => {
+      const f = await triggerFixture(false);
+      const content = { ...f.content, on: { schedule: '0 9 * * *' } };
+      expect(
+        (await genericSave(f.workflow, content).expect(200)).body.content,
+      ).toEqual({ jobs: content.jobs, on: content.on });
+    });
+    it('rolls back a failed generic save after its write', async () => {
+      const f = await triggerFixture();
+      const original = EntityManager.prototype.save;
+      const save = jest
+        .spyOn(EntityManager.prototype, 'save')
+        .mockImplementation(async function (...args) {
+          const saved: unknown = await original.apply(this, args);
+          if (args[0] === Workflow)
+            throw new Error('Fixture generic save failure');
+          return saved;
+        });
+      try {
+        await genericSave(f.workflow, {
+          ...f.content,
+          name: 'Rollback',
+          jobs: { probe: { run: 'httpx', allowFailure: false } },
+        }).expect(500);
+      } finally {
+        save.mockRestore();
+      }
+      expect(
+        (
+          await app.dataSource.query(
+            'SELECT content FROM workflows WHERE id=$1',
+            [f.workflow],
+          )
+        )[0].content,
+      ).toEqual(f.content);
+    });
+    it('retains a concurrently-created definition when a stale generic save follows it', async () => {
+      const f = await triggerFixture(false),
+        blocker = app.dataSource.createQueryRunner();
+      await blocker.startTransaction();
+      const [{ pid }] = await blocker.query<{ pid: number }[]>(
+        'SELECT pg_backend_pid() AS pid',
+      );
+      const waitFor = async (count: number) => {
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const [{ n }] = await app.dataSource.query<{ n: number }[]>(
+            `WITH RECURSIVE waiters(pid) AS (
+            SELECT $1::int UNION SELECT a.pid FROM pg_stat_activity a JOIN waiters w ON w.pid=ANY(pg_blocking_pids(a.pid))
+          ) SELECT (count(*)-1)::int AS n FROM waiters`,
+            [pid],
+          );
+          if (n >= count) return;
+          await setTimeout(20);
+        }
+        throw new Error('Expected workflow writers to wait on fixture lock');
+      };
+      let creating: Promise<unknown> | undefined,
+        saving: Promise<request.Response> | undefined;
+      try {
+        await blocker.query('SELECT id FROM workflows WHERE id=$1 FOR UPDATE', [
+          f.workflow,
+        ]);
+        creating = writer().createDisabled(
+          projectId,
+          owner.workspace.id,
+          f.binding,
+          { 'project.assets.added': true },
+        );
+        await waitFor(1);
+        saving = genericSave(f.workflow, {
+          ...f.content,
+          jobs: { probe: { run: 'httpx', allowFailure: false } },
+        }).then((r) => r);
+        await waitFor(2);
+      } finally {
+        await blocker.rollbackTransaction();
+        await blocker.release();
+        await Promise.allSettled([creating, saving]);
+      }
+      await creating;
+      expect((await saving)?.status).toBe(200);
+      const [saved] = await app.dataSource.query(
+        'SELECT content FROM workflows WHERE id=$1',
+        [f.workflow],
+      );
+      expect(saved.content).toMatchObject({
+        jobs: { probe: { allowFailure: false } },
+        on: { target: ['domain'], 'project.assets.added': { maxAssets: 200 } },
+      });
+    });
   });
 
   it('copies the default pipeline into an owned disabled binding and returns only the receipt', async () => {

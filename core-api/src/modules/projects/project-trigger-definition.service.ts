@@ -64,7 +64,7 @@ export class ProjectTriggerDefinitionService {
       };
       await manager.save(Workflow, {
         ...workflow,
-        content: { ...workflow.content, on: on as Workflow['content']['on'] },
+        content: { ...workflow.content, on: on },
       });
       return manager.save(ProjectWorkflowTrigger, {
         projectWorkflowId: binding.id,

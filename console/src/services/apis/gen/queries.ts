@@ -1207,9 +1207,15 @@ export type WorkflowJob = {
   configProfileId?: string;
 };
 
+export type OnSchedule =
+  | string
+  | {
+      cron: string;
+    }[];
+
 export type On = {
   target: string[];
-  schedule: string;
+  schedule?: OnSchedule;
 };
 
 /**

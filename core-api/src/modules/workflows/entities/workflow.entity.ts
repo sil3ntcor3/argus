@@ -30,11 +30,23 @@ import {
 export class On {
   @ApiProperty()
   target?: string[];
-  // Plain string: arbitrary 5-field cron expressions are written into this
-  // JSONB content field (e.g. from asset-group workflow creation).
-  @ApiProperty({ example: '0 0 * * *' })
+  // Workspace workflows retain strings; project definitions use a cron list.
+  @ApiProperty({
+    required: false,
+    oneOf: [
+      { type: 'string', example: '0 0 * * *' },
+      {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { cron: { type: 'string' } },
+          required: ['cron'],
+        },
+      },
+    ],
+  })
   @IsOptional()
-  schedule?: string;
+  schedule?: string | { cron: string }[];
 }
 
 export class WorkflowJob {
