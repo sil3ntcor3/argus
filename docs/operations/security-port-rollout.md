@@ -31,6 +31,7 @@ Plain values and unrecognized layouts are left unchanged. Counters are not proof
 3. Confirm unauthenticated archive calls fail, a valid worker can download its platform archives, and paths or symlinks outside the archive are refused. Archive directories must remain administrator-controlled.
 4. Public HTTP `/api/auth/sign-up/email` is closed. Internal first-admin provisioning and authorized `/api/auth/admin/create-user` remain enabled. This port does not add public registration, SMTP, verification, or approval settings.
 5. Configure `TRUSTED_PROXIES` with only the actual proxy addresses or constrained networks. Audit attribution uses the socket peer unless it trusts that peer, then walks the forwarded chain. An empty setting retains direct-peer attribution; historical audit rows are not rewritten.
+   IP/CIDR matching now uses upstream #867's shared utility. Malformed entries, including extra slash segments such as `172.16.0.0/12/1`, are skipped. Valid IPv4, IPv6, and IPv4-mapped proxy addresses retain their existing behavior. Admin IP restrictions require a separate settings and enforcement batch.
 6. Verify download names with quotes, control characters, and Unicode render safely. Malformed UTF-16 names are normalized before header encoding.
 
 Repository checks run from the root through Task:
