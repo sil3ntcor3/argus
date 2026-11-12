@@ -92,6 +92,204 @@ describe('Project workflow creation API (e2e)', () => {
     }
   });
 
+  describe('Disabled trigger creation', () => {
+    const triggerPost = (
+      body: object,
+      headers = owner.headers,
+      project = projectId,
+    ) =>
+      request(app.server)
+        .post(`/api/projects/${project}/triggers`)
+        .set(headers)
+        .type('json')
+        .send(JSON.stringify(body));
+    async function triggerFixture() {
+      const { body } = await post({ jobs: { probe: { run: 'httpx' } } }).expect(
+        201,
+      );
+      const content = {
+        name: body.name,
+        instructions: 'Keep authored data',
+        jobs: { probe: { run: 'httpx', config: { secret: 'ciphertext' } } },
+        on: { target: ['domain'], schedule: '0 6 * * *' },
+      };
+      await app.dataSource.query('UPDATE workflows SET content=$1 WHERE id=$2', [
+        JSON.stringify(content),
+        body.workflowId,
+      ]);
+      return {
+        binding: body.id as string,
+        workflow: body.workflowId as string,
+        content,
+      };
+    }
+    it.each([
+      { type: 'cron', cron: ' 0  8 * * * ' },
+      ...[
+        'project.assets.added',
+        'project.run.completed',
+        'vulnerability.detected',
+      ].map((event) => ({ type: 'event', event, config: { maxAssets: 5 } })),
+    ])(
+      'stores disabled canonical definitions and returns only safe metadata: %j',
+      async (definition) => {
+        const f = await triggerFixture();
+        const { body } = await triggerPost(
+          { projectWorkflowId: f.binding, ...definition },
+          owner.headers,
+          projectId.toUpperCase(),
+        ).expect(201);
+        expect(body).toMatchObject({
+          projectWorkflowId: f.binding,
+          type: definition.type,
+          enabled: false,
+          lastFiredAt: null,
+        });
+        const { body: read } = await request(app.server)
+          .get(`/api/projects/${projectId}/triggers`)
+          .set(owner.headers)
+          .expect(200);
+        expect(read).toContainEqual(body);
+        const [saved] = await app.dataSource.query(
+          'SELECT content FROM workflows WHERE id=$1',
+          [f.workflow],
+        );
+        expect(saved.content).toMatchObject({
+          ...f.content,
+          on: { target: f.content.on.target },
+        });
+        if (definition.type === 'cron')
+          expect(saved.content.on.schedule).toEqual([
+            { cron: '0 6 * * *' },
+            { cron: '0 8 * * *' },
+          ]);
+        else
+          expect(
+            saved.content.on[(definition as { event: string }).event],
+          ).toEqual(body.config);
+        if (definition.type === 'event') expect(body.config.maxAssets).toBe(5);
+        expect(
+          await app.dataSource.query(
+            'SELECT id FROM job_histories WHERE "workflowId"=$1',
+            [f.workflow],
+          ),
+        ).toEqual([]);
+      },
+    );
+    it('rejects invalid or unsupported input without changing stored definitions', async () => {
+      const f = await triggerFixture();
+      for (const definition of [
+        {},
+        { type: 'other' },
+        { type: 'cron' },
+        { type: 'cron', cron: 'disabled' },
+        { type: 'cron', cron: '0 8 * * *', event: 'project.assets.added' },
+        { type: 'cron', cron: '0 8 * * *', config: {} },
+        { type: 'event' },
+        { type: 'event', event: 'unknown' },
+        { type: 'event', event: 'project.assets.added', cron: '0 8 * * *' },
+        { type: 'event', event: 'project.assets.added', config: null },
+        {
+          type: 'event',
+          event: 'project.assets.added',
+          config: { unknown: true },
+        },
+        {
+          type: 'event',
+          event: 'project.assets.added',
+          config: { severity: ['high'] },
+        },
+        {
+          type: 'event',
+          event: 'project.run.completed',
+          config: { workflows: ['Bad\0'] },
+        },
+        {
+          type: 'event',
+          event: 'vulnerability.detected',
+          config: { maxAssets: 0 },
+        },
+        {
+          type: 'event',
+          event: 'vulnerability.detected',
+          config: { severity: ['unknown'] },
+        },
+        { type: 'event', event: 'project.assets.added', enabled: true },
+        { type: 'event', event: 'project.assets.added', extra: true },
+        ...['__proto__', 'prototype', 'constructor'].flatMap((key) => [
+          JSON.parse(
+            `{"type":"event","event":"project.assets.added","${key}":{}}`,
+          ) as object,
+          {
+            type: 'event',
+            event: 'project.assets.added',
+            config: JSON.parse(`{"${key}":{}}`) as object,
+          },
+        ]),
+      ])
+        await triggerPost({ projectWorkflowId: f.binding, ...definition }).expect(
+          400,
+        );
+      expect(
+        (
+          await app.dataSource.query(
+            'SELECT content FROM workflows WHERE id=$1',
+            [f.workflow],
+          )
+        )[0].content,
+      ).toEqual(f.content);
+      expect(
+        await app.dataSource.query(
+          'SELECT id FROM project_workflow_triggers WHERE "projectWorkflowId"=$1',
+          [f.binding],
+        ),
+      ).toEqual([]);
+    });
+    it('serializes canonical duplicates and enforces IDs, scope and permissions', async () => {
+      const f = await triggerFixture(),
+        input = { projectWorkflowId: f.binding, type: 'cron', cron: '0 8 * * *' };
+      const reader = { ...other.headers, 'X-Workspace-Id': owner.workspace.id };
+      await triggerPost(input, reader).expect(403);
+      await triggerPost(input, {
+        ...owner.headers,
+        'X-Workspace-Id': other.workspace.id,
+      }).expect(403);
+      await request(app.server)
+        .post(`/api/projects/${projectId}/triggers`)
+        .set('X-Workspace-Id', owner.workspace.id)
+        .send(input)
+        .expect(401);
+      await triggerPost(input, owner.headers, foreignId).expect(404);
+      await triggerPost({ ...input, projectWorkflowId: randomUUID() }).expect(
+        404,
+      );
+      await triggerPost({ ...input, projectWorkflowId: 'bad' }).expect(400);
+      await triggerPost(input, owner.headers, 'bad').expect(400);
+      await app.dataSource.query(
+        'UPDATE workspace_permissions SET permissions=$1 WHERE id=$2',
+        [['group.write'], role],
+      );
+      try {
+        const results = await Promise.all([
+          triggerPost(input, reader),
+          triggerPost({ ...input, cron: ' 0  8 * * * ' }, reader),
+        ]);
+        expect(results.map((r) => r.status).sort()).toEqual([201, 400]);
+      } finally {
+        await app.dataSource.query(
+          'UPDATE workspace_permissions SET permissions=$1 WHERE id=$2',
+          [['project.read'], role],
+        );
+      }
+      expect(
+        await app.dataSource.query(
+          'SELECT enabled FROM project_workflow_triggers WHERE "projectWorkflowId"=$1',
+          [f.binding],
+        ),
+      ).toEqual([{ enabled: false }]);
+    });
+  });
+
   describe('Generic saves with project triggers', () => {
     const writer = () => new ProjectTriggerDefinitionService(app.dataSource);
     async function triggerFixture(managed = true) {

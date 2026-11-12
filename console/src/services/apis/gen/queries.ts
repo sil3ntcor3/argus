@@ -5033,6 +5033,15 @@ export type ProjectTriggerDto = {
   lastFiredAt: string | null;
 };
 
+export type CreateProjectTriggerDto = {
+  projectWorkflowId: string;
+  type: ProjectTriggerType;
+  /** Five-field UTC cron expression */
+  cron?: string;
+  event?: ProjectTriggerEvent;
+  config?: ProjectTriggerConfigDto;
+};
+
 export type CreatedProjectWorkflowDtoSchedule =
   (typeof CreatedProjectWorkflowDtoSchedule)[keyof typeof CreatedProjectWorkflowDtoSchedule];
 
@@ -46276,6 +46285,101 @@ export function useProjectsControllerGetTriggers<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * @summary Create a disabled project workflow trigger
+ */
+export const projectsControllerCreateTrigger = (
+  id: string,
+  createProjectTriggerDto: CreateProjectTriggerDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectTriggerDto>(
+    {
+      url: `/api/projects/${id}/triggers`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createProjectTriggerDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerCreateTriggerMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerCreateTrigger>>,
+    TError,
+    { id: string; data: CreateProjectTriggerDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerCreateTrigger>>,
+  TError,
+  { id: string; data: CreateProjectTriggerDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerCreateTrigger'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerCreateTrigger>>,
+    { id: string; data: CreateProjectTriggerDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerCreateTrigger(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerCreateTriggerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerCreateTrigger>>
+>;
+export type ProjectsControllerCreateTriggerMutationBody =
+  CreateProjectTriggerDto;
+export type ProjectsControllerCreateTriggerMutationError = unknown;
+
+/**
+ * @summary Create a disabled project workflow trigger
+ */
+export const useProjectsControllerCreateTrigger = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerCreateTrigger>>,
+      TError,
+      { id: string; data: CreateProjectTriggerDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerCreateTrigger>>,
+  TError,
+  { id: string; data: CreateProjectTriggerDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerCreateTriggerMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * @summary Create a project workflow from a template, selected jobs or another project binding
