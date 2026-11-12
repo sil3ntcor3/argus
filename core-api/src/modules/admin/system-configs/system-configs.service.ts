@@ -9,10 +9,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { encrypt } from '@/common/utils/encryption.util';
+import { isIpInRanges, isIpOrCidr } from '@/common/utils/ip-range.util';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
-import { Repository } from 'typeorm';
+import { Repository, type FindOneOptions } from 'typeorm';
 import { StorageService } from '@/modules/storage/storage.service';
 import {
   MailProvider,
@@ -46,6 +47,7 @@ export interface MailServerConfig {
 export class SystemConfigsService implements OnModuleInit {
   private static readonly DEFAULT_SYSTEM_NAME = 'Argus';
   private static readonly DEFAULT_SETTINGS: SystemSettings = {
+    adminAccess: { allowedIps: [] },
     auth: { allowSignUp: false },
     mailServer: {
       enabled: false,
@@ -160,6 +162,26 @@ export class SystemConfigsService implements OnModuleInit {
     return auth?.allowSignUp === true && mailServer?.enabled === true;
   }
 
+  /** Read saved policy on every request; explicit malformed policy grants no access. */
+  async isAdminIpAllowed(clientIp: string | undefined): Promise<boolean> {
+    const config = await this.findOrCreateConfig(true);
+    const section: unknown = config.settings?.adminAccess;
+    if (section === undefined) return true;
+    if (!section || typeof section !== 'object' || Array.isArray(section))
+      return false;
+    const ips = (section as Record<string, unknown>).allowedIps;
+    if (ips === undefined) return true;
+    if (
+      !Array.isArray(ips) ||
+      ips.length > 100 ||
+      !ips.every(
+        (ip: unknown): ip is string =>
+          typeof ip === 'string' && ip.length <= 64 && isIpOrCidr(ip),
+      )
+    ) return false;
+    return ips.length === 0 || isIpInRanges(clientIp, ips);
+  }
+
   /** Only documented sections and fields cross the admin response boundary. */
   async getSettingsView(): Promise<SystemSettingsDto> {
     const settings = await this.getSettings();
@@ -170,6 +192,14 @@ export class SystemConfigsService implements OnModuleInit {
       ),
     );
     return {
+      adminAccess: {
+        allowedIps: Array.isArray(settings.adminAccess.allowedIps)
+          ? settings.adminAccess.allowedIps.filter(
+              (ip: unknown): ip is string =>
+                typeof ip === 'string' && isIpOrCidr(ip),
+            )
+          : [],
+      },
       auth: { allowSignUp: settings.auth.allowSignUp === true },
       mailServer: {
         ...visibleMail,
@@ -183,6 +213,7 @@ export class SystemConfigsService implements OnModuleInit {
   /** Lock the row so validation and concurrent section merges use the same state. */
   async updateSettings(
     dto: SystemSettingsDto,
+    requesterIp?: string,
   ): Promise<DefaultMessageResponseDto> {
     const sections: SystemSettings = Object.fromEntries(
       Object.entries(dto)
@@ -205,6 +236,30 @@ export class SystemConfigsService implements OnModuleInit {
           select: { id: true, settings: true },
           lock: { mode: 'pessimistic_write' },
         });
+        if (sections.adminAccess?.allowedIps !== undefined) {
+          const ips = sections.adminAccess.allowedIps;
+          if (
+            !Array.isArray(ips) ||
+            ips.length > 100 ||
+            !ips.every(
+              (ip: unknown): ip is string =>
+                typeof ip === 'string' &&
+                ip.length <= 64 &&
+                isIpOrCidr(ip.trim()),
+            )
+          ) {
+            throw new BadRequestException(
+              'Provide up to 100 valid IP addresses or CIDR ranges',
+            );
+          }
+          const allowedIps = [...new Set(ips.map((ip) => ip.trim()))];
+          if (allowedIps.length && !isIpInRanges(requesterIp, allowedIps)) {
+            throw new BadRequestException(
+              'The allowed IP list must include your current IP address',
+            );
+          }
+          sections.adminAccess.allowedIps = allowedIps;
+        }
         if (sections.mailServer) {
           sections.mailServer = this.prepareMailServerPatch(
             sections.mailServer,
@@ -261,20 +316,30 @@ export class SystemConfigsService implements OnModuleInit {
   private async findOrCreateConfig(
     includeSettings = false,
   ): Promise<SystemConfig> {
-    let config = await this.systemConfigRepository.findOne({
+    const options: FindOneOptions<SystemConfig> = {
       where: {},
+      // Concurrent first reads can leave duplicate rows; all consumers must agree.
+      order: { createdAt: 'ASC', id: 'ASC' },
       ...(includeSettings ? { select: { id: true, settings: true } } : {}),
-    });
+    };
+    const config = await this.systemConfigRepository.findOne(options);
+    if (config) return config;
 
-    if (!config) {
-      config = this.systemConfigRepository.create({
+    // Serialize only initialization, before settings locks or any external I/O.
+    return this.systemConfigRepository.manager.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        'argus:system-config-init',
+      ]);
+      const repo = manager.getRepository(SystemConfig);
+      const existing = await repo.findOne(options);
+      if (existing) return existing;
+      const created = repo.create({
         name: SystemConfigsService.DEFAULT_SYSTEM_NAME,
         logoPath: undefined,
       });
-      await this.systemConfigRepository.save(config);
-    }
-
-    return config;
+      await repo.save(created);
+      return created;
+    });
   }
 
   /**

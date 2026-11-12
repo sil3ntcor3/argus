@@ -1,13 +1,13 @@
-import { Public, Roles } from '@/common/decorators/app.decorator';
+import { Public } from '@/common/decorators/app.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
-import { Role } from '@/common/enums/enum';
 import { CreateToolDto } from '@/modules/tools/dto/create-tool.dto';
 import { Tool } from '@/modules/tools/entities/tools.entity';
 import { ToolsService } from '@/modules/tools/tools.service';
 import { Body, Controller, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
+import { Admin } from './admin.decorator';
 import { CreateFirstAdminDto } from './dto/admin.dto';
 
 /**
@@ -16,7 +16,7 @@ import { CreateFirstAdminDto } from './dto/admin.dto';
  */
 @ApiTags('Admin')
 @Controller('admin')
-@Roles(Role.ADMIN)
+@Admin()
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,

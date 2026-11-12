@@ -1335,6 +1335,15 @@ export type UpdateSystemConfigDto = {
   logoPath?: UpdateSystemConfigDtoLogoPath;
 };
 
+export type AdminAccessSettingsDto = {
+  /**
+   * IPs or CIDR ranges. Empty permits every IP; a nonempty list must include the requester.
+   * @maxItems 100
+   * @nullable
+   */
+  allowedIps?: string[] | null;
+};
+
 export type AuthSettingsDto = {
   /**
    * Stored sign-up preference. Public registration remains closed until verification and approval are available.
@@ -1388,6 +1397,8 @@ export type MailServerSettingsDto = {
 };
 
 export type SystemSettingsDto = {
+  /** @nullable */
+  adminAccess?: AdminAccessSettingsDto | null;
   /** @nullable */
   auth?: AuthSettingsDto | null;
   /** @nullable */
@@ -19706,7 +19717,7 @@ export function useSystemConfigsControllerGetSettings<
 }
 
 /**
- * Merges supplied fields into stored settings. Omitted or null fields retain their value; an empty password retains the saved credential. Saving these preferences does not activate public registration or send email.
+ * Merges supplied fields into stored settings. Omitted or null fields retain their value; an empty password retains the saved credential. A nonempty admin IP list must include the requester. Saving these preferences does not send email.
  * @summary Update system settings
  */
 export const systemConfigsControllerUpdateSettings = (
