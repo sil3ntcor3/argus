@@ -46,3 +46,7 @@ job evidence; graph steps alone cannot prove a run was not cancelled. Unknown or
 cancelled states suppress an outcome. Causal planning caps depth at three and
 excludes same-binding completion/finding loops, while retaining bounded discovery.
 Callers still validate tenant/project/run identity; no event publication is wired.
+
+Project workflow edits share the existing scoped workspace → project → workflow →
+binding locks and owned/editable checks. The shared helper keeps transaction and
+permission ownership with its caller, ready for later disabled-trigger persistence.
