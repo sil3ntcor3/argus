@@ -14,6 +14,7 @@ import {
   type AssetGroupWorkflow,
   type Workflow,
   useProjectsControllerGetById,
+  useProjectsControllerGetTriggers,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
@@ -26,6 +27,10 @@ import { ProjectWorkflowRenameDialog } from './project-workflow-rename-dialog';
 import { ProjectWorkflowPipelineDialog } from './project-workflow-pipeline-dialog';
 import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
+import {
+  ProjectWorkflowTriggers,
+  type TriggerQuery,
+} from './project-workflow-triggers';
 
 const runDate = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -56,6 +61,7 @@ function WorkflowCard({
   runWorkspaceId,
   hasAssets,
   focusAssignments,
+  triggers,
 }: {
   binding: AssetGroupWorkflow;
   canOpenRuns: boolean;
@@ -64,6 +70,7 @@ function WorkflowCard({
   runWorkspaceId?: string;
   hasAssets: boolean;
   focusAssignments: () => void;
+  triggers: TriggerQuery;
 }) {
   const [sourceRequested, setSourceRequested] = useState(false);
   const name = projectWorkflowLabel(binding.workflow);
@@ -91,6 +98,11 @@ function WorkflowCard({
             : `${cron} UTC`
           : 'Schedule disabled'}
       </p>
+      <ProjectWorkflowTriggers
+        bindingId={binding.id}
+        workflowName={name}
+        query={triggers}
+      />
       {(editWorkspaceId || definition || runWorkspaceId) && (
         <div className="flex flex-wrap gap-2">
           {runWorkspaceId && (
@@ -195,6 +207,13 @@ function WorkflowList({
   const project = useProjectsControllerGetById(projectId, {
     query: { retry: false },
   });
+  const triggers = useProjectsControllerGetTriggers(projectId, {
+    query: {
+      retry: false,
+      enabled:
+        !project.isError && Boolean(project.data?.assetGroupWorkflows?.length),
+    },
+  });
   const status = isAxiosError(project.error)
     ? project.error.response?.status
     : undefined;
@@ -246,6 +265,7 @@ function WorkflowList({
               editWorkspaceId={editWorkspaceId}
               runWorkspaceId={runWorkspaceId}
               hasAssets={hasAssets}
+              triggers={triggers}
               focusAssignments={() => assignments.current?.focus()}
             />
           ))}

@@ -62,3 +62,8 @@ Generic workflow saves serialize workspace/workflow access and preserve the stor
 `on` block for project-bound workflows with trigger rows, including omitted fields
 from legacy clients. Other workflows retain their existing schedule-edit behavior.
 The public schedule type accepts a legacy string or a list of `{cron}` entries.
+
+Project workflows displays the saved triggers for each binding through the existing
+read API, including UTC schedules, events, enabled state and last-fired timestamps.
+The list is read-only and keeps legacy schedule controls separate. Access failures
+hide cached rows; transient failures offer an explicit retry.
