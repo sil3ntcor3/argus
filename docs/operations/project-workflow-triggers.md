@@ -35,3 +35,8 @@ and returns a plan without applying persistence or scheduler operations.
 Private editor-input conversion keeps definitions separate from explicit state
 choices. The first duplicate entry wins, including an omitted state; callers
 retain existing runtime choices unless an override was explicitly supplied.
+
+Private matching helpers select enabled, valid event rows by workflow/outcome or
+finding severity and return independent asset arrays. The caller still owns
+tenant/project scope and launch-time asset/type/cause/chain checks. Batch splitting rejects
+nonpositive or unsafe sizes. These helpers add no dispatcher or automatic runs.
