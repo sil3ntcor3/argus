@@ -72,3 +72,7 @@ Project writers can add a disabled UTC schedule trigger to an editable, owned
 workflow in an active project. Creation refreshes the trigger list and saved YAML
 while preserving legacy schedules. Pending submissions block duplicates across
 remounts; transport/408/5xx failures require checking the list before retrying.
+
+The console's shared `useProjectTriggerCreate` hook owns these existing submission
+and cache safeguards. The schedule dialog retains its validation, messages and
+focus behavior; this extraction prepares reuse by later event-trigger forms.
