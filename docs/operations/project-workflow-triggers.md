@@ -23,3 +23,7 @@ omits scheduler IDs/unknown settings. Reads never register schedules or run jobs
 Private event configuration helpers validate event-specific settings before
 applying defaults. Their returned arrays are independent copies. They are not
 wired to the read API, persistence, queues or dispatcher.
+
+Private `on` parsing canonicalizes validated project definitions without writing
+or scheduling them. It leaves legacy `target` data untouched; future writers
+must preserve that data when updating a workflow's `on` block.
