@@ -67,3 +67,8 @@ Project workflows displays the saved triggers for each binding through the exist
 read API, including UTC schedules, events, enabled state and last-fired timestamps.
 The list is read-only and keeps legacy schedule controls separate. Access failures
 hide cached rows; transient failures offer an explicit retry.
+
+Project writers can add a disabled UTC schedule trigger to an editable, owned
+workflow in an active project. Creation refreshes the trigger list and saved YAML
+while preserving legacy schedules. Pending submissions block duplicates across
+remounts; transport/408/5xx failures require checking the list before retrying.

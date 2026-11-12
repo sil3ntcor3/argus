@@ -27,6 +27,7 @@ import { ProjectWorkflowRenameDialog } from './project-workflow-rename-dialog';
 import { ProjectWorkflowPipelineDialog } from './project-workflow-pipeline-dialog';
 import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
+import { ProjectTriggerCronDialog } from './project-trigger-cron-dialog';
 import {
   ProjectWorkflowTriggers,
   type TriggerQuery,
@@ -105,6 +106,15 @@ function WorkflowCard({
       />
       {(editWorkspaceId || definition || runWorkspaceId) && (
         <div className="flex flex-wrap gap-2">
+          {editWorkspaceId &&
+            canRenameWorkflow(binding.workflow, projectId) && (
+              <ProjectTriggerCronDialog
+                projectId={projectId}
+                bindingId={binding.id}
+                workflowName={name}
+                workspaceId={editWorkspaceId}
+              />
+            )}
           {runWorkspaceId && (
             <ProjectWorkflowRunDialog
               projectId={projectId}
