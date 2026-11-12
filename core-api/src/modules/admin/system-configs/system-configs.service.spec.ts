@@ -13,10 +13,17 @@ describe('SystemConfigsService', () => {
   let mockStorageService: Partial<StorageService>;
 
   beforeEach(async () => {
+    const manager = {
+      query: jest.fn().mockResolvedValue([]),
+      getRepository: () => mockSystemConfigRepository,
+    };
     mockSystemConfigRepository = {
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
+      manager: {
+        transaction: jest.fn((work: (tx: typeof manager) => Promise<unknown>) => work(manager)),
+      } as unknown as Repository<SystemConfig>['manager'],
     };
 
     mockStorageService = {
@@ -234,6 +241,7 @@ describe('SystemConfigsService', () => {
       });
       expect(mockSystemConfigRepository.findOne).toHaveBeenCalledWith({
         where: {},
+        order: { createdAt: 'ASC', id: 'ASC' },
         select: { id: true, settings: true },
       });
     });
@@ -256,6 +264,7 @@ describe('SystemConfigsService', () => {
     });
     it('redacts credentials and unknown stored fields from the admin view', async () => {
       const settings = {
+        adminAccess: { allowedIps: ['203.0.113.7'], internal: 'private' },
         mailServer: { password: 'encrypted-secret', internal: 'private' },
         future: { secret: 'hidden' },
       };
@@ -264,6 +273,7 @@ describe('SystemConfigsService', () => {
         settings,
       });
       const view = await service.getSettingsView();
+      expect(view.adminAccess).toEqual({ allowedIps: ['203.0.113.7'] });
       expect(view.mailServer).toMatchObject({ hasPassword: true });
       expect(view.mailServer).not.toHaveProperty('password');
       expect(view.mailServer).not.toHaveProperty('internal');
@@ -276,8 +286,37 @@ describe('SystemConfigsService', () => {
       });
       await expect(service.getSettingsView()).resolves.toMatchObject({
         auth: { allowSignUp: false },
+        adminAccess: { allowedIps: [] },
         mailServer: { hasPassword: false, provider: 'smtp' },
       });
+    });
+  });
+
+  describe('admin IP policy', () => {
+    it.each([null, false, []])('rejects malformed stored section %j', async (adminAccess) => {
+      (mockSystemConfigRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'config', settings: { adminAccess },
+      });
+      await expect(service.isAdminIpAllowed('127.0.0.1')).resolves.toBe(false);
+    });
+    it.each([
+      [undefined, undefined, true],
+      [[], undefined, true],
+      [['203.0.113.7'], '::ffff:203.0.113.7', true],
+      [['203.0.113.0/24'], '203.0.113.8', true],
+      [['2001:db8::/32'], '2001:db8::8', true],
+      [['203.0.113.7'], undefined, false],
+      [['203.0.113.7'], '198.51.100.8', false],
+      [null, '127.0.0.1', false],
+      [false, '127.0.0.1', false],
+      [[7], '127.0.0.1', false],
+      [['0.0.0.0/0/1'], '127.0.0.1', false],
+      [Array(101).fill('127.0.0.1'), '127.0.0.1', false],
+    ] as const)('checks stored %j against %s as %s', async (allowedIps, ip, expected) => {
+      (mockSystemConfigRepository.findOne as jest.Mock).mockResolvedValue({
+        id: 'config', settings: { adminAccess: { allowedIps } },
+      });
+      await expect(service.isAdminIpAllowed(ip)).resolves.toBe(expected);
     });
   });
 });

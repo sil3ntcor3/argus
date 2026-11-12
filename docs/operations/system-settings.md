@@ -8,7 +8,7 @@ additional migration.
 ## Admin contract
 
 Only platform admins can use GET and PATCH /api/admin/system-configs/settings.
-GET fills defaults for the auth and mailServer sections and returns only their
+GET fills defaults for the auth, mailServer and adminAccess sections and returns only their
 documented fields. Passwords are write-only; hasPassword reports whether a
 credential is stored. Other stored sections remain private and are preserved.
 
@@ -23,6 +23,37 @@ names are presets for future clients; connection fields remain explicit.
 An enabled mail configuration requires a nonblank host and sender email.
 Updates lock the singleton row so validation and concurrent field merges use the
 same database state. Failed validation leaves the stored settings unchanged.
+
+## Administration IP allow-list
+
+Upstream #867 adds `adminAccess.allowedIps` to the existing settings API and the
+Authentication page. Supply up to 100 IP addresses or CIDR ranges, each at most
+64 characters. PATCH trims and deduplicates entries; malformed entries or a
+nonempty replacement excluding the requesting IP return 400. An empty list
+allows every source address. Omitted/null fields retain the saved policy.
+
+The four Nest `/api/admin` controllers enforce the saved policy on each request,
+after authentication and platform-role checks. A nonmatching or unknown IP
+returns 403 while a nonempty policy is active. Malformed stored policy fails
+closed. `TRUSTED_PROXIES` must name only actual reverse proxies; untrusted
+forwarded headers cannot satisfy the allow-list. First-admin initialization
+retains its public route and existing first-admin lock/check. Better Auth's
+separate `/api/auth/admin` actions, including ban and impersonation, retain their
+existing controls and are outside this upstream guard.
+
+Reads and writes consistently select the oldest system-config row, then its ID
+for equal timestamps, if earlier concurrent initialization left duplicates.
+Rows are not merged or deleted. Console saves fail immediately offline and are
+not queued for replay after reconnect.
+Missing-row initialization takes a transaction advisory lock and rechecks before
+inserting, preventing concurrent first reads from creating another canonical row.
+
+Validate the intended proxy/client address before restricting access. If network
+changes leave no allowed administrator, an operator must restore or clear only
+`system_configs.settings.adminAccess.allowedIps` through controlled database
+maintenance, preserving the remaining settings and encrypted credentials.
+Rollback of this application batch retains stored policy but removes its
+enforcement; no migration is involved.
 
 Public HTTP registration is closed by default and requires both allowSignUp
 and an enabled mail server. Public metadata reports the effective eligibility

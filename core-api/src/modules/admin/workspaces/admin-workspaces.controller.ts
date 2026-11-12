@@ -1,7 +1,6 @@
-import { Roles } from '@/common/decorators/app.decorator';
+import { Admin } from '../admin.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { IdQueryParamDto } from '@/common/dtos/id-query-param.dto';
-import { Role } from '@/common/enums/enum';
 import { EVENT_CATALOG } from '@/modules/event-bridge/contracts/event-catalog';
 import { PublishEvent } from '@/modules/event-bridge/publishing/publish-event.decorator';
 import { ArchiveWorkspaceDto } from '@/modules/workspaces/dto/workspaces.dto';
@@ -33,7 +32,7 @@ const auditTarget = {
  */
 @ApiTags('Admin')
 @Controller('admin/workspaces')
-@Roles(Role.ADMIN)
+@Admin()
 export class AdminWorkspacesController {
   constructor(
     private readonly adminWorkspacesService: AdminWorkspacesService,
