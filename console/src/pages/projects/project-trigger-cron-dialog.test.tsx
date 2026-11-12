@@ -1,4 +1,5 @@
 import { server } from '@/test/mocks/node';
+import { getAssetGroupControllerGetByIdQueryKey } from '@/services/apis/gen/queries';
 import {
   setGlobalWorkspaceId,
   getGlobalWorkspaceId,
@@ -21,6 +22,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectWorkflowsPage } from './project-workflows-page';
 
 const access = vi.hoisted(() => ({ write: true }));
+const effects = vi.hoisted(() => ({ success: vi.fn() }));
+vi.mock('sonner', () => ({ toast: { success: effects.success } }));
 vi.mock('@/hooks/usePermission', () => ({
   usePermission: () => ({
     hasPermission: (key: string) =>
@@ -238,6 +241,84 @@ describe('Project schedule trigger creation', () => {
     setGlobalWorkspaceId('other');
     fireEvent.click(submit);
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it('refreshes project and trigger reads and invalidates the inactive legacy view', async () => {
+    const reads: string[] = [];
+    server.use(
+      http.get('/api/projects/:id', ({ request }) => {
+        reads.push(request.url);
+        return HttpResponse.json(project);
+      }),
+      http.get('/api/projects/:id/triggers', ({ request }) => {
+        reads.push(request.url);
+        return HttpResponse.json(saved ? [created] : []);
+      }),
+    );
+    const { client, submit } = await open();
+    const legacy = getAssetGroupControllerGetByIdQueryKey(projectId);
+    client.setQueryData(legacy, { name: 'Legacy cached view' });
+    fireEvent.click(submit);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(reads.filter((url) => url.endsWith(projectId))).toHaveLength(2);
+    expect(reads.filter((url) => url.endsWith('/triggers'))).toHaveLength(2);
+    expect(client.getQueryState(legacy)?.isInvalidated).toBe(true);
+  });
+
+  it.each([201, 502])(
+    'keeps a late %s result within its original workspace',
+    async (status) => {
+      let finish = () => {};
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const reads: (string | null)[] = [];
+      server.use(
+        http.get('/api/projects/:id', ({ request }) => {
+          reads.push(request.headers.get('X-Workspace-Id'));
+          return HttpResponse.json(project);
+        }),
+        http.get('/api/projects/:id/triggers', ({ request }) => {
+          reads.push(request.headers.get('X-Workspace-Id'));
+          return HttpResponse.json([]);
+        }),
+        http.post('/api/projects/:id/triggers', async () => {
+          post();
+          await pending;
+          return HttpResponse.json(status === 201 ? created : {}, { status });
+        }),
+      );
+      const { client, submit } = await open();
+      const legacy = getAssetGroupControllerGetByIdQueryKey(projectId);
+      client.setQueryData(legacy, {});
+      try {
+        fireEvent.click(submit);
+        await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+        setGlobalWorkspaceId('other');
+        finish();
+        await waitFor(() => expect(client.isMutating()).toBe(0));
+        expect(reads).toEqual(['fixture', 'fixture']);
+        expect(effects.success).not.toHaveBeenCalled();
+        expect(client.getQueryState(legacy)?.isInvalidated).toBe(true);
+      } finally {
+        finish();
+      }
+    },
+  );
+
+  it('rechecks workspace identity between form submission and HTTP dispatch', async () => {
+    const { client, submit } = await open();
+    const unsubscribe = client.getMutationCache().subscribe(({ mutation }) => {
+      if (mutation?.state.status === 'pending') setGlobalWorkspaceId('other');
+    });
+    try {
+      fireEvent.click(submit);
+      await waitFor(() => expect(screen.getByRole('alert')).toBeVisible());
+      expect(client.isMutating()).toBe(0);
+      expect(post).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('reports the existing server archive guard without inventing a read field', async () => {
