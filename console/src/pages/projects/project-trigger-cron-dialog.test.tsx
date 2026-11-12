@@ -350,6 +350,11 @@ describe('Project schedule trigger creation', () => {
           name: 'Add schedule trigger for Discovery',
         }),
       ).toBeNull();
+      expect(
+        screen.queryByRole('button', {
+          name: 'Add event trigger for Discovery',
+        }),
+      ).toBeNull();
     },
   );
 });
