@@ -189,4 +189,23 @@ describe('Private project event configuration', () => {
       expect.stringContaining('unknown setting workflows'),
     ]);
   });
+  it('can ignore opaque stored keys while retaining strict validation for known fields', () => {
+    expect(
+      eventConfigProblems(
+        assets,
+        { privateNote: 'retain' },
+        { ignoreUnknown: true },
+      ),
+    ).toEqual([]);
+    expect(
+      eventConfigProblems(
+        assets,
+        { maxAssets: 0, privateNote: 'retain' },
+        { ignoreUnknown: true },
+      ),
+    ).toEqual([expect.stringContaining('maxAssets')]);
+    expect(eventConfigProblems(assets, { privateNote: 'retain' })).toEqual([
+      expect.stringContaining('unknown setting'),
+    ]);
+  });
 });

@@ -43,10 +43,11 @@ export function normalizeEventConfig(
   }
 }
 
-/** Validate before normalizing so unknown or misplaced settings cannot disappear silently. */
+/** Strict for definitions; stored-row comparisons can retain unrelated opaque keys. */
 export function eventConfigProblems(
   event: TriggerEvent,
   raw: unknown,
+  options: { ignoreUnknown?: boolean } = {},
 ): string[] {
   const allowed = [...COMMON_SETTINGS, ...EVENT_SETTINGS[event]];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -100,6 +101,7 @@ export function eventConfigProblems(
   if (event === 'vulnerability.detected')
     listOf('severity', 'one or more severities', Object.values(Severity), true);
   const unknown = Object.keys(config).filter((key) => !allowed.includes(key));
-  if (unknown.length) problems.push(`unknown setting ${unknown.join(', ')}`);
+  if (!options.ignoreUnknown && unknown.length)
+    problems.push(`unknown setting ${unknown.join(', ')}`);
   return problems;
 }

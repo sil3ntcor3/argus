@@ -27,3 +27,7 @@ wired to the read API, persistence, queues or dispatcher.
 Private `on` parsing canonicalizes validated project definitions without writing
 or scheduling them. It leaves legacy `target` data untouched; future writers
 must preserve that data when updating a workflow's `on` block.
+
+The private synchronization planner takes one authorized binding's rows and
+validated definitions. It preserves runtime state, retains disabled duplicates,
+and returns a plan without applying persistence or scheduler operations.
