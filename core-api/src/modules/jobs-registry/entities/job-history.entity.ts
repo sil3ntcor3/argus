@@ -21,9 +21,11 @@ import {
   Relation,
 } from 'typeorm';
 import { Job } from './job.entity';
+import { ProjectWorkflowTrigger } from '@/modules/projects/entities/project-workflow-trigger.entity';
 
 @Entity('job_histories')
 @Index('IDX_job_histories_workflow', ['workflow'])
+@Index('IDX_job_histories_causedByRunId', ['causedByRunId'])
 @Index('IDX_job_histories_projectId_createdAt', ['projectId', 'createdAt'])
 @Index('IDX_job_histories_projectWorkflowId', ['projectWorkflowId'])
 export class JobHistory extends BaseEntity {
@@ -104,6 +106,23 @@ export class JobHistory extends BaseEntity {
   @ManyToOne(() => AssetGroupWorkflow, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'projectWorkflowId' })
   projectWorkflow?: Relation<AssetGroupWorkflow> | null;
+
+  @Column({ type: 'uuid', nullable: true, select: false })
+  triggerId: string | null;
+
+  @ManyToOne(() => ProjectWorkflowTrigger, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'triggerId' })
+  trigger?: Relation<ProjectWorkflowTrigger> | null;
+
+  @Column({ type: 'uuid', nullable: true, select: false })
+  causedByRunId: string | null;
+
+  @ManyToOne(() => JobHistory, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'causedByRunId' })
+  causedByRun?: Relation<JobHistory> | null;
+
+  @Column({ type: 'integer', default: 0, select: false })
+  chainDepth: number;
 
   @Column({ nullable: true })
   jobHistoryName?: string;

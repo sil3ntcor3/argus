@@ -78,7 +78,7 @@ describe('event catalog', () => {
     // The tree is the authored source; EVENT_DEFINITIONS is derived. If the
     // walk ever stops matching the shape, these fail rather than the bridge
     // publishing half a catalog.
-    it('exposes 99 leaves', () => {
+    it('exposes 100 leaves', () => {
       // 99 = the storage quota event, six file events, four project events, and the 88 below.
       // 88 = the 85 left once `worker.alive` was removed (a heartbeat is read
       // from `workers.lastSeenAt`, not streamed, and on the shared stream it
@@ -86,7 +86,7 @@ describe('event catalog', () => {
       // and the two tool install/uninstall audit events.
       // Asserting the count means the removal cannot be half-reverted without
       // failing here.
-      expect(EVENT_DEFINITIONS).toHaveLength(99);
+      expect(EVENT_DEFINITIONS).toHaveLength(100);
     });
 
     it('has no worker.alive leaf, so nothing can publish a heartbeat', () => {

@@ -1,88 +1,45 @@
-# Project workflow trigger storage
+# Project workflow triggers (Open ASM v0.12.1 port)
 
-The private `project_workflow_triggers` table stores a binding reference,
-cron/event type, optional cron and event values, JSON configuration, an enabled
-flag, and optional last-fired time and scheduler ID. Standard UUID and timestamps
-come from the existing base entity. The binding foreign key cascades deletion,
-and `IDX_pwt_projectWorkflowId` supports lookup and cleanup.
+This feature is ported from the frozen v0.12.1 release (`961d77142671e90190bd97132638441e593bec47`). Already-merged Argus extras remain; this batch imports no later upstream feature.
 
-This foundation adds persistence without backfilling legacy schedules or
-registering a dispatcher. Existing binding `schedule` and `jobId` fields stay
-active. Trigger API contracts and runtime behavior follow separately.
+Project writers manage triggers on editable, project-owned workflows in the selected workspace. Archived projects remain readable and reject writes. New triggers stay disabled unless activation is explicit. The console supports creation, editing, activation and removal, with a confirmation before enabling automatic scans. Trigger reads omit scheduler IDs and unknown configuration keys.
 
-The approved migration is generated with
-`task migration:generate name=AddProjectWorkflowTriggers`. Verify upgrade,
-rollback, reapplication and legacy-row preservation on disposable local
-Postgres. Run `task api:test:e2e:one SPEC=test/project-workflow-trigger-storage.e2e-spec.ts`
-for defaults, JSON settings, foreign-key and cascade behavior.
+## Contracts and definitions
 
-`GET /api/projects/:id/triggers` requires workspace project read access, including
-archived projects. It orders by creation time/ID, checks workflow ownership and
-omits scheduler IDs/unknown settings. Reads never register schedules or run jobs.
+- `GET /api/projects/:id/triggers` requires `project.read`.
+- `POST /api/projects/:id/triggers` requires `project.write`; optional `enabled` defaults to false.
+- `PATCH /api/projects/:id/triggers/:triggerId` accepts `cron`, `config`, and/or `enabled`. Type/event/binding are immutable. Event configuration patches merge into the saved settings. Empty, unsupported or invalid edits return 400.
+- `DELETE /api/projects/:id/triggers/:triggerId` returns `{message: "Trigger removed"}`. Missing or inaccessible records return 404.
+- Project workflow creation/update accepts optional `on: {schedule?, events?}`. Schedules contain `{cron, enabled?}` (maximum 20); events contain a recognized `event`, optional activation, and that event's filter settings (maximum three). Supplying `on` replaces managed definitions; omitting it preserves them. Existing activation is retained when omitted; new entries default disabled. First duplicate definitions win.
 
-Private event configuration helpers validate event-specific settings before
-applying defaults. Their returned arrays are independent copies. They are not
-wired to the read API, persistence, queues or dispatcher.
+Definitions and trigger rows are written atomically under workspace → project → workflow → binding locks. Saved job graphs, encrypted configuration, instructions and legacy `on.target` are retained. Generic workflow saves preserve managed `on` definitions so older editors cannot erase them.
 
-Private `on` parsing canonicalizes validated project definitions without writing
-or scheduling them. It leaves legacy `target` data untouched; future writers
-must preserve that data when updating a workflow's `on` block.
+Legacy binding `schedule` / `jobId` fields remain operational. Reconciliation only removes scheduler IDs owned by this feature (`project-trigger:`). An identical *existing* legacy scheduler supplies a firing instead of registering a duplicate. A stale legacy reference does not prevent repair of an enabled trigger. Cron expressions use UTC. Registration is reconciled at boot, after trigger commands, and every five minutes.
 
-The private synchronization planner takes one authorized binding's rows and
-validated definitions. It preserves runtime state, retains disabled duplicates,
-and returns a plan without applying persistence or scheduler operations.
+## Events and dispatch
 
-Private editor-input conversion keeps definitions separate from explicit state
-choices. The first duplicate entry wins, including an omitted state; callers
-retain existing runtime choices unless an override was explicitly supplied.
+The projects event lane now handles `project.assets.added`, `project.run.completed`, and `vulnerability.detected`, alongside asset discovery linking.
 
-Private matching helpers select enabled, valid event rows by workflow/outcome or
-finding severity and return independent asset arrays. The caller still owns
-tenant/project scope and launch-time asset/type/cause/chain checks. Batch splitting rejects
-nonpositive or unsafe sizes. These helpers add no dispatcher or automatic runs.
+- Assets-added triggers gather newly linked assets, including bounded discovery chains.
+- Completion triggers follow other project workflows and filter by saved workflow names and success/failure. Outcomes come from authoritative closed-run state and current jobs, rather than the event's claimed outcome. Zero-job/no-inputs completion is supported.
+- Finding triggers filter recognized severities, validate the recorded job/asset/workspace, and exclude findings produced by their own workflow.
 
-Private run eligibility requires authoritative closed-run and zero active/cancelled
-job evidence; graph steps alone cannot prove a run was not cancelled. Unknown or
-cancelled states suppress an outcome. Causal planning caps depth at three and
-excludes same-binding completion/finding loops, while retaining bounded discovery.
-Callers still validate tenant/project/run identity; no event publication is wired.
+Event windows coalesce assets, deduplicate deliveries for two days, apply current enabled-project membership and target types, and split at the configured asset limit. A recoverable snapshot freezes the batch size while processing. Queue redelivery retains the original window identity, including after a newer window opens. Durable deterministic run IDs prevent repeated handoff from creating duplicate runs/jobs. Failed flushes retry with backoff; retained failed jobs can be revived by redelivery.
 
-Project workflow edits share the existing scoped workspace → project → workflow →
-binding locks and owned/editable checks. The shared helper keeps transaction and
-permission ownership with its caller, ready for later disabled-trigger persistence.
+Run provenance privately records the trigger, causal run, and depth. Depth is capped at three. Cancelled causes are rejected both during gathering and under a shared run lock at execution. Disabling or deleting a trigger invalidates pending windows; existing runs continue under the workflow engine. No worker protocol changes are needed. Run lists, filters and graphs distinguish the new `event` run type.
 
-The private definition writer atomically appends one validated definition and its
-disabled row under those locks. It rejects file/row duplicates, preserves legacy
-binding schedules and authored configuration, and rolls back both writes on failure.
+`project.run.completed` carries workspace-scoped project/binding/run IDs, workflow name and outcome. It excludes logs and secrets and is not persisted as an audit action. Successful trigger management continues to publish `project.updated` with `change=triggers`.
 
-`POST /api/projects/:id/triggers` (`project.write`) creates one disabled trigger.
-Unknown fields/duplicates return 400; successes emit `project.updated` (`change=triggers`).
+## Migration and validation
 
-Generic workflow saves serialize workspace/workflow access and preserve the stored
-`on` block for project-bound workflows with trigger rows, including omitted fields
-from legacy clients. Other workflows retain their existing schedule-edit behavior.
-The public schedule type accepts a legacy string or a list of `{cron}` entries.
+The explicitly approved migration is generated through:
 
-Project workflows displays the saved triggers for each binding through the existing
-read API, including UTC schedules, events, enabled state and last-fired timestamps.
-The list is read-only and keeps legacy schedule controls separate. Access failures
-hide cached rows; transient failures offer an explicit retry.
+```bash
+task migration:generate name=AddProjectTriggerRunProvenance
+```
 
-Project writers can add a disabled UTC schedule trigger to an editable, owned
-workflow in an active project. Creation refreshes the trigger list and saved YAML
-while preserving legacy schedules. Pending submissions block duplicates across
-remounts; transport/408/5xx failures require checking the list before retrying.
+It adds nullable `job_histories.triggerId` and `causedByRunId`, `chainDepth` defaulting to zero, SET NULL references, and the cause index. There is no historical attribution backfill. These fields are excluded from default reads and public response DTOs. The existing trigger table/binding cascade is retained.
 
-The console's shared `useProjectTriggerCreate` hook owns these existing submission
-and cache safeguards. The schedule dialog retains its validation, messages and
-focus behavior; this extraction prepares reuse by later event-trigger forms.
+Use `task migration:run` / `task migration:revert` only against a confirmed local disposable database. Validate rollback with the new runtime stopped, then reapply before starting it. Upgrade/rollback must preserve historical runs, existing scope, authored content, binding schedules and all unrelated schema.
 
-Project writers can add disabled event triggers for new assets, completed runs of
-other workflows, or findings. The dialog starts with the existing default
-filters and accepts a 0–1440 minute gather window and 1–5000 assets per batch.
-It shares schedule creation's pending, uncertain-response and workspace guards.
-
-Event creation also supports target-type filters, up to 20 followed project
-workflow names and one or more run outcomes, or one or more finding severities.
-An empty target-type or workflow selection means any; outcomes default to success
-and severities to critical/high. Only the selected event's settings are sent.
+Focused Docker suites: `project-trigger-provenance`, `project-trigger-batch`, `project-trigger-runtime`, and the existing workflow-create/trigger-storage/trigger-read/DAG suites, invoked with `task api:test:e2e:one SPEC=test/<name>.e2e-spec.ts`. Run `task lint`, `task test`, `task console:test:run`, and both builds. Regenerate tracked OpenAPI/client files with `task gen-api` from the freshly booted API. Validate desktop/mobile management, uncertain/offline writes, workspace changes, permissions, saved YAML, and real event dispatch on the isolated local Docker deployment.

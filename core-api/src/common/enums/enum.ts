@@ -170,6 +170,7 @@ export enum ApiKeyType {
 export enum BullMQName {
   ASSETS_DISCOVERY_SCHEDULE = 'assets-discovery-schedule',
   ASSET_GROUPS_WORKFLOW_SCHEDULE = 'asset-groups-workflow-schedule',
+  PROJECT_TRIGGER_EVENTS = 'project-trigger-events',
   JOB_RESULT = 'job-result',
   ISSUE_CREATION = 'issue-creation',
   VULNERABILITY_ANALYSIS = 'vulnerability-analysis',
@@ -232,6 +233,7 @@ export enum DismissReason {
 export enum JobRunType {
   MANUAL = 'manual',
   SCHEDULED = 'scheduled',
+  EVENT = 'event',
 }
 
 export enum VulnerabilityAnalyzeStatus {

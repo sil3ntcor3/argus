@@ -252,4 +252,22 @@ describe('ProjectRunsPage', () => {
       pageSize: 50,
     });
   });
+  it('labels event runs and allows filtering to automatic events', () => {
+    mock.runs.mockReturnValue({
+      data: { data: [{ ...run, jobRunType: 'event' }], pageCount: 1 },
+    });
+    const onChange = vi.fn();
+    render(
+      <ProjectRunsPage projectId={projectId} page={1} onChange={onChange} />,
+    );
+    expect(
+      screen.getByRole('link', { name: /Perimeter scan, Event,/ }),
+    ).toBeVisible();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Trigger' }), {
+      target: { value: 'event' },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'event', page: 1 }),
+    );
+  });
 });

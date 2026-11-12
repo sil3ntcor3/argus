@@ -1,3 +1,4 @@
+import { PROJECT_RUN_CLOSED } from '../projects/project-trigger-eligibility';
 import { EventTriggerType, JobRunType, JobStatus } from '@/common/enums/enum';
 import {
   BadRequestException,
@@ -48,6 +49,11 @@ export interface StartRunInput {
   /** Private provenance supplied by the project workflow binding that starts a run. */
   projectId?: string;
   projectWorkflowId?: string;
+  triggerId?: string;
+  causedByRunId?: string;
+  chainDepth?: number;
+  /** Private durable handoff identity for queue redelivery. */
+  runId?: string;
 }
 
 export interface StartRunResult {
@@ -105,10 +111,23 @@ export class WorkflowRunnerService {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
-    let jobHistory: JobHistory;
+    let jobHistory: JobHistory | undefined;
+    let reused = false;
     try {
+      if (input.runId) {
+        await queryRunner.manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [input.runId]);
+        const existing = await queryRunner.manager.findOne(JobHistory, { where: { id: input.runId }, relations: { workflow: { workspace: true } } });
+        if (existing) {
+          if (existing.workflow.id !== input.workflow.id || existing.workflow.workspace.id !== input.workspaceId)
+            throw new ConflictException('Run identity belongs to another workflow');
+          jobHistory = existing;
+          reused = true;
+        }
+      }
+      if (!jobHistory) {
       if (validateScope) await validateScope(queryRunner.manager);
       jobHistory = queryRunner.manager.create(JobHistory, {
+        ...(input.runId ? { id: input.runId } : {}),
         workflow: input.workflow,
         jobRunType: input.jobRunType,
         jobHistoryName: input.jobName,
@@ -117,8 +136,12 @@ export class WorkflowRunnerService {
         scope: this.buildScope(input.targetIds, input.assetIds),
         projectId: input.projectId ?? null,
         projectWorkflowId: input.projectWorkflowId ?? null,
+        triggerId: input.triggerId ?? null,
+        causedByRunId: input.causedByRunId ?? null,
+        chainDepth: input.chainDepth ?? 0,
       });
       await queryRunner.manager.save(jobHistory);
+      }
       await queryRunner.commitTransaction();
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -129,7 +152,7 @@ export class WorkflowRunnerService {
 
     // Exactly one start event per run — the statistics snapshot listener keys
     // off it and would otherwise overwrite its own baseline.
-    this.eventEmitter.emit(EventTriggerType.WORKFLOW_START, {
+    if (!reused) this.eventEmitter.emit(EventTriggerType.WORKFLOW_START, {
       workflow: input.workflow,
       workspaceId: input.workspaceId,
       targetIds: input.targetIds,
@@ -441,6 +464,7 @@ export class WorkflowRunnerService {
     }
 
     // Emitted after the commit so listeners never read uncommitted state.
+    if (completed) this.eventEmitter.emit(PROJECT_RUN_CLOSED, jobHistoryId);
     if (completionJob) {
       this.eventEmitter.emit(EventTriggerType.WORKFLOW_END, completionJob);
     }

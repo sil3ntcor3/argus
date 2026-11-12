@@ -1,3 +1,4 @@
+import type { ProjectTriggerDefinitionService } from './project-trigger-definition.service';
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -39,6 +40,7 @@ describe('ProjectWorkflowCreateService', () => {
         { transaction } as unknown as DataSource,
         { prepare } as unknown as ProjectWorkflowJobsService,
         { getDEK } as unknown as WorkspaceEncryptionService,
+        {} as ProjectTriggerDefinitionService,
       ),
     };
   }

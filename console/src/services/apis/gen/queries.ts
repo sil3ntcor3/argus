@@ -597,6 +597,7 @@ export type JobRunType = (typeof JobRunType)[keyof typeof JobRunType];
 export const JobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
 } as const;
 
 export type TargetRunDto = {
@@ -1207,6 +1208,31 @@ export type WorkflowJob = {
   configProfileId?: string;
 };
 
+export type ProjectTriggerConfigDtoStatusItem =
+  (typeof ProjectTriggerConfigDtoStatusItem)[keyof typeof ProjectTriggerConfigDtoStatusItem];
+
+export const ProjectTriggerConfigDtoStatusItem = {
+  success: 'success',
+  failure: 'failure',
+} as const;
+
+export type ProjectTriggerConfigDto = {
+  /**
+   * @minimum 0
+   * @maximum 1440
+   */
+  windowMinutes?: number;
+  /**
+   * @minimum 1
+   * @maximum 5000
+   */
+  maxAssets?: number;
+  targetTypes?: TargetType[];
+  workflows?: string[];
+  status?: ProjectTriggerConfigDtoStatusItem[];
+  severity?: Severity[];
+};
+
 export type OnSchedule =
   | string
   | {
@@ -1216,6 +1242,9 @@ export type OnSchedule =
 export type On = {
   target: string[];
   schedule?: OnSchedule;
+  'project.assets.added'?: ProjectTriggerConfigDto;
+  'project.run.completed'?: ProjectTriggerConfigDto;
+  'vulnerability.detected'?: ProjectTriggerConfigDto;
 };
 
 /**
@@ -1963,6 +1992,7 @@ export type JobHistoryResponseDtoJobRunType =
 export const JobHistoryResponseDtoJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
 } as const;
 
 export type JobHistoryResponseDto = {
@@ -2057,6 +2087,7 @@ export type JobHistoryDetailResponseDtoJobRunType =
 export const JobHistoryDetailResponseDtoJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
 } as const;
 
 export type JobHistoryDetailResponseDto = {
@@ -4807,6 +4838,7 @@ export type AssetGroupLastRunDtoJobRunType =
 export const AssetGroupLastRunDtoJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
 } as const;
 
 export type AssetGroupLastRunDto = {
@@ -4993,31 +5025,6 @@ export const ProjectTriggerEvent = {
   vulnerabilitydetected: 'vulnerability.detected',
 } as const;
 
-export type ProjectTriggerConfigDtoStatusItem =
-  (typeof ProjectTriggerConfigDtoStatusItem)[keyof typeof ProjectTriggerConfigDtoStatusItem];
-
-export const ProjectTriggerConfigDtoStatusItem = {
-  success: 'success',
-  failure: 'failure',
-} as const;
-
-export type ProjectTriggerConfigDto = {
-  /**
-   * @minimum 0
-   * @maximum 1440
-   */
-  windowMinutes?: number;
-  /**
-   * @minimum 1
-   * @maximum 5000
-   */
-  maxAssets?: number;
-  targetTypes?: TargetType[];
-  workflows?: string[];
-  status?: ProjectTriggerConfigDtoStatusItem[];
-  severity?: Severity[];
-};
-
 export type ProjectTriggerDto = {
   id: string;
   createdAt: string;
@@ -5040,6 +5047,15 @@ export type CreateProjectTriggerDto = {
   cron?: string;
   event?: ProjectTriggerEvent;
   config?: ProjectTriggerConfigDto;
+  enabled?: boolean;
+};
+
+export type UpdateProjectTriggerDto = {
+  /** Five-field UTC cron expression; cron triggers only */
+  cron?: string;
+  /** Merge into existing event settings */
+  config?: ProjectTriggerConfigDto;
+  enabled?: boolean;
 };
 
 export type CreatedProjectWorkflowDtoSchedule =
@@ -5056,6 +5072,46 @@ export type CreatedProjectWorkflowDto = {
   workflowId: string;
   name: string;
   schedule: CreatedProjectWorkflowDtoSchedule;
+};
+
+export type ScheduleTriggerInputDto = {
+  /** Five-field UTC cron expression */
+  cron: string;
+  enabled?: boolean;
+};
+
+export type EventTriggerInputDtoStatusItem =
+  (typeof EventTriggerInputDtoStatusItem)[keyof typeof EventTriggerInputDtoStatusItem];
+
+export const EventTriggerInputDtoStatusItem = {
+  success: 'success',
+  failure: 'failure',
+} as const;
+
+export type EventTriggerInputDto = {
+  /**
+   * @minimum 0
+   * @maximum 1440
+   */
+  windowMinutes?: number;
+  /**
+   * @minimum 1
+   * @maximum 5000
+   */
+  maxAssets?: number;
+  targetTypes?: TargetType[];
+  workflows?: string[];
+  status?: EventTriggerInputDtoStatusItem[];
+  severity?: Severity[];
+  event: ProjectTriggerEvent;
+  enabled?: boolean;
+};
+
+export type ProjectWorkflowOnDto = {
+  /** @maxItems 20 */
+  schedule?: ScheduleTriggerInputDto[];
+  /** @maxItems 3 */
+  events?: EventTriggerInputDto[];
 };
 
 /**
@@ -5078,6 +5134,8 @@ export type CreateProjectWorkflowDto = {
    * @maxLength 120
    */
   name?: string;
+  /** Replace managed project trigger definitions; omit to preserve */
+  on?: ProjectWorkflowOnDto;
 };
 
 export type UpdateProjectWorkflowDtoJobs = { [key: string]: WorkflowJob };
@@ -5090,6 +5148,8 @@ export type UpdateProjectWorkflowDto = {
    */
   name?: string;
   jobs?: UpdateProjectWorkflowDtoJobs;
+  /** Replace managed project trigger definitions; omit to preserve */
+  on?: ProjectWorkflowOnDto;
 };
 
 export type CreateProjectDto = {
@@ -5280,6 +5340,7 @@ export type ProjectRunDtoJobRunType =
 export const ProjectRunDtoJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
 } as const;
 
 export type ProjectRunDto = {
@@ -5424,6 +5485,7 @@ export type ProjectOverviewRunRefDtoJobRunType =
 export const ProjectOverviewRunRefDtoJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
 } as const;
 
 export type ProjectOverviewRunRefDtoStatus =
@@ -5476,6 +5538,7 @@ export type ProjectOverviewActivityDtoJobRunType =
 export const ProjectOverviewActivityDtoJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
 } as const;
 
 export type ProjectOverviewActivityDtoRunStatus =
@@ -5528,7 +5591,7 @@ export type ProjectOverviewDtoLastRun = {
   id: string;
   createdAt: string;
   workflowName: string;
-  jobRunType: 'manual' | 'scheduled';
+  jobRunType: 'manual' | 'scheduled' | 'event';
   status:
     | 'pending'
     | 'in_progress'
@@ -6269,6 +6332,7 @@ export type JobsRegistryControllerGetManyJobHistoriesJobRunType =
 export const JobsRegistryControllerGetManyJobHistoriesJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
   all: 'all',
 } as const;
 
@@ -6910,6 +6974,7 @@ export type ProjectsControllerGetRunsJobRunType =
 export const ProjectsControllerGetRunsJobRunType = {
   manual: 'manual',
   scheduled: 'scheduled',
+  event: 'event',
 } as const;
 
 export type ProjectsControllerGetFindingsParams = {
@@ -46287,7 +46352,7 @@ export function useProjectsControllerGetTriggers<
 }
 
 /**
- * @summary Create a disabled project workflow trigger
+ * @summary Create a project workflow trigger (disabled by default)
  */
 export const projectsControllerCreateTrigger = (
   id: string,
@@ -46353,7 +46418,7 @@ export type ProjectsControllerCreateTriggerMutationBody =
 export type ProjectsControllerCreateTriggerMutationError = unknown;
 
 /**
- * @summary Create a disabled project workflow trigger
+ * @summary Create a project workflow trigger (disabled by default)
  */
 export const useProjectsControllerCreateTrigger = <
   TError = unknown,
@@ -46377,6 +46442,194 @@ export const useProjectsControllerCreateTrigger = <
 > => {
   return useMutation(
     getProjectsControllerCreateTriggerMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Update a project workflow trigger
+ */
+export const projectsControllerUpdateTrigger = (
+  id: string,
+  triggerId: string,
+  updateProjectTriggerDto: UpdateProjectTriggerDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectTriggerDto>(
+    {
+      url: `/api/projects/${id}/triggers/${triggerId}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateProjectTriggerDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerUpdateTriggerMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerUpdateTrigger>>,
+    TError,
+    { id: string; triggerId: string; data: UpdateProjectTriggerDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerUpdateTrigger>>,
+  TError,
+  { id: string; triggerId: string; data: UpdateProjectTriggerDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerUpdateTrigger'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerUpdateTrigger>>,
+    { id: string; triggerId: string; data: UpdateProjectTriggerDto }
+  > = (props) => {
+    const { id, triggerId, data } = props ?? {};
+
+    return projectsControllerUpdateTrigger(id, triggerId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerUpdateTriggerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerUpdateTrigger>>
+>;
+export type ProjectsControllerUpdateTriggerMutationBody =
+  UpdateProjectTriggerDto;
+export type ProjectsControllerUpdateTriggerMutationError = unknown;
+
+/**
+ * @summary Update a project workflow trigger
+ */
+export const useProjectsControllerUpdateTrigger = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerUpdateTrigger>>,
+      TError,
+      { id: string; triggerId: string; data: UpdateProjectTriggerDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerUpdateTrigger>>,
+  TError,
+  { id: string; triggerId: string; data: UpdateProjectTriggerDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerUpdateTriggerMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Remove a project workflow trigger
+ */
+export const projectsControllerRemoveTrigger = (
+  id: string,
+  triggerId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    {
+      url: `/api/projects/${id}/triggers/${triggerId}`,
+      method: 'DELETE',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerRemoveTriggerMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerRemoveTrigger>>,
+    TError,
+    { id: string; triggerId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerRemoveTrigger>>,
+  TError,
+  { id: string; triggerId: string },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerRemoveTrigger'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerRemoveTrigger>>,
+    { id: string; triggerId: string }
+  > = (props) => {
+    const { id, triggerId } = props ?? {};
+
+    return projectsControllerRemoveTrigger(id, triggerId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerRemoveTriggerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerRemoveTrigger>>
+>;
+
+export type ProjectsControllerRemoveTriggerMutationError = unknown;
+
+/**
+ * @summary Remove a project workflow trigger
+ */
+export const useProjectsControllerRemoveTrigger = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerRemoveTrigger>>,
+      TError,
+      { id: string; triggerId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerRemoveTrigger>>,
+  TError,
+  { id: string; triggerId: string },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerRemoveTriggerMutationOptions(options),
     queryClient,
   );
 };

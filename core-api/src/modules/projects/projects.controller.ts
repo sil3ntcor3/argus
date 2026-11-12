@@ -1,7 +1,9 @@
+import { UpdateProjectTriggerDto } from './dto/project-trigger-update.dto';
+import { ProjectTriggerRuntimeService } from './project-trigger-runtime.service';
 import { ProjectTriggerReadService } from './project-trigger-read.service';
 import { CreateProjectTriggerDto } from './dto/project-trigger-create.dto';
 import { ProjectTriggerCreateService } from './project-trigger-create.service';
-import { ProjectTriggerCreatePipe } from './project-trigger-create.pipe';
+import { ProjectTriggerCreatePipe, ProjectWorkflowTriggerInputPipe } from './project-trigger-create.pipe';
 import { ProjectTriggerDto } from './dto/project-trigger-read.dto';
 import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
@@ -100,6 +102,7 @@ export class ProjectsController {
     private readonly assetRead: ProjectAssetReadService,
     private readonly triggerRead: ProjectTriggerReadService,
     private readonly triggerCreate: ProjectTriggerCreateService,
+    private readonly triggerRuntime: ProjectTriggerRuntimeService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly workflowCreate: ProjectWorkflowCreateService,
     private readonly workflowUpdate: ProjectWorkflowUpdateService,
@@ -147,7 +150,7 @@ export class ProjectsController {
   }
 
   @Doc({
-    summary: 'Create a disabled project workflow trigger',
+    summary: 'Create a project workflow trigger (disabled by default)',
     response: { serialization: ProjectTriggerDto, httpStatus: HttpStatus.CREATED },
     request: { getWorkspaceId: true },
   })
@@ -167,6 +170,24 @@ export class ProjectsController {
     return this.triggerCreate.create(id, workspaceId, body as CreateProjectTriggerDto);
   }
 
+  @Doc({ summary: 'Update a project workflow trigger', response: { serialization: ProjectTriggerDto }, request: { getWorkspaceId: true } })
+  @ApiBody({ type: UpdateProjectTriggerDto })
+  @PublishEvent(EVENT_CATALOG.project.updated, { resourceIdFromRoute: true, metadata: () => ({ change: ProjectChange.TRIGGERS }) })
+  @WorkspaceAccess('project.write')
+  @Patch(':id/triggers/:triggerId')
+  updateTrigger(@Param('id', ParseUUIDPipe) id: string, @Param('triggerId', ParseUUIDPipe) triggerId: string,
+    @WorkspaceId() workspaceId: string, @Body(new ProjectTriggerCreatePipe(UpdateProjectTriggerDto)) body: unknown) {
+    return this.triggerCreate.update(id, workspaceId, triggerId, body as UpdateProjectTriggerDto);
+  }
+
+  @Doc({ summary: 'Remove a project workflow trigger', response: { serialization: DefaultMessageResponseDto }, request: { getWorkspaceId: true } })
+  @PublishEvent(EVENT_CATALOG.project.updated, { resourceIdFromRoute: true, metadata: () => ({ change: ProjectChange.TRIGGERS }) })
+  @WorkspaceAccess('project.write')
+  @Delete(':id/triggers/:triggerId')
+  removeTrigger(@Param('id', ParseUUIDPipe) id: string, @Param('triggerId', ParseUUIDPipe) triggerId: string, @WorkspaceId() workspaceId: string) {
+    return this.triggerCreate.remove(id, workspaceId, triggerId);
+  }
+
   @Doc({
     summary: 'Create a project workflow from a template, selected jobs or another project binding',
     response: { serialization: CreatedProjectWorkflowDto, httpStatus: HttpStatus.CREATED },
@@ -180,13 +201,17 @@ export class ProjectsController {
     }),
   })
   @WorkspaceAccess('project.write')
+  @ApiBody({ type: CreateProjectWorkflowDto })
   @Post(':id/workflows')
-  createWorkflow(
+  async createWorkflow(
     @Param() { id }: IdQueryParamDto,
-    @Body() dto: CreateProjectWorkflowDto,
+    @Body(new ProjectWorkflowTriggerInputPipe(CreateProjectWorkflowDto)) body: unknown,
     @WorkspaceId() workspaceId: string,
   ) {
-    return this.workflowCreate.create(id, workspaceId, dto);
+    const dto = body as CreateProjectWorkflowDto;
+    const result = await this.workflowCreate.create(id, workspaceId, dto);
+    if (dto.on !== undefined) await this.triggerRuntime.reconcile();
+    return result;
   }
 
   @Doc({
@@ -202,14 +227,18 @@ export class ProjectsController {
     }),
   })
   @WorkspaceAccess('project.write')
+  @ApiBody({ type: UpdateProjectWorkflowDto })
   @Patch(':id/workflows/:bindingId')
-  updateWorkflow(
+  async updateWorkflow(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('bindingId', ParseUUIDPipe) bindingId: string,
-    @Body() dto: UpdateProjectWorkflowDto,
+    @Body(new ProjectWorkflowTriggerInputPipe(UpdateProjectWorkflowDto)) body: unknown,
     @WorkspaceId() workspaceId: string,
   ) {
-    return this.workflowUpdate.update(id, workspaceId, bindingId, dto);
+    const dto = body as UpdateProjectWorkflowDto;
+    const result = await this.workflowUpdate.update(id, workspaceId, bindingId, dto);
+    if (dto.on !== undefined) await this.triggerRuntime.reconcile();
+    return result;
   }
 
   @Doc({

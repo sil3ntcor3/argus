@@ -1,3 +1,4 @@
+import { useRef, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,7 +26,7 @@ const firedDate = new Intl.DateTimeFormat(undefined, {
 });
 
 /** Keeps unsupported cron expressions visible and describes recognized events. */
-function triggerLabel(trigger: ProjectTriggerDto) {
+export function triggerLabel(trigger: ProjectTriggerDto) {
   if (trigger.type === 'cron') {
     const cron = trigger.cron ?? '';
     return `${(cron.trim().split(/\s+/)[3] === '*' && formatCronLabel(cron, 'UTC')) || cron} UTC`;
@@ -38,11 +39,17 @@ export function ProjectWorkflowTriggers({
   bindingId,
   workflowName,
   query,
+  actions,
 }: {
   bindingId: string;
   workflowName: string;
   query: TriggerQuery;
+  actions?: (
+    trigger: ProjectTriggerDto,
+    focusAfterRemove: () => void,
+  ) => ReactNode;
 }) {
+  const section = useRef<HTMLElement>(null);
   const status = isAxiosError(query.error)
     ? query.error.response?.status
     : undefined;
@@ -51,6 +58,8 @@ export function ProjectWorkflowTriggers({
     query.data?.filter((row) => row.projectWorkflowId === bindingId) ?? [];
   return (
     <section
+      ref={section}
+      tabIndex={-1}
       aria-label={`Triggers for ${workflowName}`}
       className="space-y-2 rounded-lg bg-muted/30 p-3 text-sm"
     >
@@ -123,6 +132,7 @@ export function ProjectWorkflowTriggers({
                   'Never fired'
                 )}
               </p>
+              {actions?.(trigger, () => section.current?.focus())}
             </li>
           ))}
         </ul>

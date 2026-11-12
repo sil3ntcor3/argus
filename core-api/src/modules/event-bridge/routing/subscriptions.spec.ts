@@ -159,7 +159,6 @@ describe('event bus subscriptions', () => {
           'network',
           'notification',
           'permission_group',
-          'project',
           'report',
           'storage',
           'system_config',

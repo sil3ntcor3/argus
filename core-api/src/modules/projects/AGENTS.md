@@ -9,4 +9,8 @@ Projects organize workspace assets with manual selection, inclusion rules, and e
 
 Use scope, workflow, and provenance specs. Validate ownership and lock ordering against local Docker Postgres.
 
-`project_workflow_triggers` is private storage with cascade cleanup through its binding. The read-only trigger endpoint returns recognized configuration without scheduler IDs; there is no dispatcher or automatic backfill yet. Legacy binding `schedule` / `jobId` remain the active scheduling fields.
+`ProjectTriggerRuntimeModule` is shared globally by commands, the projects event sink, and the existing schedule consumer. Keep legacy binding schedules and the queue's compatibility name. Reconciliation may remove only `project-trigger:` schedulers; a stored legacy job ID is not proof the scheduler still exists. Definitions/rows are transactional; scheduler work follows commit.
+
+Event gathering uses recoverable Redis windows and stable queue tokens. Freeze chunk size in the claimed snapshot and derive durable run IDs from token/chunk identity. `WorkflowRunnerService.startRun` serializes that identity before creating a run, so launch retries must reuse it. Check current enabled membership, target/workflow ownership, cancellation and chain depth inside the launch transaction. Private causal fields must not appear in public read models.
+
+The private `PROJECT_RUN_CLOSED` signal is a one-part symbol path because EventEmitter2 runs with wildcard mode. It fires on committed closure even when no job exists; job-backed statistics keep their existing signal. Completion events require authoritative closed/non-cancelled evidence.

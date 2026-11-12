@@ -1,3 +1,4 @@
+import { ProjectWorkflowOnDto } from './project-workflow-on.dto';
 import { CronSchedule } from '@/common/enums/enum';
 import {
   ApiProperty,
@@ -60,6 +61,14 @@ export class CreateProjectWorkflowDto {
   @NotContains('\u0000')
   @MaxLength(120)
   name?: string;
+  @ApiPropertyOptional({
+    type: ProjectWorkflowOnDto,
+    description:
+      'Replace managed project trigger definitions; omit to preserve',
+  })
+  @ValidateIf((_dto, value: unknown) => value !== undefined)
+  @IsObject()
+  on?: ProjectWorkflowOnDto;
 }
 
 export class CreatedProjectWorkflowDto {

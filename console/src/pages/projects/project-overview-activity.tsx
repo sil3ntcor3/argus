@@ -159,9 +159,11 @@ function ActivityRun({
   const trigger =
     event.jobRunType === 'scheduled'
       ? 'Scheduled'
-      : event.jobRunType === 'manual'
-        ? 'Manual'
-        : undefined;
+      : event.jobRunType === 'event'
+        ? 'Event'
+        : event.jobRunType === 'manual'
+          ? 'Manual'
+          : undefined;
   const detail = runDetails(event, trigger);
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">

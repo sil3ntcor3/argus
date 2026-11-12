@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsObject, IsString, IsUUID, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsObject,
+  IsString,
+  IsUUID,
+  ValidateIf,
+} from 'class-validator';
 import {
   PROJECT_TRIGGER_EVENTS,
   ProjectTriggerConfigDto,
@@ -32,4 +39,8 @@ export class CreateProjectTriggerDto {
   @ValidateIf((_dto, value: unknown) => value !== undefined)
   @IsObject()
   config?: ProjectTriggerConfigDto;
+  @ApiPropertyOptional({ default: false })
+  @ValidateIf((_dto, value: unknown) => value !== undefined)
+  @IsBoolean()
+  enabled?: boolean;
 }

@@ -37,6 +37,8 @@ function validateInput(input: WorkflowOnInput): void {
       errors.push(`on.${key}: must be a list`);
       continue;
     }
+    if (entries.length > (key === 'schedule' ? 20 : 3))
+      errors.push(`on.${key}: too many trigger entries`);
     entries.forEach((entry: unknown, index) => {
       const path = `on.${key}[${index}]`;
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
