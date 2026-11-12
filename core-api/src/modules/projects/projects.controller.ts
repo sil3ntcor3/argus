@@ -1,4 +1,7 @@
 import { ProjectTriggerReadService } from './project-trigger-read.service';
+import { CreateProjectTriggerDto } from './dto/project-trigger-create.dto';
+import { ProjectTriggerCreateService } from './project-trigger-create.service';
+import { ProjectTriggerCreatePipe } from './project-trigger-create.pipe';
 import { ProjectTriggerDto } from './dto/project-trigger-read.dto';
 import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
@@ -28,6 +31,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiHeader,
+  ApiBody,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -95,6 +99,7 @@ export class ProjectsController {
     private readonly candidateAssets: AssetGroupAssetService,
     private readonly assetRead: ProjectAssetReadService,
     private readonly triggerRead: ProjectTriggerReadService,
+    private readonly triggerCreate: ProjectTriggerCreateService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly workflowCreate: ProjectWorkflowCreateService,
     private readonly workflowUpdate: ProjectWorkflowUpdateService,
@@ -139,6 +144,27 @@ export class ProjectsController {
   @Get(':id/triggers')
   getTriggers(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string) {
     return this.triggerRead.list(id, workspaceId);
+  }
+
+  @Doc({
+    summary: 'Create a disabled project workflow trigger',
+    response: { serialization: ProjectTriggerDto, httpStatus: HttpStatus.CREATED },
+    request: { getWorkspaceId: true },
+  })
+  @ApiBody({ type: CreateProjectTriggerDto })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: () => ({ change: ProjectChange.TRIGGERS }),
+  })
+  @WorkspaceAccess('project.write')
+  @Post(':id/triggers')
+  createTrigger(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    // Keep the original body for strict validation; the global pipe skips unknown.
+    @Body(new ProjectTriggerCreatePipe()) body: unknown,
+  ) {
+    return this.triggerCreate.create(id, workspaceId, body as CreateProjectTriggerDto);
   }
 
   @Doc({

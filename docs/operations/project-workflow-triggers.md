@@ -54,7 +54,9 @@ permission ownership with its caller, ready for later disabled-trigger persisten
 The private definition writer atomically appends one validated definition and its
 disabled row under those locks. It rejects file/row duplicates, preserves legacy
 binding schedules and authored configuration, and rolls back both writes on failure.
-It has no HTTP entry point, scheduler registration or automatic synchronization.
+
+`POST /api/projects/:id/triggers` (`project.write`) creates one disabled trigger.
+Unknown fields/duplicates return 400; successes emit `project.updated` (`change=triggers`).
 
 Generic workflow saves serialize workspace/workflow access and preserve the stored
 `on` block for project-bound workflows with trigger rows, including omitted fields
