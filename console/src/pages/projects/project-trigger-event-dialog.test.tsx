@@ -35,6 +35,11 @@ const projectId = '6b1639b1-62ea-487f-892b-1288e4cf6767';
 const bindingId = 'e13a3774-14bc-42bb-8d64-46c3680a57aa';
 const post = vi.fn();
 let rows: Record<string, unknown>[];
+let otherWorkflows: {
+  id: string;
+  schedule: string;
+  workflow: { name: string };
+}[];
 /** Render the real page, permission gate and creation hook together. */
 async function open() {
   render(
@@ -64,7 +69,16 @@ async function open() {
 describe('Project event trigger creation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
     rows = [];
+    otherWorkflows = [];
     setGlobalWorkspaceId('fixture');
     server.use(
       http.get('/api/projects/:id', () =>
@@ -86,6 +100,7 @@ describe('Project event trigger creation', () => {
                 },
               },
             },
+            ...otherWorkflows,
           ],
         }),
       ),
@@ -104,18 +119,21 @@ describe('Project event trigger creation', () => {
       }),
     );
   });
-  afterEach(() => setGlobalWorkspaceId(null));
+  afterEach(() => {
+    setGlobalWorkspaceId(null);
+    vi.unstubAllGlobals();
+  });
 
   it.each([
-    ['project.assets.added', 'New assets of any type', 'When assets are added'],
+    ['project.assets.added', 'New assets matching', 'When assets are added'],
     [
       'project.run.completed',
-      'Any other project workflow succeeds',
+      'Assets scanned by matching runs',
       'After a project workflow finishes',
     ],
     [
       'vulnerability.detected',
-      'Critical and high findings',
+      'Assets with matching findings',
       'When a vulnerability is found',
     ],
   ])(
@@ -224,5 +242,135 @@ describe('Project event trigger creation', () => {
     expect(form.submit).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(form.submit);
     expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends selected target types without leaking hidden event settings', async () => {
+    const form = await open();
+    fireEvent.click(form.dialog.getByRole('checkbox', { name: 'Domains' }));
+    fireEvent.click(form.dialog.getByRole('checkbox', { name: 'IPs' }));
+    fireEvent.change(form.event, {
+      target: { value: 'vulnerability.detected' },
+    });
+    fireEvent.click(form.dialog.getByRole('checkbox', { name: 'Medium' }));
+    fireEvent.change(form.event, { target: { value: 'project.assets.added' } });
+    fireEvent.click(form.submit);
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(
+      {
+        projectWorkflowId: bindingId,
+        type: 'event',
+        event: 'project.assets.added',
+        config: {
+          windowMinutes: 10,
+          maxAssets: 200,
+          targetTypes: ['DOMAIN', 'IP'],
+        },
+      },
+      'fixture',
+    );
+  });
+
+  it('offers other project workflows and sends the selected failure outcome', async () => {
+    otherWorkflows = [
+      { id: 'other', schedule: 'disabled', workflow: { name: 'Recon' } },
+    ];
+    const form = await open();
+    fireEvent.change(form.event, {
+      target: { value: 'project.run.completed' },
+    });
+    const followed = within(
+      form.dialog.getByRole('group', { name: 'After workflows' }),
+    );
+    expect(followed.queryByRole('checkbox', { name: 'Discovery' })).toBeNull();
+    fireEvent.click(followed.getByRole('checkbox', { name: 'Recon' }));
+    fireEvent.click(form.dialog.getByRole('checkbox', { name: 'Succeeded' }));
+    expect(form.submit).toBeDisabled();
+    fireEvent.click(form.dialog.getByRole('checkbox', { name: 'Failed' }));
+    fireEvent.click(form.submit);
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(
+      {
+        projectWorkflowId: bindingId,
+        type: 'event',
+        event: 'project.run.completed',
+        config: {
+          windowMinutes: 10,
+          maxAssets: 200,
+          workflows: ['Recon'],
+          status: ['failure'],
+        },
+      },
+      'fixture',
+    );
+  });
+
+  it('requires a finding severity and retains its draft across event changes', async () => {
+    const form = await open();
+    fireEvent.change(form.event, {
+      target: { value: 'vulnerability.detected' },
+    });
+    for (const name of ['Critical', 'High'])
+      fireEvent.click(form.dialog.getByRole('checkbox', { name }));
+    expect(form.submit).toBeDisabled();
+    fireEvent.click(form.dialog.getByRole('checkbox', { name: 'Medium' }));
+    fireEvent.change(form.event, {
+      target: { value: 'project.run.completed' },
+    });
+    fireEvent.change(form.event, {
+      target: { value: 'vulnerability.detected' },
+    });
+    expect(form.dialog.getByRole('checkbox', { name: 'Medium' })).toBeChecked();
+    expect(
+      form.dialog.getByRole('checkbox', { name: 'Critical' }),
+    ).not.toBeChecked();
+    fireEvent.click(form.submit);
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(
+      {
+        projectWorkflowId: bindingId,
+        type: 'event',
+        event: 'vulnerability.detected',
+        config: { windowMinutes: 10, maxAssets: 200, severity: ['medium'] },
+      },
+      'fixture',
+    );
+  });
+
+  it('enforces the API limit of twenty followed workflow names', async () => {
+    otherWorkflows = Array.from({ length: 21 }, (_, index) => ({
+      id: `other-${index}`,
+      schedule: 'disabled',
+      workflow: { name: `Workflow ${index}` },
+    }));
+    const form = await open();
+    fireEvent.change(form.event, {
+      target: { value: 'project.run.completed' },
+    });
+    const choices = within(
+      form.dialog.getByRole('group', { name: 'After workflows' }),
+    ).getAllByRole('checkbox');
+    for (const choice of choices) fireEvent.click(choice);
+    expect(form.submit).toBeDisabled();
+    expect(form.dialog.getByText(/up to 20/)).toBeVisible();
+    fireEvent.submit(form.submit.closest('form')!);
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(choices[20]);
+    expect(form.submit).toBeEnabled();
+  });
+
+  it('retains filters on errors and resets them on a new dialog', async () => {
+    server.use(
+      http.post('/api/projects/:id/triggers', () =>
+        HttpResponse.json({}, { status: 400 }),
+      ),
+    );
+    const form = await open();
+    fireEvent.click(form.dialog.getByRole('checkbox', { name: 'IPs' }));
+    fireEvent.click(form.submit);
+    await form.dialog.findByRole('alert');
+    expect(form.dialog.getByRole('checkbox', { name: 'IPs' })).toBeChecked();
+    fireEvent.click(form.dialog.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(form.trigger);
+    expect(screen.getByRole('checkbox', { name: 'IPs' })).not.toBeChecked();
   });
 });

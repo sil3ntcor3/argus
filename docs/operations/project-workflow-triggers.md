@@ -77,7 +77,12 @@ The console's shared `useProjectTriggerCreate` hook owns these existing submissi
 and cache safeguards. The schedule dialog retains its validation, messages and
 focus behavior; this extraction prepares reuse by later event-trigger forms.
 
-Project writers can add disabled event triggers for new assets, successful runs of
-other workflows, or critical/high findings. The dialog uses the existing default
+Project writers can add disabled event triggers for new assets, completed runs of
+other workflows, or findings. The dialog starts with the existing default
 filters and accepts a 0–1440 minute gather window and 1–5000 assets per batch.
 It shares schedule creation's pending, uncertain-response and workspace guards.
+
+Event creation also supports target-type filters, up to 20 followed project
+workflow names and one or more run outcomes, or one or more finding severities.
+An empty target-type or workflow selection means any; outcomes default to success
+and severities to critical/high. Only the selected event's settings are sent.

@@ -10,23 +10,27 @@ import {
 } from '@/components/ui/dialog';
 import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import type { ProjectTriggerEvent } from '@/services/apis/gen/queries';
+import type {
+  ProjectTriggerConfigDto,
+  ProjectTriggerEvent,
+} from '@/services/apis/gen/queries';
 import { type FormEvent, useId, useState } from 'react';
 import { toast } from 'sonner';
 import { useProjectTriggerCreate } from './use-project-trigger-create';
+import { ProjectTriggerFilters } from './project-trigger-filters';
 
 const events: Record<ProjectTriggerEvent, { label: string; hint: string }> = {
   'project.assets.added': {
     label: 'When assets are added',
-    hint: 'New assets of any type are included.',
+    hint: 'New assets matching the selected target types are included.',
   },
   'project.run.completed': {
     label: 'After a project workflow finishes',
-    hint: 'Any other project workflow succeeds: include the assets it scanned.',
+    hint: 'Assets scanned by matching runs of other project workflows are included.',
   },
   'vulnerability.detected': {
     label: 'When a vulnerability is found',
-    hint: 'Critical and high findings: include their assets. This workflow’s own findings are excluded.',
+    hint: 'Assets with matching findings are included. This workflow’s own findings are excluded.',
   },
 };
 
@@ -36,11 +40,13 @@ export function ProjectTriggerEventDialog({
   bindingId,
   workflowName,
   workspaceId,
+  otherWorkflows = [],
 }: {
   projectId: string;
   bindingId: string;
   workflowName: string;
   workspaceId: string;
+  otherWorkflows?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [event, setEvent] = useState<ProjectTriggerEvent>(
@@ -48,6 +54,7 @@ export function ProjectTriggerEventDialog({
   );
   const [windowMinutes, setWindowMinutes] = useState('10');
   const [maxAssets, setMaxAssets] = useState('200');
+  const [filters, setFilters] = useState<ProjectTriggerConfigDto>({});
   const id = useId();
   const create = useProjectTriggerCreate(
     projectId,
@@ -84,17 +91,30 @@ export function ProjectTriggerEventDialog({
       Number(value) >= min &&
       Number(value) <= max,
   );
+  const validFilters =
+    (event !== 'project.run.completed' ||
+      ((filters.status ?? ['success']).length > 0 &&
+        (filters.workflows?.length ?? 0) <= 20)) &&
+    (event !== 'vulnerability.detected' ||
+      (filters.severity ?? ['critical', 'high']).length > 0);
 
   /** Reject incomplete numbers before the shared hook dispatches one request. */
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!valid) return;
+    if (!valid || !validFilters) return;
     await create.save({
       type: 'event',
       event,
       config: {
         windowMinutes: Number(windowMinutes),
         maxAssets: Number(maxAssets),
+        targetTypes: filters.targetTypes,
+        ...(event === 'project.run.completed'
+          ? { workflows: filters.workflows, status: filters.status }
+          : {}),
+        ...(event === 'vulnerability.detected'
+          ? { severity: filters.severity }
+          : {}),
       },
     });
   }
@@ -107,6 +127,7 @@ export function ProjectTriggerEventDialog({
           setEvent('project.assets.added');
           setWindowMinutes('10');
           setMaxAssets('200');
+          setFilters({});
           create.reset();
         }
         setOpen(next);
@@ -184,6 +205,16 @@ export function ProjectTriggerEventDialog({
             Events within the gather window form a batch; larger batches split
             at the asset limit.
           </p>
+          <ProjectTriggerFilters
+            event={event}
+            value={filters}
+            otherWorkflows={otherWorkflows}
+            disabled={creating}
+            onChange={(patch) => {
+              setFilters((previous) => ({ ...previous, ...patch }));
+              if (!unknownOutcome) create.reset();
+            }}
+          />
           {create.isError && (
             <p role="alert" className="text-sm text-destructive">
               {unknownOutcome
@@ -204,7 +235,7 @@ export function ProjectTriggerEventDialog({
             </Button>
             <Button
               type="submit"
-              disabled={!valid}
+              disabled={!valid || !validFilters}
               aria-disabled={creating || unknownOutcome}
             >
               {creating ? 'Adding…' : 'Add disabled trigger'}
