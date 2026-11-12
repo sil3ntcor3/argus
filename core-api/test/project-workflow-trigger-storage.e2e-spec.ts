@@ -1,7 +1,8 @@
 import { dataSourceOptions } from '@/database/database-config';
 import type { ProjectWorkflowTrigger } from '@/modules/projects/entities/project-workflow-trigger.entity';
+import { ProjectTriggerDefinitionService } from '@/modules/projects/project-trigger-definition.service';
 import { randomUUID } from 'node:crypto';
-import { DataSource } from 'typeorm';
+import { DataSource, type QueryRunner } from 'typeorm';
 
 describe('Private project workflow trigger storage (e2e)', () => {
   const db = new DataSource({ ...dataSourceOptions, cache: false });
@@ -54,6 +55,7 @@ describe('Private project workflow trigger storage (e2e)', () => {
     return { workspaceId, projectId, workflowId, bindingId, content };
   }
 
+  const writer = new ProjectTriggerDefinitionService(db);
   const insert = async (id: string, type = 'event') =>
     (
       await db.query<ProjectWorkflowTrigger[]>(
@@ -61,6 +63,155 @@ describe('Private project workflow trigger storage (e2e)', () => {
         [id, type],
       )
     )[0];
+
+  it('atomically stores disabled definitions without touching legacy binding state or jobs', async () => {
+    const owner = await parent();
+    const before = await db.query(
+      'SELECT * FROM project_workflows WHERE id=$1',
+      [owner.bindingId],
+    );
+    const trigger = await writer.createDisabled(
+      owner.projectId.toUpperCase(),
+      owner.workspaceId,
+      owner.bindingId,
+      { 'project.assets.added': true },
+    );
+    expect(trigger).toMatchObject({
+      enabled: false,
+      schedulerId: null,
+      lastFiredAt: null,
+      config: { maxAssets: 200 },
+    });
+    expect(
+      await db.query('SELECT * FROM project_workflows WHERE id=$1', [
+        owner.bindingId,
+      ]),
+    ).toEqual(before);
+    const [workflow] = await db.query(
+      'SELECT content FROM workflows WHERE id=$1',
+      [owner.workflowId],
+    );
+    expect(workflow.content).toEqual({
+      ...owner.content,
+      on: { ...owner.content.on, 'project.assets.added': trigger.config },
+    });
+    expect(
+      await db.query('SELECT id FROM job_histories WHERE "workflowId"=$1', [
+        owner.workflowId,
+      ]),
+    ).toEqual([]);
+  });
+
+  it('serializes duplicate creates and retains both distinct schedules', async () => {
+    const o = await parent();
+    const add = (cron: string) =>
+      writer.createDisabled(o.projectId, o.workspaceId, o.bindingId, {
+        schedule: cron,
+      });
+    const results = await Promise.allSettled([
+      add('0 8 * * *'),
+      add(' 0  8 * * * '),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({ status: 400 }),
+      }),
+    ]);
+    await add('0 9 * * *');
+    const [row] = await db.query('SELECT content FROM workflows WHERE id=$1', [
+      o.workflowId,
+    ]);
+    expect(row.content.on.schedule).toEqual([
+      { cron: '0 6 * * *' },
+      { cron: '0 8 * * *' },
+      { cron: '0 9 * * *' },
+    ]);
+    expect(
+      await db.query(
+        'SELECT enabled FROM project_workflow_triggers WHERE "projectWorkflowId"=$1',
+        [o.bindingId],
+      ),
+    ).toEqual([{ enabled: false }, { enabled: false }]);
+  });
+
+  it('rolls back the workflow edit when trigger-row persistence fails', async () => {
+    const o = await parent();
+    const createRunner: () => QueryRunner = db.createQueryRunner.bind(db);
+    const runnerSpy = jest
+      .spyOn(db, 'createQueryRunner')
+      .mockImplementation(() => {
+        const runner = createRunner();
+        const query = runner.query.bind(runner);
+        jest
+          .spyOn(runner, 'query')
+          .mockImplementation(
+            (sql: string, parameters?: unknown[], structured?: boolean) => {
+              if (sql.startsWith('INSERT INTO "project_workflow_triggers"'))
+                return Promise.reject(new Error('fixture storage failure'));
+              return query(sql, parameters, structured) as Promise<unknown>;
+            },
+          );
+        return runner;
+      });
+    try {
+      await expect(
+        writer.createDisabled(o.projectId, o.workspaceId, o.bindingId, {
+          'project.assets.added': true,
+        }),
+      ).rejects.toThrow('fixture storage failure');
+    } finally {
+      runnerSpy.mockRestore();
+    }
+    expect(
+      (
+        await db.query('SELECT content FROM workflows WHERE id=$1', [
+          o.workflowId,
+        ])
+      )[0].content,
+    ).toEqual(o.content);
+    expect(
+      await db.query(
+        'SELECT id FROM project_workflow_triggers WHERE "projectWorkflowId"=$1',
+        [o.bindingId],
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects cross-workspace, foreign binding, archived and read-only writes', async () => {
+    const o = await parent(),
+      other = await parent();
+    const add = (workspace = o.workspaceId, binding = o.bindingId) =>
+      writer.createDisabled(o.projectId, workspace, binding, {
+        'project.assets.added': true,
+      });
+    await expect(
+      writer.createDisabled(o.projectId, o.workspaceId, o.bindingId, {
+        'project.run.completed': { workflows: ['Recon\0'] },
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(add(other.workspaceId)).rejects.toMatchObject({ status: 404 });
+    await expect(add(o.workspaceId, other.bindingId)).rejects.toMatchObject({
+      status: 404,
+    });
+    await db.query('UPDATE projects SET "archivedAt"=now() WHERE id=$1', [
+      o.projectId,
+    ]);
+    await expect(add()).rejects.toMatchObject({ status: 400 });
+    await db.query('UPDATE projects SET "archivedAt"=NULL WHERE id=$1', [
+      o.projectId,
+    ]);
+    await db.query('UPDATE workflows SET "isCanEdit"=false WHERE id=$1', [
+      o.workflowId,
+    ]);
+    await expect(add()).rejects.toMatchObject({ status: 400 });
+    expect(
+      await db.query(
+        'SELECT id FROM project_workflow_triggers WHERE "projectWorkflowId"=$1',
+        [o.bindingId],
+      ),
+    ).toEqual([]);
+  });
 
   it('stores independent trigger settings with defaults without changing legacy schedules', async () => {
     const owner = await parent();

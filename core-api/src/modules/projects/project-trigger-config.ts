@@ -92,7 +92,13 @@ export function eventConfigProblems(
       workflows !== undefined &&
       (!Array.isArray(workflows) ||
         workflows.length > 20 ||
-        workflows.some((v) => typeof v !== 'string' || !v.trim()))
+        workflows.some(
+          (v) =>
+            typeof v !== 'string' ||
+            !v.trim() ||
+            v.includes('\0') ||
+            /[\uD800-\uDFFF]/u.test(v),
+        ))
     ) {
       problems.push('workflows must list up to 20 workflow names');
     }
