@@ -14,7 +14,11 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectWorkflowsPage } from './project-workflows-page';
 
-const mock = vi.hoisted(() => ({ project: vi.fn(), permission: vi.fn() }));
+const mock = vi.hoisted(() => ({
+  project: vi.fn(),
+  permission: vi.fn(),
+  triggers: vi.fn(),
+}));
 
 vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
@@ -23,6 +27,7 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetById: mock.project,
+  useProjectsControllerGetTriggers: mock.triggers,
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -49,6 +54,7 @@ const runId = 'e13a3774-14bc-42bb-8d64-46c3680a57aa';
 describe('ProjectWorkflowsPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mock.triggers.mockReturnValue({ data: [] });
     mock.permission.mockReturnValue({
       hasPermission: (key: string) => ['group.read', 'job.read'].includes(key),
     });
