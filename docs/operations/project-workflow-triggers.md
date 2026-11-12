@@ -50,3 +50,8 @@ Callers still validate tenant/project/run identity; no event publication is wire
 Project workflow edits share the existing scoped workspace → project → workflow →
 binding locks and owned/editable checks. The shared helper keeps transaction and
 permission ownership with its caller, ready for later disabled-trigger persistence.
+
+The private definition writer atomically appends one validated definition and its
+disabled row under those locks. It rejects file/row duplicates, preserves legacy
+binding schedules and authored configuration, and rolls back both writes on failure.
+It has no HTTP entry point, scheduler registration or automatic synchronization.
