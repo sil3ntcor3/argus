@@ -65,4 +65,25 @@ describe('resolveClientIp', () => {
       resolveClientIp('172.19.0.5', '203.0.113.7', ['not-an-ip', '10.0.0.0/99']),
     ).toBe('172.19.0.5');
   });
+
+  it('does not trust a CIDR with extra slash segments', () => {
+    expect(
+      resolveClientIp('172.19.0.5', '203.0.113.7', ['172.16.0.0/12/1']),
+    ).toBe('172.19.0.5');
+  });
+
+  it('walks IPv4-mapped peers through valid IPv4 proxy ranges', () => {
+    expect(
+      resolveClientIp('::ffff:172.19.0.5', '203.0.113.7', docker),
+    ).toBe('203.0.113.7');
+  });
+
+  it('keeps valid trust entries when a malformed one is also configured', () => {
+    expect(
+      resolveClientIp('172.19.0.5', '1.1.1.1, 203.0.113.7', [
+        '172.16.0.0/12/1',
+        ...docker,
+      ]),
+    ).toBe('203.0.113.7');
+  });
 });
