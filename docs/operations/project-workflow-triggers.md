@@ -76,3 +76,8 @@ remounts; transport/408/5xx failures require checking the list before retrying.
 The console's shared `useProjectTriggerCreate` hook owns these existing submission
 and cache safeguards. The schedule dialog retains its validation, messages and
 focus behavior; this extraction prepares reuse by later event-trigger forms.
+
+Project writers can add disabled event triggers for new assets, successful runs of
+other workflows, or critical/high findings. The dialog uses the existing default
+filters and accepts a 0–1440 minute gather window and 1–5000 assets per batch.
+It shares schedule creation's pending, uncertain-response and workspace guards.

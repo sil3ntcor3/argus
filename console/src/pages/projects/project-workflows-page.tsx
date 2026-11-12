@@ -28,6 +28,7 @@ import { ProjectWorkflowPipelineDialog } from './project-workflow-pipeline-dialo
 import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
 import { ProjectTriggerCronDialog } from './project-trigger-cron-dialog';
+import { ProjectTriggerEventDialog } from './project-trigger-event-dialog';
 import {
   ProjectWorkflowTriggers,
   type TriggerQuery,
@@ -109,6 +110,15 @@ function WorkflowCard({
           {editWorkspaceId &&
             canRenameWorkflow(binding.workflow, projectId) && (
               <ProjectTriggerCronDialog
+                projectId={projectId}
+                bindingId={binding.id}
+                workflowName={name}
+                workspaceId={editWorkspaceId}
+              />
+            )}
+          {editWorkspaceId &&
+            canRenameWorkflow(binding.workflow, projectId) && (
+              <ProjectTriggerEventDialog
                 projectId={projectId}
                 bindingId={binding.id}
                 workflowName={name}
