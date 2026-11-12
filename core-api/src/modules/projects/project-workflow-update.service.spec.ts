@@ -42,15 +42,33 @@ describe('ProjectWorkflowUpdateService', () => {
         Promise.resolve(value),
       ),
     };
-    const service = new ProjectWorkflowUpdateService(
-      {
-        transaction: (callback: (value: typeof manager) => Promise<unknown>) =>
-          callback(manager),
-      } as unknown as DataSource,
-      {} as ProjectWorkflowJobsService,
-      {} as WorkspaceEncryptionService,
+    const transaction = jest.fn(
+      (callback: (value: typeof manager) => Promise<unknown>) =>
+        callback(manager),
     );
-    return { service, manager, workflow, binding, query };
+    const prepared = {
+      probe: { run: 'httpx', config: { secret: 'ciphertext' } },
+    };
+    const prepare = jest.fn().mockResolvedValue(prepared);
+    const dek = Buffer.alloc(32, 7);
+    const getDEK = jest.fn().mockResolvedValue(dek);
+    const service = new ProjectWorkflowUpdateService(
+      { transaction } as unknown as DataSource,
+      { prepare } as unknown as ProjectWorkflowJobsService,
+      { getDEK } as unknown as WorkspaceEncryptionService,
+    );
+    return {
+      service,
+      manager,
+      workflow,
+      binding,
+      query,
+      transaction,
+      prepare,
+      prepared,
+      getDEK,
+      dek,
+    };
   }
 
   it('preserves authored content, encrypted configuration and schedule while renaming', async () => {
@@ -66,5 +84,103 @@ describe('ProjectWorkflowUpdateService', () => {
     expect(result.schedule).toBe(binding.schedule);
     expect(result.jobId).toBe(binding.jobId);
     expect(workflow.name).toBe('Before');
+  });
+
+  it('rejects an empty edit before acquiring a connection or encryption key', async () => {
+    const { service, transaction, getDEK } = setup();
+    await expect(
+      service.update(projectId, workspaceId, bindingId, {}),
+    ).rejects.toThrow('Provide a name or pipeline');
+    expect(transaction).not.toHaveBeenCalled();
+    expect(getDEK).not.toHaveBeenCalled();
+  });
+
+  it('resolves the key before locking and saves only the prepared graph', async () => {
+    const {
+      service,
+      transaction,
+      getDEK,
+      prepare,
+      prepared,
+      dek,
+      manager,
+      workflow,
+    } = setup();
+    const jobs = { probe: { run: 'httpx' } };
+    const result = await service.update(projectId, workspaceId, bindingId, {
+      jobs,
+    });
+    expect(getDEK).toHaveBeenCalledWith(workspaceId);
+    expect(getDEK.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.mock.invocationCallOrder[0],
+    );
+    expect(prepare).toHaveBeenCalledWith(
+      manager,
+      workspaceId,
+      jobs,
+      workflow.content.jobs,
+      dek,
+    );
+    expect(result.workflow.content).toEqual({
+      ...workflow.content,
+      jobs: prepared,
+    });
+  });
+
+  it('uses the selected canonical project ID for legacy uppercase route IDs', async () => {
+    const { service } = setup();
+    await expect(
+      service.update(projectId.toUpperCase(), workspaceId, bindingId, {
+        name: 'After',
+      }),
+    ).resolves.toMatchObject({ workflow: { name: 'After' } });
+  });
+
+  it.each([false, true])(
+    'refuses a missing or archived project (archived=%s)',
+    async (archived) => {
+      const { service, manager } = setup();
+      manager.query
+        .mockResolvedValueOnce([{ id: workspaceId }])
+        .mockResolvedValueOnce(
+          archived ? [{ id: projectId, archivedAt: new Date() }] : [],
+        );
+      await expect(
+        service.update(projectId, workspaceId, bindingId, { name: 'After' }),
+      ).rejects.toThrow(archived ? 'Project is archived' : 'Project not found');
+      expect(manager.save).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses a workflow missing from the scoped join', async () => {
+    const { service, query, manager } = setup();
+    query.getOne.mockResolvedValueOnce(null);
+    await expect(
+      service.update(projectId, workspaceId, bindingId, { name: 'After' }),
+    ).rejects.toThrow('Project workflow not found');
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
+  it.each(['readonly', 'shared', 'not-owned'])(
+    'refuses %s workflows without changing saved content',
+    async (kind) => {
+      const { service, workflow, manager } = setup();
+      if (kind === 'readonly') workflow.isCanEdit = false;
+      else if (kind === 'shared') workflow.isCanDelete = false;
+      else workflow.filePath = 'global-template.yaml';
+      await expect(
+        service.update(projectId, workspaceId, bindingId, { name: 'After' }),
+      ).rejects.toThrow('Workflow is not editable by this project');
+      expect(manager.save).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses a binding removed after selecting the workflow', async () => {
+    const { service, manager } = setup();
+    manager.findOne.mockResolvedValueOnce(null);
+    await expect(
+      service.update(projectId, workspaceId, bindingId, { name: 'After' }),
+    ).rejects.toThrow('Project workflow not found');
+    expect(manager.save).not.toHaveBeenCalled();
   });
 });
