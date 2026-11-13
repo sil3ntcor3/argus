@@ -80,7 +80,7 @@ const RUN_FINDING_COUNTS = `sightings AS (
     LIMIT 1
   ) link ON link."projectId" = $1
   JOIN LATERAL (
-    SELECT v."assetId" FROM vulnerabilities v WHERE v.id = link."vulnerabilityId" LIMIT 1
+    SELECT v."assetId" FROM vulnerabilities v WHERE v.id = link."vulnerabilityId" AND v."reviewStatus"='approved' LIMIT 1
   ) v ON true
   JOIN LATERAL (
     SELECT a."targetId" FROM assets a WHERE a.id = v."assetId" LIMIT 1

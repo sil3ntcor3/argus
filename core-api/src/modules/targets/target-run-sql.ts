@@ -61,7 +61,7 @@ export const TARGET_RUN_PROGRESS_SQL = `
          CASE WHEN (SELECT "canReadFindings" FROM owned) THEN (
            SELECT COUNT(*)::int
            FROM vulnerabilities v JOIN target_assets a ON a.id = v."assetId"
-           WHERE v."jobHistoryId" = p.id
+           WHERE v."jobHistoryId" = p.id AND v."reviewStatus"='approved'
          ) END AS "newVulnerabilities"
   FROM jobs job JOIN target_assets a ON a.id = job."assetId"
   WHERE job."jobHistoryId" = p.id`;

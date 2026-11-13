@@ -85,6 +85,10 @@ export const EVENT_POLICY: Record<EventName, EventPolicy> = {
   'artifact.unshared': { persist: true, severity: 'important' },
   'storage.quota.updated': { persist: true, severity: 'important' },
   'vulnerability.settings.updated': { persist: true, severity: 'important' },
+  'vulnerability.proposed': { persist: true, severity: 'normal' },
+  'vulnerability.review.approved': { persist: true, severity: 'important' },
+  'vulnerability.review.rejected': { persist: true, severity: 'important' },
+  'vulnerability.review.merged': { persist: true, severity: 'important' },
   'vulnerability.fixed': { persist: true, severity: 'important' },
 
   // ─── Runtime events ──────────────────────────────────────────────────────

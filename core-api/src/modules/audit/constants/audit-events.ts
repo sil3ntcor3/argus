@@ -93,6 +93,10 @@ export const AUDIT_ACTION_CATALOG = [
   { action: 'artifact.shared', label: 'Added file recipients', controller: 'ArtifactsController', method: 'addShares' },
   { action: 'artifact.unshared', label: 'Removed file recipient', controller: 'ArtifactsController', method: 'removeShare' },
   { action: 'storage.quota.updated', label: 'Changed workspace storage quota', controller: 'AdminWorkspacesController', method: 'updateStorageQuota' },
+  { action: 'vulnerability.proposed', label: 'AI finding proposed', controller: 'AgentsController', method: 'streamMessage' },
+  { action: 'vulnerability.review.approved', label: 'Approved finding proposal', controller: 'VulnerabilitiesController', method: 'approve' },
+  { action: 'vulnerability.review.rejected', label: 'Rejected finding proposal', controller: 'VulnerabilitiesController', method: 'reject' },
+  { action: 'vulnerability.review.merged', label: 'Merged finding proposal', controller: 'VulnerabilitiesController', method: 'merge' },
 ] as const satisfies readonly AuditActionEntry[];
 
 /** Union of every catalog action key — the type for the audit DTOs' `@IsIn`. */

@@ -43,13 +43,66 @@ import { VulnerabilitiesService } from './vulnerabilities.service';
 import { VulnerabilityLifecycleService } from './vulnerability-lifecycle.service';
 import { UpdateVulnerabilitySettingsDto, VulnerabilitySettingsDto } from './dto/vulnerability-settings.dto';
 import { VulnerabilityLifecycleDto, VulnerabilityLifecycleDetailDto } from './dto/vulnerability-lifecycle.dto';
+import { VulnerabilityReviewService } from './vulnerability-review.service';
+import { bulkReviewAuditMetadata, mergeReviewAuditMetadata } from './vulnerability-review-audit';
+import { ApproveVulnerabilityDto, RejectVulnerabilityDto, MergeVulnerabilityDto, BulkApproveVulnerabilitiesDto, BulkRejectVulnerabilitiesDto, BulkReviewResultDto, VulnerabilityReviewResultDto, MergeVulnerabilityResponseDto, VulnerabilityDuplicatesResponseDto } from './dto/vulnerability-review.dto';
 
 @Controller('vulnerabilities')
 export class VulnerabilitiesController {
   constructor(
     private readonly vulnerabilitiesService: VulnerabilitiesService,
     private readonly lifecycleService: VulnerabilityLifecycleService,
+    private readonly reviewService: VulnerabilityReviewService,
   ) {}
+
+  @Doc({ summary: 'Approve pending finding proposals', response: { serialization: BulkReviewResultDto }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('vulnerability.write')
+  @PublishEvent(EVENT_CATALOG.vulnerability.review.approved, { metadata: bulkReviewAuditMetadata })
+  @Post('review/approve') @HttpCode(HttpStatus.OK)
+  bulkApprove(@Body() dto: BulkApproveVulnerabilitiesDto, @UserContext() user: User, @WorkspaceId() workspaceId: string) {
+    return this.reviewService.bulk(dto.ids, id => this.reviewService.approve(id, { note: dto.note }, user.id, workspaceId));
+  }
+
+  @Doc({ summary: 'Reject pending finding proposals', response: { serialization: BulkReviewResultDto }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('vulnerability.write')
+  @PublishEvent(EVENT_CATALOG.vulnerability.review.rejected, { metadata: bulkReviewAuditMetadata })
+  @Post('review/reject') @HttpCode(HttpStatus.OK)
+  bulkReject(@Body() dto: BulkRejectVulnerabilitiesDto, @UserContext() user: User, @WorkspaceId() workspaceId: string) {
+    return this.reviewService.bulk(dto.ids, id => this.reviewService.reject(id, dto, user.id, workspaceId));
+  }
+
+  @Doc({ summary: 'Approve a pending finding proposal', response: { serialization: VulnerabilityReviewResultDto }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('vulnerability.write')
+  @PublishEvent(EVENT_CATALOG.vulnerability.review.approved, { resourceIdFromRoute: true })
+  @Post(':id/review/approve') @HttpCode(HttpStatus.OK)
+  approve(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ApproveVulnerabilityDto, @UserContext() user: User, @WorkspaceId() workspaceId: string) {
+    return this.reviewService.approve(id,dto,user.id,workspaceId);
+  }
+
+  @Doc({ summary: 'Reject a pending finding proposal', response: { serialization: VulnerabilityReviewResultDto }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('vulnerability.write')
+  @PublishEvent(EVENT_CATALOG.vulnerability.review.rejected, { resourceIdFromRoute: true })
+  @Post(':id/review/reject') @HttpCode(HttpStatus.OK)
+  reject(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RejectVulnerabilityDto, @UserContext() user: User, @WorkspaceId() workspaceId: string) {
+    return this.reviewService.reject(id,dto,user.id,workspaceId);
+  }
+
+  @Doc({ summary: 'Merge a pending proposal into an approved finding', response: { serialization: MergeVulnerabilityResponseDto }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('vulnerability.write')
+  @PublishEvent(EVENT_CATALOG.vulnerability.review.merged, { resourceIdFromRoute: true,
+    metadata: (body, result) => ({ ...mergeReviewAuditMetadata(body), movedSources: (result as MergeVulnerabilityResponseDto)?.movedSources ?? 0 }) })
+  @Post(':id/review/merge') @HttpCode(HttpStatus.OK)
+  merge(@Param('id', ParseUUIDPipe) id: string, @Body() dto: MergeVulnerabilityDto, @UserContext() user: User, @WorkspaceId() workspaceId: string) {
+    return this.reviewService.merge(id,dto.targetVulnerabilityId,user.id,workspaceId);
+  }
+
+  @Doc({ summary: 'Find approved duplicates of a proposal', response: { serialization: VulnerabilityDuplicatesResponseDto }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('vulnerability.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':id/review/duplicates')
+  duplicates(@Param('id', ParseUUIDPipe) id: string, @WorkspaceId() workspaceId: string) {
+    return this.reviewService.duplicates(id,workspaceId);
+  }
 
   @Doc({
     summary: 'Scan targets',
@@ -84,7 +137,8 @@ export class VulnerabilitiesController {
     @Req() request?: RequestWithMetadata,
   ) {
     return this.vulnerabilitiesService.getVulnerabilities(query, workspaceId,
-      request?.permissions?.some(permission => ['*', 'job.read', 'job.write'].includes(permission)) ?? false);
+      request?.permissions?.some(permission => ['*', 'job.read', 'job.write'].includes(permission)) ?? false,
+      { userId: request?.user?.id, canReadAgents: request?.permissions?.some(permission => ['*','agent.read','agent.write'].includes(permission)) ?? false });
   }
 
   @Doc({
@@ -170,7 +224,8 @@ export class VulnerabilitiesController {
     @Req() request?: RequestWithMetadata,
   ) {
     return this.vulnerabilitiesService.getVulnerability(id, workspaceId,
-      request?.permissions?.some(permission => ['*', 'job.read', 'job.write'].includes(permission)) ?? false);
+      request?.permissions?.some(permission => ['*', 'job.read', 'job.write'].includes(permission)) ?? false,
+      { userId: request?.user?.id, canReadAgents: request?.permissions?.some(permission => ['*','agent.read','agent.write'].includes(permission)) ?? false });
   }
 
   @Doc({

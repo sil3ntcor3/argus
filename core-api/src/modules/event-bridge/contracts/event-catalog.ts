@@ -190,6 +190,12 @@ export const EVENT_CATALOG = {
     deleted: { name: 'network.deleted', summary: 'Internal network deleted' },
   },
   vulnerability: {
+    proposed: { name: 'vulnerability.proposed', summary: 'AI finding proposed for review' },
+    review: {
+      approved: { name: 'vulnerability.review.approved', summary: 'Finding proposal approved' },
+      rejected: { name: 'vulnerability.review.rejected', summary: 'Finding proposal rejected' },
+      merged: { name: 'vulnerability.review.merged', summary: 'Finding proposal merged' },
+    },
     comment: {
       created: { name: 'vulnerability.comment.created', summary: 'Comment added to a vulnerability' },
     },

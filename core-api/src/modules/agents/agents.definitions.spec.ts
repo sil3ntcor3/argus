@@ -51,6 +51,12 @@ describe('parseBuiltinAgentFile', () => {
     expect(new Set(names).size).toBe(files.length);
     expect(names).toEqual(expect.arrayContaining(['pentest', 'worker']));
   });
+  it.each(['pentest','exploit-verifier','retester'])('lets %s record confirmed proof through human review',name=>{
+    const def=parseBuiltinAgentFile(fs.readFileSync(path.join(BUILTIN_DIR,`${name}.md`),'utf-8'));
+    expect(def?.metadata.tools).toContain('propose_vulnerability');
+    expect(def?.systemPrompt).toContain('propose_vulnerability');
+    expect(def?.systemPrompt).toContain('verifiesVulnerabilityId');
+  });
 });
 
 describe('AgentsDefinitionsService', () => {

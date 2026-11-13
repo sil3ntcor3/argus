@@ -1,6 +1,7 @@
 import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
 import { Workflow } from '@/modules/workflows/entities/workflow.entity';
-import { BullMQName } from '@/common/enums/enum';
+import { BullMQName, AuditActorType } from '@/common/enums/enum';
+import type { ConsumedEvent } from '@/modules/event-bridge/contracts/event-envelope';
 import { ProjectTriggerRuntimeService } from '@/modules/projects/project-trigger-runtime.service';
 import { ProjectTriggerBatchService } from '@/modules/projects/project-trigger-batch.service';
 import { ProjectRunEventsListener } from '@/modules/projects/project-run-events.listener';
@@ -584,6 +585,31 @@ describe('Project trigger management and dispatch (Docker)', () => {
       }),
     );
     expect(await token(child.id)).toBeNull();
+  });
+  it('launches once for a durable human approval without inventing scanner jobs or coverage',async()=>{
+    const row=await create({ type:'event',event:'vulnerability.detected',enabled:true,config:{ windowMinutes:10,severity:['high'] } });
+    const id=await insert(`INSERT INTO vulnerabilities (name,fingerprint,"assetId","reviewStatus","discoveredBy",severity,"timesDetected") VALUES ($1,$2,$3,'pending_review','ai','high',0)`,['Approval automation',randomUUID(),domainAssets[0]]);
+    const publish=jest.spyOn(app.app.get(EventBridgeService),'publishSafely').mockResolvedValue(null);
+    await request(app.server).post(`/api/vulnerabilities/${id}/review/approve`).set(owner.headers).send({}).expect(200);
+    const published=publish.mock.calls.find(([definition])=>typeof definition!=='string'&&definition.name==='vulnerability.detected');
+    expect(published).toBeDefined();
+    const approval={ ...(published![1] as Omit<ConsumedEvent,'eventId'>),eventId:randomUUID() };
+    const payload=approval.payload as Record<string,unknown>;
+    await runtime.handleEvent('vulnerability.detected',{ ...approval,metadata:{ approvalEventId:randomUUID() } });
+    await runtime.handleEvent('vulnerability.detected',{ ...approval,actor:{ type:AuditActorType.User,id:other.user.userId } });
+    await runtime.handleEvent('vulnerability.detected',{ ...approval,payload:{ ...payload,assetId:ipAsset } });
+    await q(`UPDATE vulnerabilities SET "reviewStatus"='rejected' WHERE id=$1`,[id]);
+    await runtime.handleEvent('vulnerability.detected',approval);
+    expect(await token(row.id)).toBeNull();
+    await q(`UPDATE vulnerabilities SET "reviewStatus"='approved' WHERE id=$1`,[id]);
+    await runtime.handleEvent('vulnerability.detected',approval);
+    const queued=await token(row.id);expect(queued).toBeTruthy();
+    await runtime.handleEvent('vulnerability.detected',approval);expect(await token(row.id)).toBe(queued);
+    await runtime.fireEvent({ triggerId:row.id,token:queued! });
+    expect((await runs()).filter(run=>run.triggerId===row.id)).toEqual([expect.objectContaining({ causedByRunId:null,chainDepth:0,scope:{ assetIds:[domainAssets[0]] } })]);
+    await runtime.handleEvent('vulnerability.detected',approval);expect(await token(row.id)).toBeNull();
+    const [finding]=await q('SELECT "timesDetected","lastScannerObservedAt","scanScopeKey" FROM vulnerabilities WHERE id=$1',[id]);
+    expect(finding).toEqual({ timesDetected:0,lastScannerObservedAt:null,scanScopeKey:null });
   });
   it('revalidates cancellation after gathering and before launching the child', async () => {
     const row = await create({

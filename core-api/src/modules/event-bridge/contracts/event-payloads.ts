@@ -36,7 +36,7 @@ export interface DetectedVulnerability {
 /** `vulnerability.detected` — every NEW vulnerability one job produced. */
 export interface VulnerabilityDetectedPayload {
   projectId?: string;
-  jobId: string;
+  jobId?: string;
   targetId: string;
   assetId: string;
   assetValue: string;

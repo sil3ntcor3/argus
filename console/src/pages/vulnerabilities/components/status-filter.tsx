@@ -16,6 +16,8 @@ import { VulnerabilitiesControllerGetVulnerabilitiesStatus } from '@/services/ap
 
 /** Status filter options with display labels */
 const STATUS_OPTIONS = [
+  { value: VulnerabilitiesControllerGetVulnerabilitiesStatus.pending_review, label: 'Pending review' },
+  { value: VulnerabilitiesControllerGetVulnerabilitiesStatus.rejected, label: 'Rejected' },
   ...(['new', 'active', 'resurfaced', 'fixed'] as const).map(value => ({
     value: VulnerabilitiesControllerGetVulnerabilitiesStatus[value],
     label: value[0].toUpperCase() + value.slice(1),
@@ -55,7 +57,7 @@ export function StatusFilter({ value, onValueChange }: StatusFilterProps) {
         onValueChange(val as VulnerabilitiesControllerGetVulnerabilitiesStatus)
       }
     >
-      <SelectTrigger aria-label="Finding status" className="border-dashed text-xs py-0">
+      <SelectTrigger aria-label="Finding status" data-finding-review-focus className="border-dashed text-xs py-0">
         <SelectValue placeholder="Status" />
       </SelectTrigger>
       <SelectContent>

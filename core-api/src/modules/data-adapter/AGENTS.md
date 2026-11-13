@@ -32,3 +32,7 @@ payload. Integration connectors can call `upsertAssetsByTargetId` directly.
 Test with `task api:test:one SPEC=src/modules/data-adapter/data-adapter.service.spec.ts`.
 Validate lock order, retries, and timestamp comparisons against local Postgres
 when changing scanner lifecycle behavior.
+
+Review/discovery status, reviewer ID/relation, review date and note are also
+server-owned and stripped from connector results. `select: false` alone cannot
+protect these columns from an ingestion payload.

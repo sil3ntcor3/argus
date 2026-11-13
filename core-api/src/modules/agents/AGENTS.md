@@ -9,3 +9,9 @@ AI Studio owns model connections, conversations, streaming replies, approvals, s
 - Remote execution uses the worker pin and assignment rules. Agent configuration, conversations, messages, memories, and user-defined skills have distinct ownership and retention behavior.
 
 Use the provider, mode gating, cancellation, and stream-buffer specs. Local browser smoke can exercise workspace and worker gating without sending prompts to a real provider.
+
+`propose_vulnerability` is an AGENT-mode, conversation-only write tool behind
+existing plan/todo/approval gates. Pass trusted user/chat/project scope and Stop
+to `VulnerabilityProposalService`; model arguments cannot set ownership or approve
+a finding. Subagents pass their actual name for attribution. Only pentest,
+exploit-verifier and retester built-ins include the release's proposal tool.

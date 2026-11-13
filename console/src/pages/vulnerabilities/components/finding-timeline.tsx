@@ -35,6 +35,7 @@ const statusLabels = new Map([
   ['active', 'Active'],
   ['fixed', 'Fixed'],
   ['resurfaced', 'Resurfaced'],
+  ['pending_review', 'Pending review'], ['approved', 'Approved'], ['rejected', 'Rejected'],
 ]);
 
 const eventLabels = new Map([
@@ -43,6 +44,8 @@ const eventLabels = new Map([
   ['reopened', 'Reopened'],
   ['risk_expired', 'Risk acceptance expired'],
   ['fix_claimed', 'Fix claimed'],
+  ['proposed', 'AI proposal submitted'], ['approved', 'Proposal approved'], ['rejected', 'Proposal rejected'],
+  ['merged', 'Proposal merged'], ['verified_by_ai', 'AI verification evidence added'],
 ]);
 
 const reasonLabels = new Map([

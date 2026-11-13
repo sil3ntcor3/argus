@@ -3,6 +3,8 @@ import { PROJECT_READ_TOOLS, withProjectAccess } from './tools/project-tool-acce
 import { ArtifactBufferService } from '@/modules/artifacts/artifact-buffer.service';
 import { WorkspacesService } from '@/modules/workspaces/workspaces.service';
 import { artifactTools } from './tools/artifact.tools';
+import { VulnerabilityProposalService } from '@/modules/vulnerabilities/vulnerability-proposal.service';
+import { vulnerabilityProposalTool } from './tools/vulnerability-proposal.tool';
 import type { WrapperType } from '@/common/types/app.types';
 import { Inject, Injectable, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -261,6 +263,8 @@ export class AgentTool {
     private readonly projectTriggersService: ProjectTriggersService,
     private readonly projectWorkflowsService: ProjectWorkflowsService,
     private readonly eventBridge: EventBridgeService,
+    @Inject(forwardRef(() => VulnerabilityProposalService))
+    private readonly vulnerabilityProposalService: WrapperType<VulnerabilityProposalService>,
   ) {}
 
   private get deps(): AgentToolDeps {
@@ -350,6 +354,7 @@ export class AgentTool {
     approval?: ApprovalSettings,
     projectId?: string | null,
     userId?: string,
+    agentName = 'mainagent',
   ): Record<string, ToolType> {
     const deps = this.deps;
     const conversation = conversationId ?? '';
@@ -365,6 +370,9 @@ export class AgentTool {
     }
     // AGENT-only tools act on workers and projects
     if (agentMode === AgentMode.AGENT) {
+      if (scope.userId && conversationId) tools.propose_vulnerability = vulnerabilityProposalTool(
+        this.vulnerabilityProposalService, workspaceId, scope.userId, conversationId, agentName,
+      );
       for (const [name, build] of Object.entries(PROJECT_ACTION_TOOLS)) {
         tools[name] = withProjectAccess(name, build(deps, workspaceId, scope), deps, workspaceId, scope);
       }

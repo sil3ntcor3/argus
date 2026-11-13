@@ -3115,9 +3115,179 @@ export type TopTechnologiesResponseDto = {
   technologies: TechnologyCountDto[];
 };
 
+export type VulnerabilityReviewResultDtoReviewStatus =
+  (typeof VulnerabilityReviewResultDtoReviewStatus)[keyof typeof VulnerabilityReviewResultDtoReviewStatus];
+
+export const VulnerabilityReviewResultDtoReviewStatus = {
+  pending_review: 'pending_review',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type VulnerabilityReviewResultDtoDetectionStatus =
+  (typeof VulnerabilityReviewResultDtoDetectionStatus)[keyof typeof VulnerabilityReviewResultDtoDetectionStatus];
+
+export const VulnerabilityReviewResultDtoDetectionStatus = {
+  new: 'new',
+  active: 'active',
+  fixed: 'fixed',
+  resurfaced: 'resurfaced',
+} as const;
+
+export type VulnerabilityReviewResultDtoSeverity =
+  (typeof VulnerabilityReviewResultDtoSeverity)[keyof typeof VulnerabilityReviewResultDtoSeverity];
+
+export const VulnerabilityReviewResultDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type VulnerabilityReviewResultDto = {
+  id: string;
+  reviewStatus: VulnerabilityReviewResultDtoReviewStatus;
+  detectionStatus: VulnerabilityReviewResultDtoDetectionStatus;
+  severity: VulnerabilityReviewResultDtoSeverity;
+};
+
+export type SkippedReviewDto = {
+  id: string;
+  reason: string;
+};
+
+export type BulkReviewResultDto = {
+  reviewed: VulnerabilityReviewResultDto[];
+  skipped: SkippedReviewDto[];
+};
+
+export type BulkApproveVulnerabilitiesDto = {
+  /**
+   * @minItems 1
+   * @maxItems 200
+   */
+  ids: string[];
+  /** @maxLength 5000 */
+  note?: string;
+};
+
+export type BulkRejectVulnerabilitiesDto = {
+  /**
+   * @minLength 1
+   * @maxLength 5000
+   */
+  note: string;
+  /**
+   * @minItems 1
+   * @maxItems 200
+   */
+  ids: string[];
+};
+
+export type ApproveVulnerabilityDtoSeverity =
+  (typeof ApproveVulnerabilityDtoSeverity)[keyof typeof ApproveVulnerabilityDtoSeverity];
+
+export const ApproveVulnerabilityDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type ApproveVulnerabilityDto = {
+  severity?: ApproveVulnerabilityDtoSeverity;
+  /** @maxLength 5000 */
+  note?: string;
+};
+
+export type RejectVulnerabilityDto = {
+  /**
+   * @minLength 1
+   * @maxLength 5000
+   */
+  note: string;
+};
+
+export type MergeVulnerabilityResponseDto = {
+  targetVulnerabilityId: string;
+  movedSources: number;
+};
+
+export type MergeVulnerabilityDto = {
+  targetVulnerabilityId: string;
+};
+
+export type VulnerabilityDuplicateDtoSeverity =
+  (typeof VulnerabilityDuplicateDtoSeverity)[keyof typeof VulnerabilityDuplicateDtoSeverity];
+
+export const VulnerabilityDuplicateDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type VulnerabilityDuplicateDtoDetectionStatus =
+  (typeof VulnerabilityDuplicateDtoDetectionStatus)[keyof typeof VulnerabilityDuplicateDtoDetectionStatus];
+
+export const VulnerabilityDuplicateDtoDetectionStatus = {
+  new: 'new',
+  active: 'active',
+  fixed: 'fixed',
+  resurfaced: 'resurfaced',
+} as const;
+
+export type VulnerabilityDuplicateDtoReasonsItem =
+  (typeof VulnerabilityDuplicateDtoReasonsItem)[keyof typeof VulnerabilityDuplicateDtoReasonsItem];
+
+export const VulnerabilityDuplicateDtoReasonsItem = {
+  cwe: 'cwe',
+  cve: 'cve',
+  affected_url: 'affected_url',
+  name: 'name',
+} as const;
+
+export type VulnerabilityDuplicateDto = {
+  id: string;
+  name: string;
+  severity: VulnerabilityDuplicateDtoSeverity;
+  detectionStatus: VulnerabilityDuplicateDtoDetectionStatus;
+  /** @nullable */
+  affectedUrl: string | null;
+  /** @nullable */
+  cveId: string[] | null;
+  /** @nullable */
+  cweId: string[] | null;
+  reasons: VulnerabilityDuplicateDtoReasonsItem[];
+};
+
+export type VulnerabilityDuplicatesResponseDto = {
+  data: VulnerabilityDuplicateDto[];
+};
+
 export type ScanDto = {
   /** IDs of the targets to scan */
   targetIds: string[];
+};
+
+export type VulnerabilitySourceSummaryDtoKind =
+  (typeof VulnerabilitySourceSummaryDtoKind)[keyof typeof VulnerabilitySourceSummaryDtoKind];
+
+export const VulnerabilitySourceSummaryDtoKind = {
+  tool: 'tool',
+  ai_agent: 'ai_agent',
+  user: 'user',
+} as const;
+
+export type VulnerabilitySourceSummaryDto = {
+  kind: VulnerabilitySourceSummaryDtoKind;
+  /** @nullable */
+  toolName: string | null;
+  /** @nullable */
+  agentName: string | null;
 };
 
 export type VulnerabilityDetectionStatus =
@@ -3182,6 +3352,25 @@ export const VulnerabilityLifecycleDtoAnalyzeStatus = {
   failed: 'failed',
 } as const;
 
+export type VulnerabilityLifecycleDtoReviewStatus =
+  (typeof VulnerabilityLifecycleDtoReviewStatus)[keyof typeof VulnerabilityLifecycleDtoReviewStatus];
+
+export const VulnerabilityLifecycleDtoReviewStatus = {
+  pending_review: 'pending_review',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type VulnerabilityLifecycleDtoDiscoveredBy =
+  (typeof VulnerabilityLifecycleDtoDiscoveredBy)[keyof typeof VulnerabilityLifecycleDtoDiscoveredBy];
+
+export const VulnerabilityLifecycleDtoDiscoveredBy = {
+  tool: 'tool',
+  ai: 'ai',
+  ai_tool: 'ai_tool',
+  manual: 'manual',
+} as const;
+
 export type VulnerabilityLifecycleDto = {
   id: string;
   createdAt: string;
@@ -3239,8 +3428,11 @@ export type VulnerabilityLifecycleDto = {
   fixedVersion?: string | null;
   analyzeStatus: VulnerabilityLifecycleDtoAnalyzeStatus;
   analyzeResult: string;
+  reviewStatus: VulnerabilityLifecycleDtoReviewStatus;
+  discoveredBy: VulnerabilityLifecycleDtoDiscoveredBy;
+  sources: VulnerabilitySourceSummaryDto[];
   detectionStatus: VulnerabilityDetectionStatus;
-  /** @minimum 1 */
+  /** @minimum 0 */
   timesDetected: number;
   /** @minimum 0 */
   resurfacedCount: number;
@@ -3309,6 +3501,7 @@ export type VulnerabilityMttrDto = {
 };
 
 export type GetVulnerabilitiesStatisticsResponseDto = {
+  pendingReview: number;
   data: VulnerabilityStatisticsDto[];
   byDetectionStatus: VulnerabilityDetectionCountsDto;
   newLast7Days: number;
@@ -3411,6 +3604,49 @@ export type ClaimFixDto = {
   note?: string;
 };
 
+export type VulnerabilityToolRefDto = {
+  id: string;
+  name: string;
+};
+
+export type ProposalEvidenceDto = {
+  requests: string[];
+  responses: string[];
+  baseline: string;
+  notes?: string;
+};
+
+export type VulnerabilitySourceDetailDtoKind =
+  (typeof VulnerabilitySourceDetailDtoKind)[keyof typeof VulnerabilitySourceDetailDtoKind];
+
+export const VulnerabilitySourceDetailDtoKind = {
+  tool: 'tool',
+  ai_agent: 'ai_agent',
+  user: 'user',
+} as const;
+
+export type VulnerabilitySourceDetailDto = {
+  kind: VulnerabilitySourceDetailDtoKind;
+  /** @nullable */
+  toolName: string | null;
+  /** @nullable */
+  agentName: string | null;
+  id: string;
+  createdAt: string;
+  /** @nullable */
+  tool: VulnerabilityToolRefDto | null;
+  /** @nullable */
+  jobHistoryId: string | null;
+  /** @nullable */
+  agentConversationId: string | null;
+  /** @nullable */
+  toolCallIds: string[] | null;
+  /** @nullable */
+  evidence: ProposalEvidenceDto | null;
+  /** @nullable */
+  createdByUser: VulnerabilityUserRefDto | null;
+};
+
 export type VulnerabilityLifecycleDetailDtoSeverity =
   (typeof VulnerabilityLifecycleDetailDtoSeverity)[keyof typeof VulnerabilityLifecycleDetailDtoSeverity];
 
@@ -3430,6 +3666,25 @@ export const VulnerabilityLifecycleDetailDtoAnalyzeStatus = {
   running: 'running',
   done: 'done',
   failed: 'failed',
+} as const;
+
+export type VulnerabilityLifecycleDetailDtoReviewStatus =
+  (typeof VulnerabilityLifecycleDetailDtoReviewStatus)[keyof typeof VulnerabilityLifecycleDetailDtoReviewStatus];
+
+export const VulnerabilityLifecycleDetailDtoReviewStatus = {
+  pending_review: 'pending_review',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type VulnerabilityLifecycleDetailDtoDiscoveredBy =
+  (typeof VulnerabilityLifecycleDetailDtoDiscoveredBy)[keyof typeof VulnerabilityLifecycleDetailDtoDiscoveredBy];
+
+export const VulnerabilityLifecycleDetailDtoDiscoveredBy = {
+  tool: 'tool',
+  ai: 'ai',
+  ai_tool: 'ai_tool',
+  manual: 'manual',
 } as const;
 
 export type VulnerabilityLifecycleDetailDto = {
@@ -3489,8 +3744,11 @@ export type VulnerabilityLifecycleDetailDto = {
   fixedVersion?: string | null;
   analyzeStatus: VulnerabilityLifecycleDetailDtoAnalyzeStatus;
   analyzeResult: string;
+  reviewStatus: VulnerabilityLifecycleDetailDtoReviewStatus;
+  discoveredBy: VulnerabilityLifecycleDetailDtoDiscoveredBy;
+  sources: VulnerabilitySourceDetailDto[];
   detectionStatus: VulnerabilityDetectionStatus;
-  /** @minimum 1 */
+  /** @minimum 0 */
   timesDetected: number;
   /** @minimum 0 */
   resurfacedCount: number;
@@ -3507,6 +3765,12 @@ export type VulnerabilityLifecycleDetailDto = {
   /** @nullable */
   vulnerabilityDismissal: VulnerabilityDismissalInfoDto | null;
   /** @nullable */
+  reviewedAt: string | null;
+  /** @nullable */
+  reviewNote: string | null;
+  /** @nullable */
+  reviewedByUser: VulnerabilityUserRefDto | null;
+  /** @nullable */
   fixClaimedByUser: VulnerabilityUserRefDto | null;
 };
 
@@ -3520,6 +3784,11 @@ export const VulnerabilityTimelineEventDtoType = {
   reopened: 'reopened',
   risk_expired: 'risk_expired',
   fix_claimed: 'fix_claimed',
+  proposed: 'proposed',
+  approved: 'approved',
+  rejected: 'rejected',
+  merged: 'merged',
+  verified_by_ai: 'verified_by_ai',
 } as const;
 
 export type VulnerabilityTimelineEventDtoDismissalReason =
@@ -7402,6 +7671,7 @@ export type VulnerabilitiesControllerGetVulnerabilitiesParams = {
   limit?: number;
   sortBy?: string;
   sortOrder?: VulnerabilitiesControllerGetVulnerabilitiesSortOrder;
+  discoveredBy?: VulnerabilitiesControllerGetVulnerabilitiesDiscoveredByItem[];
   overdue?: boolean;
   targetIds?: string[];
   q?: string;
@@ -7443,10 +7713,22 @@ export const VulnerabilitiesControllerGetVulnerabilitiesSortOrder = {
   DESC: 'DESC',
 } as const;
 
+export type VulnerabilitiesControllerGetVulnerabilitiesDiscoveredByItem =
+  (typeof VulnerabilitiesControllerGetVulnerabilitiesDiscoveredByItem)[keyof typeof VulnerabilitiesControllerGetVulnerabilitiesDiscoveredByItem];
+
+export const VulnerabilitiesControllerGetVulnerabilitiesDiscoveredByItem = {
+  tool: 'tool',
+  ai: 'ai',
+  ai_tool: 'ai_tool',
+  manual: 'manual',
+} as const;
+
 export type VulnerabilitiesControllerGetVulnerabilitiesStatus =
   (typeof VulnerabilitiesControllerGetVulnerabilitiesStatus)[keyof typeof VulnerabilitiesControllerGetVulnerabilitiesStatus];
 
 export const VulnerabilitiesControllerGetVulnerabilitiesStatus = {
+  pending_review: 'pending_review',
+  rejected: 'rejected',
   open: 'open',
   dismissed: 'dismissed',
   all: 'all',
@@ -33549,6 +33831,653 @@ export function useStatisticControllerGetTopTechnologies<
 } {
   const queryOptions =
     getStatisticControllerGetTopTechnologiesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Approve pending finding proposals
+ */
+export const vulnerabilitiesControllerBulkApprove = (
+  bulkApproveVulnerabilitiesDto: BulkApproveVulnerabilitiesDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<BulkReviewResultDto>(
+    {
+      url: `/api/vulnerabilities/review/approve`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: bulkApproveVulnerabilitiesDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerBulkApproveMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerBulkApprove>>,
+    TError,
+    { data: BulkApproveVulnerabilitiesDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerBulkApprove>>,
+  TError,
+  { data: BulkApproveVulnerabilitiesDto },
+  TContext
+> => {
+  const mutationKey = ['vulnerabilitiesControllerBulkApprove'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerBulkApprove>>,
+    { data: BulkApproveVulnerabilitiesDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return vulnerabilitiesControllerBulkApprove(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VulnerabilitiesControllerBulkApproveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerBulkApprove>>
+>;
+export type VulnerabilitiesControllerBulkApproveMutationBody =
+  BulkApproveVulnerabilitiesDto;
+export type VulnerabilitiesControllerBulkApproveMutationError = unknown;
+
+/**
+ * @summary Approve pending finding proposals
+ */
+export const useVulnerabilitiesControllerBulkApprove = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof vulnerabilitiesControllerBulkApprove>>,
+      TError,
+      { data: BulkApproveVulnerabilitiesDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerBulkApprove>>,
+  TError,
+  { data: BulkApproveVulnerabilitiesDto },
+  TContext
+> => {
+  return useMutation(
+    getVulnerabilitiesControllerBulkApproveMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Reject pending finding proposals
+ */
+export const vulnerabilitiesControllerBulkReject = (
+  bulkRejectVulnerabilitiesDto: BulkRejectVulnerabilitiesDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<BulkReviewResultDto>(
+    {
+      url: `/api/vulnerabilities/review/reject`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: bulkRejectVulnerabilitiesDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerBulkRejectMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerBulkReject>>,
+    TError,
+    { data: BulkRejectVulnerabilitiesDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerBulkReject>>,
+  TError,
+  { data: BulkRejectVulnerabilitiesDto },
+  TContext
+> => {
+  const mutationKey = ['vulnerabilitiesControllerBulkReject'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerBulkReject>>,
+    { data: BulkRejectVulnerabilitiesDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return vulnerabilitiesControllerBulkReject(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VulnerabilitiesControllerBulkRejectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerBulkReject>>
+>;
+export type VulnerabilitiesControllerBulkRejectMutationBody =
+  BulkRejectVulnerabilitiesDto;
+export type VulnerabilitiesControllerBulkRejectMutationError = unknown;
+
+/**
+ * @summary Reject pending finding proposals
+ */
+export const useVulnerabilitiesControllerBulkReject = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof vulnerabilitiesControllerBulkReject>>,
+      TError,
+      { data: BulkRejectVulnerabilitiesDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerBulkReject>>,
+  TError,
+  { data: BulkRejectVulnerabilitiesDto },
+  TContext
+> => {
+  return useMutation(
+    getVulnerabilitiesControllerBulkRejectMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Approve a pending finding proposal
+ */
+export const vulnerabilitiesControllerApprove = (
+  id: string,
+  approveVulnerabilityDto: ApproveVulnerabilityDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<VulnerabilityReviewResultDto>(
+    {
+      url: `/api/vulnerabilities/${id}/review/approve`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: approveVulnerabilityDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerApproveMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerApprove>>,
+    TError,
+    { id: string; data: ApproveVulnerabilityDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerApprove>>,
+  TError,
+  { id: string; data: ApproveVulnerabilityDto },
+  TContext
+> => {
+  const mutationKey = ['vulnerabilitiesControllerApprove'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerApprove>>,
+    { id: string; data: ApproveVulnerabilityDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return vulnerabilitiesControllerApprove(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VulnerabilitiesControllerApproveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerApprove>>
+>;
+export type VulnerabilitiesControllerApproveMutationBody =
+  ApproveVulnerabilityDto;
+export type VulnerabilitiesControllerApproveMutationError = unknown;
+
+/**
+ * @summary Approve a pending finding proposal
+ */
+export const useVulnerabilitiesControllerApprove = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof vulnerabilitiesControllerApprove>>,
+      TError,
+      { id: string; data: ApproveVulnerabilityDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerApprove>>,
+  TError,
+  { id: string; data: ApproveVulnerabilityDto },
+  TContext
+> => {
+  return useMutation(
+    getVulnerabilitiesControllerApproveMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Reject a pending finding proposal
+ */
+export const vulnerabilitiesControllerReject = (
+  id: string,
+  rejectVulnerabilityDto: RejectVulnerabilityDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<VulnerabilityReviewResultDto>(
+    {
+      url: `/api/vulnerabilities/${id}/review/reject`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: rejectVulnerabilityDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerRejectMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerReject>>,
+    TError,
+    { id: string; data: RejectVulnerabilityDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerReject>>,
+  TError,
+  { id: string; data: RejectVulnerabilityDto },
+  TContext
+> => {
+  const mutationKey = ['vulnerabilitiesControllerReject'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerReject>>,
+    { id: string; data: RejectVulnerabilityDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return vulnerabilitiesControllerReject(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VulnerabilitiesControllerRejectMutationResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerReject>>
+>;
+export type VulnerabilitiesControllerRejectMutationBody =
+  RejectVulnerabilityDto;
+export type VulnerabilitiesControllerRejectMutationError = unknown;
+
+/**
+ * @summary Reject a pending finding proposal
+ */
+export const useVulnerabilitiesControllerReject = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof vulnerabilitiesControllerReject>>,
+      TError,
+      { id: string; data: RejectVulnerabilityDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerReject>>,
+  TError,
+  { id: string; data: RejectVulnerabilityDto },
+  TContext
+> => {
+  return useMutation(
+    getVulnerabilitiesControllerRejectMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Merge a pending proposal into an approved finding
+ */
+export const vulnerabilitiesControllerMerge = (
+  id: string,
+  mergeVulnerabilityDto: MergeVulnerabilityDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<MergeVulnerabilityResponseDto>(
+    {
+      url: `/api/vulnerabilities/${id}/review/merge`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: mergeVulnerabilityDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerMergeMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerMerge>>,
+    TError,
+    { id: string; data: MergeVulnerabilityDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerMerge>>,
+  TError,
+  { id: string; data: MergeVulnerabilityDto },
+  TContext
+> => {
+  const mutationKey = ['vulnerabilitiesControllerMerge'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerMerge>>,
+    { id: string; data: MergeVulnerabilityDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return vulnerabilitiesControllerMerge(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VulnerabilitiesControllerMergeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerMerge>>
+>;
+export type VulnerabilitiesControllerMergeMutationBody = MergeVulnerabilityDto;
+export type VulnerabilitiesControllerMergeMutationError = unknown;
+
+/**
+ * @summary Merge a pending proposal into an approved finding
+ */
+export const useVulnerabilitiesControllerMerge = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof vulnerabilitiesControllerMerge>>,
+      TError,
+      { id: string; data: MergeVulnerabilityDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerMerge>>,
+  TError,
+  { id: string; data: MergeVulnerabilityDto },
+  TContext
+> => {
+  return useMutation(
+    getVulnerabilitiesControllerMergeMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Find approved duplicates of a proposal
+ */
+export const vulnerabilitiesControllerDuplicates = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<VulnerabilityDuplicatesResponseDto>(
+    {
+      url: `/api/vulnerabilities/${id}/review/duplicates`,
+      method: 'GET',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerDuplicatesQueryKey = (id: string) => {
+  return [`/api/vulnerabilities/${id}/review/duplicates`] as const;
+};
+
+export const getVulnerabilitiesControllerDuplicatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getVulnerabilitiesControllerDuplicatesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>
+  > = ({ signal }) =>
+    vulnerabilitiesControllerDuplicates(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type VulnerabilitiesControllerDuplicatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>
+>;
+export type VulnerabilitiesControllerDuplicatesQueryError = unknown;
+
+export function useVulnerabilitiesControllerDuplicates<
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+          TError,
+          Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useVulnerabilitiesControllerDuplicates<
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+          TError,
+          Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useVulnerabilitiesControllerDuplicates<
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Find approved duplicates of a proposal
+ */
+
+export function useVulnerabilitiesControllerDuplicates<
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerDuplicates>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getVulnerabilitiesControllerDuplicatesQueryOptions(
+    id,
+    options,
+  );
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<
     TData,

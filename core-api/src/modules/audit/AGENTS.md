@@ -11,3 +11,8 @@
 - The daily retention job archives rows older than 90 days to per-day JSONL files under `AUDIT_ARCHIVE_DIR` before deleting any rows. The watermark resumes archival. File or watermark failures stop deletion. Keep the archive and its watermark private.
 
 Run `task api:test` for query, CSV, retention, and wiring checks. Verify trigger and permissions changes against a disposable local Postgres instance.
+
+Review metadata projection uses `vulnerability-review-audit.ts`: single/merge
+events identify the proposal, bulk receipts identify actual reviewed/skipped
+IDs, and absent receipts leave outcomes unknown. Never record review notes or
+attached request/response evidence in audit envelopes.

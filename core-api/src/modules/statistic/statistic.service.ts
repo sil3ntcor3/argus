@@ -1,3 +1,4 @@
+import { findingDetectedAt } from '@/modules/vulnerabilities/open-vulnerability';
 import { Injectable } from '@nestjs/common';
 import { DataSource, LessThan, MoreThanOrEqual } from 'typeorm';
 import { TlsStatisticResponseDto } from './dto/tls-statistic.dto';
@@ -563,10 +564,10 @@ export class StatisticService {
       query.andWhere('target.id = :targetId', { targetId });
     }
     if (startDate) {
-      query.andWhere('vuln.createdAt >= :startDate', { startDate });
+      query.andWhere(`${findingDetectedAt('vuln')} >= :startDate`, { startDate });
     }
     if (endDate) {
-      query.andWhere('vuln.createdAt <= :endDate', { endDate });
+      query.andWhere(`${findingDetectedAt('vuln')} <= :endDate`, { endDate });
     }
 
     return query
@@ -1026,13 +1027,13 @@ export class StatisticService {
       .createQueryBuilder('v')
       .leftJoin('v.asset', 'asset')
       .leftJoin('asset.target', 'target')
-      .select("TO_CHAR(v.createdAt, 'YYYY-MM-DD')", 'date')
+      .select(`TO_CHAR(${findingDetectedAt('v')}, 'YYYY-MM-DD')`, 'date')
       .addSelect('COUNT(*)', 'count')
       .where('target.workspaceId = :workspaceId', { workspaceId })
-      .andWhere('v.createdAt >= :startDate', { startDate })
-      .andWhere('v.createdAt <= :endDate', { endDate })
+      .andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate })
+      .andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate })
       .andWhere(openVulnerabilityCondition('v'))
-      .groupBy("TO_CHAR(v.createdAt, 'YYYY-MM-DD')")
+      .groupBy(`TO_CHAR(${findingDetectedAt('v')}, 'YYYY-MM-DD')`)
       .orderBy('date', 'ASC');
 
     applyReportFindingFilter(qb, options);
@@ -1124,12 +1125,12 @@ export class StatisticService {
       .andWhere(openVulnerabilityCondition('v'));
 
     if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', {
+      qb.andWhere(`${findingDetectedAt('v')} >= :startDate`, {
         startDate: options.startDate,
       });
     }
     if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
+      qb.andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate: options.endDate });
     }
     if (options?.targetIds?.length) {
       qb.andWhere('target.id IN (:...targetIds)', {

@@ -65,9 +65,9 @@ export class TargetChangesService {
          FROM target_assets a JOIN asset_services s ON s."assetId" = a.id
          WHERE $3::text IS NULL OR $3 = '${TargetChangeKind.SERVICE}'
          UNION ALL
-         SELECT '${TargetChangeKind.VULNERABILITY}', v."createdAt", v.id, a.id
+         SELECT '${TargetChangeKind.VULNERABILITY}', COALESCE(v."firstDetectedDate",v."createdAt"), v.id, a.id
          FROM target_assets a JOIN vulnerabilities v ON v."assetId" = a.id
-         WHERE $6::boolean AND ($3::text IS NULL OR $3 = '${TargetChangeKind.VULNERABILITY}')
+         WHERE v."reviewStatus"='approved' AND $6::boolean AND ($3::text IS NULL OR $3 = '${TargetChangeKind.VULNERABILITY}')
        ), page AS (
          SELECT * FROM matching ORDER BY at DESC, kind, id LIMIT $4 OFFSET $5
        )

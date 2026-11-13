@@ -1,5 +1,7 @@
 import {
   BullMQName,
+  AuditActorType,
+  AuditOutcome,
   JobRunType,
   Severity,
   type TargetType,
@@ -343,6 +345,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
       projectId: string | undefined,
       assets: string[];
     let causeId: string | undefined;
+    let deliveryId = event.eventId;
     if (name === 'project.assets.added') {
       if (!uuid(payload.projectId) || !Array.isArray(payload.assetIds)) return;
       projectId = payload.projectId;
@@ -368,6 +371,29 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
         workflowName: '',
         outcome: 'success',
       };
+    } else if (payload.jobId === undefined) {
+      // An approval is not a scanner job. Rehydrate the exact durable human
+      // decision, never infer coverage or trust the transport's severity.
+      const approvalEventId = event.metadata?.approvalEventId;
+      if (event.outcome !== AuditOutcome.Success || event.actor?.type !== AuditActorType.User ||
+        event.resourceType !== 'vulnerability' || !uuid(event.resourceId) || !uuid(event.actor.id) ||
+        !uuid(approvalEventId) || !uuid(payload.assetId) || !Array.isArray(payload.vulnerabilities) ||
+        payload.vulnerabilities.length !== 1 ||
+        (payload.vulnerabilities[0] as { id?: unknown } | null)?.id !== event.resourceId) return;
+      const [approved] = await this.db.query<{ assetId: string; severity: Severity }[]>(
+        `SELECT finding."assetId",finding.severity FROM vulnerability_events review
+         JOIN vulnerabilities finding ON finding.id=review."vulnerabilityId"
+         JOIN assets asset ON asset.id=finding."assetId" JOIN targets target ON target.id=asset."targetId"
+         WHERE review.id=$1 AND review.type='approved' AND review."workspaceId"=$2 AND target."workspaceId"=$2
+           AND finding.id=$3 AND finding."reviewStatus"='approved' AND finding."reviewedById"=$4
+           AND review."actorId"=$4 AND finding."reviewedAt" IS NOT NULL
+           AND finding."firstDetectedDate"=finding."reviewedAt" AND review."occurredAt">=finding."reviewedAt"
+           AND finding."assetId"=$5`,
+        [approvalEventId,event.workspaceId,event.resourceId,event.actor.id,payload.assetId]);
+      if (!approved || !Object.values(Severity).includes(approved.severity)) return;
+      assets = [approved.assetId]; fact = { event:'vulnerability.detected',severities:[approved.severity] };
+      // Different transport deliveries of one human decision still gather once.
+      deliveryId = approvalEventId;
     } else {
       if (
         !uuid(payload.jobId) ||
@@ -475,7 +501,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
         eligible,
         cause ? { runId: cause.id, depth } : null,
         config.windowMinutes ?? 10,
-        event.eventId,
+        deliveryId,
       );
     }
   }
