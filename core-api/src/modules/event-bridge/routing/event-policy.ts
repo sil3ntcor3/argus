@@ -143,6 +143,7 @@ export const EVENT_POLICY: Record<EventName, EventPolicy> = {
   'issue.opened': { persist: false, severity: 'normal' },
   'issue.closed': { persist: false, severity: 'normal' },
   'issue.comment.created': { persist: false, severity: 'normal' },
+  'vulnerability.comment.created': { persist: false, severity: 'normal' },
   'issue.comment.updated': { persist: false, severity: 'normal' },
 
   'statistics.aggregated': { persist: false, severity: 'normal' },

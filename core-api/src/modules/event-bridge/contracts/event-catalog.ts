@@ -190,6 +190,9 @@ export const EVENT_CATALOG = {
     deleted: { name: 'network.deleted', summary: 'Internal network deleted' },
   },
   vulnerability: {
+    comment: {
+      created: { name: 'vulnerability.comment.created', summary: 'Comment added to a vulnerability' },
+    },
     settings: {
       updated: { name: 'vulnerability.settings.updated', summary: 'Finding management policy changed' },
     },

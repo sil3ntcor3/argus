@@ -78,7 +78,8 @@ describe('event catalog', () => {
     // The tree is the authored source; EVENT_DEFINITIONS is derived. If the
     // walk ever stops matching the shape, these fail rather than the bridge
     // publishing half a catalog.
-    it('exposes 102 leaves', () => {
+    it('exposes 103 leaves', () => {
+      // The resource discussion port adds vulnerability.comment.created.
       // Two lifecycle events add policy saves and trusted scanner fixes.
       // 99 = the storage quota event, six file events, four project events, and the 88 below.
       // 88 = the 85 left once `worker.alive` was removed (a heartbeat is read
@@ -87,7 +88,7 @@ describe('event catalog', () => {
       // and the two tool install/uninstall audit events.
       // Asserting the count means the removal cannot be half-reverted without
       // failing here.
-      expect(EVENT_DEFINITIONS).toHaveLength(102);
+      expect(EVENT_DEFINITIONS).toHaveLength(103);
     });
 
     it('has no worker.alive leaf, so nothing can publish a heartbeat', () => {
