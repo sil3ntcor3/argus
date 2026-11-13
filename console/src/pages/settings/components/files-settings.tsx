@@ -326,7 +326,7 @@ function FileGrid({
               {dateFormat.format(new Date(file[dateField]))}
             </p>
             <p className="break-all text-xs text-muted-foreground">
-              {file.source === 'agent' ? 'Agent' : 'Upload'}
+              {file.source === 'template' ? 'Template' : file.source === 'agent' ? 'Agent' : 'Upload'}
               {file.createdBy ? ` · ${file.createdBy.name}` : ''}
             </p>
             {renderActions(file)}
@@ -812,7 +812,7 @@ function WorkspaceFiles({
                         <div className="min-w-0">
                           <span className="font-medium">{file.name}</span>
                           <span className="block text-xs text-muted-foreground">
-                            {file.source === 'agent' ? 'Agent' : 'Upload'}
+                            {file.source === 'template' ? 'Template' : file.source === 'agent' ? 'Agent' : 'Upload'}
                             {file.createdBy ? ` · ${file.createdBy.name}` : ''}
                           </span>
                         </div>

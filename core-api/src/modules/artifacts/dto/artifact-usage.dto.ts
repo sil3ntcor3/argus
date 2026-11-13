@@ -2,8 +2,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ArtifactListCreatorDto } from './artifact-list.dto';
 
 export class ArtifactSourceUsageDto {
-  @ApiProperty({ enum: ['upload', 'agent'] })
-  source: 'upload' | 'agent';
+  @ApiProperty({ enum: ['upload', 'agent', 'template'] })
+  source: 'upload' | 'agent' | 'template';
 
   @ApiProperty({ minimum: 0 })
   bytes: number;

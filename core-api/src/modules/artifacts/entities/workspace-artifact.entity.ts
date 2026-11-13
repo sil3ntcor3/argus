@@ -75,7 +75,7 @@ export class WorkspaceArtifact {
   sizeBytes: string;
 
   @Column({ type: 'varchar', default: 'upload' })
-  source: 'upload' | 'agent';
+  source: 'upload' | 'agent' | 'template';
 
   @Column({ type: 'varchar', default: 'pending' })
   status: 'pending' | 'ready' | 'deleted';

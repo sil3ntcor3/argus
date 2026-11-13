@@ -3,6 +3,7 @@ import {
   ARTIFACT_MAX_FILE_BYTES,
   ARTIFACT_UPLOAD_TTL_SECONDS,
   workspaceArtifactKey,
+  workspaceArtifactRevisionKey,
   workspaceArtifactUploadKey,
 } from '@/common/constants/artifact-storage';
 import {
@@ -671,6 +672,34 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /** Publish a fresh server-owned revision without replacing any existing bytes. */
+  public async publishArtifactRevision(input: ArtifactLocation & {
+    revisionId: string; buffer: Buffer; contentType: string; abortSignal?: AbortSignal;
+  }): Promise<string> {
+    validateArtifactUpload({ ...input, sizeBytes: input.buffer.length });
+    if (input.revisionId.length !== 36 || !isUUID(input.revisionId)) {
+      throw new BadRequestException('Invalid artifact revision');
+    }
+    const key = workspaceArtifactRevisionKey(input.workspaceId, input.artifactId, input.revisionId);
+    const deadline = AbortSignal.timeout(15_000);
+    const abortSignal = input.abortSignal ? AbortSignal.any([input.abortSignal, deadline]) : deadline;
+    abortSignal.throwIfAborted();
+    try {
+      await this.rustFsClient.getClient().send(new PutObjectCommand({
+        Bucket: ARTIFACT_BUCKET, Key: key, Body: input.buffer,
+        ContentType: input.contentType, CacheControl: 'private, no-store',
+        Metadata: { 'argus-artifact-id': input.artifactId.toLowerCase() },
+        IfNoneMatch: '*',
+      }), { abortSignal });
+    } catch (error: unknown) {
+      if (error instanceof S3ServiceException && [409, 412].includes(error.$metadata.httpStatusCode ?? 0)) {
+        throw new ConflictException('Artifact revision already exists');
+      }
+      throw error;
+    }
+    return key;
+  }
+
   /** Remove the two canonical keys of an expired upload or deleted file. */
   public async deleteArtifactUploadObjects(location: ArtifactLocation): Promise<void> {
     validateArtifactLocation(location);
@@ -1035,6 +1064,11 @@ export class StorageService implements OnModuleInit {
 
   /** Delete exact keys already authorized by the bounded artifact sweep. */
   public async deleteArtifactSweepObjects(keys: string[]): Promise<number> {
+    return (await this.deleteArtifactSweepFailures(keys)).length;
+  }
+
+  /** Return exact failed keys so retirement records survive partial S3 failures. */
+  public async deleteArtifactSweepFailures(keys: string[]): Promise<string[]> {
     const result = await this.rustFsClient.getClient().send(new DeleteObjectsCommand({
       Bucket: ARTIFACT_BUCKET,
       Delete: {
@@ -1042,7 +1076,8 @@ export class StorageService implements OnModuleInit {
         Quiet: true,
       },
     }), { abortSignal: AbortSignal.timeout(15_000) });
-    return result.Errors?.length ?? 0;
+    if (result.Errors?.some(error => !error.Key || !keys.includes(error.Key))) return keys;
+    return result.Errors?.map(error => error.Key!) ?? [];
   }
 
   /**

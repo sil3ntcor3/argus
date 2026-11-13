@@ -24,6 +24,7 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 - `ArtifactUsageService` reads the meter without creating a row. A missing row has zero usage and the default 1 GiB quota. `ARTIFACT_MAX_FILE_BYTES` is 50 MiB.
 - Usage breakdowns count ready files only. Source and creator groups sort by bytes descending with stable ties. Creator objects contain only ID, name, and image, with removed creators grouped under null. Empty workspaces return empty arrays. Meter totals can also retain charges awaiting physical cleanup.
 - `ArtifactWriteModule` exports the private `ArtifactBufferService`. Its caller authorizes the workspace and actor. Agent buffers use the existing reservation, immutable publication, and quota transitions, with private ownership. Interrupted writes remain pending for expiry recovery. Upload callers retain their default source.
+- Metadata and usage source values also recognize `template`. The private Templates writer uses the same quota ledger and pending-upload lifecycle, then fresh immutable object keys for edits; the existing legacy Templates endpoints are not switched by this storage batch.
 
 ## Sharing and audit
 
@@ -51,6 +52,8 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 - Deletion commits the tombstone first so reads stop immediately. `ArtifactCleanupService` removes both object keys before releasing the charge and removing the row. Failed purges keep their tombstones for retry.
 - `ArtifactExpirySweepService` reclaims pending reservations after their expiry plus a 15-minute grace period. It also retries tombstones. `ArtifactStagingSweepService` uses a Redis cursor to find older orphan staging writes in bounded pages.
 - The staging sweep also reclaims a ready file's staging key once its saved upload deadline passes the sweep cutoff.
+- `TemplateRevisionSweepService` uses a separate Redis cursor and bounded object pages. It skips active publishers and protects the current pointer. Private `argusTemplateRetirements` metadata records each retired suffix; the sweep starts its 15-minute grace only after observing a committed retirement under the workspace lock, using the database clock. Later edits preserve prior retirement times. Successful removals clear their entries without changing the visible file update time; partial S3 failures remain retryable. A time budget resumes a long page from the last visited workspace.
+- Missing artifact rows alone do not authorize revision deletion: late post-purge revisions require a successful `artifact.deleted` audit in the same workspace. The existing workspace sweep handles audited workspace deletion. Without retained proof, preserve objects for operator investigation. Deleted templates retain their charge until their current revision and canonical upload keys are removed.
 - Workspace deletion cascades file and quota rows, then attempts prefix cleanup. The staging sweep can retry a deleted workspace's prefix when the matching successful deletion audit event still exists. Absence from the workspace table alone does not authorize cleanup of final keys.
 
 ## Verification

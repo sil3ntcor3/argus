@@ -14,6 +14,8 @@ interface ReserveArtifactUpload {
   contentType: string;
   sizeBytes: number;
   source?: WorkspaceArtifact['source'];
+  parentFolderId?: string;
+  metadata?: Record<string, unknown>;
   abortSignal?: AbortSignal;
 }
 
@@ -30,7 +32,7 @@ export class ArtifactUploadReservationService {
    * returned until its pending record and quota reservation both commit.
    */
   async reserveUpload({
-    workspaceId, createdByUserId, name, contentType, sizeBytes, source = 'upload', abortSignal,
+    workspaceId, createdByUserId, name, contentType, sizeBytes, source = 'upload', parentFolderId, metadata = {}, abortSignal,
   }: ReserveArtifactUpload) {
     abortSignal?.throwIfAborted();
     if (!name.trim() || name.length > 255 || [...name].some(character => {
@@ -71,6 +73,7 @@ export class ArtifactUploadReservationService {
       const pending = await repo.save(repo.create({
         id,
         workspaceId: workspace.id,
+        parentFolderId,
         createdByUserId,
         name,
         mimeType: contentType,
@@ -78,7 +81,7 @@ export class ArtifactUploadReservationService {
         objectKey: workspaceArtifactKey(workspace.id, id),
         source,
         status: 'pending',
-        metadata: {},
+        metadata,
         expiresAt: upload.expiresAt,
       }));
       // Quota or foreign key locks may have held the transaction past expiry.

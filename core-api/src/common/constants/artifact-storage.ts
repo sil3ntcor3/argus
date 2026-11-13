@@ -14,3 +14,7 @@ export function workspaceArtifactKey(workspaceId: string, artifactId: string): s
 export function workspaceArtifactUploadKey(workspaceId: string, artifactId: string): string {
   return workspaceArtifactNamespace(workspaceId, artifactId) + '/upload';
 }
+
+export function workspaceArtifactRevisionKey(workspaceId: string, artifactId: string, revisionId: string): string {
+  return workspaceArtifactNamespace(workspaceId, artifactId) + '/revisions/' + revisionId.toLowerCase();
+}
