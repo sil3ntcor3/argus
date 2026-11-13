@@ -12,10 +12,11 @@ import { usePermission } from '@/hooks/usePermission';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { formatCronLabel } from '@/lib/cron-schedule';
 import {
-  type AssetGroupWorkflow,
   type Workflow,
   useProjectsControllerGetById,
   useProjectsControllerGetTriggers,
+  useProjectsControllerGetWorkflows,
+  type ProjectWorkflowBindingDto,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
@@ -67,7 +68,7 @@ function WorkflowCard({
   triggers,
   otherWorkflows,
 }: {
-  binding: AssetGroupWorkflow;
+  binding: ProjectWorkflowBindingDto;
   canOpenRuns: boolean;
   projectId: string;
   editWorkspaceId?: string;
@@ -151,6 +152,7 @@ function WorkflowCard({
               workflowName={name}
               workspaceId={runWorkspaceId}
               hasAssets={hasAssets}
+              canOpenRuns={canOpenRuns}
               hasSteps={Boolean(
                 definition?.jobs && Object.keys(definition.jobs).length,
               )}
@@ -187,7 +189,6 @@ function WorkflowCard({
             <ProjectWorkflowDetachDialog
               projectId={projectId}
               bindingId={binding.id}
-              workflowId={binding.workflow.id}
               workflowName={name}
               workspaceId={editWorkspaceId}
               focusAssignments={focusAssignments}
@@ -246,33 +247,35 @@ function WorkflowList({
   const project = useProjectsControllerGetById(projectId, {
     query: { retry: false },
   });
+  const workflows = useProjectsControllerGetWorkflows(projectId, { query: { retry: false } });
   const triggers = useProjectsControllerGetTriggers(projectId, {
     query: {
       retry: false,
       enabled:
-        !project.isError && Boolean(project.data?.assetGroupWorkflows?.length),
+        !project.isError && Boolean(workflows.data?.length),
     },
   });
-  const status = isAxiosError(project.error)
-    ? project.error.response?.status
+  const failure = project.error ?? workflows.error;
+  const status = isAxiosError(failure)
+    ? failure.response?.status
     : undefined;
 
   if (status === 401 || status === 403) return <AccessDenied />;
   if (status === 404) return <p role="status">Project not found</p>;
-  if (project.isError && !project.data)
+  if ((project.isError && !project.data) || workflows.isError)
     return (
       <div className="flex flex-wrap items-center gap-3">
         <p role="status">Unable to load project workflows</p>
         <Button
           variant="outline"
-          disabled={project.isFetching}
-          onClick={() => void project.refetch()}
+          disabled={project.isFetching || workflows.isFetching}
+          onClick={() => { void project.refetch(); void workflows.refetch(); }}
         >
           Retry
         </Button>
       </div>
     );
-  if (!project.data)
+  if (!project.data || !workflows.data)
     return (
       <Skeleton
         role="status"
@@ -280,7 +283,7 @@ function WorkflowList({
         className="h-32 rounded-xl"
       />
     );
-  const bindings = project.data.assetGroupWorkflows ?? [];
+  const bindings = workflows.data;
   const hasAssets = project.data.totalAssets > 0;
 
   return (
@@ -351,7 +354,8 @@ export function ProjectWorkflowsPage({ projectId }: { projectId: string }) {
           projectId={parsedId.data}
           canOpenRuns={permission.hasPermission('job.read')}
           runWorkspaceId={
-            permission.hasPermission('workflow.write')
+            permission.hasPermission('workflow.write') &&
+            (permission.hasPermission('project.write') || permission.hasPermission('group.write'))
               ? state.selectedWorkspaceId
               : undefined
           }

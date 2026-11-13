@@ -1,4 +1,7 @@
 import { UserId } from '@/common/decorators/app.decorator';
+import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
+import { ProjectWorkflowActionsService } from './project-workflow-actions.service';
+import { ProjectWorkflowBindingDto, ProjectWorkflowRemovedDto, ProjectWorkflowRunReceiptDto, RunProjectWorkflowDto } from './dto/project-workflow-actions.dto';
 import { ProjectFilesService } from './project-files.service';
 import { PresignProjectFileDto, PresignProjectFileResponseDto, ProjectFileDto } from './dto/project-files.dto';
 import { UpdateProjectTriggerDto } from './dto/project-trigger-update.dto';
@@ -33,6 +36,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiHeader,
@@ -110,11 +114,35 @@ export class ProjectsController {
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly workflowCreate: ProjectWorkflowCreateService,
     private readonly workflowUpdate: ProjectWorkflowUpdateService,
+    private readonly workflowActions: ProjectWorkflowActionsService,
     private readonly runRead: ProjectRunReadService,
     private readonly findingRead: ProjectFindingReadService,
     private readonly findingTimeline: ProjectFindingTimelineService,
     private readonly overviewRead: ProjectOverviewReadService,
   ) {}
+
+  @Doc({ summary: 'List project workflow bindings', response: { serialization: ProjectWorkflowBindingDto, isArray: true }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.read')
+  @Get(':id/workflows')
+  getWorkflows(@Param('id', ParseUUIDPipe) id: string, @WorkspaceId() workspaceId: string, @Req() request: RequestWithMetadata) {
+    const jobs = request.permissions?.some(key => ['*', 'job.read', 'job.write'].includes(key)) ?? false;
+    return this.workflowActions.list(id, workspaceId, jobs);
+  }
+
+  @Doc({ summary: 'Run a project workflow on all or selected enabled assets', response: { serialization: ProjectWorkflowRunReceiptDto, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.write', 'workflow.write')
+  @Post(':id/workflows/:bindingId/run')
+  runWorkflow(@Param('id', ParseUUIDPipe) id: string, @Param('bindingId', ParseUUIDPipe) bindingId: string, @WorkspaceId() workspaceId: string, @Body() dto: RunProjectWorkflowDto) {
+    return this.workflowActions.run(id, workspaceId, bindingId, dto);
+  }
+
+  @Doc({ summary: 'Remove a project workflow binding and its exclusive owned definition', response: { serialization: ProjectWorkflowRemovedDto }, request: { getWorkspaceId: true } })
+  @PublishEvent(EVENT_CATALOG.project.updated, { resourceIdFromRoute: true, metadata: () => ({ change: ProjectChange.WORKFLOW_REMOVED }) })
+  @WorkspaceAccess('project.write')
+  @Delete(':id/workflows/:bindingId')
+  removeWorkflow(@Param('id', ParseUUIDPipe) id: string, @Param('bindingId', ParseUUIDPipe) bindingId: string, @WorkspaceId() workspaceId: string) {
+    return this.workflowActions.remove(id, workspaceId, bindingId);
+  }
 
   @Doc({
     summary: 'List projects',

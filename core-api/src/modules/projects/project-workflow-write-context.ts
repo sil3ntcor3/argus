@@ -14,6 +14,20 @@ export async function lockEditableProjectWorkflow(
   workspaceId: string,
   bindingId: string,
 ): Promise<{ workflow: Workflow; binding: AssetGroupWorkflow }> {
+  const result = await lockProjectWorkflow(manager, projectId, workspaceId, bindingId);
+  if (!isGroupOwnedWorkflow(result.workflow, projectId.toLowerCase()) || !result.workflow.isCanEdit) {
+    throw new BadRequestException('Workflow is not editable by this project');
+  }
+  return result;
+}
+
+/** Lock a binding without requiring ownership of its reusable definition. */
+export async function lockProjectWorkflow(
+  manager: EntityManager,
+  projectId: string,
+  workspaceId: string,
+  bindingId: string,
+): Promise<{ workflow: Workflow; binding: AssetGroupWorkflow }> {
   // Follow workspace deletion's parent-to-child lock order.
   await manager.query('SELECT id FROM workspaces WHERE id = $1 FOR KEY SHARE', [
     workspaceId,
@@ -46,9 +60,6 @@ export async function lockEditableProjectWorkflow(
     .setLock('pessimistic_write', undefined, ['workflow'])
     .getOne();
   if (!workflow) throw new NotFoundException('Project workflow not found');
-  if (!isGroupOwnedWorkflow(workflow, project.id) || !workflow.isCanEdit) {
-    throw new BadRequestException('Workflow is not editable by this project');
-  }
   // Run creation and workflow deletion lock the workflow before its binding.
   const binding = await manager.findOne(AssetGroupWorkflow, {
     where: {

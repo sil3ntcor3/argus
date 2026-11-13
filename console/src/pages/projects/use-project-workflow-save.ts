@@ -57,7 +57,7 @@ export function useProjectWorkflowSave(projectId: string, workspaceId: string) {
       await client.invalidateQueries({
         predicate: ({ queryKey: [path] }) =>
           typeof path === 'string' &&
-          (path.toLowerCase() === key[0] ||
+          (path.toLowerCase() === key[0] + '/workflows' || path.toLowerCase() === key[0] ||
             path.toLowerCase() === legacyKey[0]),
         refetchType: getGlobalWorkspaceId() === workspaceId ? 'active' : 'none',
       });

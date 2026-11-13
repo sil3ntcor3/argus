@@ -1,3 +1,4 @@
+import { lockProjectWorkflow } from '../projects/project-workflow-write-context';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { BullMQName, CronSchedule, JobRunType, JobStatus } from '@/common/enums/enum';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -352,41 +353,35 @@ export class AssetGroupWorkflowService {
         );
       }
 
-      // Update the relationship with provided data
-      if (updateData.schedule !== undefined) {
-        assetGroupWorkspace.schedule = updateData.schedule;
-
-        if (assetGroupWorkspace.jobId) {
-          await this.scanScheduleQueue.removeJobScheduler(
-            assetGroupWorkspace.jobId,
-          );
+      // Commit the definition under the same locks as canonical removal. Never
+      // save the detached entity after Redis I/O: save() could INSERT it again.
+      const committed = await this.assetGroupWorkflowRepo.manager.transaction(async manager => {
+        const { binding } = await lockProjectWorkflow(manager, assetGroupWorkspace.assetGroup.id, workspaceId, assetGroupWorkflowId);
+        const previousJobId = binding.jobId;
+        if (updateData.schedule !== undefined) {
+          binding.schedule = updateData.schedule;
+          binding.jobId = null;
+          await manager.update(AssetGroupWorkflow, { id: binding.id }, { schedule: binding.schedule, jobId: null });
         }
-
-        if (updateData.schedule !== 'disabled') {
-          const newJob = await this.scanScheduleQueue.add(
-            assetGroupWorkspace.id,
-            { id: assetGroupWorkspace.id } as AssetGroupWorkflow,
-            {
-              repeat: {
-                pattern: assetGroupWorkspace.schedule,
-              },
-            },
+        return { binding, previousJobId };
+      });
+      if (updateData.schedule !== undefined) {
+        if (committed.previousJobId) await this.scanScheduleQueue.removeJobScheduler(committed.previousJobId);
+        if (committed.binding.schedule !== 'disabled') {
+          const job = await this.scanScheduleQueue.add(committed.binding.id, { id: committed.binding.id } as AssetGroupWorkflow, { repeat: { pattern: committed.binding.schedule } });
+          const updated = await this.assetGroupWorkflowRepo.update(
+            { id: committed.binding.id, schedule: committed.binding.schedule },
+            { jobId: job.repeatJobKey ?? null },
           );
-          if (newJob.repeatJobKey) {
-            assetGroupWorkspace.jobId = newJob.repeatJobKey;
+          if (!updated.affected) {
+            if (job.repeatJobKey) await this.scanScheduleQueue.removeJobScheduler(job.repeatJobKey);
+            throw new NotFoundException('Workflow assignment was removed or its schedule changed');
           }
-        } else {
-          // The old scheduler was removed above; drop the stale jobId so
-          // it no longer references a removed repeat job.
-          assetGroupWorkspace.jobId = null;
         }
       }
-
-      // Save the updated relationship
-      const updatedRelationship =
-        await this.assetGroupWorkflowRepo.save(assetGroupWorkspace);
-
-      return updatedRelationship;
+      const current = await this.assetGroupWorkflowRepo.findOne({ where: { id: assetGroupWorkflowId, assetGroup: { workspace: { id: workspaceId } } }, relations: ['assetGroup', 'workflow'] });
+      if (!current) throw new NotFoundException('Workflow assignment was removed');
+      return current;
     } catch (error) {
       this.logger.error(
         `Error updating asset group workflow relationship with ID ${assetGroupWorkflowId}:`,

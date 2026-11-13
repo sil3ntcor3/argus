@@ -19,6 +19,7 @@ import { jobsFromEntries } from '@/pages/asset-group/components/pipeline-mapping
 import {
   getAssetGroupControllerGetByIdQueryKey,
   getProjectsControllerGetByIdQueryKey,
+  getProjectsControllerGetWorkflowsQueryKey,
   getProjectsControllerGetManyQueryKey,
   getProjectsControllerGetOverviewQueryKey,
   projectsControllerCreateWorkflow,
@@ -127,6 +128,7 @@ export function ProjectWorkflowCreateDialog({
     await Promise.all(
       [
         getProjectsControllerGetByIdQueryKey(projectId),
+        getProjectsControllerGetWorkflowsQueryKey(projectId),
         getProjectsControllerGetOverviewQueryKey(projectId),
         getAssetGroupControllerGetByIdQueryKey(projectId),
         getProjectsControllerGetManyQueryKey(),

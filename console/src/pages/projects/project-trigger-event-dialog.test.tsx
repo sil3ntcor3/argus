@@ -81,6 +81,24 @@ describe('Project event trigger creation', () => {
     otherWorkflows = [];
     setGlobalWorkspaceId('fixture');
     server.use(
+      http.get('/api/projects/:id/workflows', () => HttpResponse.json([
+            {
+              id: bindingId,
+              schedule: 'disabled',
+              workflow: {
+                id: bindingId,
+                name: 'Discovery',
+                filePath: `project-${projectId}-scan.yaml`,
+                isCanEdit: true,
+                isCanDelete: true,
+                content: {
+                  name: 'Discovery',
+                  jobs: { probe: { run: 'httpx' } },
+                },
+              },
+            },
+            ...otherWorkflows,
+          ])),
       http.get('/api/projects/:id', () =>
         HttpResponse.json({
           totalAssets: 0,

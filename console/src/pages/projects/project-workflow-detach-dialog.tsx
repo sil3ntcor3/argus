@@ -9,128 +9,66 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
-  assetGroupControllerRemoveManyWorkflows,
-  getAssetGroupControllerGetByIdQueryKey,
+  projectsControllerRemoveWorkflow,
   getProjectsControllerGetByIdQueryKey,
   getProjectsControllerGetManyQueryKey,
-  projectsControllerGetById,
-  type ProjectViewDto,
-  useAssetGroupControllerRemoveManyWorkflows,
+  getAssetGroupControllerGetByIdQueryKey,
 } from '@/services/apis/gen/queries';
-import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
-
-class AssignmentChanged extends Error {}
+import { useProjectWorkflowAction } from './use-project-workflow-action';
 
 export function ProjectWorkflowDetachDialog({
   projectId,
   bindingId,
-  workflowId,
   workflowName,
   workspaceId,
   focusAssignments,
 }: {
   projectId: string;
   bindingId: string;
-  workflowId: string;
   workflowName: string;
   workspaceId: string;
   focusAssignments: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [detaching, setDetaching] = useState(false);
-  const lock = useRef(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const queryClient = useQueryClient();
+  const remove = useProjectWorkflowAction(
+    workspaceId,
+    projectId,
+    bindingId,
+    'remove',
+  );
+  const detaching = remove.busy;
   const detailKey = getProjectsControllerGetByIdQueryKey(projectId);
-  const remove = useAssetGroupControllerRemoveManyWorkflows({
-    mutation: {
-      networkMode: 'always',
-      retry: false,
-      mutationFn: async ({ groupId, data }) => {
-        if (workspaceId !== getGlobalWorkspaceId())
-          throw new Error('The selected workspace changed');
-        const project = await projectsControllerGetById(groupId, {
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (workspaceId !== getGlobalWorkspaceId())
-          throw new Error('The selected workspace changed');
-        const isCurrent = project.assetGroupWorkflows?.some(
-          (binding) =>
-            binding.id === bindingId && binding.workflow?.id === workflowId,
-        );
-        if (!isCurrent) throw new AssignmentChanged();
-        return assetGroupControllerRemoveManyWorkflows(groupId, data);
-      },
-    },
-  });
-  const stale = remove.error instanceof AssignmentChanged;
-
   function changeOpen(next: boolean) {
-    if (lock.current) return;
-    if (next) remove.reset();
-    else if (stale && workspaceId === getGlobalWorkspaceId())
-      void queryClient.invalidateQueries({ queryKey: detailKey });
-    setOpen(next);
+    if (!remove.isLocked()) setOpen(next);
   }
-
   async function detach() {
-    if (stale || lock.current || workspaceId !== getGlobalWorkspaceId()) return;
-    lock.current = true;
-    setDetaching(true);
-    try {
-      const result = await remove
-        .mutateAsync({
-          groupId: projectId,
-          data: { workflowIds: [workflowId] },
-        })
-        .catch(() => undefined);
-      if (!result) return;
-      if (workspaceId === getGlobalWorkspaceId()) {
-        await queryClient.cancelQueries({ queryKey: detailKey, exact: true });
-        if (workspaceId === getGlobalWorkspaceId()) {
-          setOpen(false);
-          queryClient.setQueryData<ProjectViewDto>(
-            detailKey,
-            (project) =>
-              project && {
-                ...project,
-                assetGroupWorkflows: project.assetGroupWorkflows?.filter(
-                  (binding) => binding.id !== bindingId,
-                ),
-              },
-          );
-          toast.success('Workflow detached.');
-        }
-      }
-      const legacy = getAssetGroupControllerGetByIdQueryKey(projectId)[0];
-      const root = detailKey[0];
-      const refetchType =
-        workspaceId === getGlobalWorkspaceId() ? 'active' : 'none';
-      await Promise.all([
-        queryClient.invalidateQueries({
-          predicate: ({ queryKey: [path] }) => {
-            if (typeof path !== 'string') return false;
-            const resource = path.toLowerCase();
-            return (
-              resource === legacy ||
-              resource === root ||
-              resource.startsWith(root + '/')
-            );
-          },
-          refetchType,
-        }),
-        queryClient.invalidateQueries({
-          queryKey: getProjectsControllerGetManyQueryKey(),
-          refetchType,
-        }),
-      ]);
-    } finally {
-      lock.current = false;
-      setDetaching(false);
-    }
+    const result = await remove.execute((signal) =>
+      projectsControllerRemoveWorkflow(projectId, bindingId, {
+        signal,
+        timeout: 30_000,
+        headers: { 'X-Workspace-Id': workspaceId },
+      }),
+    );
+    if (!result || !remove.current()) return;
+    setOpen(false);
+    toast.success('Workflow removed.');
+    const legacy = getAssetGroupControllerGetByIdQueryKey(projectId)[0];
+    const root = detailKey[0];
+    await Promise.all([
+      queryClient.invalidateQueries({
+        predicate: ({ queryKey: [path] }) =>
+          typeof path === 'string' &&
+          (path === legacy || path === root || path.startsWith(root + '/')),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: getProjectsControllerGetManyQueryKey(),
+      }),
+    ]);
   }
 
   return (
@@ -140,9 +78,9 @@ export function ProjectWorkflowDetachDialog({
           ref={trigger}
           variant="outline"
           size="sm"
-          aria-label={`Detach workflow ${workflowName}`}
+          aria-label={`Remove workflow ${workflowName}`}
         >
-          Detach workflow
+          Remove workflow
         </Button>
       </DialogTrigger>
       <DialogContent
@@ -155,18 +93,18 @@ export function ProjectWorkflowDetachDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>Detach project workflow</DialogTitle>
+          <DialogTitle>Remove project workflow</DialogTitle>
           <DialogDescription>
-            Detach {workflowName} from this project? Its project schedule stops.
-            The workflow definition and past runs remain. Filters for this
-            assignment are removed from Runs and Findings.
+            Remove {workflowName} and stop its project triggers and schedule? An
+            exclusively owned workflow and its runs and jobs will be deleted.
+            Shared workflow definitions remain. Findings are retained.
           </DialogDescription>
         </DialogHeader>
-        {remove.isError && (
+        {(remove.error || remove.uncertain) && (
           <p role="alert">
-            {stale
-              ? 'Workflow assignment changed. Close this dialog to refresh.'
-              : 'Unable to detach the workflow. Try again.'}
+            {remove.uncertain
+              ? 'Could not confirm removal. Refresh the workflow list before making another request.'
+              : remove.error}
           </p>
         )}
         <DialogFooter>
@@ -178,14 +116,28 @@ export function ProjectWorkflowDetachDialog({
           >
             Cancel
           </Button>
+          {remove.uncertain && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                void queryClient.invalidateQueries({ queryKey: detailKey });
+                void queryClient.invalidateQueries({
+                  queryKey: [detailKey[0] + '/workflows'],
+                });
+                remove.acknowledge();
+              }}
+            >
+              I checked the list; allow a new request
+            </Button>
+          )}
           <Button
             variant="destructive"
-            disabled={stale}
+            disabled={remove.uncertain}
             aria-disabled={detaching}
             className="aria-disabled:opacity-50"
             onClick={() => void detach()}
           >
-            {detaching ? 'Detaching…' : 'Detach workflow'}
+            {detaching ? 'Removing…' : 'Remove workflow'}
           </Button>
         </DialogFooter>
       </DialogContent>

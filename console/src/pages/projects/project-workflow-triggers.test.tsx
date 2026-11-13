@@ -16,6 +16,7 @@ vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetById: mock.project,
+  useProjectsControllerGetWorkflows: () => ({ ...mock.project(), data: mock.project().data?.assetGroupWorkflows }),
   useProjectsControllerGetTriggers: mock.triggers,
 }));
 vi.mock('@tanstack/react-router', () => ({

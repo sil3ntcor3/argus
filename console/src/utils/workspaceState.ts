@@ -35,6 +35,8 @@ const UNSCOPED_QUERY_ROOTS = new Set([
   'workspaces',
   // Drafts include their workspace explicitly, including late save callbacks.
   'template-tabs',
+  // Action outcomes carry their originating workspace, even in late callbacks.
+  'project-workflow-outcome',
 ]);
 
 /** `queryKeyHashFn` that puts the selected workspace into every scoped key. */

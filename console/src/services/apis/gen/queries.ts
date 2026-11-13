@@ -5557,6 +5557,49 @@ export type NotificationListResponseDto = {
   nextCursor?: string | null;
 };
 
+export type ProjectWorkflowViewDto = {
+  id: string;
+  name: string;
+  filePath: string;
+  createdAt: string;
+  updatedAt: string;
+  isCanEdit: boolean;
+  isCanDelete: boolean;
+  content: WorkflowContent;
+};
+
+export type ProjectTriggerType =
+  (typeof ProjectTriggerType)[keyof typeof ProjectTriggerType];
+
+export const ProjectTriggerType = {
+  cron: 'cron',
+  event: 'event',
+} as const;
+
+export type ProjectTriggerEvent =
+  (typeof ProjectTriggerEvent)[keyof typeof ProjectTriggerEvent];
+
+export const ProjectTriggerEvent = {
+  projectassetsadded: 'project.assets.added',
+  projectruncompleted: 'project.run.completed',
+  vulnerabilitydetected: 'vulnerability.detected',
+} as const;
+
+export type ProjectTriggerDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  projectWorkflowId: string;
+  type: ProjectTriggerType;
+  /** @nullable */
+  cron: string | null;
+  event: ProjectTriggerEvent | null;
+  config: ProjectTriggerConfigDto;
+  enabled: boolean;
+  /** @nullable */
+  lastFiredAt: string | null;
+};
+
 export type AssetGroupLastRunDtoStatus =
   (typeof AssetGroupLastRunDtoStatus)[keyof typeof AssetGroupLastRunDtoStatus];
 
@@ -5587,6 +5630,37 @@ export type AssetGroupLastRunDto = {
   workflowName: string;
   jobHistoryName: string;
   jobRunType: AssetGroupLastRunDtoJobRunType;
+};
+
+export type ProjectWorkflowBindingDto = {
+  id: string;
+  projectId: string;
+  workflowId: string;
+  createdAt: string;
+  updatedAt: string;
+  schedule: string;
+  workflow: ProjectWorkflowViewDto;
+  triggers: ProjectTriggerDto[];
+  /** @nullable */
+  lastRun: AssetGroupLastRunDto | null;
+};
+
+export type ProjectWorkflowRunReceiptDto = {
+  jobHistoryId: string;
+  assets: number;
+};
+
+export type RunProjectWorkflowDto = {
+  /**
+   * @minItems 1
+   * @maxItems 5000
+   */
+  assetIds?: string[];
+};
+
+export type ProjectWorkflowRemovedDto = {
+  message: string;
+  name: string;
 };
 
 export type AssetGroupWorkflowAssetGroup = { [key: string]: unknown };
@@ -5645,38 +5719,6 @@ export type WorkflowTemplateDto = {
   filePath: string;
   name: string;
   jobs: WorkflowTemplateJobDto[];
-};
-
-export type ProjectTriggerType =
-  (typeof ProjectTriggerType)[keyof typeof ProjectTriggerType];
-
-export const ProjectTriggerType = {
-  cron: 'cron',
-  event: 'event',
-} as const;
-
-export type ProjectTriggerEvent =
-  (typeof ProjectTriggerEvent)[keyof typeof ProjectTriggerEvent];
-
-export const ProjectTriggerEvent = {
-  projectassetsadded: 'project.assets.added',
-  projectruncompleted: 'project.run.completed',
-  vulnerabilitydetected: 'vulnerability.detected',
-} as const;
-
-export type ProjectTriggerDto = {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-  projectWorkflowId: string;
-  type: ProjectTriggerType;
-  /** @nullable */
-  cron: string | null;
-  event: ProjectTriggerEvent | null;
-  config: ProjectTriggerConfigDto;
-  enabled: boolean;
-  /** @nullable */
-  lastFiredAt: string | null;
 };
 
 export type CreateProjectTriggerDto = {
@@ -44209,6 +44251,559 @@ export const useNotificationsControllerDeleteNotification = <
 };
 
 /**
+ * @summary List project workflow bindings
+ */
+export const projectsControllerGetWorkflows = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectWorkflowBindingDto[]>(
+    { url: `/api/projects/${id}/workflows`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerGetWorkflowsQueryKey = (id: string) => {
+  return [`/api/projects/${id}/workflows`] as const;
+};
+
+export const getProjectsControllerGetWorkflowsQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getProjectsControllerGetWorkflowsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetWorkflows>>
+  > = ({ signal }) =>
+    projectsControllerGetWorkflows(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetWorkflowsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetWorkflows>>
+>;
+export type ProjectsControllerGetWorkflowsQueryError = unknown;
+
+export function useProjectsControllerGetWorkflows<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetWorkflows>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetWorkflows<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetWorkflows>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetWorkflows<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List project workflow bindings
+ */
+
+export function useProjectsControllerGetWorkflows<
+  TData = Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetWorkflows>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetWorkflowsQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create a project workflow from a template, selected jobs or another project binding
+ */
+export const projectsControllerCreateWorkflow = (
+  id: string,
+  createProjectWorkflowDto: CreateProjectWorkflowDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<CreatedProjectWorkflowDto>(
+    {
+      url: `/api/projects/${id}/workflows`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createProjectWorkflowDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerCreateWorkflowMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+    TError,
+    { id: string; data: CreateProjectWorkflowDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+  TError,
+  { id: string; data: CreateProjectWorkflowDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerCreateWorkflow'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+    { id: string; data: CreateProjectWorkflowDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return projectsControllerCreateWorkflow(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerCreateWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>
+>;
+export type ProjectsControllerCreateWorkflowMutationBody =
+  CreateProjectWorkflowDto;
+export type ProjectsControllerCreateWorkflowMutationError = unknown;
+
+/**
+ * @summary Create a project workflow from a template, selected jobs or another project binding
+ */
+export const useProjectsControllerCreateWorkflow = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+      TError,
+      { id: string; data: CreateProjectWorkflowDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
+  TError,
+  { id: string; data: CreateProjectWorkflowDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerCreateWorkflowMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Run a project workflow on all or selected enabled assets
+ */
+export const projectsControllerRunWorkflow = (
+  id: string,
+  bindingId: string,
+  runProjectWorkflowDto: RunProjectWorkflowDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectWorkflowRunReceiptDto>(
+    {
+      url: `/api/projects/${id}/workflows/${bindingId}/run`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: runProjectWorkflowDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerRunWorkflowMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerRunWorkflow>>,
+    TError,
+    { id: string; bindingId: string; data: RunProjectWorkflowDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerRunWorkflow>>,
+  TError,
+  { id: string; bindingId: string; data: RunProjectWorkflowDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerRunWorkflow'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerRunWorkflow>>,
+    { id: string; bindingId: string; data: RunProjectWorkflowDto }
+  > = (props) => {
+    const { id, bindingId, data } = props ?? {};
+
+    return projectsControllerRunWorkflow(id, bindingId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerRunWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerRunWorkflow>>
+>;
+export type ProjectsControllerRunWorkflowMutationBody = RunProjectWorkflowDto;
+export type ProjectsControllerRunWorkflowMutationError = unknown;
+
+/**
+ * @summary Run a project workflow on all or selected enabled assets
+ */
+export const useProjectsControllerRunWorkflow = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerRunWorkflow>>,
+      TError,
+      { id: string; bindingId: string; data: RunProjectWorkflowDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerRunWorkflow>>,
+  TError,
+  { id: string; bindingId: string; data: RunProjectWorkflowDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerRunWorkflowMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Remove a project workflow binding and its exclusive owned definition
+ */
+export const projectsControllerRemoveWorkflow = (
+  id: string,
+  bindingId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectWorkflowRemovedDto>(
+    {
+      url: `/api/projects/${id}/workflows/${bindingId}`,
+      method: 'DELETE',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerRemoveWorkflowMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerRemoveWorkflow>>,
+    TError,
+    { id: string; bindingId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerRemoveWorkflow>>,
+  TError,
+  { id: string; bindingId: string },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerRemoveWorkflow'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerRemoveWorkflow>>,
+    { id: string; bindingId: string }
+  > = (props) => {
+    const { id, bindingId } = props ?? {};
+
+    return projectsControllerRemoveWorkflow(id, bindingId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerRemoveWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerRemoveWorkflow>>
+>;
+
+export type ProjectsControllerRemoveWorkflowMutationError = unknown;
+
+/**
+ * @summary Remove a project workflow binding and its exclusive owned definition
+ */
+export const useProjectsControllerRemoveWorkflow = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerRemoveWorkflow>>,
+      TError,
+      { id: string; bindingId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerRemoveWorkflow>>,
+  TError,
+  { id: string; bindingId: string },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerRemoveWorkflowMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Update a project workflow name, job graph, or both
+ */
+export const projectsControllerUpdateWorkflow = (
+  id: string,
+  bindingId: string,
+  updateProjectWorkflowDto: UpdateProjectWorkflowDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<AssetGroupWorkflow>(
+    {
+      url: `/api/projects/${id}/workflows/${bindingId}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateProjectWorkflowDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerUpdateWorkflowMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+    TError,
+    { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+  TError,
+  { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerUpdateWorkflow'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+    { id: string; bindingId: string; data: UpdateProjectWorkflowDto }
+  > = (props) => {
+    const { id, bindingId, data } = props ?? {};
+
+    return projectsControllerUpdateWorkflow(
+      id,
+      bindingId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerUpdateWorkflowMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>
+>;
+export type ProjectsControllerUpdateWorkflowMutationBody =
+  UpdateProjectWorkflowDto;
+export type ProjectsControllerUpdateWorkflowMutationError = unknown;
+
+/**
+ * @summary Update a project workflow name, job graph, or both
+ */
+export const useProjectsControllerUpdateWorkflow = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+      TError,
+      { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
+  TError,
+  { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerUpdateWorkflowMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * @summary List projects
  */
 export const projectsControllerGetMany = (
@@ -45263,202 +45858,6 @@ export const useProjectsControllerRemoveTrigger = <
 > => {
   return useMutation(
     getProjectsControllerRemoveTriggerMutationOptions(options),
-    queryClient,
-  );
-};
-
-/**
- * @summary Create a project workflow from a template, selected jobs or another project binding
- */
-export const projectsControllerCreateWorkflow = (
-  id: string,
-  createProjectWorkflowDto: CreateProjectWorkflowDto,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<CreatedProjectWorkflowDto>(
-    {
-      url: `/api/projects/${id}/workflows`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      data: createProjectWorkflowDto,
-      signal,
-    },
-    options,
-  );
-};
-
-export const getProjectsControllerCreateWorkflowMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
-    TError,
-    { id: string; data: CreateProjectWorkflowDto },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
-  TError,
-  { id: string; data: CreateProjectWorkflowDto },
-  TContext
-> => {
-  const mutationKey = ['projectsControllerCreateWorkflow'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
-    { id: string; data: CreateProjectWorkflowDto }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return projectsControllerCreateWorkflow(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type ProjectsControllerCreateWorkflowMutationResult = NonNullable<
-  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>
->;
-export type ProjectsControllerCreateWorkflowMutationBody =
-  CreateProjectWorkflowDto;
-export type ProjectsControllerCreateWorkflowMutationError = unknown;
-
-/**
- * @summary Create a project workflow from a template, selected jobs or another project binding
- */
-export const useProjectsControllerCreateWorkflow = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
-      TError,
-      { id: string; data: CreateProjectWorkflowDto },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof projectsControllerCreateWorkflow>>,
-  TError,
-  { id: string; data: CreateProjectWorkflowDto },
-  TContext
-> => {
-  return useMutation(
-    getProjectsControllerCreateWorkflowMutationOptions(options),
-    queryClient,
-  );
-};
-
-/**
- * @summary Update a project workflow name, job graph, or both
- */
-export const projectsControllerUpdateWorkflow = (
-  id: string,
-  bindingId: string,
-  updateProjectWorkflowDto: UpdateProjectWorkflowDto,
-  options?: SecondParameter<typeof orvalClient>,
-  signal?: AbortSignal,
-) => {
-  return orvalClient<AssetGroupWorkflow>(
-    {
-      url: `/api/projects/${id}/workflows/${bindingId}`,
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      data: updateProjectWorkflowDto,
-      signal,
-    },
-    options,
-  );
-};
-
-export const getProjectsControllerUpdateWorkflowMutationOptions = <
-  TError = unknown,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
-    TError,
-    { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
-    TContext
-  >;
-  request?: SecondParameter<typeof orvalClient>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
-  TError,
-  { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
-  TContext
-> => {
-  const mutationKey = ['projectsControllerUpdateWorkflow'];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      'mutationKey' in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
-    { id: string; bindingId: string; data: UpdateProjectWorkflowDto }
-  > = (props) => {
-    const { id, bindingId, data } = props ?? {};
-
-    return projectsControllerUpdateWorkflow(
-      id,
-      bindingId,
-      data,
-      requestOptions,
-    );
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type ProjectsControllerUpdateWorkflowMutationResult = NonNullable<
-  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>
->;
-export type ProjectsControllerUpdateWorkflowMutationBody =
-  UpdateProjectWorkflowDto;
-export type ProjectsControllerUpdateWorkflowMutationError = unknown;
-
-/**
- * @summary Update a project workflow name, job graph, or both
- */
-export const useProjectsControllerUpdateWorkflow = <
-  TError = unknown,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
-      TError,
-      { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
-      TContext
-    >;
-    request?: SecondParameter<typeof orvalClient>;
-  },
-  queryClient?: QueryClient,
-): UseMutationResult<
-  Awaited<ReturnType<typeof projectsControllerUpdateWorkflow>>,
-  TError,
-  { id: string; bindingId: string; data: UpdateProjectWorkflowDto },
-  TContext
-> => {
-  return useMutation(
-    getProjectsControllerUpdateWorkflowMutationOptions(options),
     queryClient,
   );
 };
