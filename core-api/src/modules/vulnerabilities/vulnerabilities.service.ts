@@ -1,3 +1,4 @@
+import type { ReviewReader } from './vulnerability-review-read';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import {
@@ -167,6 +168,7 @@ export class VulnerabilitiesService {
     query: GetVulnerabilitiesQueryDto,
     workspaceId: string,
     canReadJobs = false,
+    reader: ReviewReader = {},
   ) {
     const {
       limit,
@@ -228,6 +230,10 @@ export class VulnerabilitiesService {
       });
     }
 
+    const reviewStatus = [VulnerabilityStatus.PENDING_REVIEW, VulnerabilityStatus.REJECTED].includes(status as VulnerabilityStatus) ? status : 'approved';
+    queryBuilder.andWhere('vulnerabilities.reviewStatus = :reviewStatus', { reviewStatus });
+    if (query.discoveredBy?.length) queryBuilder.andWhere('vulnerabilities.discoveredBy IN (:...discoveredBy)', { discoveredBy: query.discoveredBy });
+
     // Filter by status
     if (status === VulnerabilityStatus.OPEN) {
       queryBuilder.andWhere(openVulnerabilityCondition('vulnerabilities'));
@@ -281,7 +287,7 @@ export class VulnerabilitiesService {
 
     const [vulnerabilities, total] = await queryBuilder.getManyAndCount();
 
-    const data = await projectFindingLifecycle(this.vulnerabilitiesRepository.manager, vulnerabilities, workspaceId, canReadJobs);
+    const data = await projectFindingLifecycle(this.vulnerabilitiesRepository.manager, vulnerabilities, workspaceId, canReadJobs, false, reader);
     return getManyResponse({ query, data, total });
   }
 
@@ -292,7 +298,7 @@ export class VulnerabilitiesService {
    * @param workspaceId - The ID of the workspace to which the vulnerability belongs.
    * @returns A promise that resolves to the vulnerability entity.
    */
-  async getVulnerability(id: string, workspaceId: string, canReadJobs = false) {
+  async getVulnerability(id: string, workspaceId: string, canReadJobs = false, reader: ReviewReader = {}) {
     const queryBuilder = this.vulnerabilitiesRepository
       .createQueryBuilder('vulnerabilities')
       .addSelect(LIFECYCLE_READ_COLUMNS.map(column => `vulnerabilities.${column}`))
@@ -326,7 +332,7 @@ export class VulnerabilitiesService {
     if (dismissal && (dismissal.reason !== RISK_ACCEPTED || !dismissal.expiresAt)) {
       delete dismissal.expiresAt;
     }
-    return (await projectFindingLifecycle(this.vulnerabilitiesRepository.manager, [vulnerability], workspaceId, canReadJobs, true))[0];
+    return (await projectFindingLifecycle(this.vulnerabilitiesRepository.manager, [vulnerability], workspaceId, canReadJobs, true, reader))[0];
   }
 
   /**
@@ -382,7 +388,8 @@ export class VulnerabilitiesService {
       }),
     );
 
-    return { data: statistics,
+    const [{ pendingReview }] = await this.vulnerabilitiesRepository.manager.query<{ pendingReview: number }[]>(`SELECT COUNT(*)::int AS "pendingReview" FROM vulnerabilities v JOIN assets a ON a.id=v."assetId" JOIN targets t ON t.id=a."targetId" WHERE t."workspaceId"=$1 AND v."reviewStatus"='pending_review' AND ($2::uuid[] IS NULL OR t.id=ANY($2::uuid[]))`, [workspaceId, targetIds?.length ? targetIds : null]);
+    return { data: statistics, pendingReview,
       ...await findingLifecycleStatistics(this.vulnerabilitiesRepository.manager, workspaceId, targetIds) };
   }
 
@@ -416,8 +423,8 @@ export class VulnerabilitiesService {
       TimelineRow[]
     >(
       `SELECT event.id, event.type, event."occurredAt",
-              CASE WHEN event.type IN ('detected', 'status_changed') THEN event."fromStatus" END AS "fromStatus",
-              CASE WHEN event.type IN ('detected', 'status_changed') THEN event."toStatus" END AS "toStatus",
+              CASE WHEN event."fromStatus" IN ('new','active','fixed','resurfaced','pending_review','approved','rejected') THEN event."fromStatus" END AS "fromStatus",
+              CASE WHEN event."toStatus" IN ('new','active','fixed','resurfaced','pending_review','approved','rejected') THEN event."toStatus" END AS "toStatus",
               CASE WHEN workflow."workspaceId" = target."workspaceId" THEN history.id END AS "jobHistoryId",
               CASE event.type
                 WHEN 'dismissed' THEN event.data ->> 'reason'

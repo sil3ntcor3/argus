@@ -591,6 +591,7 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
         approval,
         conversation.projectId,
         userId,
+        job.name,
       ) as Record<string, Tool>;
       // The skills the definition declares, offered as the main agent's are:
       // listed in the prompt, loaded on demand with load_skill

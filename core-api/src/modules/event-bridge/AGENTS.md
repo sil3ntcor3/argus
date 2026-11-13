@@ -12,3 +12,7 @@ The global `EventBridgeModule` publishes CloudEvents to the Redis stream `oasm:e
 - In-process `EventEmitter2` signals such as `WORKFLOW_END` use separate routing. A local signal reaches the Redis stream only if its handler explicitly publishes an event.
 
 Use `task api:test` for catalog-policy parity, boot wiring, publish redaction, retry, and sink checks.
+
+Proposal/review audit events exclude proof and notes. `vulnerability.detected`
+may omit `jobId` for a human-approved proposal; project dispatch must validate
+the durable approval event rather than trusting that transport payload.

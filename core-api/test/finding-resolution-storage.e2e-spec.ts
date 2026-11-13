@@ -202,6 +202,12 @@ describe('Finding resolution storage (e2e)', () => {
       fixClaimedBy: { id: owner.user.userId },
       fixClaimedAt: new Date('2099-01-01T00:00:00Z'),
       dueAt: new Date('2099-01-01T00:00:00Z'),
+      reviewStatus: 'rejected',
+      discoveredBy: 'ai',
+      reviewedById: owner.user.userId,
+      reviewedBy: { id: owner.user.userId },
+      reviewedAt: new Date('2099-01-01T00:00:00Z'),
+      reviewNote: 'Injected scanner review',
     } as unknown as Vulnerability;
     const adapter = app.app.get(DataAdapterService);
     await adapter.vulnerabilities({ data: [payload], job });
@@ -210,6 +216,7 @@ describe('Finding resolution storage (e2e)', () => {
       [assetId, payload.name],
     );
     findingId = id;
+    expect((await app.dataSource.query('SELECT "reviewStatus","discoveredBy","reviewedById","reviewedAt","reviewNote" FROM vulnerabilities WHERE id=$1',[id]))[0]).toEqual({ reviewStatus:'approved',discoveredBy:'tool',reviewedById:null,reviewedAt:null,reviewNote:null });
     expect(await read()).toEqual({ ...Object.fromEntries(fields.map((field) => [field, null])),
       lastSeenJobHistoryId: runId });
     await app.dataSource.query(

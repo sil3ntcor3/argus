@@ -14,3 +14,10 @@ Use scope, workflow, and provenance specs. Validate ownership and lock ordering 
 Event gathering uses recoverable Redis windows and stable queue tokens. Freeze chunk size in the claimed snapshot and derive durable run IDs from token/chunk identity. `WorkflowRunnerService.startRun` serializes that identity before creating a run, so launch retries must reuse it. Check current enabled membership, target/workflow ownership, cancellation and chain depth inside the launch transaction. Private causal fields must not appear in public read models.
 
 The private `PROJECT_RUN_CLOSED` signal is a one-part symbol path because EventEmitter2 runs with wildcard mode. It fires on committed closure even when no job exists; job-backed statistics keep their existing signal. Completion events require authoritative closed/non-cancelled evidence.
+
+Finding counts/feeds include approved findings only. Human approval can emit
+`vulnerability.detected` without a scanner job. `ProjectTriggerRuntimeService`
+validates its private `approvalEventId` against the committed approval event,
+actor, review time and finding/asset/workspace; deduplicate by that durable event
+ID. This path supplies no scanner coverage or causal run. Preserve the existing
+job-backed detection path and its evidence checks.

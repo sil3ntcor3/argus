@@ -29,3 +29,14 @@ rollback requirements.
 
 Use the controller and service specs for permission and response changes.
 Use Docker Postgres for expiry, row-locking and event ordering checks.
+
+AI proposals have `reviewStatus=pending_review` and enter approved counts only
+through `VulnerabilityReviewService`. Rejection retains proof; merge moves
+sources, comments and history into an approved finding on the same asset before
+deleting the proposal. Bulk items commit separately; a failed response does not
+prove nothing saved. Review decisions lock parents before fingerprint/ID-ordered
+findings. `VulnerabilityProposalService` validates current chat/project ownership
+and cited calls at execution time; AI evidence never creates scanner coverage.
+Use `findingDetectedAt` for detection-date aggregates and the projections in
+`vulnerability-review-read.ts` for authorized source references and limited user
+objects. See `docs/operations/finding-proposal-review-rollout.md`.

@@ -994,6 +994,12 @@ export class DataAdapterService {
         delete vulnValues.fixClaimedById;
         delete vulnValues.fixClaimedBy;
         delete vulnValues.dueAt;
+        delete vulnValues.reviewStatus;
+        delete vulnValues.discoveredBy;
+        delete vulnValues.reviewedById;
+        delete vulnValues.reviewedBy;
+        delete vulnValues.reviewedAt;
+        delete vulnValues.reviewNote;
         return {
           ...vulnValues,
           ...normalizeCodeFields(vulnValues),

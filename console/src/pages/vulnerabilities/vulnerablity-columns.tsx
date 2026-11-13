@@ -12,6 +12,7 @@ import { AnalyzeStatusButton } from '@/components/vulnerabilities/analyze-status
 import type { VulnerabilityLifecycleDto as Vulnerability } from '@/services/apis/gen/queries';
 import { DetectionStatusBadge, SlaDue } from '@/components/vulnerabilities/lifecycle-badges';
 import { isOpenFinding } from '@/components/vulnerabilities/lifecycle';
+import { FindingSourceBadges } from '@/components/vulnerabilities/finding-sources';
 import { Link } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
 import { BellOff } from 'lucide-react';
@@ -81,6 +82,7 @@ export const vulnerabilityColumns: ColumnDef<Vulnerability, unknown>[] = [
               <BadgeList list={cveIds} maxDisplay={2} />
             )}
           </div>
+          <FindingSourceBadges discoveredBy={row.original.discoveredBy} reviewStatus={row.original.reviewStatus} sources={row.original.sources} />
         </div>
       );
     },
@@ -139,6 +141,8 @@ export const vulnerabilityColumns: ColumnDef<Vulnerability, unknown>[] = [
         <div className="min-h-[60px] flex items-center">
           {value ? (
             <div>{new Date(value).toLocaleDateString()}</div>
+          ) : row.original.reviewStatus === 'pending_review' || row.original.reviewStatus === 'rejected' ? (
+            <Badge variant="outline">{row.original.reviewStatus === 'pending_review' ? 'Pending review' : 'Rejected'}</Badge>
           ) : (
             <div className="text-muted-foreground">-</div>
           )}

@@ -6,6 +6,12 @@ describe('VulnerabilitiesController workspace permission guards', () => {
   const reflector = new Reflector();
 
   const cases: Array<[string, string, string[]]> = [
+    ['approve', 'POST /:id/review/approve', ['vulnerability.write']],
+    ['reject', 'POST /:id/review/reject', ['vulnerability.write']],
+    ['merge', 'POST /:id/review/merge', ['vulnerability.write']],
+    ['bulkApprove', 'POST /review/approve', ['vulnerability.write']],
+    ['bulkReject', 'POST /review/reject', ['vulnerability.write']],
+    ['duplicates', 'GET /:id/review/duplicates', ['vulnerability.read']],
     ['scan', 'POST /scan', ['vulnerability.write']],
     ['getVulnerabilities', 'GET /', ['vulnerability.read']],
     ['getVulnerabilitiesStatistics', 'GET /statistics', ['vulnerability.read']],

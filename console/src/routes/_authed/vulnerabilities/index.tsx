@@ -8,6 +8,7 @@ const table = tableSearch({ sortBy: 'severity', sortOrder: 'DESC' });
 const vulnerabilitiesSearchSchema = z.object({
   ...table.shape,
   status: z.string().optional(),
+  discoveredBy: z.enum(['tool','ai','ai_tool','manual']).optional(),
   overdue: z.enum(['true']).optional(),
   severity: z.string().optional(),
   tags: z.string().optional(),

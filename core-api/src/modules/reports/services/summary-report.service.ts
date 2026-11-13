@@ -1,3 +1,4 @@
+import { findingDetectedAt } from '@/modules/vulnerabilities/open-vulnerability';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -261,8 +262,8 @@ export class SummaryReportService {
       .leftJoin('target.workspace', 'workspace')
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere(openVulnerabilityCondition('v'))
-      .andWhere('v.createdAt >= :startDate', { startDate })
-      .andWhere('v.createdAt <= :endDate', { endDate })
+      .andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate })
+      .andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate })
       .getCount();
   }
 
@@ -284,6 +285,7 @@ export class SummaryReportService {
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere('v.isArchived = :isArchived', { isArchived: false })
       .andWhere('dismissal.id IS NOT NULL')
+      .andWhere("v.reviewStatus = 'approved'")
       .andWhere('dismissal.createdAt >= :startDate', { startDate })
       .andWhere('dismissal.createdAt <= :endDate', { endDate })
       .getCount();
@@ -302,14 +304,14 @@ export class SummaryReportService {
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere(openVulnerabilityCondition('v'))
       .andWhere('v.severity != :info', { info: 'info' })
-      .orderBy('v.createdAt', 'DESC')
+      .orderBy(findingDetectedAt('v'), 'DESC')
       .limit(limit);
 
     if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', { startDate: options.startDate });
+      qb.andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate: options.startDate });
     }
     if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
+      qb.andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate: options.endDate });
     }
     if (options?.targetIds?.length) {
       qb.andWhere('target.id IN (:...targetIds)', {
@@ -326,7 +328,7 @@ export class SummaryReportService {
       cvss: v.cvssScore ?? 0,
       asset: v.asset?.value || 'Unknown',
       category: v.tags?.[0] || 'General',
-      discovered: `${String(v.createdAt.getDate()).padStart(2, '0')}/${String(v.createdAt.getMonth() + 1).padStart(2, '0')}/${v.createdAt.getFullYear()}`,
+      discovered: `${String((v.firstDetectedDate ?? v.createdAt).getDate()).padStart(2, '0')}/${String((v.firstDetectedDate ?? v.createdAt).getMonth() + 1).padStart(2, '0')}/${(v.firstDetectedDate ?? v.createdAt).getFullYear()}`,
       status: v.analyzeStatus,
     }));
   }
@@ -348,6 +350,7 @@ export class SummaryReportService {
       )
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere('dismissal.id IS NOT NULL')
+      .andWhere("v.reviewStatus = 'approved'")
       .orderBy('dismissal.createdAt', 'DESC')
       .limit(limit);
 
@@ -372,6 +375,7 @@ export class SummaryReportService {
       .leftJoin('target.workspace', 'workspace')
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere('v.isArchived = :isArchived', { isArchived: true })
+      .andWhere("v.reviewStatus = 'approved'")
       .orderBy('v.updatedAt', 'DESC')
       .limit(limit);
 
@@ -403,7 +407,7 @@ export class SummaryReportService {
         const resolvedDate = v.vulnerabilityDismissal?.createdAt || v.updatedAt;
         const daysOpen = Math.max(
           0,
-          Math.floor((now.getTime() - v.createdAt.getTime()) / (1000 * 60 * 60 * 24)),
+          Math.floor((now.getTime() - (v.firstDetectedDate ?? v.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
         );
         return {
           id: v.cveId?.[0] || v.fingerprint || v.id.substring(0, 8),
@@ -449,10 +453,10 @@ export class SummaryReportService {
       .limit(limit);
 
     if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', { startDate: options.startDate });
+      qb.andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate: options.startDate });
     }
     if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
+      qb.andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate: options.endDate });
     }
     if (options?.targetIds?.length) {
       qb.andWhere('t.id IN (:...targetIds)', { targetIds: options.targetIds });
@@ -517,10 +521,10 @@ export class SummaryReportService {
       .orderBy('COUNT(v.id)', 'DESC');
 
     if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', { startDate: options.startDate });
+      qb.andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate: options.startDate });
     }
     if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
+      qb.andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate: options.endDate });
     }
     if (options?.targetIds?.length) {
       qb.andWhere('t.id IN (:...targetIds)', { targetIds: options.targetIds });
@@ -560,6 +564,7 @@ export class SummaryReportService {
       .leftJoin('target.workspace', 'workspace')
       .select('COUNT(DISTINCT v.jobHistoryId)', 'count')
       .where('workspace.id = :workspaceId', { workspaceId })
+      .andWhere("v.reviewStatus = 'approved'")
       .andWhere('v.createdAt >= :startDate', { startDate })
       .andWhere('v.createdAt <= :endDate', { endDate });
 

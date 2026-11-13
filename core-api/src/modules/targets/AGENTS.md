@@ -8,3 +8,7 @@ Targets are scan roots such as domains, IP addresses, CIDRs, and Git organizatio
 - A target schedule stores the BullMQ scheduler key. A missing scheduler or unavailable Redis can leave the next scan unknown. Preserve cancellation permissions and avoid treating a closed run as active.
 
 Run the target service and controller specs and validate summary, overview, changes, and run history against local Docker Postgres.
+
+Finding discoveries, weekly buckets and per-run finding totals exclude
+pending/rejected proposals. Approved AI findings use their human approval's
+detection time, without acquiring scanner-run provenance.

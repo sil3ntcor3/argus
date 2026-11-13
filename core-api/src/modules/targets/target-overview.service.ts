@@ -232,7 +232,7 @@ export class TargetOverviewService {
               ) END AS runs,
               CASE WHEN $4::boolean THEN (
                 WITH open_findings AS MATERIALIZED (
-                  SELECT v.id, v.severity, v."createdAt",
+                  SELECT v.id, v.severity, COALESCE(v."firstDetectedDate",v."createdAt") AS "createdAt",
                          CASE v.severity
                            WHEN '${Severity.CRITICAL}' THEN 5 WHEN '${Severity.HIGH}' THEN 4
                            WHEN '${Severity.MEDIUM}' THEN 3 WHEN '${Severity.LOW}' THEN 2
@@ -241,11 +241,11 @@ export class TargetOverviewService {
                   FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
                   WHERE a."targetId" = t.id AND ${openVulnerabilityCondition('v')}
                 ), week_counts AS (
-                  SELECT width_bucket(v."createdAt", $5::timestamp[]) AS week_number,
+                  SELECT width_bucket(COALESCE(v."firstDetectedDate",v."createdAt")::timestamp, $5::timestamp[]) AS week_number,
                          ${WEEKLY_COUNT_COLUMNS_SQL}
                   FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
-                  WHERE a."targetId" = t.id
-                    AND v."createdAt" BETWEEN ($5::timestamp[])[1] AND $6::timestamp
+                  WHERE a."targetId" = t.id AND v."reviewStatus"='approved'
+                    AND COALESCE(v."firstDetectedDate",v."createdAt")::timestamp BETWEEN ($5::timestamp[])[1] AND $6::timestamp
                   GROUP BY 1
                 )
                 SELECT jsonb_build_object(

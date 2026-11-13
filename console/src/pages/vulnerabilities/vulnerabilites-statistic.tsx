@@ -73,6 +73,9 @@ export default function VulnerabilitiesStatistic({
 
   return (
     <div className="space-y-2">
+      <Button variant="outline" size="sm" onClick={() => navigate({ search: ((prev: Record<string, unknown>) => ({
+        ...prev, status: 'pending_review', overdue: undefined, page: 1,
+      })) as never })}>Pending review · {data?.pendingReview ?? 0}</Button>
       <h2 className="text-sm font-medium">Open findings by severity</h2>
       <dl className={grid} aria-label="Finding severity counts">
         {severities.map(({ key, label, color }) => (

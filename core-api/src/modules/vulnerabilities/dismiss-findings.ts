@@ -69,7 +69,7 @@ export async function dismissFindings(
     `SELECT finding.id FROM vulnerabilities AS finding
      JOIN assets AS asset ON asset.id = finding."assetId"
      JOIN targets AS target ON target.id = asset."targetId"
-     WHERE target."workspaceId" = $2 AND finding.id = ANY($1::uuid[])
+     WHERE target."workspaceId" = $2 AND finding.id = ANY($1::uuid[]) AND finding."reviewStatus"='approved'
      ORDER BY finding.fingerprint, finding.id FOR NO KEY UPDATE OF finding`,
     [unique, workspaceId],
   );

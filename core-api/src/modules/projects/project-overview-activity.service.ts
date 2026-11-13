@@ -116,7 +116,7 @@ export class ProjectOverviewActivityService {
         JOIN LATERAL (
           SELECT v.id FROM vulnerabilities v JOIN assets a ON a.id = v."assetId"
           JOIN targets t ON t.id = a."targetId" AND t."workspaceId" = $2
-          WHERE v.id = pv."vulnerabilityId" LIMIT 1
+          WHERE v.id = pv."vulnerabilityId" AND v."reviewStatus"='approved' LIMIT 1
         ) v ON true
         JOIN vulnerability_dismissals d ON d."vulnerabilityId" = v.id
         LEFT JOIN users u ON u.id = d."userId"
