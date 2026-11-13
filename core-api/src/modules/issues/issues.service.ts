@@ -63,6 +63,15 @@ export class IssuesService {
     // this check a caller could attach a comment to another tenant's issue.
     await this.getById(issueId, workspaceId);
 
+    if (createCommentDto.repCommentId) {
+      const parent = await this.issueCommentsRepository.findOne({
+        where: { id: createCommentDto.repCommentId, issueId },
+        withDeleted: true,
+        select: ['id'],
+      });
+      if (!parent) throw new NotFoundException('Reply comment not found in issue');
+    }
+
     const comment = this.issueCommentsRepository.create({
       content: createCommentDto.content,
       repCommentId: createCommentDto.repCommentId,
@@ -111,7 +120,7 @@ export class IssuesService {
         'repCreatedBy.id',
         'repCreatedBy.name',
       ])
-      .leftJoin('issueComments.repComment', 'repComment')
+      .leftJoin('issueComments.repComment', 'repComment', 'repComment.issueId = issueComments.issueId')
       .leftJoin('repComment.createdBy', 'repCreatedBy')
       .orderBy('issueComments.createdAt', 'ASC')
       .skip((page - 1) * limit)
@@ -122,6 +131,7 @@ export class IssuesService {
     // Transform to response DTO format
     const transformedComments = comments.map((comment) => ({
       ...comment,
+      repCommentId: comment.repComment?.id ?? null,
       createdBy: {
         id: comment.createdBy.id,
         name: comment.createdBy.name,
@@ -519,6 +529,7 @@ export class IssuesService {
   ): Promise<void> {
     try {
       const { issueId } = originalComment;
+      if (!issueId) return;
       // Get the issue to provide context to the AI assistant
       const issue = await this.issuesRepository.findOne({
         where: { id: issueId },
