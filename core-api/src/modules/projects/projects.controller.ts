@@ -1,3 +1,6 @@
+import { UserId } from '@/common/decorators/app.decorator';
+import { ProjectFilesService } from './project-files.service';
+import { PresignProjectFileDto, PresignProjectFileResponseDto, ProjectFileDto } from './dto/project-files.dto';
 import { UpdateProjectTriggerDto } from './dto/project-trigger-update.dto';
 import { ProjectTriggerRuntimeService } from './project-trigger-runtime.service';
 import { ProjectTriggerReadService } from './project-trigger-read.service';
@@ -92,6 +95,7 @@ import {
 @Controller('projects')
 export class ProjectsController {
   constructor(
+    private readonly files: ProjectFilesService,
     private readonly projects: AssetGroupService,
     private readonly metadata: ProjectMetadataReadService,
     private readonly scopePreview: ProjectScopePreviewService,
@@ -525,4 +529,28 @@ export class ProjectsController {
   delete(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string) {
     return this.projects.delete(id, workspaceId);
   }
+  @Doc({ summary: 'Project files', response: { serialization: ProjectFileDto, isArray: true }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.read') @Get(':id/files')
+  getFiles(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string) {
+    return this.files.list(id, workspaceId);
+  }
+
+  @Doc({ summary: 'Start a project context upload', response: { serialization: PresignProjectFileResponseDto, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.write') @Post(':id/files/presign')
+  presignFile(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string, @UserId() userId: string, @Body() dto: PresignProjectFileDto) {
+    return this.files.presign(id, workspaceId, userId, dto);
+  }
+
+  @Doc({ summary: 'Complete and attach a project context upload', response: { serialization: ProjectFileDto, isArray: true, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.write') @Post(':id/files/:artifactId/complete')
+  completeFile(@Param('id', ParseUUIDPipe) id: string, @Param('artifactId', ParseUUIDPipe) artifactId: string, @WorkspaceId() workspaceId: string, @UserId() userId: string) {
+    return this.files.complete(id, workspaceId, userId, artifactId);
+  }
+
+  @Doc({ summary: 'Detach a context file without deleting it', response: { serialization: ProjectFileDto, isArray: true }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.write') @Delete(':id/files/:artifactId')
+  removeFile(@Param('id', ParseUUIDPipe) id: string, @Param('artifactId', ParseUUIDPipe) artifactId: string, @WorkspaceId() workspaceId: string) {
+    return this.files.remove(id, workspaceId, artifactId);
+  }
+
 }

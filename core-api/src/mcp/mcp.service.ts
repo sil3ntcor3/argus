@@ -1,4 +1,5 @@
 import { API_GLOBAL_PREFIX } from '@/common/constants/app.constants';
+import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
 import { AgentTool } from '@/modules/agents/agents.tools';
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -75,7 +76,7 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
       res,
     );
 
-    const server = this.createMcpServer(workspaceId);
+    const server = this.createMcpServer(workspaceId, (_req as RequestWithMetadata).user?.id);
 
     if (this.sessions.size >= McpService.MAX_SESSIONS) {
       this.evictStaleSessions();
@@ -128,19 +129,19 @@ export class McpService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private createMcpServer(workspaceId: string): McpServer {
+  private createMcpServer(workspaceId: string, userId?: string): McpServer {
     const server = new McpServer({
       name: 'argus-server',
       version: '1.0.0',
     });
 
-    this.registerTools(server, workspaceId);
+    this.registerTools(server, workspaceId, userId);
 
     return server;
   }
 
-  private registerTools(server: McpServer, workspaceId: string): void {
-    const allTools = this.agentTool.getMcpTools(workspaceId);
+  private registerTools(server: McpServer, workspaceId: string, userId?: string): void {
+    const allTools = this.agentTool.getMcpTools(workspaceId, userId);
 
     for (const [name, toolInstance] of Object.entries(allTools)) {
       try {

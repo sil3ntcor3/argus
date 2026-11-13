@@ -1,5 +1,8 @@
+import { OnEvent } from '@nestjs/event-emitter';
+import { PROJECT_DELETING_EVENT, type ProjectDeletingEvent } from '@/modules/projects/project-conversation-events';
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Inject,
   forwardRef,
@@ -25,6 +28,14 @@ import { Repository } from 'typeorm';
 import { AgentApprovalMode, AgentMode } from '@/common/enums/enum';
 import { RemoteExecuteSubscribeService } from '@/modules/workers/remote-execute-subscribe.service';
 import { WorkersService } from '@/modules/workers/workers.service';
+import { AssetGroup as Project } from '@/modules/asset-group/entities/asset-groups.entity';
+import { findProjectOrFail } from '@/modules/projects/project-access';
+import { ProjectFilesService } from '@/modules/projects/project-files.service';
+import { WorkspacesService } from '@/modules/workspaces/workspaces.service';
+
+/** Project files in the prompt: each one cut here, all of them together at the total. */
+const PROJECT_FILE_PROMPT_CHARS = 8_000;
+const PROJECT_FILES_PROMPT_CHARS = 30_000;
 import { WorkspaceEncryptionService } from '@/services/workspace-encryption/workspace-encryption.service';
 import {
   APPROVAL_TIMEOUT_MS,
@@ -455,6 +466,9 @@ export class AgentsCompletionsService {
     private readonly toolCallRepository: Repository<AgentMessageToolCall>,
     @InjectRepository(AgentConversationTodo)
     private readonly todoRepository: Repository<AgentConversationTodo>,
+    @InjectRepository(Project)
+    private readonly projectRepository: Repository<Project>,
+    private readonly projectFiles: ProjectFilesService,
     @Inject(forwardRef(() => AgentTool))
     private readonly agentTool: AgentTool,
     private readonly agentsMemories: AgentsMemoriesService,
@@ -466,7 +480,9 @@ export class AgentsCompletionsService {
     private readonly remoteExecuteSubscribe: RemoteExecuteSubscribeService,
     private readonly agentsConfig: AgentsConfigService,
     private readonly modelsCatalog: AgentsModelsCatalogService,
+    @Inject(forwardRef(() => AgentsSubagentsService))
     private readonly subagents: AgentsSubagentsService,
+    private readonly workspacesService: WorkspacesService,
   ) {
     this.loadAllPrompts();
   }
@@ -877,10 +893,7 @@ export class AgentsCompletionsService {
         messages: [{ role: 'user', content: prompt }],
         tools,
         ...stepLimit(20),
-        ...(() => {
-          const opts = getReasoningProviderOptions(llmConfig.provider);
-          return opts ? { providerOptions: opts } : {};
-        })(),
+        ...this.modelsCatalog.reasoningOptions(llmConfig),
         onChunk: ({ chunk }: { chunk: TextStreamPart<ToolSet> }) => {
           if (chunk.type === 'text-delta') {
             accumulatedText += chunk.text;
@@ -959,6 +972,11 @@ export class AgentsCompletionsService {
         'Worker is offline; choose an online worker or Auto',
       );
     }
+    // Its tools are locked to the project, so it must be one of this workspace
+    if (dto.projectId) {
+      await this.assertProjectRead(workspaceId, userId);
+      await findProjectOrFail(this.projectRepository, dto.projectId, workspaceId);
+    }
     const agentConfig = await this.agentsConfig.find(workspaceId, userId);
     const newConversation = this.conversationRepository.create({
       ...(dto.conversationId ? { id: dto.conversationId } : {}),
@@ -972,7 +990,15 @@ export class AgentsCompletionsService {
         agentConfig?.defaultApprovalMode ??
         AgentApprovalMode.MANUAL,
       workerId: dto.workerId,
+      projectId: dto.projectId,
     });
+    if (dto.projectId) {
+      return this.conversationRepository.manager.transaction(async manager => {
+        const rows = await manager.query<unknown[]>('SELECT id FROM projects WHERE id=$1 AND "workspaceId"=$2 FOR SHARE', [dto.projectId, workspaceId]);
+        if (!rows.length) throw new NotFoundException('Project not found');
+        return manager.save(AgentConversation, newConversation);
+      });
+    }
     return this.conversationRepository.save(newConversation);
   }
 
@@ -1352,6 +1378,7 @@ export class AgentsCompletionsService {
           : Promise.resolve(null),
     ]);
     const userContext = formatUserInstructions(agentConfig);
+    const projectContext = await this.projectContext(conversation, workspaceId);
 
     const todos = await this.loadTodoItems(conversation.id);
     const planning = planningState(conversation.approvalMode, todos, agentMode);
@@ -1385,6 +1412,7 @@ export class AgentsCompletionsService {
       modePrompt,
       systemPrompt,
       userContext,
+      projectContext,
       opts.staticContext,
       summaryContext,
       // Memory off (the default): saved memories stay stored but out of the prompt
@@ -1394,6 +1422,69 @@ export class AgentsCompletionsService {
       planContext,
       currentTimeContext,
     ].filter((part): part is string => !!part);
+  }
+
+  /** Tells the model which project the chat is locked to; '' outside one. */
+  private async projectContext(
+    conversation: AgentConversation,
+    workspaceId: string,
+  ): Promise<string> {
+    if (!conversation.projectId) return '';
+    await this.assertProjectRead(workspaceId, conversation.createdBy);
+    const project = await findProjectOrFail(this.projectRepository, conversation.projectId, workspaceId);
+    const files = await this.projectFiles.contextFiles(project.id, {
+      perFile: PROJECT_FILE_PROMPT_CHARS,
+      total: PROJECT_FILES_PROMPT_CHARS,
+    }, workspaceId);
+    return [
+      `[PROJECT]: This conversation is about the project "${project.name}" (projectId ${project.id})${project.archivedAt ? ', which is archived (read-only)' : ''}.`,
+      'Every Argus data tool (assets, vulnerabilities, ports, technologies, TLS, statistics) and every project tool is locked to it: they only return and change data inside this project, whatever projectId you pass.',
+      'Answer from the project scope; say so when the user asks about something outside it.',
+      ...(project.instruction
+        ? [`[PROJECT INSTRUCTION] (set by the project's members; follow it):\n${project.instruction}`]
+        : []),
+      ...files.map((file) =>
+        [
+          `[PROJECT FILE] "${file.name}" (fileId ${file.id}, ${file.totalChars} characters${file.content.length < file.totalChars ? `, first ${file.content.length} shown: read the rest with read_project_file` : ''}):`,
+          file.content,
+        ].join('\n'),
+      ),
+    ].join('\n');
+  }
+
+  /** Project context is read on every turn, including after membership changes. */
+  private async assertProjectRead(workspaceId: string, userId: string): Promise<void> {
+    const { permissionKeys } = await this.workspacesService.getMembershipWithPermissions(workspaceId, userId);
+    if (!permissionKeys.some(key => ['*', 'project.read', 'project.write'].includes(key))) {
+      throw new ForbiddenException('Requires project.read');
+    }
+  }
+
+  /** Durable DB state stops a project stream even when deletion happens on another API replica. */
+  @OnEvent(PROJECT_DELETING_EVENT, { promisify: true })
+  async stopProjectConversations({ projectId, workspaceId }: ProjectDeletingEvent): Promise<void> {
+    const conversations = await this.conversationRepository.find({ where: { projectId, workspaceId }, select: { id: true } });
+    for (const conversation of conversations) await this.stopRun(conversation.id);
+  }
+
+  private watchProjectConversation(conversationId: string, projectId: string | null | undefined, workspaceId: string, userId?: string): () => void {
+    let busy = false; let closed = false;
+    const timer = setInterval(() => {
+      if (busy || closed) return;
+      busy = true;
+      void (async () => {
+        const live = await this.conversationRepository.findOne({ where: { id: conversationId, workspaceId }, select: { id: true, projectId: true, createdBy: true } });
+        if (!live || (projectId && live.projectId !== projectId) || (userId && live.createdBy !== userId)) { await this.stopRun(conversationId); return; }
+        if (live.projectId && userId) await this.assertProjectRead(workspaceId, userId);
+      })().catch(async (error: unknown) => {
+        if (error instanceof ForbiddenException || error instanceof NotFoundException) await this.stopRun(conversationId);
+        else this.logger.warn(`Project conversation heartbeat failed: ${String(error)}`);
+      }).catch((error: unknown) => {
+        this.logger.warn(`Project conversation stop failed: ${String(error)}`);
+      }).finally(() => { busy = false; });
+    }, 2000);
+    timer.unref?.();
+    return () => { closed = true; clearInterval(timer); };
   }
 
   /**
@@ -1453,6 +1544,7 @@ export class AgentsCompletionsService {
       contextWindow: window.tokens,
       contextWindowSource: window.source,
       catalogEstimated: window.estimated,
+      reasoningEffort: this.modelsCatalog.effortFor(llmConfig) ?? null,
     };
   }
 
@@ -1822,11 +1914,8 @@ export class AgentsCompletionsService {
             ),
           }
         : {}),
-      // Enable reasoning/thinking via provider-specific options
-      ...(() => {
-        const opts = getReasoningProviderOptions(llmConfig.provider);
-        return opts ? { providerOptions: opts } : {};
-      })(),
+      // Reasoning/thinking at the picked effort, via provider-specific options
+      ...this.modelsCatalog.reasoningOptions(llmConfig),
       // AGENT mode needs more output tokens for multi-step execution
       ...(maxOutputTokens ? { maxOutputTokens } : {}),
       // Accumulate text-delta and reasoning chunks as they arrive, and track
@@ -2122,6 +2211,7 @@ export class AgentsCompletionsService {
   private createContinuationStream(
     options: StreamTextOptions & {
       workspaceId: string;
+      projectId?: string | null;
       userId?: string;
       /** The user's agent config, loaded once for the turn */
       agentConfig?: AgentConfig | null;
@@ -2243,6 +2333,7 @@ export class AgentsCompletionsService {
       controller: ReadableStreamDefaultController<UIMessageChunk>,
     ) => {
       let controllerClosed = false;
+      const stopWatching = options.projectId || agentMode === AgentMode.AGENT ? this.watchProjectConversation(conversationId, options.projectId, workspaceId, userId) : () => undefined;
 
       /**
        * Waits (bounded) for this conversation's background subagents and
@@ -2675,6 +2766,7 @@ export class AgentsCompletionsService {
           );
         }
       } finally {
+        stopWatching();
         unsubscribeSubagents();
         unsubscribeSubagentScreenshots();
         // A placeholder no iteration finished (stopped mid-iteration or
@@ -2938,6 +3030,7 @@ export class AgentsCompletionsService {
         todosEmitter,
         conversation.id,
         approval,
+        conversation.projectId,
       ) as ToolSet),
       ...this.getPlanTools(planning, conversation.id, todosEmitter, {
         workspaceId,
@@ -2986,6 +3079,7 @@ export class AgentsCompletionsService {
     });
     const stream = this.createContinuationStream({
       onSettled,
+      projectId: conversation.projectId,
       llmConfig,
       model,
       modelMessages,

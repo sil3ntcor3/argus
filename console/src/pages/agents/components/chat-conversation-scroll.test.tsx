@@ -1,3 +1,5 @@
+vi.mock('@/pages/agents/components/project-scope-select', () => ({ ProjectScopeSelect: () => null }));
+vi.mock('@/pages/agents/components/worker-select', () => ({ WorkerSelect: () => null }));
 import { act, render, screen } from '@testing-library/react';
 import type { UIMessage } from 'ai';
 import type { ReactNode } from 'react';

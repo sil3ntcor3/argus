@@ -607,9 +607,16 @@ describe('AgentTool MCP surface', () => {
   const agentTool = Object.create(AgentTool.prototype) as AgentTool;
 
   it('offers only the read-only workspace data tools', () => {
-    const names = Object.keys(agentTool.getMcpTools('w1'));
+    const names = Object.keys(agentTool.getMcpTools('w1', 'user'));
     expect(names.sort()).toEqual([...MCP_TOOLS].sort());
     expect(names.every((name) => READ_ONLY_TOOLS.has(name))).toBe(true);
+  });
+
+  it('keeps the legacy read-only surface for workspace keys with no member principal', () => {
+    const tools = agentTool.getMcpTools('w1');
+    expect(tools).toHaveProperty('enumerate_assets');
+    expect(tools).not.toHaveProperty('read_project_file');
+    expect(tools).not.toHaveProperty('list_projects');
   });
 
   it.each([

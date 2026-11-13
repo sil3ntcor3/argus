@@ -1,5 +1,5 @@
 import { jsonSchema, streamText, tool } from 'ai';
-import { LLMProvider } from './enums/agent.enums';
+import { LLMProvider, ReasoningEffort } from './enums/agent.enums';
 import {
   getLLMProviderConfig,
   getReasoningProviderOptions,
@@ -45,7 +45,7 @@ it.each([undefined, 'https://jp.api.openai.com/v1/'])(
     const result = streamText({
       model: config.handler('fixture-key', model),
       prompt: 'Check the local test fixture',
-      providerOptions: getReasoningProviderOptions(LLMProvider.OPENAI),
+      providerOptions: getReasoningProviderOptions(LLMProvider.OPENAI, ReasoningEffort.HIGH),
       tools: {
         list_findings: tool({
           inputSchema: jsonSchema({

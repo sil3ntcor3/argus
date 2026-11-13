@@ -18,6 +18,13 @@ describe('ProjectMetadataReadService', () => {
   const query = new GetAllAssetGroupsQueryDto();
   beforeEach(() => jest.resetAllMocks());
 
+  it('returns only the saved instruction on the canonical project view', async () => {
+    groups.getAssetGroupById.mockResolvedValue({ id: 'a', instruction: 'stale' });
+    dataSource.query.mockResolvedValue([{ id: 'a', description: null, instruction: 'Only staging', autoAddAssets: true }]);
+    expect(await service.getById('a', 'workspace')).toHaveProperty('instruction', 'Only staging');
+    expect(dataSource.query).toHaveBeenCalledWith(expect.stringContaining('instruction'), ['workspace', ['a']]);
+  });
+
   it('batches metadata once with bound workspace and ids, retaining base fields', async () => {
     const a = Object.assign(new AssetGroup(), {
       id: 'a',
