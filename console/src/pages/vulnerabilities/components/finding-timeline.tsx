@@ -42,6 +42,7 @@ const eventLabels = new Map([
   ['dismissed', 'Dismissed'],
   ['reopened', 'Reopened'],
   ['risk_expired', 'Risk acceptance expired'],
+  ['fix_claimed', 'Fix claimed'],
 ]);
 
 const reasonLabels = new Map([
@@ -153,6 +154,12 @@ function TimelineEvents({
             )}
           </div>
           <DismissalDetails event={event} />
+          {event.type === 'fix_claimed' && event.verification && <p className="text-sm text-muted-foreground">
+            {event.verification === 'next_covering_scan' ? 'Awaiting the next trusted covering scan.' : 'No comparable scan evidence is available for automatic verification.'}
+          </p>}
+          {typeof event.fixClaimVerified === 'boolean' && <p className="text-sm text-muted-foreground">
+            {event.fixClaimVerified ? 'Fix claim verified by a covering scan.' : 'This scan did not verify a fix claim.'}
+          </p>}
         </li>
       ))}
     </ol>

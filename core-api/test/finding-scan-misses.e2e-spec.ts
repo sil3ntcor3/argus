@@ -65,6 +65,9 @@ describe('Private comparable scan misses (e2e)', () => {
     app = await createTestApp();
     await app.app.listen(0);
     owner = await createUserWithWorkspace(app.server, 'finding-scan-misses');
+    // The accounting-only fixture explicitly disables the newly enabled policy.
+    await app.dataSource.query(`UPDATE workspaces SET settings=$2 WHERE id=$1`,
+      [owner.workspace.id, { vulnerabilityManagement: { autoCloseEnabled: false } }]);
     const host = randomUUID() + '.example.test';
     const target = await insert(
       `INSERT INTO targets (value,type,"workspaceId") VALUES ($1,'DOMAIN',$2)`,
@@ -107,7 +110,7 @@ describe('Private comparable scan misses (e2e)', () => {
     expect(await state(legacy)).toEqual({ missedScans: 0, detectionStatus: 'new' });
   });
 
-  it('counts only distinct comparable completed runs and does not close findings', async () => {
+  it('counts distinct comparable runs without closing when policy is disabled', async () => {
     const current = await finding(observedAt);
     const unknown = await finding(null);
     const archived = await finding(observedAt, true);

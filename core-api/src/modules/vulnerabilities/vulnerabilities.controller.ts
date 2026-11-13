@@ -1,3 +1,4 @@
+import { vulnerabilitySettingsChanges } from './vulnerability-settings';
 import { UserContext } from '@/common/decorators/app.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
@@ -16,6 +17,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   Req,
 } from '@nestjs/common';
@@ -24,6 +26,8 @@ import { AnalyzeVulnerabilityDto } from './dto/analyze-vulnerability.dto';
 import {
   BulkDismissVulnerabilitiesDto,
   BulkReopenVulnerabilitiesDto,
+  ClaimFixDto,
+  ClaimFixResponseDto,
 } from './dto/bulk-vulnerability.dto';
 import {
   GetVulnerabilitiesStatisticsQueryDto,
@@ -33,15 +37,18 @@ import { GetVulnerabilitiesQueryDto } from './dto/get-vulnerability.dto';
 import { ScanDto } from './dto/scan.dto';
 import { VulnerabilityTimelineResponseDto } from './dto/vulnerability-timeline.dto';
 import { VulnerabilityDismissal } from './entities/vulnerability-dismissal.entity';
-import { Vulnerability } from './entities/vulnerability.entity';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
 import { VulnerabilitiesService } from './vulnerabilities.service';
+import { VulnerabilityLifecycleService } from './vulnerability-lifecycle.service';
+import { UpdateVulnerabilitySettingsDto, VulnerabilitySettingsDto } from './dto/vulnerability-settings.dto';
+import { VulnerabilityLifecycleDto, VulnerabilityLifecycleDetailDto } from './dto/vulnerability-lifecycle.dto';
 
 @Controller('vulnerabilities')
 export class VulnerabilitiesController {
   constructor(
     private readonly vulnerabilitiesService: VulnerabilitiesService,
+    private readonly lifecycleService: VulnerabilityLifecycleService,
   ) {}
 
   @Doc({
@@ -63,7 +70,7 @@ export class VulnerabilitiesController {
     description:
       'Retrieves a comprehensive list of security vulnerabilities identified across targets and assets, including detailed information about risks and remediation recommendations.',
     response: {
-      serialization: GetManyResponseDto(Vulnerability),
+      serialization: GetManyResponseDto(VulnerabilityLifecycleDto),
     },
     request: {
       getWorkspaceId: true,
@@ -74,8 +81,10 @@ export class VulnerabilitiesController {
   async getVulnerabilities(
     @Query() query: GetVulnerabilitiesQueryDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request?: RequestWithMetadata,
   ) {
-    return this.vulnerabilitiesService.getVulnerabilities(query, workspaceId);
+    return this.vulnerabilitiesService.getVulnerabilities(query, workspaceId,
+      request?.permissions?.some(permission => ['*', 'job.read', 'job.write'].includes(permission)) ?? false);
   }
 
   @Doc({
@@ -102,11 +111,52 @@ export class VulnerabilitiesController {
   }
 
   @Doc({
+    summary: 'Get vulnerability management settings',
+    response: { serialization: VulnerabilitySettingsDto },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('vulnerability.read')
+  @Header('Cache-Control', 'private, no-store')
+  @Get('settings')
+  getSettings(@WorkspaceId() workspaceId: string) {
+    return this.lifecycleService.getSettings(workspaceId);
+  }
+
+  @Doc({
+    summary: 'Update vulnerability management settings',
+    response: { serialization: VulnerabilitySettingsDto },
+    request: { getWorkspaceId: true },
+  })
+  @PublishEvent(EVENT_CATALOG.vulnerability.settings.updated, {
+    changes: vulnerabilitySettingsChanges,
+  })
+  @WorkspaceAccess('workspace.config')
+  @Put('settings')
+  updateSettings(@WorkspaceId() workspaceId: string, @Body() dto: UpdateVulnerabilitySettingsDto) {
+    return this.lifecycleService.updateSettings(workspaceId, dto);
+  }
+
+  @Doc({
+    summary: 'Report findings fixed pending scan verification',
+    response: { serialization: ClaimFixResponseDto },
+    request: { getWorkspaceId: true },
+  })
+  @PublishEvent(EVENT_CATALOG.vulnerability.status.updated, {
+    metadata: body => ({ action: 'claim_fix', count: new Set((body as ClaimFixDto)?.vulnerabilityIds ?? []).size }),
+  })
+  @WorkspaceAccess('vulnerability.write')
+  @Post('claim-fix')
+  @HttpCode(HttpStatus.OK)
+  claimFix(@WorkspaceId() workspaceId: string, @UserContext() user: User, @Body() dto: ClaimFixDto) {
+    return this.lifecycleService.claimFix(dto.vulnerabilityIds, workspaceId, user.id, dto.note);
+  }
+
+  @Doc({
     summary: 'Get vulnerability by id',
     description:
       'Retrieves detailed information about a specific security vulnerability identified within the system, including its attributes, associated assets, and remediation guidance.',
     response: {
-      serialization: Vulnerability,
+      serialization: VulnerabilityLifecycleDetailDto,
     },
     request: {
       getWorkspaceId: true,
@@ -117,8 +167,10 @@ export class VulnerabilitiesController {
   getVulnerabilityById(
     @Param('id') id: string,
     @WorkspaceId() workspaceId: string,
+    @Req() request?: RequestWithMetadata,
   ) {
-    return this.vulnerabilitiesService.getVulnerability(id, workspaceId);
+    return this.vulnerabilitiesService.getVulnerability(id, workspaceId,
+      request?.permissions?.some(permission => ['*', 'job.read', 'job.write'].includes(permission)) ?? false);
   }
 
   @Doc({

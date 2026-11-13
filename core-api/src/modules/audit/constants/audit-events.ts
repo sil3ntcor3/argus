@@ -18,7 +18,7 @@ export interface AuditActionEntry {
   action: string;
   /** English display name served via GET /workspaces/:id/audit/actions. */
   label: string;
-  /** Controller class that emits the event (S11 wiring guard). */
+  /** Producer class (controller or background service; S11 wiring guard). */
   controller: string;
   /** Handler method on the controller that emits the event (S11). */
   method: string;
@@ -62,6 +62,8 @@ export const AUDIT_ACTION_CATALOG = [
   // vulnerabilities (21–22)
   { action: 'vulnerability.status.updated', label: 'Changed vulnerability status', controller: 'VulnerabilitiesController', method: 'bulkDismissVulnerabilities' },
   { action: 'vulnerability.bulk_updated', label: 'Bulk updated vulnerabilities', controller: 'VulnerabilitiesController', method: 'bulkReopenVulnerabilities' },
+  { action: 'vulnerability.settings.updated', label: 'Changed finding management policy', controller: 'VulnerabilitiesController', method: 'updateSettings' },
+  { action: 'vulnerability.fixed', label: 'Scanner verified findings fixed', controller: 'FindingScanAccountingService', method: 'onWorkflowEnd' },
   // reports (23–25)
   { action: 'report.generated', label: 'Generated report', controller: 'ReportsController', method: 'generateSummaryReport' },
   { action: 'report.exported', label: 'Exported report', controller: 'ReportsController', method: 'previewSummaryReport' },

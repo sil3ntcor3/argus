@@ -54,6 +54,7 @@ import {
 } from './open-vulnerability';
 import { reopenFindings } from './reopen-findings';
 import { compileVulnerabilityFilter } from './vulnerability-filter';
+import { findingLifecycleStatistics, LIFECYCLE_READ_COLUMNS, projectFindingLifecycle } from './vulnerability-lifecycle-read';
 
 @Injectable()
 export class VulnerabilitiesService {
@@ -165,6 +166,7 @@ export class VulnerabilitiesService {
   async getVulnerabilities(
     query: GetVulnerabilitiesQueryDto,
     workspaceId: string,
+    canReadJobs = false,
   ) {
     const {
       limit,
@@ -185,6 +187,7 @@ export class VulnerabilitiesService {
 
     const queryBuilder = this.vulnerabilitiesRepository
       .createQueryBuilder('vulnerabilities')
+      .addSelect(LIFECYCLE_READ_COLUMNS.map(column => `vulnerabilities.${column}`))
       .leftJoin('vulnerabilities.asset', 'assets')
       .addSelect(['assets.id', 'assets.value'])
       .leftJoin('assets.target', 'targets')
@@ -207,6 +210,7 @@ export class VulnerabilitiesService {
     } else {
       queryBuilder.orderBy(`vulnerabilities.${sortBy}`, sortOrder);
     }
+    queryBuilder.addOrderBy('vulnerabilities.id', 'ASC');
 
     if (targetIds) {
       queryBuilder.andWhere('targets.id IN (:...targetIds)', { targetIds });
@@ -229,7 +233,14 @@ export class VulnerabilitiesService {
       queryBuilder.andWhere(openVulnerabilityCondition('vulnerabilities'));
     } else if (status === VulnerabilityStatus.DISMISSED) {
       queryBuilder.andWhere('dismissal.vulnerabilityId IS NOT NULL');
+    } else if (status === VulnerabilityStatus.FIXED) {
+      queryBuilder.andWhere('vulnerabilities.detectionStatus = :detectionStatus', { detectionStatus: 'fixed' });
+    } else if ([VulnerabilityStatus.NEW, VulnerabilityStatus.ACTIVE, VulnerabilityStatus.RESURFACED].includes(status as VulnerabilityStatus)) {
+      queryBuilder.andWhere(openVulnerabilityCondition('vulnerabilities'))
+        .andWhere('vulnerabilities.detectionStatus = :detectionStatus', { detectionStatus: status });
     }
+    if (query.overdue) queryBuilder.andWhere(openVulnerabilityCondition('vulnerabilities'))
+      .andWhere('vulnerabilities.dueAt < statement_timestamp()');
 
     // Filter by severity levels
     if (Array.isArray(severity) && severity.length > 0) {
@@ -270,7 +281,8 @@ export class VulnerabilitiesService {
 
     const [vulnerabilities, total] = await queryBuilder.getManyAndCount();
 
-    return getManyResponse({ query, data: vulnerabilities, total });
+    const data = await projectFindingLifecycle(this.vulnerabilitiesRepository.manager, vulnerabilities, workspaceId, canReadJobs);
+    return getManyResponse({ query, data, total });
   }
 
   /**
@@ -280,9 +292,12 @@ export class VulnerabilitiesService {
    * @param workspaceId - The ID of the workspace to which the vulnerability belongs.
    * @returns A promise that resolves to the vulnerability entity.
    */
-  async getVulnerability(id: string, workspaceId: string) {
+  async getVulnerability(id: string, workspaceId: string, canReadJobs = false) {
     const queryBuilder = this.vulnerabilitiesRepository
       .createQueryBuilder('vulnerabilities')
+      .addSelect(LIFECYCLE_READ_COLUMNS.map(column => `vulnerabilities.${column}`))
+      .leftJoin('vulnerabilities.fixClaimedBy', 'fixActor')
+      .addSelect(['fixActor.id', 'fixActor.name', 'fixActor.image'])
       .leftJoin('vulnerabilities.asset', 'assets')
       .addSelect(['assets.id', 'assets.value'])
       .leftJoin('assets.target', 'targets')
@@ -311,7 +326,7 @@ export class VulnerabilitiesService {
     if (dismissal && (dismissal.reason !== RISK_ACCEPTED || !dismissal.expiresAt)) {
       delete dismissal.expiresAt;
     }
-    return vulnerability;
+    return (await projectFindingLifecycle(this.vulnerabilitiesRepository.manager, [vulnerability], workspaceId, canReadJobs, true))[0];
   }
 
   /**
@@ -367,7 +382,8 @@ export class VulnerabilitiesService {
       }),
     );
 
-    return { data: statistics };
+    return { data: statistics,
+      ...await findingLifecycleStatistics(this.vulnerabilitiesRepository.manager, workspaceId, targetIds) };
   }
 
   /**
@@ -390,6 +406,8 @@ export class VulnerabilitiesService {
       | (Omit<VulnerabilityTimelineEventDto, 'dismissalReason' | 'expiresAt'> & {
           rawReason: string | null;
           rawExpiry: string | null;
+          rawVerification: string | null;
+          rawVerified: unknown;
         })
       | { id: null };
     // An owned finding with no events still has one row; a missing or foreign
@@ -408,7 +426,13 @@ export class VulnerabilitiesService {
               END AS "rawReason",
               CASE WHEN event.type IN ('dismissed', 'reopened', 'risk_expired')
                 THEN event.data ->> 'expiresAt'
-              END AS "rawExpiry"
+              END AS "rawExpiry",
+              CASE WHEN event.type='fix_claimed' THEN event.data->>'verification' END AS "rawVerification",
+              CASE WHEN event.type='status_changed' AND event."toStatus"='fixed'
+                AND event.data->>'reason'='not_detected_by_covering_scan'
+                AND event.data->'coverageVersion'='1'::jsonb
+                AND jsonb_typeof(event.data->'fixClaimVerified')='boolean'
+                THEN event.data->'fixClaimVerified' END AS "rawVerified"
        FROM vulnerabilities AS finding
        JOIN assets AS asset ON asset.id = finding."assetId"
        JOIN targets AS target ON target.id = asset."targetId"
@@ -432,7 +456,7 @@ export class VulnerabilitiesService {
     const data: VulnerabilityTimelineEventDto[] = [];
     for (const row of rows) {
       if (row.id === null) continue;
-      const { rawReason, rawExpiry, ...event } = row;
+      const { rawReason, rawExpiry, rawVerification, rawVerified, ...event } = row;
       const dismissalReason = FINDING_DISMISS_REASONS.find(
         (reason) => reason === rawReason,
       );
@@ -445,6 +469,9 @@ export class VulnerabilitiesService {
           : undefined;
       data.push({
         ...event,
+        ...(rawVerification === 'next_covering_scan' || rawVerification === 'not_verifiable_by_scan'
+          ? { verification: rawVerification } : {}),
+        ...(typeof rawVerified === 'boolean' ? { fixClaimVerified: rawVerified } : {}),
         ...(dismissalReason ? { dismissalReason } : {}),
         ...(expiresAt && Number.isFinite(expiresAt.getTime()) ? { expiresAt } : {}),
       });

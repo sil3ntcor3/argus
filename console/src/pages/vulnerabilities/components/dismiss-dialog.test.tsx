@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DismissAlertDialog } from './dismiss-dialog';
 
 const mutate = vi.hoisted(() => vi.fn());
+let maxDays = 180;
+let policyReady = true;
 vi.mock('@/services/apis/gen/queries', () => ({
+  useVulnerabilitiesControllerGetSettings: () => ({ data: { riskAcceptMaxDays: maxDays }, isFetchedAfterMount: policyReady }),
   useVulnerabilitiesControllerBulkDismissVulnerabilities: () => ({
     mutate,
     isPending: false,
@@ -25,6 +28,7 @@ describe('DismissAlertDialog timed risk acceptance', () => {
   let rerender: ReturnType<typeof render>['rerender'];
 
   beforeEach(() => {
+    maxDays = 180; policyReady = true;
     mutate.mockReset();
     ({ rerender } = render(
       <DismissAlertDialog
@@ -32,6 +36,17 @@ describe('DismissAlertDialog timed risk acceptance', () => {
         trigger={<button>Dismiss alert</button>}
       />,
     ));
+  });
+
+  it('uses the workspace maximum and waits for fresh policy before accepting a risk', () => {
+    maxDays = 365; policyReady = false;
+    const dialog = open();
+    fireEvent.click(dialog.getByRole('radio', { name: 'Risk accepted' }));
+    fireEvent.change(dialog.getByLabelText('Accepted until'), { target: { value: day(364) } });
+    expect(dialog.getByRole('button', { name: 'Dismiss' })).toBeDisabled();
+    policyReady = true;
+    fireEvent.change(dialog.getByLabelText('Accepted until'), { target: { value: day(363) } });
+    expect(dialog.getByRole('button', { name: 'Dismiss' })).toBeEnabled();
   });
 
   it('requires a valid future date and submits the local date with a timezone', () => {

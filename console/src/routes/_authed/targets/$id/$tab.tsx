@@ -15,6 +15,7 @@ const targetDetailSearchSchema = z.object({
   ...table.shape,
   where: z.string().optional(),
   status: z.string().optional(),
+  overdue: z.enum(['true']).optional(),
   severity: z.string().optional(),
   tags: z.string().optional(),
   createdFrom: z.string().optional(),

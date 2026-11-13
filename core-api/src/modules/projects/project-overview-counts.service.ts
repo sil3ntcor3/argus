@@ -58,7 +58,7 @@ export class ProjectOverviewCountsService {
         SELECT v.severity, pv."firstSeenAt", ${openVulnerabilityCondition('v')} AS "isOpen"
         FROM owned p JOIN project_vulnerabilities pv ON pv."projectId" = p.id
         JOIN LATERAL (
-          SELECT v.id, v.severity, v."isArchived"
+          SELECT v.id, v.severity, v."isArchived", v."detectionStatus"
           FROM vulnerabilities v JOIN assets a ON a.id = v."assetId"
           JOIN targets t ON t.id = a."targetId" AND t."workspaceId" = $2
           WHERE v.id = pv."vulnerabilityId"
