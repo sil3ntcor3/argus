@@ -86,7 +86,7 @@ describe('Project AI context and files (Docker e2e)', () => {
       const pending = request(app.server).patch(`/api/projects/${project}`).set(owner.headers).send({ instruction: 'Must not be saved' }).expect(400).then(response => response);
       let waiting = false;
       for (let n=0; n<100; n++) {
-        const [row] = await app.dataSource.query<{ waiting: boolean }[]>(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'SELECT "archivedAt" FROM projects%' AND query NOT LIKE '%pg_stat_activity%') AS waiting`);
+        const [row] = await app.dataSource.query<{ waiting: boolean }[]>(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'SELECT id,"archivedAt" FROM projects%' AND query NOT LIKE '%pg_stat_activity%') AS waiting`);
         if (row.waiting) { waiting = true; break; } await delay(5);
       }
       expect(waiting).toBe(true); await blocker.commitTransaction(); await pending;

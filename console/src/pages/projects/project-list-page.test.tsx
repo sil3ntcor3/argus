@@ -14,6 +14,7 @@ vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
   useWorkspaceState: mock.workspace,
 }));
+vi.mock('./project-archive-dialog', () => ({ ProjectArchiveDialog: () => null }));
 vi.mock('@/services/apis/gen/queries', () => ({
   useProjectsControllerGetMany: mock.projects,
 }));
@@ -100,6 +101,16 @@ describe('ProjectListPage', () => {
       page: 1,
       search: 'perimeter',
     });
+  });
+
+  it('resets pagination when switching archived filters and preserves it during search', () => {
+    render(<ListHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Project status' }), { target: { value: 'archived' } });
+    expect(mock.projects.mock.lastCall?.[0]).toMatchObject({ page: 1, status: 'archived' });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search projects' }), { target: { value: 'perimeter' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(mock.projects.mock.lastCall?.[0]).toMatchObject({ page: 1, status: 'archived', search: 'perimeter' });
   });
 
   it('distinguishes an empty workspace from a search with no matches', () => {

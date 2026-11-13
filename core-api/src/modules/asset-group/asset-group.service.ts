@@ -71,6 +71,7 @@ export class AssetGroupService {
     query: GetAllAssetGroupsQueryDto,
     workspaceId: string,
     projectScoped = false,
+    projectStatus?: 'active' | 'archived' | 'all',
   ) {
     try {
       const { page, limit, sortBy, sortOrder } = query;
@@ -81,6 +82,8 @@ export class AssetGroupService {
         .createQueryBuilder('assetGroup')
         .leftJoin('assetGroup.workspace', 'workspace')
         .where('workspace.id = :workspaceId', { workspaceId });
+      if (projectScoped && projectStatus && projectStatus !== 'all')
+        queryBuilder.andWhere(`assetGroup.archivedAt IS ${projectStatus === 'archived' ? 'NOT ' : ''}NULL`);
 
       // Add search filter if provided
       if (query.search && query.search.trim() !== '') {
@@ -626,52 +629,23 @@ export class AssetGroupService {
     metadata?: ProjectMetadataInput,
   ): Promise<AssetGroup> {
     try {
-      if (metadata?.instruction !== undefined) {
-        // Instruction writes must serialize with archive/delete, including when
-        // the request was authorized before another transaction archived it.
-        return this.assetGroupRepo.manager.transaction(async manager => {
-          const [project] = await manager.query<{ archivedAt: Date | null }[]>(
-            'SELECT "archivedAt" FROM projects WHERE id=$1 AND "workspaceId"=$2 FOR NO KEY UPDATE', [id, workspaceId]);
-          if (!project) throw new NotFoundException('Project not found');
-          if (project.archivedAt) throw new BadRequestException('Project is archived');
-          const repo = manager.getRepository(AssetGroup);
-          await repo.update({ id }, {
-            ...(updateAssetGroupDto.name !== undefined ? { name: updateAssetGroupDto.name } : {}),
-            ...(updateAssetGroupDto.hexColor !== undefined ? { hexColor: updateAssetGroupDto.hexColor } : {}),
-            ...(metadata.description !== undefined ? { description: metadata.description?.trim() || null } : {}),
-            ...(metadata.autoAddAssets !== undefined ? { autoAddAssets: metadata.autoAddAssets } : {}),
-            instruction: metadata.instruction?.trim() || null,
-          });
-          return repo.findOneByOrFail({ id, workspace: { id: workspaceId } });
-        });
-      }
-      // Find the asset group
-      const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id, workspace: { id: workspaceId } },
+      return await this.assetGroupRepo.manager.transaction(async manager => {
+        await manager.query('SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE', [workspaceId]);
+        const [project] = await manager.query<{ id: string; archivedAt: Date | null }[]>(
+          'SELECT id,"archivedAt" FROM projects WHERE id=$1 AND "workspaceId"=$2 FOR NO KEY UPDATE', [id, workspaceId]);
+        if (!project) throw new NotFoundException('Project not found');
+        if (project.archivedAt) throw new BadRequestException('Project is archived');
+        const repo = manager.getRepository(AssetGroup);
+        const patch = {
+          ...(updateAssetGroupDto.name !== undefined ? { name: updateAssetGroupDto.name } : {}),
+          ...(updateAssetGroupDto.hexColor !== undefined ? { hexColor: updateAssetGroupDto.hexColor } : {}),
+          ...(metadata?.description !== undefined ? { description: metadata.description?.trim() || null } : {}),
+          ...(metadata?.autoAddAssets !== undefined ? { autoAddAssets: metadata.autoAddAssets } : {}),
+          ...(metadata?.instruction !== undefined ? { instruction: metadata.instruction?.trim() || null } : {}),
+        };
+        if (Object.keys(patch).length) await repo.update({ id: project.id }, patch);
+        return repo.findOneByOrFail({ id: project.id, workspace: { id: workspaceId } });
       });
-
-      if (!assetGroup) {
-        throw new NotFoundException(
-          `Asset group with ID "${id}" not found in workspace "${workspaceId}"`,
-        );
-      }
-
-      // Update fields if provided
-      if (updateAssetGroupDto.name !== undefined) {
-        assetGroup.name = updateAssetGroupDto.name;
-      }
-      if (updateAssetGroupDto.hexColor !== undefined) {
-        assetGroup.hexColor = updateAssetGroupDto.hexColor;
-      }
-
-      // Save the updated asset group
-      if (metadata?.description !== undefined)
-        assetGroup.description = metadata.description?.trim() || null;
-      if (metadata?.autoAddAssets !== undefined)
-        assetGroup.autoAddAssets = metadata.autoAddAssets;
-      const updatedAssetGroup = await this.assetGroupRepo.save(assetGroup);
-
-      return updatedAssetGroup;
     } catch (error) {
       this.logger.error(
         `Error updating asset group with ID ${id} in workspace ${workspaceId}:`,

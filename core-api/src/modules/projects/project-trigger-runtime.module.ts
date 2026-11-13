@@ -9,6 +9,7 @@ import {
 } from './project-trigger-batch.service';
 import { ProjectTriggerRuntimeService } from './project-trigger-runtime.service';
 import { ProjectRunEventsListener } from './project-run-events.listener';
+import { ProjectLegacyScheduleService } from './project-legacy-schedule.service';
 
 @Processor(BullMQName.PROJECT_TRIGGER_EVENTS)
 class ProjectTriggerEventConsumer extends WorkerHost {
@@ -30,6 +31,7 @@ class ProjectTriggerEventConsumer extends WorkerHost {
     ),
   ],
   providers: [
+    ProjectLegacyScheduleService,
     ProjectTriggerDefinitionService,
     ProjectTriggerBatchService,
     ProjectTriggerRuntimeService,
@@ -37,6 +39,7 @@ class ProjectTriggerEventConsumer extends WorkerHost {
     ProjectTriggerEventConsumer,
   ],
   exports: [
+    ProjectLegacyScheduleService,
     ProjectTriggerDefinitionService,
     ProjectTriggerRuntimeService,
     ProjectTriggerBatchService,

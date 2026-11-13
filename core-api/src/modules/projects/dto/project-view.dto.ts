@@ -20,4 +20,6 @@ export class ProjectViewDto extends PickType(AssetGroup, [
 
   @ApiProperty({ type: Boolean, readOnly: true })
   autoAddAssets: boolean;
+  @ApiProperty({ type: String, format: 'date-time', nullable: true, readOnly: true })
+  archivedAt: Date | null;
 }

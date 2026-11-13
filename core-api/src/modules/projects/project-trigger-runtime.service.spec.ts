@@ -1,4 +1,5 @@
 import type { DataSource } from 'typeorm';
+import type { ProjectLegacyScheduleService } from './project-legacy-schedule.service';
 import type { Queue } from 'bullmq';
 import type { WorkflowRunnerService } from '../jobs-registry/workflow-runner.service';
 import type { ProjectTriggerBatchService } from './project-trigger-batch.service';
@@ -26,6 +27,7 @@ describe('Project trigger runtime reconciliation', () => {
       {} as WorkflowRunnerService,
       queue as unknown as Queue,
       {} as ProjectTriggerBatchService,
+      { reconcileWithManager: jest.fn() } as unknown as ProjectLegacyScheduleService,
     );
     await runtime.reconcile();
     expect(queue.removeJobScheduler).toHaveBeenCalledTimes(1);

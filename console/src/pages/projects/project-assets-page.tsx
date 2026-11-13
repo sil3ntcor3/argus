@@ -1,3 +1,4 @@
+import { ProjectArchivedNotice } from './project-archive-dialog';
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +10,7 @@ import {
   type ProjectAssetDto,
   ProjectAssetSource,
   useProjectsControllerGetAssets,
+  useProjectsControllerGetById,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
@@ -146,9 +148,11 @@ function AssetList({
   onChange,
   canOpenAssets,
   canOpenRuns,
-  canEditProject,
+  canEditProject: requestedEdit,
   workspaceId,
 }: AssetProps & AssetLinks & { canEditProject: boolean; workspaceId: string }) {
+  const metadata = useProjectsControllerGetById(projectId, { query: { retry: false } });
+  const canEditProject = requestedEdit && Boolean(metadata.data) && !metadata.isError && !metadata.data?.archivedAt;
   const [assetToRemove, setAssetToRemove] = useState<ProjectAssetDto | null>(
     null,
   );
@@ -224,6 +228,7 @@ function AssetList({
 
   return (
     <div className="space-y-4">
+      <ProjectArchivedNotice archivedAt={metadata.data?.archivedAt} />
       <ProjectScopeSummary projectId={projectId} canEdit={canEditProject} />
       {canEditProject && (
         <>

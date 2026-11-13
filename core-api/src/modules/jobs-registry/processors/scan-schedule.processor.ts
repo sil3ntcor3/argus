@@ -1,3 +1,4 @@
+import { ProjectArchivedException } from '@/modules/projects/project-archive-state';
 import { ProjectTriggerRuntimeService } from '@/modules/projects/project-trigger-runtime.service';
 import { BullMQName, JobRunType } from '@/common/enums/enum';
 import { AssetGroupWorkflowService } from '@/modules/asset-group/asset-group-workflow.service';
@@ -47,7 +48,7 @@ export class AssetGroupsScheduleConsumer extends WorkerHost {
     super();
   }
   async process(job: Job<AssetGroupWorkflow & { triggerId?: string; cron?: string }>): Promise<void> {
-    if (job.data.triggerId) { await this.triggers.fireCron(job.data.triggerId, job.id ?? String(job.timestamp), job.data.cron); return; }
+    if (job.data.triggerId) { await this.triggers.fireCron(job.data.triggerId, job.id ?? String(job.timestamp), job.data.cron, (job.data as { epoch?: string }).epoch); return; }
     const assetGroupWorkflowId = job.data.id;
     try {
       // Internal scheduler: the binding id comes from our own queue, so the
@@ -60,14 +61,14 @@ export class AssetGroupsScheduleConsumer extends WorkerHost {
         assetGroupWorkflowId,
         JobRunType.SCHEDULED,
         workspaceId,
+        job.repeatJobKey,
       );
     } catch (error) {
-      // The job is orphaned: its asset group/workflow was removed from the
-      // DB without cleaning up the BullMQ schedule. Drop the job instead of
-      // letting it fail on every repeat.
-      if (error instanceof NotFoundException) {
+      // A deleted or archived binding may retain a repeat after Redis cleanup
+      // failed. Remove only the key from this actual delivery.
+      if (error instanceof NotFoundException || error instanceof ProjectArchivedException) {
         this.logger.warn(
-          `Asset group workflow "${assetGroupWorkflowId}" no longer exists, removing scheduled job`,
+          `Asset group workflow "${assetGroupWorkflowId}" is unavailable, removing scheduled job`,
         );
         if (job.repeatJobKey) {
           await this.assetGroupWorkflowService.removeGroupWorkflowScheduler(

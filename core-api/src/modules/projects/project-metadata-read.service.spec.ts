@@ -71,7 +71,7 @@ describe('ProjectMetadataReadService', () => {
       'description',
       'Saved',
     );
-    expect(result.data[0]).not.toHaveProperty('archivedAt');
+    expect(result.data[0]).toHaveProperty('archivedAt', null);
   });
 
   it('does not query metadata for an empty list', async () => {

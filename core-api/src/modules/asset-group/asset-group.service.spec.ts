@@ -34,6 +34,8 @@ describe('AssetGroupService', () => {
     manager: mockManager,
     findOne: jest.fn(),
     findByIds: jest.fn(),
+    update: jest.fn(),
+    findOneByOrFail: jest.fn(),
     createQueryBuilder: jest.fn(),
     create: jest.fn<
       Record<string, unknown>,
@@ -902,6 +904,8 @@ describe('AssetGroupService', () => {
       autoAddAssets: true,
     };
     mockAssetGroupRepo.findOne.mockResolvedValue(saved);
+    mockAssetGroupRepo.findOneByOrFail.mockResolvedValue(saved);
+    mockAssetGroupRepo.update.mockImplementation((_where, patch) => { Object.assign(saved, patch); return Promise.resolve({ affected: 1 }); });
     mockAssetGroupRepo.save.mockImplementation((entity) =>
       Promise.resolve(entity),
     );

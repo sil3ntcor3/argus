@@ -5557,6 +5557,77 @@ export type NotificationListResponseDto = {
   nextCursor?: string | null;
 };
 
+export type AssetGroupLastRunDtoStatus =
+  (typeof AssetGroupLastRunDtoStatus)[keyof typeof AssetGroupLastRunDtoStatus];
+
+export const AssetGroupLastRunDtoStatus = {
+  pending: 'pending',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  skipped: 'skipped',
+} as const;
+
+export type AssetGroupLastRunDtoJobRunType =
+  (typeof AssetGroupLastRunDtoJobRunType)[keyof typeof AssetGroupLastRunDtoJobRunType];
+
+export const AssetGroupLastRunDtoJobRunType = {
+  manual: 'manual',
+  scheduled: 'scheduled',
+  event: 'event',
+} as const;
+
+export type AssetGroupLastRunDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  totalJobs: number;
+  status: AssetGroupLastRunDtoStatus;
+  workflowName: string;
+  jobHistoryName: string;
+  jobRunType: AssetGroupLastRunDtoJobRunType;
+};
+
+export type AssetGroupWorkflowAssetGroup = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type AssetGroupWorkflowJobId = { [key: string]: unknown } | null;
+
+export type AssetGroupWorkflow = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  assetGroup: AssetGroupWorkflowAssetGroup;
+  workflow: Workflow;
+  /** 5-field cron expression (UTC) or "disabled" to turn scheduling off */
+  schedule: string;
+  /** @nullable */
+  jobId?: AssetGroupWorkflowJobId;
+  lastRun?: AssetGroupLastRunDto;
+};
+
+export type ProjectViewDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  hexColor?: string;
+  assetGroupWorkflows?: AssetGroupWorkflow[];
+  totalAssets: number;
+  /** @nullable */
+  lastRunAt?: string | null;
+  /** @nullable */
+  readonly description: string | null;
+  /** @nullable */
+  readonly instruction: string | null;
+  readonly autoAddAssets: boolean;
+  /** @nullable */
+  readonly archivedAt: string | null;
+};
+
 export type ProjectWorkflowViewDto = {
   id: string;
   name: string;
@@ -5600,38 +5671,6 @@ export type ProjectTriggerDto = {
   lastFiredAt: string | null;
 };
 
-export type AssetGroupLastRunDtoStatus =
-  (typeof AssetGroupLastRunDtoStatus)[keyof typeof AssetGroupLastRunDtoStatus];
-
-export const AssetGroupLastRunDtoStatus = {
-  pending: 'pending',
-  in_progress: 'in_progress',
-  completed: 'completed',
-  failed: 'failed',
-  cancelled: 'cancelled',
-  skipped: 'skipped',
-} as const;
-
-export type AssetGroupLastRunDtoJobRunType =
-  (typeof AssetGroupLastRunDtoJobRunType)[keyof typeof AssetGroupLastRunDtoJobRunType];
-
-export const AssetGroupLastRunDtoJobRunType = {
-  manual: 'manual',
-  scheduled: 'scheduled',
-  event: 'event',
-} as const;
-
-export type AssetGroupLastRunDto = {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-  totalJobs: number;
-  status: AssetGroupLastRunDtoStatus;
-  workflowName: string;
-  jobHistoryName: string;
-  jobRunType: AssetGroupLastRunDtoJobRunType;
-};
-
 export type ProjectWorkflowBindingDto = {
   id: string;
   projectId: string;
@@ -5661,43 +5700,6 @@ export type RunProjectWorkflowDto = {
 export type ProjectWorkflowRemovedDto = {
   message: string;
   name: string;
-};
-
-export type AssetGroupWorkflowAssetGroup = { [key: string]: unknown };
-
-/**
- * @nullable
- */
-export type AssetGroupWorkflowJobId = { [key: string]: unknown } | null;
-
-export type AssetGroupWorkflow = {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-  assetGroup: AssetGroupWorkflowAssetGroup;
-  workflow: Workflow;
-  /** 5-field cron expression (UTC) or "disabled" to turn scheduling off */
-  schedule: string;
-  /** @nullable */
-  jobId?: AssetGroupWorkflowJobId;
-  lastRun?: AssetGroupLastRunDto;
-};
-
-export type ProjectViewDto = {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-  name: string;
-  hexColor?: string;
-  assetGroupWorkflows?: AssetGroupWorkflow[];
-  totalAssets: number;
-  /** @nullable */
-  lastRunAt?: string | null;
-  /** @nullable */
-  readonly description: string | null;
-  /** @nullable */
-  readonly instruction: string | null;
-  readonly autoAddAssets: boolean;
 };
 
 export type GetManyProjectViewDtoDto = {
@@ -8479,7 +8481,17 @@ export type ProjectsControllerGetManyParams = {
   sortBy?: string;
   sortOrder?: string;
   targetIds?: string[];
+  status?: ProjectsControllerGetManyStatus;
 };
+
+export type ProjectsControllerGetManyStatus =
+  (typeof ProjectsControllerGetManyStatus)[keyof typeof ProjectsControllerGetManyStatus];
+
+export const ProjectsControllerGetManyStatus = {
+  active: 'active',
+  archived: 'archived',
+  all: 'all',
+} as const;
 
 export type ProjectsControllerGetAssetsParams = {
   search?: string;
@@ -44246,6 +44258,180 @@ export const useNotificationsControllerDeleteNotification = <
 > => {
   return useMutation(
     getNotificationsControllerDeleteNotificationMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Archive a project and pause its schedules
+ */
+export const projectsControllerArchive = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectViewDto>(
+    { url: `/api/projects/${id}/archive`, method: 'POST', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerArchiveMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerArchive>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerArchive>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerArchive'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerArchive>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return projectsControllerArchive(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerArchiveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerArchive>>
+>;
+
+export type ProjectsControllerArchiveMutationError = unknown;
+
+/**
+ * @summary Archive a project and pause its schedules
+ */
+export const useProjectsControllerArchive = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerArchive>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerArchive>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerArchiveMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Reopen an archived project
+ */
+export const projectsControllerUnarchive = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectViewDto>(
+    { url: `/api/projects/${id}/unarchive`, method: 'POST', signal },
+    options,
+  );
+};
+
+export const getProjectsControllerUnarchiveMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof projectsControllerUnarchive>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof projectsControllerUnarchive>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['projectsControllerUnarchive'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof projectsControllerUnarchive>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return projectsControllerUnarchive(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ProjectsControllerUnarchiveMutationResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerUnarchive>>
+>;
+
+export type ProjectsControllerUnarchiveMutationError = unknown;
+
+/**
+ * @summary Reopen an archived project
+ */
+export const useProjectsControllerUnarchive = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof projectsControllerUnarchive>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof projectsControllerUnarchive>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getProjectsControllerUnarchiveMutationOptions(options),
     queryClient,
   );
 };

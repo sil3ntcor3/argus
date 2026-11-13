@@ -1,3 +1,5 @@
+import { isGroupOwnedWorkflow } from '../asset-group/workflow-ownership';
+import { ProjectArchivedException } from '../projects/project-archive-state';
 import { GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -117,6 +119,9 @@ export class WorkflowsService {
         .setLock('pessimistic_write', undefined, ['workflow'])
         .getOne();
       if (!workflow) throw new Error('Workflow not found in this workspace');
+      const owners = await manager.query<{ id: string; archivedAt: Date | null }[]>('SELECT p.id,p."archivedAt" FROM projects p JOIN project_workflows pw ON pw."projectId"=p.id WHERE pw."workflowId"=$1 AND p."workspaceId"=$2', [workflow.id, workspace.id]);
+      if (owners.some(project => project.archivedAt && isGroupOwnedWorkflow(workflow, project.id))) throw new ProjectArchivedException();
+
       if (updateData.name) workflow.name = updateData.name;
       if (updateData.content) {
         const projects = await manager.query<{ projectId: string }[]>(
@@ -243,8 +248,15 @@ export class WorkflowsService {
    * @throws Error if workflow is not found in the workspace
    */
   async deleteWorkflow(id: string, workspace: { id: string }): Promise<void> {
-    const workflow = await this.getWorkspaceWorkflow(id, workspace);
-    await this.workflowRepository.remove(workflow);
+    await this.workflowRepository.manager.transaction(async manager => {
+      await manager.query('SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE', [workspace.id]);
+      const workflow = await manager.getRepository(Workflow).createQueryBuilder('workflow').leftJoinAndSelect('workflow.workspace', 'workspace')
+        .where('workflow.id=:id AND workflow."workspaceId"=:workspaceId', { id, workspaceId: workspace.id }).setLock('pessimistic_write', undefined, ['workflow']).getOne();
+      if (!workflow) throw new Error('Workflow not found in this workspace');
+      const owners = await manager.query<{ id: string; archivedAt: Date | null }[]>('SELECT p.id,p."archivedAt" FROM projects p JOIN project_workflows pw ON pw."projectId"=p.id WHERE pw."workflowId"=$1 AND p."workspaceId"=$2', [workflow.id, workspace.id]);
+      if (owners.some(project => project.archivedAt && isGroupOwnedWorkflow(workflow, project.id))) throw new ProjectArchivedException();
+      await manager.remove(Workflow, workflow);
+    });
   }
 
   /**

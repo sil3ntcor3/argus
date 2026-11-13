@@ -1,4 +1,5 @@
 import { ProjectTriggerManageDialog } from './project-trigger-manage-dialog';
+import { ProjectArchivedNotice } from './project-archive-dialog';
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
 import {
@@ -284,11 +285,13 @@ function WorkflowList({
       />
     );
   const bindings = workflows.data;
+  const archived = Boolean(project.data.archivedAt);
   const hasAssets = project.data.totalAssets > 0;
 
   return (
     <section ref={assignments} tabIndex={-1} aria-label="Workflow assignments">
-      {editWorkspaceId && (
+      <ProjectArchivedNotice archivedAt={project.data.archivedAt} />
+      {editWorkspaceId && !archived && (
         <div className="mb-3 flex justify-end">
           <ProjectWorkflowCreateDialog
             projectId={projectId}
@@ -304,8 +307,8 @@ function WorkflowList({
               binding={binding}
               canOpenRuns={canOpenRuns}
               projectId={projectId}
-              editWorkspaceId={editWorkspaceId}
-              runWorkspaceId={runWorkspaceId}
+              editWorkspaceId={archived ? undefined : editWorkspaceId}
+              runWorkspaceId={archived ? undefined : runWorkspaceId}
               hasAssets={hasAssets}
               triggers={triggers}
               otherWorkflows={bindings

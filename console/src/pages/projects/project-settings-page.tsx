@@ -23,6 +23,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, type ReactNode, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ProjectDeleteDialog } from './project-delete-dialog';
+import { ProjectArchiveDialog, ProjectArchivedNotice } from './project-archive-dialog';
 import { ProjectAgentContext } from './project-agent-context';
 import { projectRouteId } from './project-route-id';
 
@@ -87,6 +88,7 @@ function SettingsForm({
   });
   const stale = update.error instanceof SettingsChanged;
   const canSave =
+    !project.archivedAt &&
     !stale &&
     patch.name !== '' &&
     (patch.name !== undefined || patch.description !== undefined);
@@ -108,7 +110,7 @@ function SettingsForm({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canSave || lock.current || workspaceId !== getGlobalWorkspaceId())
+    if (project.archivedAt || !canSave || lock.current || workspaceId !== getGlobalWorkspaceId())
       return;
     lock.current = true;
     setSaving(true);
@@ -143,7 +145,7 @@ function SettingsForm({
           value={name}
           required={draft?.name !== undefined}
           maxLength={120}
-          readOnly={saving}
+          readOnly={saving || Boolean(project.archivedAt)}
           className="focus-visible:ring-2 focus-visible:ring-ring"
           onChange={(event) => edit('name', event.target.value)}
         />
@@ -154,7 +156,7 @@ function SettingsForm({
           id="project-settings-description"
           value={description}
           maxLength={2000}
-          readOnly={saving}
+          readOnly={saving || Boolean(project.archivedAt)}
           onChange={(event) => edit('description', event.target.value)}
         />
       </div>
@@ -193,8 +195,10 @@ function SettingsForm({
 
   return (
     <div className="max-w-xl space-y-6">
+      <ProjectArchivedNotice archivedAt={project.archivedAt} />
+      <ProjectArchiveDialog key={`${workspaceId}:${project.id}:${project.archivedAt ?? 'active'}`} project={project} workspaceId={workspaceId} />
       {form}
-      <ProjectAgentContext project={project} workspaceId={workspaceId} canEdit canChat={permission.hasPermission('agent.read')} />
+      <ProjectAgentContext project={project} workspaceId={workspaceId} canEdit={!project.archivedAt} canChat={permission.hasPermission('agent.read')} />
       <section
         className="space-y-2 border-t pt-4"
         aria-label="Project deletion"
