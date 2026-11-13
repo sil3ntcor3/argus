@@ -6394,6 +6394,71 @@ export type ArtifactFolderDetailDto = {
   path: ArtifactFolderPathItemDto[];
 };
 
+export type CommentAuthorDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  image?: string | null;
+};
+
+export type RepliedCommentDto = {
+  id: string;
+  /** First characters of the replied-to comment */
+  snippet: string;
+  /** The replied-to comment has been deleted */
+  deleted: boolean;
+  /** @nullable */
+  author: CommentAuthorDto | null;
+};
+
+export type CommentResponseDtoType =
+  (typeof CommentResponseDtoType)[keyof typeof CommentResponseDtoType];
+
+export const CommentResponseDtoType = {
+  content: 'content',
+  open: 'open',
+  closed: 'closed',
+} as const;
+
+export type CommentResponseDto = {
+  id: string;
+  content: string;
+  type: CommentResponseDtoType;
+  /** @nullable */
+  issueId?: string | null;
+  /** @nullable */
+  vulnerabilityId?: string | null;
+  isCanEdit: boolean;
+  isCanDelete: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  author: CommentAuthorDto | null;
+  /** @nullable */
+  repComment: RepliedCommentDto | null;
+};
+
+export type GetManyCommentResponseDtoDto = {
+  data: CommentResponseDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
+export type CreateCommentDto = {
+  /** @maxLength 10000 */
+  content: string;
+  /** Comment this one replies to; must be on the same subject. */
+  repCommentId?: string;
+};
+
+export type UpdateCommentDto = {
+  /** @maxLength 10000 */
+  content: string;
+};
+
 export type CreateFirstAdminDto = {
   email: string;
   password: string;
@@ -7723,6 +7788,22 @@ export type ArtifactFoldersControllerGetManyParams = {
    * Parent folder ID. Omit for the workspace root.
    */
   parentFolderId?: string;
+};
+
+export type CommentsControllerListIssueCommentsParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: string;
+};
+
+export type CommentsControllerListVulnerabilityCommentsParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: string;
 };
 
 export type AdminUsersControllerGetUsersParams = {
@@ -52972,6 +53053,1226 @@ export function usePublicArtifactsControllerDownload<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Comments of an issue, oldest first.
+ * @summary List issue comments
+ */
+export const commentsControllerListIssueComments = (
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyCommentResponseDtoDto>(
+    { url: `/api/issues/${issueId}/comments`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getCommentsControllerListIssueCommentsInfiniteQueryKey = (
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+) => {
+  return [
+    'infinite',
+    `/api/issues/${issueId}/comments`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getCommentsControllerListIssueCommentsQueryKey = (
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+) => {
+  return [
+    `/api/issues/${issueId}/comments`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getCommentsControllerListIssueCommentsInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+    CommentsControllerListIssueCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListIssueCommentsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getCommentsControllerListIssueCommentsInfiniteQueryKey(issueId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+    QueryKey,
+    CommentsControllerListIssueCommentsParams['page']
+  > = ({ signal, pageParam }) =>
+    commentsControllerListIssueComments(
+      issueId,
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: issueId !== null && issueId !== undefined,
+    ...queryOptions,
+  } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+    TError,
+    TData,
+    QueryKey,
+    CommentsControllerListIssueCommentsParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type CommentsControllerListIssueCommentsInfiniteQueryResult =
+  NonNullable<Awaited<ReturnType<typeof commentsControllerListIssueComments>>>;
+export type CommentsControllerListIssueCommentsInfiniteQueryError = unknown;
+
+export function useCommentsControllerListIssueCommentsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+    CommentsControllerListIssueCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  issueId: string,
+  params: undefined | CommentsControllerListIssueCommentsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListIssueCommentsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+          TError,
+          Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useCommentsControllerListIssueCommentsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+    CommentsControllerListIssueCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListIssueCommentsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+          TError,
+          Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useCommentsControllerListIssueCommentsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+    CommentsControllerListIssueCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListIssueCommentsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List issue comments
+ */
+
+export function useCommentsControllerListIssueCommentsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+    CommentsControllerListIssueCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListIssueCommentsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getCommentsControllerListIssueCommentsInfiniteQueryOptions(
+      issueId,
+      params,
+      options,
+    );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getCommentsControllerListIssueCommentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+  TError = unknown,
+>(
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getCommentsControllerListIssueCommentsQueryKey(issueId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>
+  > = ({ signal }) =>
+    commentsControllerListIssueComments(
+      issueId,
+      params,
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: issueId !== null && issueId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type CommentsControllerListIssueCommentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof commentsControllerListIssueComments>>
+>;
+export type CommentsControllerListIssueCommentsQueryError = unknown;
+
+export function useCommentsControllerListIssueComments<
+  TData = Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+  TError = unknown,
+>(
+  issueId: string,
+  params: undefined | CommentsControllerListIssueCommentsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+          TError,
+          Awaited<ReturnType<typeof commentsControllerListIssueComments>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useCommentsControllerListIssueComments<
+  TData = Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+  TError = unknown,
+>(
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+          TError,
+          Awaited<ReturnType<typeof commentsControllerListIssueComments>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useCommentsControllerListIssueComments<
+  TData = Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+  TError = unknown,
+>(
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List issue comments
+ */
+
+export function useCommentsControllerListIssueComments<
+  TData = Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+  TError = unknown,
+>(
+  issueId: string,
+  params?: CommentsControllerListIssueCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListIssueComments>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getCommentsControllerListIssueCommentsQueryOptions(
+    issueId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Adds a comment to an issue, optionally as a reply to a comment of the same issue.
+ * @summary Comment on an issue
+ */
+export const commentsControllerCreateIssueComment = (
+  issueId: string,
+  createCommentDto: CreateCommentDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<CommentResponseDto>(
+    {
+      url: `/api/issues/${issueId}/comments`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createCommentDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getCommentsControllerCreateIssueCommentMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof commentsControllerCreateIssueComment>>,
+    TError,
+    { issueId: string; data: CreateCommentDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof commentsControllerCreateIssueComment>>,
+  TError,
+  { issueId: string; data: CreateCommentDto },
+  TContext
+> => {
+  const mutationKey = ['commentsControllerCreateIssueComment'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof commentsControllerCreateIssueComment>>,
+    { issueId: string; data: CreateCommentDto }
+  > = (props) => {
+    const { issueId, data } = props ?? {};
+
+    return commentsControllerCreateIssueComment(issueId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CommentsControllerCreateIssueCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof commentsControllerCreateIssueComment>>
+>;
+export type CommentsControllerCreateIssueCommentMutationBody = CreateCommentDto;
+export type CommentsControllerCreateIssueCommentMutationError = unknown;
+
+/**
+ * @summary Comment on an issue
+ */
+export const useCommentsControllerCreateIssueComment = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof commentsControllerCreateIssueComment>>,
+      TError,
+      { issueId: string; data: CreateCommentDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof commentsControllerCreateIssueComment>>,
+  TError,
+  { issueId: string; data: CreateCommentDto },
+  TContext
+> => {
+  return useMutation(
+    getCommentsControllerCreateIssueCommentMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Comments of a vulnerability, oldest first.
+ * @summary List vulnerability comments
+ */
+export const commentsControllerListVulnerabilityComments = (
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyCommentResponseDtoDto>(
+    {
+      url: `/api/vulnerabilities/${vulnerabilityId}/comments`,
+      method: 'GET',
+      params,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getCommentsControllerListVulnerabilityCommentsInfiniteQueryKey = (
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+) => {
+  return [
+    'infinite',
+    `/api/vulnerabilities/${vulnerabilityId}/comments`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getCommentsControllerListVulnerabilityCommentsQueryKey = (
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+) => {
+  return [
+    `/api/vulnerabilities/${vulnerabilityId}/comments`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getCommentsControllerListVulnerabilityCommentsInfiniteQueryOptions =
+  <
+    TData = InfiniteData<
+      Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+      CommentsControllerListVulnerabilityCommentsParams['page']
+    >,
+    TError = unknown,
+  >(
+    vulnerabilityId: string,
+    params?: CommentsControllerListVulnerabilityCommentsParams,
+    options?: {
+      query?: Partial<
+        UseInfiniteQueryOptions<
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >,
+          TError,
+          TData,
+          QueryKey,
+          CommentsControllerListVulnerabilityCommentsParams['page']
+        >
+      >;
+      request?: SecondParameter<typeof orvalClient>;
+    },
+  ) => {
+    const { query: queryOptions, request: requestOptions } = options ?? {};
+
+    const queryKey =
+      queryOptions?.queryKey ??
+      getCommentsControllerListVulnerabilityCommentsInfiniteQueryKey(
+        vulnerabilityId,
+        params,
+      );
+
+    const queryFn: QueryFunction<
+      Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+      QueryKey,
+      CommentsControllerListVulnerabilityCommentsParams['page']
+    > = ({ signal, pageParam }) =>
+      commentsControllerListVulnerabilityComments(
+        vulnerabilityId,
+        { ...params, page: pageParam ?? params?.['page'] },
+        requestOptions,
+        signal,
+      );
+
+    return {
+      queryKey,
+      queryFn,
+      enabled: vulnerabilityId !== null && vulnerabilityId !== undefined,
+      ...queryOptions,
+    } as UseInfiniteQueryOptions<
+      Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+      TError,
+      TData,
+      QueryKey,
+      CommentsControllerListVulnerabilityCommentsParams['page']
+    > & { queryKey: DataTag<QueryKey, TData, TError> };
+  };
+
+export type CommentsControllerListVulnerabilityCommentsInfiniteQueryResult =
+  NonNullable<
+    Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>
+  >;
+export type CommentsControllerListVulnerabilityCommentsInfiniteQueryError =
+  unknown;
+
+export function useCommentsControllerListVulnerabilityCommentsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+    CommentsControllerListVulnerabilityCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params: undefined | CommentsControllerListVulnerabilityCommentsParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListVulnerabilityCommentsParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useCommentsControllerListVulnerabilityCommentsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+    CommentsControllerListVulnerabilityCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListVulnerabilityCommentsParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useCommentsControllerListVulnerabilityCommentsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+    CommentsControllerListVulnerabilityCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListVulnerabilityCommentsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List vulnerability comments
+ */
+
+export function useCommentsControllerListVulnerabilityCommentsInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+    CommentsControllerListVulnerabilityCommentsParams['page']
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData,
+        QueryKey,
+        CommentsControllerListVulnerabilityCommentsParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getCommentsControllerListVulnerabilityCommentsInfiniteQueryOptions(
+      vulnerabilityId,
+      params,
+      options,
+    );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getCommentsControllerListVulnerabilityCommentsQueryOptions = <
+  TData = Awaited<
+    ReturnType<typeof commentsControllerListVulnerabilityComments>
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getCommentsControllerListVulnerabilityCommentsQueryKey(
+      vulnerabilityId,
+      params,
+    );
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>
+  > = ({ signal }) =>
+    commentsControllerListVulnerabilityComments(
+      vulnerabilityId,
+      params,
+      requestOptions,
+      signal,
+    );
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: vulnerabilityId !== null && vulnerabilityId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type CommentsControllerListVulnerabilityCommentsQueryResult =
+  NonNullable<
+    Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>
+  >;
+export type CommentsControllerListVulnerabilityCommentsQueryError = unknown;
+
+export function useCommentsControllerListVulnerabilityComments<
+  TData = Awaited<
+    ReturnType<typeof commentsControllerListVulnerabilityComments>
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params: undefined | CommentsControllerListVulnerabilityCommentsParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useCommentsControllerListVulnerabilityComments<
+  TData = Awaited<
+    ReturnType<typeof commentsControllerListVulnerabilityComments>
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >,
+          TError,
+          Awaited<
+            ReturnType<typeof commentsControllerListVulnerabilityComments>
+          >
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useCommentsControllerListVulnerabilityComments<
+  TData = Awaited<
+    ReturnType<typeof commentsControllerListVulnerabilityComments>
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List vulnerability comments
+ */
+
+export function useCommentsControllerListVulnerabilityComments<
+  TData = Awaited<
+    ReturnType<typeof commentsControllerListVulnerabilityComments>
+  >,
+  TError = unknown,
+>(
+  vulnerabilityId: string,
+  params?: CommentsControllerListVulnerabilityCommentsParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof commentsControllerListVulnerabilityComments>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getCommentsControllerListVulnerabilityCommentsQueryOptions(
+      vulnerabilityId,
+      params,
+      options,
+    );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Adds a comment to a vulnerability, optionally as a reply to a comment of the same vulnerability.
+ * @summary Comment on a vulnerability
+ */
+export const commentsControllerCreateVulnerabilityComment = (
+  vulnerabilityId: string,
+  createCommentDto: CreateCommentDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<CommentResponseDto>(
+    {
+      url: `/api/vulnerabilities/${vulnerabilityId}/comments`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createCommentDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getCommentsControllerCreateVulnerabilityCommentMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof commentsControllerCreateVulnerabilityComment>>,
+    TError,
+    { vulnerabilityId: string; data: CreateCommentDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof commentsControllerCreateVulnerabilityComment>>,
+  TError,
+  { vulnerabilityId: string; data: CreateCommentDto },
+  TContext
+> => {
+  const mutationKey = ['commentsControllerCreateVulnerabilityComment'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof commentsControllerCreateVulnerabilityComment>>,
+    { vulnerabilityId: string; data: CreateCommentDto }
+  > = (props) => {
+    const { vulnerabilityId, data } = props ?? {};
+
+    return commentsControllerCreateVulnerabilityComment(
+      vulnerabilityId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CommentsControllerCreateVulnerabilityCommentMutationResult =
+  NonNullable<
+    Awaited<ReturnType<typeof commentsControllerCreateVulnerabilityComment>>
+  >;
+export type CommentsControllerCreateVulnerabilityCommentMutationBody =
+  CreateCommentDto;
+export type CommentsControllerCreateVulnerabilityCommentMutationError = unknown;
+
+/**
+ * @summary Comment on a vulnerability
+ */
+export const useCommentsControllerCreateVulnerabilityComment = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof commentsControllerCreateVulnerabilityComment>>,
+      TError,
+      { vulnerabilityId: string; data: CreateCommentDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof commentsControllerCreateVulnerabilityComment>>,
+  TError,
+  { vulnerabilityId: string; data: CreateCommentDto },
+  TContext
+> => {
+  return useMutation(
+    getCommentsControllerCreateVulnerabilityCommentMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Only the author can edit; system comments cannot be edited.
+ * @summary Edit a comment
+ */
+export const commentsControllerUpdateComment = (
+  id: string,
+  updateCommentDto: UpdateCommentDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<CommentResponseDto>(
+    {
+      url: `/api/comments/${id}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateCommentDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getCommentsControllerUpdateCommentMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof commentsControllerUpdateComment>>,
+    TError,
+    { id: string; data: UpdateCommentDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof commentsControllerUpdateComment>>,
+  TError,
+  { id: string; data: UpdateCommentDto },
+  TContext
+> => {
+  const mutationKey = ['commentsControllerUpdateComment'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof commentsControllerUpdateComment>>,
+    { id: string; data: UpdateCommentDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return commentsControllerUpdateComment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CommentsControllerUpdateCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof commentsControllerUpdateComment>>
+>;
+export type CommentsControllerUpdateCommentMutationBody = UpdateCommentDto;
+export type CommentsControllerUpdateCommentMutationError = unknown;
+
+/**
+ * @summary Edit a comment
+ */
+export const useCommentsControllerUpdateComment = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof commentsControllerUpdateComment>>,
+      TError,
+      { id: string; data: UpdateCommentDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof commentsControllerUpdateComment>>,
+  TError,
+  { id: string; data: UpdateCommentDto },
+  TContext
+> => {
+  return useMutation(
+    getCommentsControllerUpdateCommentMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Soft-deletes a comment. Only the author can delete; system comments cannot be deleted.
+ * @summary Delete a comment
+ */
+export const commentsControllerDeleteComment = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/comments/${id}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getCommentsControllerDeleteCommentMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof commentsControllerDeleteComment>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof commentsControllerDeleteComment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['commentsControllerDeleteComment'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof commentsControllerDeleteComment>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return commentsControllerDeleteComment(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CommentsControllerDeleteCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof commentsControllerDeleteComment>>
+>;
+
+export type CommentsControllerDeleteCommentMutationError = unknown;
+
+/**
+ * @summary Delete a comment
+ */
+export const useCommentsControllerDeleteComment = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof commentsControllerDeleteComment>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof commentsControllerDeleteComment>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getCommentsControllerDeleteCommentMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * Creates the first admin user in the system. Refused once an admin exists.

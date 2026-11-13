@@ -5,8 +5,9 @@
 - Resolve the source and issue in the selected workspace before returning or changing related records. Status changes and comments must check the same workspace. Comment edits and deletion also enforce authorship.
 - Background creation uses a source handler and checks for an existing issue before creating another. Preserve the linked finding and existing source semantics when extending issue types.
 - The internal `IssueComment` class now maps to `comments`. Exactly one issue
-  or finding subject is stored; finding ownership is private in this storage
-  foundation. Legacy issue queries and reply joins must stay issue-scoped.
+  or finding subject is stored; the finding field stays excluded from ordinary
+  entity reads. The dedicated Comments module projects it into authorized DTOs.
+  Legacy issue queries and reply joins must stay issue-scoped.
   Never pass a null issue ID to TypeORM's legacy assistant lookup.
 - The table rename requires a coordinated API rollout. Rollback refuses while
   finding comments exist. See `docs/operations/resource-comment-storage-rollout.md`.
