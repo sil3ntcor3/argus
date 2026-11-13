@@ -3,6 +3,7 @@ import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import CreateWorkspace from '../workspaces/create-workspace';
 import { FastScanDialog } from './components/fast-scan-dialog';
 import { VulnerabilitiesView } from './vulnerabilities-view';
+import { FindingSettings } from './components/finding-settings';
 
 const Vulnerabilities = () => {
   const { workspaces } = useWorkspaceSelector();
@@ -15,7 +16,7 @@ const Vulnerabilities = () => {
       {workspaces.length === 0 ? (
         <CreateWorkspace />
       ) : (
-        <VulnerabilitiesView actions={<FastScanDialog />} />
+        <VulnerabilitiesView actions={<><FindingSettings /><FastScanDialog /></>} />
       )}
     </Page>
   );

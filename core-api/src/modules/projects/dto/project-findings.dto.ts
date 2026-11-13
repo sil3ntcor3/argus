@@ -8,6 +8,7 @@ import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsUUID,
@@ -59,12 +60,12 @@ export class GetProjectFindingsQueryDto extends PickType(
   provenance?: ProjectFindingProvenance;
 
   @ApiPropertyOptional({
-    enum: VulnerabilityStatus,
+    enum: [VulnerabilityStatus.OPEN, VulnerabilityStatus.DISMISSED, VulnerabilityStatus.ALL],
     default: VulnerabilityStatus.OPEN,
     description: 'Open excludes archived and dismissed findings',
   })
   @IsOptional()
-  @IsEnum(VulnerabilityStatus)
+  @IsIn([VulnerabilityStatus.OPEN, VulnerabilityStatus.DISMISSED, VulnerabilityStatus.ALL])
   status?: VulnerabilityStatus;
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })

@@ -1,9 +1,9 @@
+import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { Vulnerability } from '@/modules/vulnerabilities/entities/vulnerability.entity';
 import { DataAdapterService } from '@/modules/data-adapter/data-adapter.service';
 import { Job } from '@/modules/jobs-registry/entities/job.entity';
 import { randomUUID } from 'node:crypto';
 import * as request from 'supertest';
-import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
 
 const fields = [
@@ -126,7 +126,7 @@ describe('Finding resolution storage (e2e)', () => {
     });
   });
 
-  it('keeps populated provenance private in entity reads and authenticated list/detail responses', async () => {
+  it('keeps raw provenance private while exposing approved lifecycle fields through DTOs', async () => {
     const runId = await insert(
       `INSERT INTO job_histories ("jobHistoryName") VALUES ($1)`,
       ['Private resolution provenance'],
@@ -156,13 +156,16 @@ describe('Finding resolution storage (e2e)', () => {
       const serialized = JSON.stringify(response.body);
       expect(serialized).toContain(findingId);
       for (const field of [
-        ...fields,
+        'fixClaimedById',
         'lastSeenJobHistory',
         'fixedByJobHistory',
         'fixClaimedBy',
       ]) {
         expect(serialized).not.toContain(`"${field}"`);
       }
+      const finding = path.endsWith(findingId) ? response.body : response.body.data.find((row: { id: string }) => row.id === findingId);
+      expect(finding).toMatchObject({ lastSeenJobHistoryId: null, fixedByJobHistoryId: null,
+        fixClaimedAt: expect.any(String), dueAt: expect.any(String) });
       await request(app.server).get(path).expect(401);
     }
   });
@@ -207,9 +210,8 @@ describe('Finding resolution storage (e2e)', () => {
       [assetId, payload.name],
     );
     findingId = id;
-    expect(await read()).toEqual(
-      Object.fromEntries(fields.map((field) => [field, null])),
-    );
+    expect(await read()).toEqual({ ...Object.fromEntries(fields.map((field) => [field, null])),
+      lastSeenJobHistoryId: runId });
     await app.dataSource.query(
       `UPDATE vulnerabilities SET "lastSeenJobHistoryId" = $1, "fixedByJobHistoryId" = $1,
        "fixClaimedById" = $2, "fixClaimedAt" = $3, "dueAt" = $3 WHERE id = $4`,

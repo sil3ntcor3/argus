@@ -12,6 +12,7 @@ import { FindingRiskExpiryService } from './finding-risk-expiry.service';
 import { VulnerabilityAnalysisProcessor } from './processors/vulnerability-analysis.processor';
 import { VulnerabilitiesController } from './vulnerabilities.controller';
 import { VulnerabilitiesService } from './vulnerabilities.service';
+import { VulnerabilityLifecycleService } from './vulnerability-lifecycle.service';
 
 @Global()
 @Module({
@@ -37,6 +38,7 @@ import { VulnerabilitiesService } from './vulnerabilities.service';
     VulnerabilitiesService,
     VulnerabilityAnalysisProcessor,
     FindingRiskExpiryService,
+    VulnerabilityLifecycleService,
   ],
   exports: [VulnerabilitiesService],
 })

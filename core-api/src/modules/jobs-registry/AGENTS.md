@@ -22,7 +22,11 @@ the same run lock. A step with no input can complete without creating jobs.
   coverage privately when the saved scope and claim still match. The evidence
   does not appear in REST. Closed workflows recompute a private count of
   comparable missed runs. A retry or retention can make the cache stale until
-  the next recompute, so the count alone cannot close a finding.
+  the next recompute, so the count alone cannot close a finding. The lifecycle
+  accounting path recomputes proof under locks and closes only at the saved
+  threshold. Keep its exact database-clock fix event and private scan cutoff
+  atomic. Protect the latest proof's history before taking finding locks, and
+  defer closure when that parent is unavailable.
 - Keep job terminal writes conditional: cancellation or a retry can change the
   state while a result is processing.
 

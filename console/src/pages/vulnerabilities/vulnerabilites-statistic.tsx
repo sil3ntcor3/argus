@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useWorkspaceSelector } from '@/hooks/useWorkspaceSelector';
 import { useVulnerabilitiesControllerGetVulnerabilitiesStatistics } from '@/services/apis/gen/queries';
+import { useNavigate } from '@tanstack/react-router';
 
 const severities = [
   { key: 'critical', label: 'Critical', color: 'text-red-500' },
@@ -20,6 +21,7 @@ export default function VulnerabilitiesStatistic({
   targetId?: string;
 }) {
   const { selectedWorkspace } = useWorkspaceSelector();
+  const navigate = useNavigate();
   const { data, isLoading, isError, isFetching, errorUpdatedAt, refetch } =
     useVulnerabilitiesControllerGetVulnerabilitiesStatistics(
       targetId ? { targetIds: [targetId] } : {},
@@ -82,6 +84,28 @@ export default function VulnerabilitiesStatistic({
           </div>
         ))}
       </dl>
+      {data?.byDetectionStatus && <>
+        <h2 className="pt-2 text-sm font-medium">Detection lifecycle</h2>
+        <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" aria-label="Finding lifecycle counts">
+          {(['new', 'active', 'resurfaced', 'fixed'] as const).map(status => <div key={status} className="rounded-lg border bg-card p-3">
+            <dt className="text-sm capitalize text-muted-foreground">{status}</dt>
+            <dd><button className="text-xl font-semibold tabular-nums underline-offset-4 hover:underline" aria-label={`Show ${status} findings`}
+              onClick={() => navigate({ search: ((prev: Record<string, unknown>) => ({ ...prev, status, overdue: undefined, page: 1 })) as never })}>
+              {data.byDetectionStatus[status]}</button></dd>
+          </div>)}
+          <div className="rounded-lg border bg-card p-3"><dt className="text-sm text-muted-foreground">Overdue</dt><dd>
+            <button className="text-xl font-semibold text-destructive tabular-nums underline-offset-4 hover:underline" aria-label="Show overdue findings"
+              onClick={() => navigate({ search: ((prev: Record<string, unknown>) => ({ ...prev, status: 'open', overdue: 'true', page: 1 })) as never })}>{data.overdue}</button>
+          </dd></div>
+        </dl>
+        <p className="text-xs text-muted-foreground">{data.newLast7Days} new open findings in 7 days · {data.resurfacedLast30Days} resurfaced and {data.fixedLast30Days} fixed in 30 days</p>
+        <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Mean time to remediation · last 90 days</summary>
+          <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">{data.mttr.map(row => <div key={row.severity}>
+            <dt className="text-xs capitalize text-muted-foreground">{row.severity}</dt>
+            <dd className="text-sm tabular-nums">{row.days === null ? 'No fixes yet' : `${row.days.toFixed(1)} days (${row.count} fixes)`}</dd>
+          </div>)}</dl>
+        </details>
+      </>}
     </div>
   );
 }

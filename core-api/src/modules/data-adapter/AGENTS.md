@@ -24,7 +24,9 @@ payload. Integration connectors can call `upsertAssetsByTargetId` directly.
   Every positive still updates the private database observation time under
   those locks. Preserve the lock order and the insert chunk limit.
 - A fixed finding resurfaces only with a recorded in-progress scan claim later
-  than its fix timestamp. Archive status is preserved. This path records
+  than the uniquely verified private negative-scan cutoff, falling back to the
+  fix timestamp for ambiguous/invalid legacy events. Keep timestamp parsing and
+  comparisons in PostgreSQL; JavaScript dates lose microseconds. Archive status is preserved. This path records
   observed findings; an omitted finding does not close anything.
 
 Test with `task api:test:one SPEC=src/modules/data-adapter/data-adapter.service.spec.ts`.

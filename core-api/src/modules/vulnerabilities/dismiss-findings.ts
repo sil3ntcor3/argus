@@ -7,8 +7,7 @@ import {
   type FindingDismissalReason,
 } from './finding-dismissal-reason';
 import { activeDismissalCondition } from './open-vulnerability';
-
-const MAX_ACCEPTANCE_MS = 180 * 86_400_000;
+import { loadVulnerabilitySettings } from './vulnerability-settings';
 
 export type FindingDismissalInput = {
   reason: FindingDismissalReason;
@@ -34,16 +33,16 @@ function parseExpiry({ reason, expiresAt }: FindingDismissalInput) {
   return new Date(expiresAt);
 }
 
-function checkExpiryWindow(expiresAt: Date | undefined) {
+function checkExpiryWindow(expiresAt: Date | undefined, maxDays: number) {
   if (!expiresAt) return;
   const remaining = expiresAt.getTime() - Date.now();
   if (
     !Number.isFinite(remaining) ||
     remaining <= 0 ||
-    remaining > MAX_ACCEPTANCE_MS
+    remaining > maxDays * 86_400_000
   ) {
     throw new BadRequestException(
-      'expiresAt must be in the future and at most 180 days away',
+      `expiresAt must be in the future and at most ${maxDays} days away`,
     );
   }
 }
@@ -57,18 +56,21 @@ export async function dismissFindings(
   input: FindingDismissalInput,
 ) {
   const expiresAt = parseExpiry(input);
-  checkExpiryWindow(expiresAt);
   const unique = [...new Set(ids)];
   // Follow the expiry sweep's parent-to-child lock order.
   await manager.query('SELECT id FROM workspaces WHERE id = $1 FOR KEY SHARE', [
     workspaceId,
   ]);
+  const maxDays = expiresAt
+    ? (await loadVulnerabilitySettings(manager, workspaceId)).riskAcceptMaxDays
+    : 180;
+  checkExpiryWindow(expiresAt, maxDays);
   const scoped = await manager.query<{ id: string }[]>(
     `SELECT finding.id FROM vulnerabilities AS finding
      JOIN assets AS asset ON asset.id = finding."assetId"
      JOIN targets AS target ON target.id = asset."targetId"
      WHERE target."workspaceId" = $2 AND finding.id = ANY($1::uuid[])
-     ORDER BY finding.id FOR NO KEY UPDATE OF finding`,
+     ORDER BY finding.fingerprint, finding.id FOR NO KEY UPDATE OF finding`,
     [unique, workspaceId],
   );
   const found = new Set(scoped.map(({ id }) => id));
@@ -114,7 +116,7 @@ export async function dismissFindings(
       throw new BadRequestException('Dismissals changed; retry the request');
   }
 
-  checkExpiryWindow(expiresAt);
+  checkExpiryWindow(expiresAt, maxDays);
   const repository = manager.getRepository(VulnerabilityDismissal);
   const dismissals = unique.map((vulnerabilityId) =>
     repository.create({

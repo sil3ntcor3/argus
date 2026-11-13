@@ -184,7 +184,7 @@ export class ProjectFindingReadService {
     // Keep each lookup on its unique key even when table statistics
     // underestimate newly ingested findings on one asset.
     const findingJoins = `CROSS JOIN LATERAL (
-        SELECT id, severity, "assetId", "toolId", name, "cveId", "isArchived"
+        SELECT id, severity, "assetId", "toolId", name, "cveId", "isArchived", "detectionStatus"
         FROM vulnerabilities WHERE id = pv."vulnerabilityId" LIMIT 1
       ) v
       CROSS JOIN LATERAL (

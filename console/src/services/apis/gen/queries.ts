@@ -3120,8 +3120,146 @@ export type ScanDto = {
   targetIds: string[];
 };
 
-export type GetManyVulnerabilityDto = {
-  data: Vulnerability[];
+export type VulnerabilityDetectionStatus =
+  (typeof VulnerabilityDetectionStatus)[keyof typeof VulnerabilityDetectionStatus];
+
+export const VulnerabilityDetectionStatus = {
+  new: 'new',
+  active: 'active',
+  fixed: 'fixed',
+  resurfaced: 'resurfaced',
+} as const;
+
+export type VulnerabilityUserRefDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  image: string | null;
+};
+
+export type VulnerabilityDismissalInfoDtoReason =
+  (typeof VulnerabilityDismissalInfoDtoReason)[keyof typeof VulnerabilityDismissalInfoDtoReason];
+
+export const VulnerabilityDismissalInfoDtoReason = {
+  false_positive: 'false_positive',
+  used_in_test: 'used_in_test',
+  wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
+} as const;
+
+export type VulnerabilityDismissalInfoDto = {
+  id: string;
+  vulnerabilityId: string;
+  userId: string;
+  reason: VulnerabilityDismissalInfoDtoReason;
+  /** @nullable */
+  comment: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+  /** @nullable */
+  user: VulnerabilityUserRefDto | null;
+};
+
+export type VulnerabilityLifecycleDtoSeverity =
+  (typeof VulnerabilityLifecycleDtoSeverity)[keyof typeof VulnerabilityLifecycleDtoSeverity];
+
+export const VulnerabilityLifecycleDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type VulnerabilityLifecycleDtoAnalyzeStatus =
+  (typeof VulnerabilityLifecycleDtoAnalyzeStatus)[keyof typeof VulnerabilityLifecycleDtoAnalyzeStatus];
+
+export const VulnerabilityLifecycleDtoAnalyzeStatus = {
+  not_analyzed: 'not_analyzed',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export type VulnerabilityLifecycleDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  description: string;
+  synopsis: string;
+  severity: VulnerabilityLifecycleDtoSeverity;
+  tags: string[];
+  references: string[];
+  authors: string[];
+  affectedUrl: string;
+  ipAddress: string;
+  host: string;
+  ports: string[];
+  cvssMetric: string;
+  cvssScore: number;
+  epssScore: number;
+  vprScore: number;
+  cveId: string[];
+  bidId: string[];
+  cweId: string[];
+  ceaId: string[];
+  iava: string[];
+  cveUrl: string;
+  cweUrl: string;
+  solution: string;
+  extractorName: string;
+  extractedResults: string[];
+  publicationDate: string;
+  modificationDate: string;
+  firstDetectedDate: string;
+  lastSeenDate: string;
+  tool: Tool;
+  asset: Asset;
+  /** Code findings: file path relative to the repository root */
+  filePath?: string;
+  /** @nullable */
+  lineStart?: number | null;
+  /** @nullable */
+  lineEnd?: number | null;
+  /**
+   * Commit the finding was observed in
+   * @nullable
+   */
+  commit?: string | null;
+  /**
+   * Vulnerable dependency (SCA)
+   * @nullable
+   */
+  packageName?: string | null;
+  /** @nullable */
+  installedVersion?: string | null;
+  /** @nullable */
+  fixedVersion?: string | null;
+  analyzeStatus: VulnerabilityLifecycleDtoAnalyzeStatus;
+  analyzeResult: string;
+  detectionStatus: VulnerabilityDetectionStatus;
+  /** @minimum 1 */
+  timesDetected: number;
+  /** @minimum 0 */
+  resurfacedCount: number;
+  /** @nullable */
+  fixedAt: string | null;
+  /** @nullable */
+  fixClaimedAt: string | null;
+  /** @nullable */
+  dueAt: string | null;
+  /** @nullable */
+  lastSeenJobHistoryId: string | null;
+  /** @nullable */
+  fixedByJobHistoryId: string | null;
+  /** @nullable */
+  vulnerabilityDismissal: VulnerabilityDismissalInfoDto | null;
+};
+
+export type GetManyVulnerabilityLifecycleDtoDto = {
+  data: VulnerabilityLifecycleDto[];
   total: number;
   page: number;
   limit: number;
@@ -3145,8 +3283,231 @@ export type VulnerabilityStatisticsDto = {
   count: number;
 };
 
+export type VulnerabilityDetectionCountsDto = {
+  new: number;
+  active: number;
+  resurfaced: number;
+  fixed: number;
+};
+
+export type VulnerabilityMttrDtoSeverity =
+  (typeof VulnerabilityMttrDtoSeverity)[keyof typeof VulnerabilityMttrDtoSeverity];
+
+export const VulnerabilityMttrDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type VulnerabilityMttrDto = {
+  severity: VulnerabilityMttrDtoSeverity;
+  /** @nullable */
+  days: number | null;
+  count: number;
+};
+
 export type GetVulnerabilitiesStatisticsResponseDto = {
   data: VulnerabilityStatisticsDto[];
+  byDetectionStatus: VulnerabilityDetectionCountsDto;
+  newLast7Days: number;
+  resurfacedLast30Days: number;
+  fixedLast30Days: number;
+  overdue: number;
+  mttr: VulnerabilityMttrDto[];
+};
+
+export type VulnerabilitySlaDaysResponseDto = {
+  /** @nullable */
+  critical: number | null;
+  /** @nullable */
+  high: number | null;
+  /** @nullable */
+  medium: number | null;
+  /** @nullable */
+  low: number | null;
+  /** @nullable */
+  info: number | null;
+};
+
+export type VulnerabilitySettingsDto = {
+  slaDays: VulnerabilitySlaDaysResponseDto;
+  slaRestartOnResurface: boolean;
+  autoCloseEnabled: boolean;
+  autoCloseMissedScans: number;
+  riskAcceptMaxDays: number;
+};
+
+export type VulnerabilitySlaDaysDto = {
+  /**
+   * SLA in days; null = no SLA for this severity
+   * @minimum 1
+   * @maximum 3650
+   * @nullable
+   */
+  critical?: number | null;
+  /**
+   * SLA in days; null = no SLA for this severity
+   * @minimum 1
+   * @maximum 3650
+   * @nullable
+   */
+  high?: number | null;
+  /**
+   * SLA in days; null = no SLA for this severity
+   * @minimum 1
+   * @maximum 3650
+   * @nullable
+   */
+  medium?: number | null;
+  /**
+   * SLA in days; null = no SLA for this severity
+   * @minimum 1
+   * @maximum 3650
+   * @nullable
+   */
+  low?: number | null;
+  /**
+   * SLA in days; null = no SLA for this severity
+   * @minimum 1
+   * @maximum 3650
+   * @nullable
+   */
+  info?: number | null;
+};
+
+export type UpdateVulnerabilitySettingsDto = {
+  slaDays?: VulnerabilitySlaDaysDto;
+  /** Restart the SLA clock when a fixed finding resurfaces */
+  slaRestartOnResurface?: boolean;
+  /** Close findings that a covering scan no longer reports */
+  autoCloseEnabled?: boolean;
+  /**
+   * Consecutive covering scans a finding must be missing from before it closes
+   * @minimum 1
+   * @maximum 10
+   */
+  autoCloseMissedScans?: number;
+  /**
+   * Longest allowed risk acceptance, in days
+   * @minimum 1
+   * @maximum 3650
+   */
+  riskAcceptMaxDays?: number;
+};
+
+export type ClaimFixResponseDto = {
+  updated: number;
+};
+
+export type ClaimFixDto = {
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  vulnerabilityIds: string[];
+  /** @maxLength 5000 */
+  note?: string;
+};
+
+export type VulnerabilityLifecycleDetailDtoSeverity =
+  (typeof VulnerabilityLifecycleDetailDtoSeverity)[keyof typeof VulnerabilityLifecycleDetailDtoSeverity];
+
+export const VulnerabilityLifecycleDetailDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type VulnerabilityLifecycleDetailDtoAnalyzeStatus =
+  (typeof VulnerabilityLifecycleDetailDtoAnalyzeStatus)[keyof typeof VulnerabilityLifecycleDetailDtoAnalyzeStatus];
+
+export const VulnerabilityLifecycleDetailDtoAnalyzeStatus = {
+  not_analyzed: 'not_analyzed',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export type VulnerabilityLifecycleDetailDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  description: string;
+  synopsis: string;
+  severity: VulnerabilityLifecycleDetailDtoSeverity;
+  tags: string[];
+  references: string[];
+  authors: string[];
+  affectedUrl: string;
+  ipAddress: string;
+  host: string;
+  ports: string[];
+  cvssMetric: string;
+  cvssScore: number;
+  epssScore: number;
+  vprScore: number;
+  cveId: string[];
+  bidId: string[];
+  cweId: string[];
+  ceaId: string[];
+  iava: string[];
+  cveUrl: string;
+  cweUrl: string;
+  solution: string;
+  extractorName: string;
+  extractedResults: string[];
+  publicationDate: string;
+  modificationDate: string;
+  firstDetectedDate: string;
+  lastSeenDate: string;
+  tool: Tool;
+  asset: Asset;
+  /** Code findings: file path relative to the repository root */
+  filePath?: string;
+  /** @nullable */
+  lineStart?: number | null;
+  /** @nullable */
+  lineEnd?: number | null;
+  /**
+   * Commit the finding was observed in
+   * @nullable
+   */
+  commit?: string | null;
+  /**
+   * Vulnerable dependency (SCA)
+   * @nullable
+   */
+  packageName?: string | null;
+  /** @nullable */
+  installedVersion?: string | null;
+  /** @nullable */
+  fixedVersion?: string | null;
+  analyzeStatus: VulnerabilityLifecycleDetailDtoAnalyzeStatus;
+  analyzeResult: string;
+  detectionStatus: VulnerabilityDetectionStatus;
+  /** @minimum 1 */
+  timesDetected: number;
+  /** @minimum 0 */
+  resurfacedCount: number;
+  /** @nullable */
+  fixedAt: string | null;
+  /** @nullable */
+  fixClaimedAt: string | null;
+  /** @nullable */
+  dueAt: string | null;
+  /** @nullable */
+  lastSeenJobHistoryId: string | null;
+  /** @nullable */
+  fixedByJobHistoryId: string | null;
+  /** @nullable */
+  vulnerabilityDismissal: VulnerabilityDismissalInfoDto | null;
+  /** @nullable */
+  fixClaimedByUser: VulnerabilityUserRefDto | null;
 };
 
 export type VulnerabilityTimelineEventDtoType =
@@ -3158,6 +3519,7 @@ export const VulnerabilityTimelineEventDtoType = {
   dismissed: 'dismissed',
   reopened: 'reopened',
   risk_expired: 'risk_expired',
+  fix_claimed: 'fix_claimed',
 } as const;
 
 export type VulnerabilityTimelineEventDtoDismissalReason =
@@ -3168,6 +3530,14 @@ export const VulnerabilityTimelineEventDtoDismissalReason = {
   used_in_test: 'used_in_test',
   wont_fix: 'wont_fix',
   risk_accepted: 'risk_accepted',
+} as const;
+
+export type VulnerabilityTimelineEventDtoVerification =
+  (typeof VulnerabilityTimelineEventDtoVerification)[keyof typeof VulnerabilityTimelineEventDtoVerification];
+
+export const VulnerabilityTimelineEventDtoVerification = {
+  next_covering_scan: 'next_covering_scan',
+  not_verifiable_by_scan: 'not_verifiable_by_scan',
 } as const;
 
 export type VulnerabilityTimelineEventDto = {
@@ -3182,6 +3552,8 @@ export type VulnerabilityTimelineEventDto = {
   jobHistoryId: string | null;
   dismissalReason?: VulnerabilityTimelineEventDtoDismissalReason;
   expiresAt?: string;
+  verification?: VulnerabilityTimelineEventDtoVerification;
+  fixClaimVerified?: boolean;
 };
 
 export type VulnerabilityTimelineResponseDto = {
@@ -6964,7 +7336,8 @@ export type VulnerabilitiesControllerGetVulnerabilitiesParams = {
   page?: number;
   limit?: number;
   sortBy?: string;
-  sortOrder?: string;
+  sortOrder?: VulnerabilitiesControllerGetVulnerabilitiesSortOrder;
+  overdue?: boolean;
   targetIds?: string[];
   q?: string;
   /**
@@ -6997,6 +7370,14 @@ export type VulnerabilitiesControllerGetVulnerabilitiesParams = {
   filter?: string;
 };
 
+export type VulnerabilitiesControllerGetVulnerabilitiesSortOrder =
+  (typeof VulnerabilitiesControllerGetVulnerabilitiesSortOrder)[keyof typeof VulnerabilitiesControllerGetVulnerabilitiesSortOrder];
+
+export const VulnerabilitiesControllerGetVulnerabilitiesSortOrder = {
+  ASC: 'ASC',
+  DESC: 'DESC',
+} as const;
+
 export type VulnerabilitiesControllerGetVulnerabilitiesStatus =
   (typeof VulnerabilitiesControllerGetVulnerabilitiesStatus)[keyof typeof VulnerabilitiesControllerGetVulnerabilitiesStatus];
 
@@ -7004,6 +7385,10 @@ export const VulnerabilitiesControllerGetVulnerabilitiesStatus = {
   open: 'open',
   dismissed: 'dismissed',
   all: 'all',
+  new: 'new',
+  active: 'active',
+  resurfaced: 'resurfaced',
+  fixed: 'fixed',
 } as const;
 
 export type VulnerabilitiesControllerGetVulnerabilitiesSeverityItem =
@@ -33195,7 +33580,7 @@ export const vulnerabilitiesControllerGetVulnerabilities = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<GetManyVulnerabilityDto>(
+  return orvalClient<GetManyVulnerabilityLifecycleDtoDto>(
     { url: `/api/vulnerabilities`, method: 'GET', params, signal },
     options,
   );
@@ -33814,6 +34199,348 @@ export function useVulnerabilitiesControllerGetVulnerabilitiesStatistics<
 }
 
 /**
+ * @summary Get vulnerability management settings
+ */
+export const vulnerabilitiesControllerGetSettings = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<VulnerabilitySettingsDto>(
+    { url: `/api/vulnerabilities/settings`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerGetSettingsQueryKey = () => {
+  return [`/api/vulnerabilities/settings`] as const;
+};
+
+export const getVulnerabilitiesControllerGetSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getVulnerabilitiesControllerGetSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>
+  > = ({ signal }) =>
+    vulnerabilitiesControllerGetSettings(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type VulnerabilitiesControllerGetSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>
+>;
+export type VulnerabilitiesControllerGetSettingsQueryError = unknown;
+
+export function useVulnerabilitiesControllerGetSettings<
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+          TError,
+          Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useVulnerabilitiesControllerGetSettings<
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+          TError,
+          Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useVulnerabilitiesControllerGetSettings<
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get vulnerability management settings
+ */
+
+export function useVulnerabilitiesControllerGetSettings<
+  TData = Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof vulnerabilitiesControllerGetSettings>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions =
+    getVulnerabilitiesControllerGetSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Update vulnerability management settings
+ */
+export const vulnerabilitiesControllerUpdateSettings = (
+  updateVulnerabilitySettingsDto: UpdateVulnerabilitySettingsDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<VulnerabilitySettingsDto>(
+    {
+      url: `/api/vulnerabilities/settings`,
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateVulnerabilitySettingsDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerUpdateSettingsMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerUpdateSettings>>,
+    TError,
+    { data: UpdateVulnerabilitySettingsDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerUpdateSettings>>,
+  TError,
+  { data: UpdateVulnerabilitySettingsDto },
+  TContext
+> => {
+  const mutationKey = ['vulnerabilitiesControllerUpdateSettings'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerUpdateSettings>>,
+    { data: UpdateVulnerabilitySettingsDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return vulnerabilitiesControllerUpdateSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VulnerabilitiesControllerUpdateSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerUpdateSettings>>
+>;
+export type VulnerabilitiesControllerUpdateSettingsMutationBody =
+  UpdateVulnerabilitySettingsDto;
+export type VulnerabilitiesControllerUpdateSettingsMutationError = unknown;
+
+/**
+ * @summary Update vulnerability management settings
+ */
+export const useVulnerabilitiesControllerUpdateSettings = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof vulnerabilitiesControllerUpdateSettings>>,
+      TError,
+      { data: UpdateVulnerabilitySettingsDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerUpdateSettings>>,
+  TError,
+  { data: UpdateVulnerabilitySettingsDto },
+  TContext
+> => {
+  return useMutation(
+    getVulnerabilitiesControllerUpdateSettingsMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Report findings fixed pending scan verification
+ */
+export const vulnerabilitiesControllerClaimFix = (
+  claimFixDto: ClaimFixDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ClaimFixResponseDto>(
+    {
+      url: `/api/vulnerabilities/claim-fix`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: claimFixDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getVulnerabilitiesControllerClaimFixMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerClaimFix>>,
+    TError,
+    { data: ClaimFixDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerClaimFix>>,
+  TError,
+  { data: ClaimFixDto },
+  TContext
+> => {
+  const mutationKey = ['vulnerabilitiesControllerClaimFix'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof vulnerabilitiesControllerClaimFix>>,
+    { data: ClaimFixDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return vulnerabilitiesControllerClaimFix(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type VulnerabilitiesControllerClaimFixMutationResult = NonNullable<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerClaimFix>>
+>;
+export type VulnerabilitiesControllerClaimFixMutationBody = ClaimFixDto;
+export type VulnerabilitiesControllerClaimFixMutationError = unknown;
+
+/**
+ * @summary Report findings fixed pending scan verification
+ */
+export const useVulnerabilitiesControllerClaimFix = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof vulnerabilitiesControllerClaimFix>>,
+      TError,
+      { data: ClaimFixDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof vulnerabilitiesControllerClaimFix>>,
+  TError,
+  { data: ClaimFixDto },
+  TContext
+> => {
+  return useMutation(
+    getVulnerabilitiesControllerClaimFixMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
  * Retrieves detailed information about a specific security vulnerability identified within the system, including its attributes, associated assets, and remediation guidance.
  * @summary Get vulnerability by id
  */
@@ -33822,7 +34549,7 @@ export const vulnerabilitiesControllerGetVulnerabilityById = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<Vulnerability>(
+  return orvalClient<VulnerabilityLifecycleDetailDto>(
     { url: `/api/vulnerabilities/${id}`, method: 'GET', signal },
     options,
   );

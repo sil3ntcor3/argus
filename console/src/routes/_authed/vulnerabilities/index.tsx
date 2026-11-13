@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { tableSearch } from '@/lib/table-search';
 import Vulnerabilities from '@/pages/vulnerabilities/vulnerabilities';
 
-const table = tableSearch();
+const table = tableSearch({ sortBy: 'severity', sortOrder: 'DESC' });
 
 const vulnerabilitiesSearchSchema = z.object({
   ...table.shape,
   status: z.string().optional(),
+  overdue: z.enum(['true']).optional(),
   severity: z.string().optional(),
   tags: z.string().optional(),
   createdFrom: z.string().optional(),

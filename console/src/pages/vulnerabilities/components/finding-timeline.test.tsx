@@ -89,6 +89,20 @@ describe('FindingTimeline', () => {
     expect(dialog.queryByRole('link')).not.toBeInTheDocument();
   });
 
+  it('explains fix claims and distinguishes covering scans begun before or after a claim', () => {
+    useTimeline.mockReturnValue({ data: { data: [
+      { ...events[1], id: 'claim', type: 'fix_claimed', verification: 'next_covering_scan' },
+      { ...events[1], id: 'unknown', type: 'fix_claimed', verification: 'not_verifiable_by_scan' },
+      { ...events[0], id: 'verified', toStatus: 'fixed', fixClaimVerified: true },
+      { ...events[0], id: 'earlier', toStatus: 'fixed', fixClaimVerified: false },
+    ] }, isFetchedAfterMount: true });
+    const dialog = open();
+    expect(dialog.getByText('Awaiting the next trusted covering scan.')).toBeVisible();
+    expect(dialog.getByText(/No comparable scan evidence/)).toBeVisible();
+    expect(dialog.getByText('Fix claim verified by a covering scan.')).toBeVisible();
+    expect(dialog.getByText('This scan did not verify a fix claim.')).toBeVisible();
+  });
+
   it('describes dismissal history and keeps unknown events neutral', () => {
     useTimeline.mockReturnValue({
       data: {

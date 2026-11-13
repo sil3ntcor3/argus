@@ -52,6 +52,7 @@ const CONTROLLER_FILES: Record<string, string> = {
   ProjectsController: '@/modules/projects/projects.controller',
   InternalNetworksController: '@/modules/internal-networks/internal-networks.controller',
   VulnerabilitiesController: '@/modules/vulnerabilities/vulnerabilities.controller',
+  FindingScanAccountingService: '@/modules/jobs-registry/finding-scan-accounting.service',
   ReportsController: '@/modules/reports/reports.controller',
   JobsRegistryController: '@/modules/jobs-registry/jobs-registry.controller',
   WorkflowsController: '@/modules/workflows/workflows.controller',
@@ -103,6 +104,7 @@ const WORKSPACES_REQUIRED_KEYS: Record<string, string[] | undefined> = {
   'permission_group.created': ['workspace.write'],
   'permission_group.updated': ['workspace.write'],
   'permission_group.deleted': ['workspace.write'],
+  'vulnerability.settings.updated': ['workspace.config'],
 };
 
 const reflector = new Reflector();
@@ -295,6 +297,11 @@ describe('AuditService', () => {
   });
 
   describe('S10 event dictionary', () => {
+    it('includes finding policy changes and trusted scanner fixes', () => {
+      expect(AUDIT_EVENTS).toEqual(expect.arrayContaining([
+        'vulnerability.settings.updated', 'vulnerability.fixed',
+      ]));
+    });
     it('every action in AUDIT_EVENTS matches the action regex', () => {
       for (const action of AUDIT_EVENTS) {
         expect(action).toMatch(AUDIT_EVENTS_RE);
