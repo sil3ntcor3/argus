@@ -16,6 +16,7 @@ import { ProjectWorkflowsPage } from './project-workflows-page';
 
 const mock = vi.hoisted(() => ({
   project: vi.fn(),
+  workflows: vi.fn(),
   permission: vi.fn(),
   triggers: vi.fn(),
 }));
@@ -27,6 +28,7 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetById: mock.project,
+  useProjectsControllerGetWorkflows: mock.workflows,
   useProjectsControllerGetTriggers: mock.triggers,
 }));
 vi.mock('@tanstack/react-router', () => ({
@@ -54,6 +56,7 @@ const runId = 'e13a3774-14bc-42bb-8d64-46c3680a57aa';
 describe('ProjectWorkflowsPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mock.workflows.mockImplementation(() => ({ ...mock.project(), data: mock.project().data?.assetGroupWorkflows }));
     mock.triggers.mockReturnValue({ data: [] });
     mock.permission.mockReturnValue({
       hasPermission: (key: string) => ['group.read', 'job.read'].includes(key),

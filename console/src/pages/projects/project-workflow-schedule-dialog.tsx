@@ -130,7 +130,7 @@ export function ProjectWorkflowScheduleDialog({
       await queryClient.invalidateQueries({
         predicate: ({ queryKey: [path] }) =>
           typeof path === 'string' &&
-          (path.toLowerCase() === key[0] ||
+          (path.toLowerCase() === key[0] + '/workflows' || path.toLowerCase() === key[0] ||
             path.toLowerCase() === legacyKey[0]),
         refetchType: workspaceId === getGlobalWorkspaceId() ? 'active' : 'none',
       });

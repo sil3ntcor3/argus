@@ -112,6 +112,7 @@ describe('Project schedule trigger creation', () => {
     saved = false;
     setGlobalWorkspaceId('fixture');
     server.use(
+      http.get('/api/projects/:id/workflows', () => HttpResponse.json(project.assetGroupWorkflows)),
       http.get('/api/projects/:id', () => HttpResponse.json(project)),
       http.get('/api/projects/:id/triggers', () =>
         HttpResponse.json(saved ? [created] : []),

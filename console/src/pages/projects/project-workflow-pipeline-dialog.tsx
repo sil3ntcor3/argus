@@ -33,7 +33,7 @@ export function ProjectWorkflowPipelineDialog({
   workspaceId,
 }: {
   projectId: string;
-  binding: AssetGroupWorkflow;
+  binding: Pick<AssetGroupWorkflow, 'id' | 'workflow'>;
   workflowName: string;
   workspaceId: string;
 }) {
