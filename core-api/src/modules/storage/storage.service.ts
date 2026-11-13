@@ -726,6 +726,41 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /** Durable private import tombstone. Never metered or treated as file content. */
+  public async hasLegacyTemplateImport(workspaceId: string, templateId: string): Promise<boolean> {
+    if (![workspaceId, templateId].every(id => isUUID(id))) throw new BadRequestException('Invalid template import marker');
+    try {
+      await this.rustFsClient.getClient().send(new HeadObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: `workspaces/${workspaceId}/template-imports/${templateId}` }), { abortSignal: AbortSignal.timeout(15_000) });
+      return true;
+    } catch (error) {
+      if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 404) return false;
+      throw error;
+    }
+  }
+
+  public async claimLegacyTemplateImport(workspaceId: string, templateId: string, digest: string): Promise<boolean> {
+    if (![workspaceId, templateId].every(id => isUUID(id)) || !/^[a-f0-9]{64}$/.test(digest)) throw new BadRequestException('Invalid template import marker');
+    try {
+      await this.rustFsClient.getClient().send(new PutObjectCommand({
+        Bucket: ARTIFACT_BUCKET, Key: `workspaces/${workspaceId}/template-imports/${templateId}`,
+        Body: JSON.stringify({ digest }), ContentType: 'application/json', CacheControl: 'private, no-store', IfNoneMatch: '*',
+      }), { abortSignal: AbortSignal.timeout(15_000) });
+      return true;
+    } catch (error) {
+      if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 412) return false;
+      throw error;
+    }
+  }
+
+  /** Connector containers cannot resolve a browser-relative storage URL. */
+  public async getTemplateWorkerDownloadUrl(opts: { bucket: string; key: string; expiresIn: number }): Promise<{ url: string; expiresIn: number }> {
+    const signed = await this.getPresignedDownloadUrl(opts);
+    if (/^https?:\/\//.test(signed.url)) return signed;
+    const base = this.configService.get<string>('BASE_URL');
+    if (!base || !/^https?:\/\//.test(base)) throw new BadRequestException('Set a worker-reachable BASE_URL for template downloads');
+    return { ...signed, url: new URL(signed.url, base).href };
+  }
+
   public async getPresignedDownloadUrl(opts: {
     bucket: string;
     key: string;

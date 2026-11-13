@@ -8,7 +8,7 @@ const loadYaml = load as (source: string) => unknown;
 
 /** Shared boundary for content writes, legacy imports and dispatch reads. */
 export function validateTemplate(name?: string, content?: string): void {
-  if (name !== undefined && (!name || name.length > 200 || !/\.ya?ml$/i.test(name))) {
+  if (name !== undefined && (!name || name.length > 200 || [...name].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) || !/\.ya?ml$/i.test(name))) {
     throw new BadRequestException(TEMPLATE_NAME_ERROR);
   }
   if (content === undefined) return;

@@ -8,7 +8,7 @@ describe('custom template validation', () => {
     },
   );
 
-  it.each(['', 'check.txt', 'check.yaml.exe', 'x'.repeat(196) + '.yaml'])(
+  it.each(['', 'check.txt', 'check.yaml.exe', 'bad\nname.yaml', 'bad\0.yaml', 'x'.repeat(196) + '.yaml'])(
     'rejects a missing, non-YAML or oversized display name', name => {
       expect(() => validateTemplate(name, 'id: check')).toThrow(BadRequestException);
     },

@@ -31,7 +31,7 @@ export class TemplateArtifactService {
     private readonly eventBridge: EventBridgeService,
   ) {}
 
-  async create({ workspaceId, userId, name, content, abortSignal }: Actor & { name: string; content: string }): Promise<WorkspaceArtifact> {
+  async create({ workspaceId, userId, name, content, abortSignal, legacyImport }: Actor & { name: string; content: string; legacyImport?: { id: string; digest: string } }): Promise<WorkspaceArtifact> {
     name = name.trim();
     validateTemplate(name, content);
     const signal = this.deadline(abortSignal);
@@ -41,12 +41,13 @@ export class TemplateArtifactService {
     const { artifact } = await this.reservation.reserveUpload({
       workspaceId, createdByUserId: userId, name, contentType: 'application/yaml',
       sizeBytes: buffer.length, source: 'template', parentFolderId: folder.id, abortSignal: signal,
-      metadata: { [TEMPLATE_RETIREMENTS_KEY]: {} },
+      legacyTemplateId: legacyImport?.id,
+      metadata: { [TEMPLATE_RETIREMENTS_KEY]: {}, ...(legacyImport ? { argusLegacyTemplate: { ...legacyImport, name } } : {}) },
     });
     // Reuse the existing charged pending state and expiry recovery for creation.
     await this.storage.uploadFile(workspaceArtifactUploadKey(workspaceId, artifact.id), buffer, ARTIFACT_BUCKET, 'application/yaml', signal);
     const file = await this.completion.completeUpload({ workspaceId, userId, artifactId: artifact.id, source: 'template', abortSignal: signal });
-    await this.audit(file, userId, 'created');
+    await this.audit(file, userId, 'created', !!legacyImport);
     return file;
   }
 
@@ -120,9 +121,9 @@ export class TemplateArtifactService {
     return signal ? AbortSignal.any([signal, deadline]) : deadline;
   }
 
-  private async audit(file: WorkspaceArtifact, userId: string, action: 'created' | 'updated'): Promise<void> {
+  private async audit(file: WorkspaceArtifact, userId: string, action: 'created' | 'updated', system = false): Promise<void> {
     await this.eventBridge.publishSafely(EVENT_CATALOG.artifact[action], {
-      workspaceId: file.workspaceId, actor: { type: AuditActorType.User, id: userId },
+      workspaceId: file.workspaceId, actor: system ? { type: AuditActorType.System } : { type: AuditActorType.User, id: userId },
       outcome: AuditOutcome.Success, resourceType: 'artifact', resourceId: file.id,
       metadata: { source: file.source, sizeBytes: Number(file.sizeBytes) },
     } satisfies EventEnvelopeData, { subject: `workspace:${file.workspaceId}/artifact:${file.id}` });

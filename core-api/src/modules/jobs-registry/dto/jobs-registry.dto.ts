@@ -43,6 +43,8 @@ export class GetNextJobResponseDto extends PickType(Job, [
 
 /** Extended result returned by getNextJob for connector-capable workers. */
 export interface GetNextJobResult extends GetNextJobResponseDto {
+  /** Exact current claim generation, including reclaimed jobs. Never on wire. */
+  dispatchClaimAt?: Date;
   /** Generation for a first claim only, excluded from worker responses. */
   claimedAt?: Date;
   /** Absolute database time of the first claim, separate from its generation. */
@@ -217,12 +219,15 @@ export class CreateJobs extends PickType(Job, [
    */
   assetServiceIds?: string[];
   workspaceId: string;
-  workflow: Workflow;
+  workflow?: Workflow;
   jobHistory?: JobHistory;
   jobName?: string;
   jobRunType?: JobRunType;
   configProfileId?: string;
   config?: Record<string, unknown>;
+  /** Server-selected saved templates; never accepted from a workflow config. */
+  customTemplateIds?: string[];
+  customTemplateActorId?: string;
 }
 
 // --- Category-Specific Result DTOs ---

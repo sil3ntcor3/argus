@@ -111,12 +111,15 @@ interface TargetPickerProps {
   onSelectedChange: (selected: Set<string>) => void;
   /** Only list targets of this type. */
   type?: TargetType;
+  /** Optional caller lifetime for an embedded picker. */
+  request?: { signal?: AbortSignal; timeout?: number };
 }
 
 export function TargetPicker({
   selected,
   onSelectedChange,
   type,
+  request,
 }: TargetPickerProps) {
   const [filter, setFilter] = useState('');
   const {
@@ -135,7 +138,7 @@ export function TargetPicker({
     value: filter || undefined,
     type,
     status: JobStatus.completed,
-  });
+  }, { request });
   const targets = useMemo(() => data?.data ?? [], [data?.data]);
 
   const toggle = (rows: GetManyTargetResponseDto[], checked: boolean) => {

@@ -96,3 +96,7 @@ tasks:
   models:snapshot:
     cmds:
       - pnpm exec ts-node --project tsconfig.json -r tsconfig-paths/register -- scripts/update-models-snapshot.ts
+  templates:import:
+    desc: Preview or explicitly apply the lossless legacy template import
+    cmds:
+      - pnpm exec ts-node --project tsconfig.json -r tsconfig-paths/register -- scripts/import-legacy-templates.ts {{.CLI_ARGS}}

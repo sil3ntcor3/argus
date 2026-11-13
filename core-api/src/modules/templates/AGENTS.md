@@ -1,6 +1,21 @@
 # Argus Templates module
 
-The public `TemplatesController` and `TemplatesService` currently use the legacy `templates` table and `nuclei-templates` bucket. Their API/UI cutover is separate from the storage foundation below. Keep legacy rows and objects for the approved data-preserving import.
+`TemplatesController` uses the artifact-backed API in `dto/templates.dto.ts`.
+Keep legacy `templates` rows and `nuclei-templates` objects intact for the explicit
+maintenance import. See `docs/operations/templates-rollout.md` before cutover.
+
+- Only ready template-source files in the reserved root folder are Templates.
+  Current workspace membership and owner/shared/public access apply. Responses
+  expose safe artifact metadata; content reads are bounded, fatal UTF-8 decoded
+  and YAML validated. Preserve a valid UTF-8 BOM for exact legacy imports.
+- Run scope must be exactly one nonempty selection. Verify every selected
+  template/target/asset/project and installed Nuclei before creating jobs.
+  Private template IDs and initiating actor live only in the job input snapshot;
+  `saved-template-dispatch.ts` reauthorizes and signs after config resolution.
+  Neither that selector nor claim generations belong on a worker/HTTP response.
+- Legacy imports default to preview, serialize each ID, use insert-only reserved
+  identities and retain immutable attempt markers so deletion stays deleted.
+  A failed attempt needs operator review, never an automatic overwrite.
 
 ## Private artifact writer
 
