@@ -24,14 +24,16 @@ import { ArtifactFolder } from './artifact-folder.entity';
 @Index('IDX_artifacts_creator', ['createdByUserId'])
 @Index('IDX_artifacts_status_expires', ['status', 'expiresAt'])
 @Check('CHK_artifacts_size_bytes', '"sizeBytes" BETWEEN 0 AND 9007199254740991')
-@Check('CHK_artifacts_source', `"source" IN ('upload', 'agent')`)
+@Check('CHK_artifacts_source_templates', `"source" IN ('upload', 'agent', 'template')`)
 @Check('CHK_artifacts_status', `"status" IN ('pending', 'ready', 'deleted')`)
 @Check('CHK_artifacts_share_type', `"shareType" IN ('private', 'shared', 'public')`)
 @Check('CHK_artifacts_pending_expiry', `"status" <> 'pending' OR "expiresAt" IS NOT NULL`)
 @Check('CHK_artifacts_metadata', `jsonb_typeof("metadata") = 'object'`)
 @Check(
-  'CHK_artifacts_object_key',
-  `"objectKey" = ('workspaces/' || "workspaceId"::text || '/' || "id"::text || '/file')`,
+  'CHK_artifacts_object_key_revisions',
+  `"objectKey" = ('workspaces/' || "workspaceId"::text || '/' || "id"::text || '/file') OR
+   ("source" = 'template' AND "objectKey" ~ ('^workspaces/' || "workspaceId"::text || '/' || "id"::text ||
+    '/revisions/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'))`,
 )
 @ForeignKey(() => ArtifactFolder, ['workspaceId', 'parentFolderId'], ['workspaceId', 'id'], {
   name: 'FK_artifacts_parent_folder',
