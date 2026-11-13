@@ -11,6 +11,8 @@ The migration is generated with
 these five columns and three foreign keys. It adds no indexes or backfill.
 Existing rows remain unchanged and the new fields are null. Ordinary entity
 reads and the public API omit these fields, including when privately populated.
+Scanner ingestion strips their IDs, dates and relation objects on creation and
+preserves stored private values on repeat results.
 
 There are no runtime writers, automatic closure, fix verification or SLA changes
 in this batch. Existing scanner evidence, dismissals, timeline behavior and

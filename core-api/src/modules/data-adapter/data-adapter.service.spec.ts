@@ -1689,9 +1689,17 @@ describe('DataAdapterService', () => {
         scanScopeKey: 'untrusted',
         fixedAt: new Date(),
         lastScannerObservedAt: new Date('2099-01-01T00:00:00Z'),
+        lastSeenJobHistoryId: 'untrusted-run',
+        lastSeenJobHistory: { id: 'untrusted-run' },
+        fixedByJobHistoryId: 'untrusted-run',
+        fixedByJobHistory: { id: 'untrusted-run' },
+        fixClaimedAt: new Date('2099-01-01T00:00:00Z'),
+        fixClaimedById: 'untrusted-user',
+        fixClaimedBy: { id: 'untrusted-user' },
+        dueAt: new Date('2099-01-01T00:00:00Z'),
       };
       await service.vulnerabilities({
-        data: [{ ...mockVulnerabilities[0], ...scannerLifecycle }],
+        data: [{ ...mockVulnerabilities[0], ...scannerLifecycle } as unknown as Vulnerability],
         job: { ...mockJob, findingScanScopeKey },
       });
 
