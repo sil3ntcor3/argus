@@ -1,7 +1,7 @@
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
 import { IssueComment } from '@/modules/issues/entities/issue-comment.entity';
-import { IssuesService } from '@/modules/issues/issues.service';
+import { CommentsService } from '@/modules/comments/comments.service';
 import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
 import { randomUUID } from 'node:crypto';
 
@@ -57,50 +57,50 @@ describe('Resource comment storage (e2e)', () => {
     const entity = await app.dataSource.getRepository(IssueComment).findOneByOrFail({ id: row.id });
     expect(Reflect.get(entity, 'vulnerabilityId')).toBeUndefined();
     expect(JSON.stringify(entity)).not.toContain('vulnerabilityId');
-    const service = app.app.get(IssuesService);
-    const legacy = await service.createComment({ content: 'Legacy operations still work' }, issueId,
+    const service = app.app.get(CommentsService);
+    const legacy = await service.create({ kind: 'issue', id: issueId }, { content: 'Legacy operations still work' },
       owner.user.userId, owner.workspace.id);
-    const result = await service.getCommentsByIssueId(issueId, new GetManyBaseQueryParams(), owner.workspace.id);
+    const result = await service.list({ kind: 'issue', id: issueId }, new GetManyBaseQueryParams(), owner.workspace.id);
     expect(result.data.map(comment => comment.id)).toContain(legacy.id);
     expect(result.data.map(comment => comment.id)).not.toContain(row.id);
-    expect(JSON.stringify(result)).not.toContain('vulnerabilityId');
+    expect(result.data.every(comment => comment.vulnerabilityId === null)).toBe(true);
   });
 
   it('preserves legacy replies, soft deletion, authorship and workspace scoping', async () => {
-    const service = app.app.get(IssuesService);
-    const parent = await service.createComment({ content: 'Parent fixture' }, issueId, owner.user.userId, owner.workspace.id);
-    const reply = await service.createComment({ content: 'Reply fixture', repCommentId: parent.id }, issueId,
+    const service = app.app.get(CommentsService);
+    const parent = await service.create({ kind: 'issue', id: issueId }, { content: 'Parent fixture' }, owner.user.userId, owner.workspace.id);
+    const reply = await service.create({ kind: 'issue', id: issueId }, { content: 'Reply fixture', repCommentId: parent.id },
       owner.user.userId, owner.workspace.id);
-    await expect(service.updateCommentById(parent.id, { content: 'Unauthorized' }, foreign.user.userId, owner.workspace.id))
+    await expect(service.update(parent.id, { content: 'Unauthorized' }, foreign.user.userId, owner.workspace.id, ['workspace.write']))
       .rejects.toMatchObject({ status: 403 });
-    await expect(service.updateCommentById(parent.id, { content: 'Foreign scope' }, owner.user.userId, foreign.workspace.id))
+    await expect(service.update(parent.id, { content: 'Foreign scope' }, owner.user.userId, foreign.workspace.id, ['workspace.write']))
       .rejects.toMatchObject({ status: 404 });
-    await service.updateCommentById(reply.id, { content: 'Updated reply' }, owner.user.userId, owner.workspace.id);
-    await service.deleteCommentById(parent.id, owner.user.userId, owner.workspace.id);
-    const result = await service.getCommentsByIssueId(issueId, new GetManyBaseQueryParams(), owner.workspace.id);
+    await service.update(reply.id, { content: 'Updated reply' }, owner.user.userId, owner.workspace.id, ['workspace.write']);
+    await service.delete(parent.id, owner.user.userId, owner.workspace.id, ['workspace.write']);
+    const result = await service.list({ kind: 'issue', id: issueId }, new GetManyBaseQueryParams(), owner.workspace.id);
     expect(result.data.find(comment => comment.id === reply.id)).toMatchObject({ content: 'Updated reply',
-      repComment: { id: parent.id, content: 'The comment has been deleted.' } });
+      repComment: { id: parent.id, deleted: true, snippet: '' } });
     expect(result.data.map(comment => comment.id)).not.toContain(parent.id);
   });
 
-  it('does not let legacy issue operations edit or delete finding comments', async () => {
+  it('requires finding write access even for an author who can write issues', async () => {
     const row = await save({ vulnerabilityId: findingId });
-    const service = app.app.get(IssuesService);
-    await expect(service.updateCommentById(row.id, { content: 'Wrong subject' }, owner.user.userId, owner.workspace.id))
-      .rejects.toMatchObject({ status: 404 });
-    await expect(service.deleteCommentById(row.id, owner.user.userId, owner.workspace.id)).rejects.toMatchObject({ status: 404 });
+    const service = app.app.get(CommentsService);
+    await expect(service.update(row.id, { content: 'Wrong subject' }, owner.user.userId, owner.workspace.id, ['workspace.write']))
+      .rejects.toMatchObject({ status: 403 });
+    await expect(service.delete(row.id, owner.user.userId, owner.workspace.id, ['workspace.write'])).rejects.toMatchObject({ status: 403 });
   });
 
   it('rejects private finding replies and redacts pre-existing cross-subject references', async () => {
     const privateComment = await save({ vulnerabilityId: findingId });
-    const service = app.app.get(IssuesService);
-    await expect(service.createComment({ content: 'Attempted quote', repCommentId: privateComment.id },
-      issueId, owner.user.userId, owner.workspace.id)).rejects.toMatchObject({ status: 404 });
+    const service = app.app.get(CommentsService);
+    await expect(service.create({ kind: 'issue', id: issueId }, { content: 'Attempted quote', repCommentId: privateComment.id },
+      owner.user.userId, owner.workspace.id)).rejects.toMatchObject({ status: 400 });
     const stale = await app.dataSource.getRepository(IssueComment).save(Object.assign(new IssueComment(), {
       content: 'Stored legacy reference', issueId, repCommentId: privateComment.id, createdById: owner.user.userId,
     }));
-    const result = await service.getCommentsByIssueId(issueId, new GetManyBaseQueryParams(), owner.workspace.id);
-    expect(result.data.find(comment => comment.id === stale.id)).toMatchObject({ repComment: null, repCommentId: null });
+    const result = await service.list({ kind: 'issue', id: issueId }, new GetManyBaseQueryParams(), owner.workspace.id);
+    expect(result.data.find(comment => comment.id === stale.id)).toMatchObject({ repComment: null });
     expect(JSON.stringify(result)).not.toContain('Private storage fixture');
   });
 

@@ -37,7 +37,7 @@ describe('Resource discussion HTTP contracts (e2e)', () => {
     await app.dataSource.query('INSERT INTO workspace_member_permissions("memberId","permissionId") VALUES($1,$2)',
       [member, roleId]);
     const seed = async (workspaceId: string) => {
-      const issue = await insert('INSERT INTO issues(title,"workspaceId") VALUES($1,$2)', ['Discussion fixture', workspaceId]);
+      const issue = await insert('INSERT INTO issues(title,"workspaceId",no) VALUES($1,$2,(SELECT COALESCE(max(no),0)+1 FROM issues WHERE "workspaceId"=$2))', ['Discussion fixture', workspaceId]);
       const target = await insert(`INSERT INTO targets(value,type,"workspaceId") VALUES($1,'DOMAIN',$2)`,
         [randomUUID() + '.example.test', workspaceId]);
       const asset = await insert('INSERT INTO assets(value,"targetId") VALUES($1,$2)', [randomUUID(), target]);
@@ -167,7 +167,7 @@ describe('Resource discussion HTTP contracts (e2e)', () => {
 
   it.each(['issue', 'vulnerability'] as const)('removes the thread when its %s subject is deleted', async kind => {
     const subject = kind === 'issue'
-      ? await insert('INSERT INTO issues(title,"workspaceId") VALUES($1,$2)', ['Disposable subject', owner.workspace.id])
+      ? await insert('INSERT INTO issues(title,"workspaceId",no) VALUES($1,$2,(SELECT COALESCE(max(no),0)+1 FROM issues WHERE "workspaceId"=$2))', ['Disposable subject', owner.workspace.id])
       : await insert('INSERT INTO vulnerabilities(name,"assetId") SELECT $1,"assetId" FROM vulnerabilities WHERE id=$2',
         ['Disposable subject', findingId]);
     const row = await request(app.server).post(thread(kind, subject)).set(owner.headers).send({ content: 'Cascade fixture' }).expect(201);

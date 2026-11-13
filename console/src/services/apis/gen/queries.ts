@@ -592,6 +592,14 @@ export type GetManyTargetRepositoryDtoDto = {
   pageCount: number;
 };
 
+export type TargetIssueRefDto = {
+  id: string;
+  no: number;
+  title: string;
+  status: string;
+  priority: string;
+};
+
 export type JobRunType = (typeof JobRunType)[keyof typeof JobRunType];
 
 export const JobRunType = {
@@ -744,6 +752,7 @@ export type TargetInsightDto = {
 };
 
 export type TargetOverviewDto = {
+  issues: TargetIssueRefDto[];
   /** Enabled assets on the target */
   totalAssets: number;
   /** Enabled assets discovered in the last seven days */
@@ -3290,6 +3299,21 @@ export type VulnerabilitySourceSummaryDto = {
   agentName: string | null;
 };
 
+export type IssueStatus = (typeof IssueStatus)[keyof typeof IssueStatus];
+
+export const IssueStatus = {
+  open: 'open',
+  in_progress: 'in_progress',
+  resolved: 'resolved',
+  closed: 'closed',
+} as const;
+
+export type VulnerabilityOpenIssueDto = {
+  id: string;
+  no: number;
+  status: IssueStatus;
+};
+
 export type VulnerabilityDetectionStatus =
   (typeof VulnerabilityDetectionStatus)[keyof typeof VulnerabilityDetectionStatus];
 
@@ -3431,6 +3455,8 @@ export type VulnerabilityLifecycleDto = {
   reviewStatus: VulnerabilityLifecycleDtoReviewStatus;
   discoveredBy: VulnerabilityLifecycleDtoDiscoveredBy;
   sources: VulnerabilitySourceSummaryDto[];
+  /** @nullable */
+  openIssue: VulnerabilityOpenIssueDto | null;
   detectionStatus: VulnerabilityDetectionStatus;
   /** @minimum 0 */
   timesDetected: number;
@@ -3747,6 +3773,8 @@ export type VulnerabilityLifecycleDetailDto = {
   reviewStatus: VulnerabilityLifecycleDetailDtoReviewStatus;
   discoveredBy: VulnerabilityLifecycleDetailDtoDiscoveredBy;
   sources: VulnerabilitySourceDetailDto[];
+  /** @nullable */
+  openIssue: VulnerabilityOpenIssueDto | null;
   detectionStatus: VulnerabilityDetectionStatus;
   /** @minimum 0 */
   timesDetected: number;
@@ -3789,6 +3817,7 @@ export const VulnerabilityTimelineEventDtoType = {
   rejected: 'rejected',
   merged: 'merged',
   verified_by_ai: 'verified_by_ai',
+  issue_linked: 'issue_linked',
 } as const;
 
 export type VulnerabilityTimelineEventDtoDismissalReason =
@@ -6663,6 +6692,557 @@ export type ArtifactFolderDetailDto = {
   path: ArtifactFolderPathItemDto[];
 };
 
+export type IssueRuleConditionsDtoMinSeverity =
+  (typeof IssueRuleConditionsDtoMinSeverity)[keyof typeof IssueRuleConditionsDtoMinSeverity];
+
+export const IssueRuleConditionsDtoMinSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type IssueRuleConditionsDto = {
+  minSeverity?: IssueRuleConditionsDtoMinSeverity;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  minEpss?: number;
+  targetIds?: string[];
+};
+
+export type IssueRuleDtoEvent =
+  (typeof IssueRuleDtoEvent)[keyof typeof IssueRuleDtoEvent];
+
+export const IssueRuleDtoEvent = {
+  vulnerabilitydetected: 'vulnerability.detected',
+  vulnerabilityresurfaced: 'vulnerability.resurfaced',
+} as const;
+
+export type IssueRuleDtoIssueType =
+  (typeof IssueRuleDtoIssueType)[keyof typeof IssueRuleDtoIssueType];
+
+export const IssueRuleDtoIssueType = {
+  vulnerability_remediation: 'vulnerability_remediation',
+  task: 'task',
+  asset_review: 'asset_review',
+  scan_failure: 'scan_failure',
+} as const;
+
+export type IssueRuleDtoGroupBy =
+  (typeof IssueRuleDtoGroupBy)[keyof typeof IssueRuleDtoGroupBy];
+
+export const IssueRuleDtoGroupBy = {
+  none: 'none',
+  vulnerability_name: 'vulnerability_name',
+  asset: 'asset',
+  target: 'target',
+} as const;
+
+/**
+ * @nullable
+ */
+export type IssueRuleDtoPriority =
+  (typeof IssueRuleDtoPriority)[keyof typeof IssueRuleDtoPriority] | null;
+
+export const IssueRuleDtoPriority = {
+  p1: 'p1',
+  p2: 'p2',
+  p3: 'p3',
+  p4: 'p4',
+} as const;
+
+export type IssueRuleDto = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  event: IssueRuleDtoEvent;
+  conditions: IssueRuleConditionsDto;
+  issueType: IssueRuleDtoIssueType;
+  groupBy: IssueRuleDtoGroupBy;
+  /** @nullable */
+  priority: IssueRuleDtoPriority;
+  /** @nullable */
+  defaultAssigneeId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateIssueRuleDtoEvent =
+  (typeof CreateIssueRuleDtoEvent)[keyof typeof CreateIssueRuleDtoEvent];
+
+export const CreateIssueRuleDtoEvent = {
+  vulnerabilitydetected: 'vulnerability.detected',
+  vulnerabilityresurfaced: 'vulnerability.resurfaced',
+} as const;
+
+/**
+ * Rules open vulnerability remediation issues only, for now
+ */
+export type CreateIssueRuleDtoIssueType =
+  (typeof CreateIssueRuleDtoIssueType)[keyof typeof CreateIssueRuleDtoIssueType];
+
+export const CreateIssueRuleDtoIssueType = {
+  vulnerability_remediation: 'vulnerability_remediation',
+} as const;
+
+export type CreateIssueRuleDtoGroupBy =
+  (typeof CreateIssueRuleDtoGroupBy)[keyof typeof CreateIssueRuleDtoGroupBy];
+
+export const CreateIssueRuleDtoGroupBy = {
+  none: 'none',
+  vulnerability_name: 'vulnerability_name',
+  asset: 'asset',
+  target: 'target',
+} as const;
+
+/**
+ * Fixed priority; null derives it from the severity
+ * @nullable
+ */
+export type CreateIssueRuleDtoPriority =
+  | (typeof CreateIssueRuleDtoPriority)[keyof typeof CreateIssueRuleDtoPriority]
+  | null;
+
+export const CreateIssueRuleDtoPriority = {
+  p1: 'p1',
+  p2: 'p2',
+  p3: 'p3',
+  p4: 'p4',
+} as const;
+
+export type CreateIssueRuleDto = {
+  /** @maxLength 200 */
+  name: string;
+  enabled?: boolean;
+  event: CreateIssueRuleDtoEvent;
+  conditions?: IssueRuleConditionsDto;
+  /** Rules open vulnerability remediation issues only, for now */
+  issueType: CreateIssueRuleDtoIssueType;
+  groupBy?: CreateIssueRuleDtoGroupBy;
+  /**
+   * Fixed priority; null derives it from the severity
+   * @nullable
+   */
+  priority?: CreateIssueRuleDtoPriority;
+  /** @nullable */
+  defaultAssigneeId?: string | null;
+};
+
+export type UpdateIssueRuleDtoEvent =
+  (typeof UpdateIssueRuleDtoEvent)[keyof typeof UpdateIssueRuleDtoEvent];
+
+export const UpdateIssueRuleDtoEvent = {
+  vulnerabilitydetected: 'vulnerability.detected',
+  vulnerabilityresurfaced: 'vulnerability.resurfaced',
+} as const;
+
+/**
+ * Rules open vulnerability remediation issues only, for now
+ */
+export type UpdateIssueRuleDtoIssueType =
+  (typeof UpdateIssueRuleDtoIssueType)[keyof typeof UpdateIssueRuleDtoIssueType];
+
+export const UpdateIssueRuleDtoIssueType = {
+  vulnerability_remediation: 'vulnerability_remediation',
+} as const;
+
+export type UpdateIssueRuleDtoGroupBy =
+  (typeof UpdateIssueRuleDtoGroupBy)[keyof typeof UpdateIssueRuleDtoGroupBy];
+
+export const UpdateIssueRuleDtoGroupBy = {
+  none: 'none',
+  vulnerability_name: 'vulnerability_name',
+  asset: 'asset',
+  target: 'target',
+} as const;
+
+/**
+ * Fixed priority; null derives it from the severity
+ * @nullable
+ */
+export type UpdateIssueRuleDtoPriority =
+  | (typeof UpdateIssueRuleDtoPriority)[keyof typeof UpdateIssueRuleDtoPriority]
+  | null;
+
+export const UpdateIssueRuleDtoPriority = {
+  p1: 'p1',
+  p2: 'p2',
+  p3: 'p3',
+  p4: 'p4',
+} as const;
+
+export type UpdateIssueRuleDto = {
+  /** @maxLength 200 */
+  name?: string;
+  enabled?: boolean;
+  event?: UpdateIssueRuleDtoEvent;
+  conditions?: IssueRuleConditionsDto;
+  /** Rules open vulnerability remediation issues only, for now */
+  issueType?: UpdateIssueRuleDtoIssueType;
+  groupBy?: UpdateIssueRuleDtoGroupBy;
+  /**
+   * Fixed priority; null derives it from the severity
+   * @nullable
+   */
+  priority?: UpdateIssueRuleDtoPriority;
+  /** @nullable */
+  defaultAssigneeId?: string | null;
+};
+
+export type IssueUserDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  image?: string | null;
+};
+
+export type IssueProgressDto = {
+  done: number;
+  total: number;
+};
+
+export type IssueListItemDtoType =
+  (typeof IssueListItemDtoType)[keyof typeof IssueListItemDtoType];
+
+export const IssueListItemDtoType = {
+  vulnerability_remediation: 'vulnerability_remediation',
+  task: 'task',
+  asset_review: 'asset_review',
+  scan_failure: 'scan_failure',
+} as const;
+
+export type IssueListItemDtoStatus =
+  (typeof IssueListItemDtoStatus)[keyof typeof IssueListItemDtoStatus];
+
+export const IssueListItemDtoStatus = {
+  open: 'open',
+  in_progress: 'in_progress',
+  resolved: 'resolved',
+  closed: 'closed',
+} as const;
+
+export type IssueListItemDtoPriority =
+  (typeof IssueListItemDtoPriority)[keyof typeof IssueListItemDtoPriority];
+
+export const IssueListItemDtoPriority = {
+  p1: 'p1',
+  p2: 'p2',
+  p3: 'p3',
+  p4: 'p4',
+} as const;
+
+/**
+ * @nullable
+ */
+export type IssueListItemDtoResolution =
+  | (typeof IssueListItemDtoResolution)[keyof typeof IssueListItemDtoResolution]
+  | null;
+
+export const IssueListItemDtoResolution = {
+  fixed: 'fixed',
+  accepted: 'accepted',
+  duplicate: 'duplicate',
+  wont_fix: 'wont_fix',
+  other: 'other',
+} as const;
+
+export type IssueListItemDto = {
+  id: string;
+  no: number;
+  title: string;
+  type: IssueListItemDtoType;
+  status: IssueListItemDtoStatus;
+  priority: IssueListItemDtoPriority;
+  /** @nullable */
+  resolution: IssueListItemDtoResolution;
+  /** @nullable */
+  dueAt: string | null;
+  /** @nullable */
+  resolvedAt: string | null;
+  tags: string[];
+  /** @nullable */
+  ruleId: string | null;
+  /** @nullable */
+  assignee: IssueUserDto | null;
+  /** @nullable */
+  createdBy: IssueUserDto | null;
+  linkCount: number;
+  /** @nullable */
+  progress: IssueProgressDto | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GetManyIssueListItemDtoDto = {
+  data: IssueListItemDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasNextPage: boolean;
+  pageCount: number;
+};
+
+export type IssueLinkResourceSummaryDtoSeverity =
+  (typeof IssueLinkResourceSummaryDtoSeverity)[keyof typeof IssueLinkResourceSummaryDtoSeverity];
+
+export const IssueLinkResourceSummaryDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type IssueLinkResourceSummaryDtoDetectionStatus =
+  (typeof IssueLinkResourceSummaryDtoDetectionStatus)[keyof typeof IssueLinkResourceSummaryDtoDetectionStatus];
+
+export const IssueLinkResourceSummaryDtoDetectionStatus = {
+  new: 'new',
+  active: 'active',
+  fixed: 'fixed',
+  resurfaced: 'resurfaced',
+} as const;
+
+export type IssueLinkResourceSummaryDtoReviewStatus =
+  (typeof IssueLinkResourceSummaryDtoReviewStatus)[keyof typeof IssueLinkResourceSummaryDtoReviewStatus];
+
+export const IssueLinkResourceSummaryDtoReviewStatus = {
+  pending_review: 'pending_review',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type IssueLinkResourceSummaryDto = {
+  /** Resource no longer exists */
+  missing?: boolean;
+  /** Vulnerability name / project name */
+  name?: string;
+  /** Asset or target value */
+  value?: string;
+  severity?: IssueLinkResourceSummaryDtoSeverity;
+  detectionStatus?: IssueLinkResourceSummaryDtoDetectionStatus;
+  reviewStatus?: IssueLinkResourceSummaryDtoReviewStatus;
+  /** Asset of the vulnerability */
+  assetValue?: string;
+  /** @nullable */
+  dueAt?: string | null;
+  /** Dismissal in effect */
+  dismissed?: boolean;
+  /** Run status: running | completed */
+  status?: string;
+  createdAt?: string;
+};
+
+export type IssueLinkDtoResourceType =
+  (typeof IssueLinkDtoResourceType)[keyof typeof IssueLinkDtoResourceType];
+
+export const IssueLinkDtoResourceType = {
+  vulnerability: 'vulnerability',
+  asset: 'asset',
+  target: 'target',
+  project: 'project',
+  job_history: 'job_history',
+} as const;
+
+export type IssueLinkDto = {
+  id: string;
+  resourceType: IssueLinkDtoResourceType;
+  resourceId: string;
+  /** @nullable */
+  addedById: string | null;
+  createdAt: string;
+  resource: IssueLinkResourceSummaryDto;
+};
+
+export type IssueDetailDtoType =
+  (typeof IssueDetailDtoType)[keyof typeof IssueDetailDtoType];
+
+export const IssueDetailDtoType = {
+  vulnerability_remediation: 'vulnerability_remediation',
+  task: 'task',
+  asset_review: 'asset_review',
+  scan_failure: 'scan_failure',
+} as const;
+
+export type IssueDetailDtoStatus =
+  (typeof IssueDetailDtoStatus)[keyof typeof IssueDetailDtoStatus];
+
+export const IssueDetailDtoStatus = {
+  open: 'open',
+  in_progress: 'in_progress',
+  resolved: 'resolved',
+  closed: 'closed',
+} as const;
+
+export type IssueDetailDtoPriority =
+  (typeof IssueDetailDtoPriority)[keyof typeof IssueDetailDtoPriority];
+
+export const IssueDetailDtoPriority = {
+  p1: 'p1',
+  p2: 'p2',
+  p3: 'p3',
+  p4: 'p4',
+} as const;
+
+/**
+ * @nullable
+ */
+export type IssueDetailDtoResolution =
+  | (typeof IssueDetailDtoResolution)[keyof typeof IssueDetailDtoResolution]
+  | null;
+
+export const IssueDetailDtoResolution = {
+  fixed: 'fixed',
+  accepted: 'accepted',
+  duplicate: 'duplicate',
+  wont_fix: 'wont_fix',
+  other: 'other',
+} as const;
+
+export type IssueDetailDto = {
+  id: string;
+  no: number;
+  title: string;
+  type: IssueDetailDtoType;
+  status: IssueDetailDtoStatus;
+  priority: IssueDetailDtoPriority;
+  /** @nullable */
+  resolution: IssueDetailDtoResolution;
+  /** @nullable */
+  dueAt: string | null;
+  /** @nullable */
+  resolvedAt: string | null;
+  tags: string[];
+  /** @nullable */
+  ruleId: string | null;
+  /** @nullable */
+  assignee: IssueUserDto | null;
+  /** @nullable */
+  createdBy: IssueUserDto | null;
+  linkCount: number;
+  /** @nullable */
+  progress: IssueProgressDto | null;
+  createdAt: string;
+  updatedAt: string;
+  /** @nullable */
+  description: string | null;
+  /** @nullable */
+  groupKey: string | null;
+  links: IssueLinkDto[];
+};
+
+export type IssueLinkInputDtoResourceType =
+  (typeof IssueLinkInputDtoResourceType)[keyof typeof IssueLinkInputDtoResourceType];
+
+export const IssueLinkInputDtoResourceType = {
+  vulnerability: 'vulnerability',
+  asset: 'asset',
+  target: 'target',
+  project: 'project',
+  job_history: 'job_history',
+} as const;
+
+export type IssueLinkInputDto = {
+  resourceType: IssueLinkInputDtoResourceType;
+  resourceId: string;
+};
+
+export type CreateIssueDtoType =
+  (typeof CreateIssueDtoType)[keyof typeof CreateIssueDtoType];
+
+export const CreateIssueDtoType = {
+  vulnerability_remediation: 'vulnerability_remediation',
+  task: 'task',
+  asset_review: 'asset_review',
+  scan_failure: 'scan_failure',
+} as const;
+
+export type CreateIssueDtoPriority =
+  (typeof CreateIssueDtoPriority)[keyof typeof CreateIssueDtoPriority];
+
+export const CreateIssueDtoPriority = {
+  p1: 'p1',
+  p2: 'p2',
+  p3: 'p3',
+  p4: 'p4',
+} as const;
+
+export type CreateIssueDto = {
+  /** @maxLength 500 */
+  title: string;
+  description?: string;
+  type?: CreateIssueDtoType;
+  priority?: CreateIssueDtoPriority;
+  /** @nullable */
+  dueAt?: string | null;
+  /** @nullable */
+  assigneeId?: string | null;
+  tags?: string[];
+  links?: IssueLinkInputDto[];
+};
+
+export type UpdateIssueDtoPriority =
+  (typeof UpdateIssueDtoPriority)[keyof typeof UpdateIssueDtoPriority];
+
+export const UpdateIssueDtoPriority = {
+  p1: 'p1',
+  p2: 'p2',
+  p3: 'p3',
+  p4: 'p4',
+} as const;
+
+export type UpdateIssueDto = {
+  /** @maxLength 500 */
+  title?: string;
+  /** @nullable */
+  description?: string | null;
+  tags?: string[];
+  priority?: UpdateIssueDtoPriority;
+  /** @nullable */
+  dueAt?: string | null;
+  /** @nullable */
+  assigneeId?: string | null;
+};
+
+export type ChangeIssueStatusDtoStatus =
+  (typeof ChangeIssueStatusDtoStatus)[keyof typeof ChangeIssueStatusDtoStatus];
+
+export const ChangeIssueStatusDtoStatus = {
+  open: 'open',
+  in_progress: 'in_progress',
+  resolved: 'resolved',
+  closed: 'closed',
+} as const;
+
+/**
+ * Required when the status is resolved or closed
+ */
+export type ChangeIssueStatusDtoResolution =
+  (typeof ChangeIssueStatusDtoResolution)[keyof typeof ChangeIssueStatusDtoResolution];
+
+export const ChangeIssueStatusDtoResolution = {
+  fixed: 'fixed',
+  accepted: 'accepted',
+  duplicate: 'duplicate',
+  wont_fix: 'wont_fix',
+  other: 'other',
+} as const;
+
+export type ChangeIssueStatusDto = {
+  status: ChangeIssueStatusDtoStatus;
+  /** Required when the status is resolved or closed */
+  resolution?: ChangeIssueStatusDtoResolution;
+  /** Note added to the system comment */
+  note?: string;
+};
+
+export type AddIssueLinksDto = {
+  links: IssueLinkInputDto[];
+};
+
 export type CommentAuthorDto = {
   id: string;
   name: string;
@@ -6687,6 +7267,7 @@ export const CommentResponseDtoType = {
   content: 'content',
   open: 'open',
   closed: 'closed',
+  system: 'system',
 } as const;
 
 export type CommentResponseDto = {
@@ -8071,6 +8652,86 @@ export type ArtifactFoldersControllerGetManyParams = {
    */
   parentFolderId?: string;
 };
+
+export type IssuesControllerGetManyParams = {
+  /**
+   * Search on the title or the issue number (e.g. "#12")
+   */
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: IssuesControllerGetManySortBy;
+  sortOrder?: string;
+  status?: IssuesControllerGetManyStatusItem[];
+  type?: IssuesControllerGetManyTypeItem[];
+  priority?: IssuesControllerGetManyPriorityItem[];
+  assigneeId?: string;
+  /**
+   * Only issues assigned to me
+   */
+  mine?: boolean;
+  /**
+   * Only open / in-progress issues past their due date
+   */
+  overdue?: boolean;
+  /**
+   * With resourceId: only issues linked to this resource
+   */
+  resourceType?: IssuesControllerGetManyResourceType;
+  resourceId?: string;
+};
+
+export type IssuesControllerGetManySortBy =
+  (typeof IssuesControllerGetManySortBy)[keyof typeof IssuesControllerGetManySortBy];
+
+export const IssuesControllerGetManySortBy = {
+  updatedAt: 'updatedAt',
+  createdAt: 'createdAt',
+  dueAt: 'dueAt',
+  priority: 'priority',
+  no: 'no',
+} as const;
+
+export type IssuesControllerGetManyStatusItem =
+  (typeof IssuesControllerGetManyStatusItem)[keyof typeof IssuesControllerGetManyStatusItem];
+
+export const IssuesControllerGetManyStatusItem = {
+  open: 'open',
+  in_progress: 'in_progress',
+  resolved: 'resolved',
+  closed: 'closed',
+} as const;
+
+export type IssuesControllerGetManyTypeItem =
+  (typeof IssuesControllerGetManyTypeItem)[keyof typeof IssuesControllerGetManyTypeItem];
+
+export const IssuesControllerGetManyTypeItem = {
+  vulnerability_remediation: 'vulnerability_remediation',
+  task: 'task',
+  asset_review: 'asset_review',
+  scan_failure: 'scan_failure',
+} as const;
+
+export type IssuesControllerGetManyPriorityItem =
+  (typeof IssuesControllerGetManyPriorityItem)[keyof typeof IssuesControllerGetManyPriorityItem];
+
+export const IssuesControllerGetManyPriorityItem = {
+  p1: 'p1',
+  p2: 'p2',
+  p3: 'p3',
+  p4: 'p4',
+} as const;
+
+export type IssuesControllerGetManyResourceType =
+  (typeof IssuesControllerGetManyResourceType)[keyof typeof IssuesControllerGetManyResourceType];
+
+export const IssuesControllerGetManyResourceType = {
+  vulnerability: 'vulnerability',
+  asset: 'asset',
+  target: 'target',
+  project: 'project',
+  job_history: 'job_history',
+} as const;
 
 export type CommentsControllerListIssueCommentsParams = {
   search?: string;
@@ -53982,6 +54643,1589 @@ export function usePublicArtifactsControllerDownload<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Rules that open issues from events, oldest first.
+ * @summary List issue rules
+ */
+export const issueRulesControllerListRules = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueRuleDto[]>(
+    { url: `/api/issues/rules`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getIssueRulesControllerListRulesQueryKey = () => {
+  return [`/api/issues/rules`] as const;
+};
+
+export const getIssueRulesControllerListRulesQueryOptions = <
+  TData = Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+  TError = unknown,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<
+      Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+      TError,
+      TData
+    >
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getIssueRulesControllerListRulesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof issueRulesControllerListRules>>
+  > = ({ signal }) => issueRulesControllerListRules(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type IssueRulesControllerListRulesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof issueRulesControllerListRules>>
+>;
+export type IssueRulesControllerListRulesQueryError = unknown;
+
+export function useIssueRulesControllerListRules<
+  TData = Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+  TError = unknown,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+          TError,
+          Awaited<ReturnType<typeof issueRulesControllerListRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useIssueRulesControllerListRules<
+  TData = Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+          TError,
+          Awaited<ReturnType<typeof issueRulesControllerListRules>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useIssueRulesControllerListRules<
+  TData = Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List issue rules
+ */
+
+export function useIssueRulesControllerListRules<
+  TData = Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+  TError = unknown,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issueRulesControllerListRules>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getIssueRulesControllerListRulesQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Adds a rule that opens or extends issues from an event.
+ * @summary Create issue rule
+ */
+export const issueRulesControllerCreateRule = (
+  createIssueRuleDto: CreateIssueRuleDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueRuleDto>(
+    {
+      url: `/api/issues/rules`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createIssueRuleDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getIssueRulesControllerCreateRuleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issueRulesControllerCreateRule>>,
+    TError,
+    { data: CreateIssueRuleDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issueRulesControllerCreateRule>>,
+  TError,
+  { data: CreateIssueRuleDto },
+  TContext
+> => {
+  const mutationKey = ['issueRulesControllerCreateRule'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issueRulesControllerCreateRule>>,
+    { data: CreateIssueRuleDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return issueRulesControllerCreateRule(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssueRulesControllerCreateRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issueRulesControllerCreateRule>>
+>;
+export type IssueRulesControllerCreateRuleMutationBody = CreateIssueRuleDto;
+export type IssueRulesControllerCreateRuleMutationError = unknown;
+
+/**
+ * @summary Create issue rule
+ */
+export const useIssueRulesControllerCreateRule = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issueRulesControllerCreateRule>>,
+      TError,
+      { data: CreateIssueRuleDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issueRulesControllerCreateRule>>,
+  TError,
+  { data: CreateIssueRuleDto },
+  TContext
+> => {
+  return useMutation(
+    getIssueRulesControllerCreateRuleMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Creates the default rule ("Critical & High": high and critical findings open one remediation issue per vulnerability name) unless it exists. Returns every rule.
+ * @summary Install default issue rules
+ */
+export const issueRulesControllerCreateDefaultRules = (
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueRuleDto[]>(
+    { url: `/api/issues/rules/defaults`, method: 'POST', signal },
+    options,
+  );
+};
+
+export const getIssueRulesControllerCreateDefaultRulesMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issueRulesControllerCreateDefaultRules>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issueRulesControllerCreateDefaultRules>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ['issueRulesControllerCreateDefaultRules'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issueRulesControllerCreateDefaultRules>>,
+    void
+  > = () => {
+    return issueRulesControllerCreateDefaultRules(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssueRulesControllerCreateDefaultRulesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issueRulesControllerCreateDefaultRules>>
+>;
+
+export type IssueRulesControllerCreateDefaultRulesMutationError = unknown;
+
+/**
+ * @summary Install default issue rules
+ */
+export const useIssueRulesControllerCreateDefaultRules = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issueRulesControllerCreateDefaultRules>>,
+      TError,
+      void,
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issueRulesControllerCreateDefaultRules>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(
+    getIssueRulesControllerCreateDefaultRulesMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Update issue rule
+ */
+export const issueRulesControllerUpdateRule = (
+  id: string,
+  updateIssueRuleDto: UpdateIssueRuleDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueRuleDto>(
+    {
+      url: `/api/issues/rules/${id}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateIssueRuleDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getIssueRulesControllerUpdateRuleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issueRulesControllerUpdateRule>>,
+    TError,
+    { id: string; data: UpdateIssueRuleDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issueRulesControllerUpdateRule>>,
+  TError,
+  { id: string; data: UpdateIssueRuleDto },
+  TContext
+> => {
+  const mutationKey = ['issueRulesControllerUpdateRule'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issueRulesControllerUpdateRule>>,
+    { id: string; data: UpdateIssueRuleDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return issueRulesControllerUpdateRule(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssueRulesControllerUpdateRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issueRulesControllerUpdateRule>>
+>;
+export type IssueRulesControllerUpdateRuleMutationBody = UpdateIssueRuleDto;
+export type IssueRulesControllerUpdateRuleMutationError = unknown;
+
+/**
+ * @summary Update issue rule
+ */
+export const useIssueRulesControllerUpdateRule = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issueRulesControllerUpdateRule>>,
+      TError,
+      { id: string; data: UpdateIssueRuleDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issueRulesControllerUpdateRule>>,
+  TError,
+  { id: string; data: UpdateIssueRuleDto },
+  TContext
+> => {
+  return useMutation(
+    getIssueRulesControllerUpdateRuleMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Issues the rule opened stay; they no longer point at it.
+ * @summary Delete issue rule
+ */
+export const issueRulesControllerDeleteRule = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/issues/rules/${id}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getIssueRulesControllerDeleteRuleMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issueRulesControllerDeleteRule>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issueRulesControllerDeleteRule>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['issueRulesControllerDeleteRule'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issueRulesControllerDeleteRule>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return issueRulesControllerDeleteRule(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssueRulesControllerDeleteRuleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issueRulesControllerDeleteRule>>
+>;
+
+export type IssueRulesControllerDeleteRuleMutationError = unknown;
+
+/**
+ * @summary Delete issue rule
+ */
+export const useIssueRulesControllerDeleteRule = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issueRulesControllerDeleteRule>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issueRulesControllerDeleteRule>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getIssueRulesControllerDeleteRuleMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Issues of the workspace with filters (status, type, priority, assignee, mine, overdue, linked resource, search on title or number) and progress per item.
+ * @summary List issues
+ */
+export const issuesControllerGetMany = (
+  params?: IssuesControllerGetManyParams,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<GetManyIssueListItemDtoDto>(
+    { url: `/api/issues`, method: 'GET', params, signal },
+    options,
+  );
+};
+
+export const getIssuesControllerGetManyInfiniteQueryKey = (
+  params?: IssuesControllerGetManyParams,
+) => {
+  return ['infinite', `/api/issues`, ...(params ? [params] : [])] as const;
+};
+
+export const getIssuesControllerGetManyQueryKey = (
+  params?: IssuesControllerGetManyParams,
+) => {
+  return [`/api/issues`, ...(params ? [params] : [])] as const;
+};
+
+export const getIssuesControllerGetManyInfiniteQueryOptions = <
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>,
+    IssuesControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: IssuesControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        IssuesControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getIssuesControllerGetManyInfiniteQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>,
+    QueryKey,
+    IssuesControllerGetManyParams['page']
+  > = ({ signal, pageParam }) =>
+    issuesControllerGetMany(
+      { ...params, page: pageParam ?? params?.['page'] },
+      requestOptions,
+      signal,
+    );
+
+  return { queryKey, queryFn, ...queryOptions } as UseInfiniteQueryOptions<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>,
+    TError,
+    TData,
+    QueryKey,
+    IssuesControllerGetManyParams['page']
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type IssuesControllerGetManyInfiniteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerGetMany>>
+>;
+export type IssuesControllerGetManyInfiniteQueryError = unknown;
+
+export function useIssuesControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>,
+    IssuesControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params: undefined | IssuesControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        IssuesControllerGetManyParams['page']
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof issuesControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof issuesControllerGetMany>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useIssuesControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>,
+    IssuesControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: IssuesControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        IssuesControllerGetManyParams['page']
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof issuesControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof issuesControllerGetMany>>,
+          QueryKey
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useIssuesControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>,
+    IssuesControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: IssuesControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        IssuesControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List issues
+ */
+
+export function useIssuesControllerGetManyInfinite<
+  TData = InfiniteData<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>,
+    IssuesControllerGetManyParams['page']
+  >,
+  TError = unknown,
+>(
+  params?: IssuesControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseInfiniteQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData,
+        QueryKey,
+        IssuesControllerGetManyParams['page']
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseInfiniteQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getIssuesControllerGetManyInfiniteQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useInfiniteQuery(
+    queryOptions,
+    queryClient,
+  ) as UseInfiniteQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+export const getIssuesControllerGetManyQueryOptions = <
+  TData = Awaited<ReturnType<typeof issuesControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: IssuesControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getIssuesControllerGetManyQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>
+  > = ({ signal }) => issuesControllerGetMany(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof issuesControllerGetMany>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type IssuesControllerGetManyQueryResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerGetMany>>
+>;
+export type IssuesControllerGetManyQueryError = unknown;
+
+export function useIssuesControllerGetMany<
+  TData = Awaited<ReturnType<typeof issuesControllerGetMany>>,
+  TError = unknown,
+>(
+  params: undefined | IssuesControllerGetManyParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof issuesControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof issuesControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useIssuesControllerGetMany<
+  TData = Awaited<ReturnType<typeof issuesControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: IssuesControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof issuesControllerGetMany>>,
+          TError,
+          Awaited<ReturnType<typeof issuesControllerGetMany>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useIssuesControllerGetMany<
+  TData = Awaited<ReturnType<typeof issuesControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: IssuesControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary List issues
+ */
+
+export function useIssuesControllerGetMany<
+  TData = Awaited<ReturnType<typeof issuesControllerGetMany>>,
+  TError = unknown,
+>(
+  params?: IssuesControllerGetManyParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetMany>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getIssuesControllerGetManyQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Creates an issue, optionally linked to resources of the workspace.
+ * @summary Create issue
+ */
+export const issuesControllerCreate = (
+  createIssueDto: CreateIssueDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueDetailDto>(
+    {
+      url: `/api/issues`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: createIssueDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getIssuesControllerCreateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issuesControllerCreate>>,
+    TError,
+    { data: CreateIssueDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issuesControllerCreate>>,
+  TError,
+  { data: CreateIssueDto },
+  TContext
+> => {
+  const mutationKey = ['issuesControllerCreate'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issuesControllerCreate>>,
+    { data: CreateIssueDto }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return issuesControllerCreate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssuesControllerCreateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerCreate>>
+>;
+export type IssuesControllerCreateMutationBody = CreateIssueDto;
+export type IssuesControllerCreateMutationError = unknown;
+
+/**
+ * @summary Create issue
+ */
+export const useIssuesControllerCreate = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issuesControllerCreate>>,
+      TError,
+      { data: CreateIssueDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issuesControllerCreate>>,
+  TError,
+  { data: CreateIssueDto },
+  TContext
+> => {
+  return useMutation(
+    getIssuesControllerCreateMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * An issue with its linked resources summarised and its progress.
+ * @summary Get issue
+ */
+export const issuesControllerGetById = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueDetailDto>(
+    { url: `/api/issues/${id}`, method: 'GET', signal },
+    options,
+  );
+};
+
+export const getIssuesControllerGetByIdQueryKey = (id: string) => {
+  return [`/api/issues/${id}`] as const;
+};
+
+export const getIssuesControllerGetByIdQueryOptions = <
+  TData = Awaited<ReturnType<typeof issuesControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getIssuesControllerGetByIdQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof issuesControllerGetById>>
+  > = ({ signal }) => issuesControllerGetById(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof issuesControllerGetById>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type IssuesControllerGetByIdQueryResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerGetById>>
+>;
+export type IssuesControllerGetByIdQueryError = unknown;
+
+export function useIssuesControllerGetById<
+  TData = Awaited<ReturnType<typeof issuesControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof issuesControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof issuesControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useIssuesControllerGetById<
+  TData = Awaited<ReturnType<typeof issuesControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetById>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof issuesControllerGetById>>,
+          TError,
+          Awaited<ReturnType<typeof issuesControllerGetById>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useIssuesControllerGetById<
+  TData = Awaited<ReturnType<typeof issuesControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Get issue
+ */
+
+export function useIssuesControllerGetById<
+  TData = Awaited<ReturnType<typeof issuesControllerGetById>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof issuesControllerGetById>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getIssuesControllerGetByIdQueryOptions(id, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Updates title, description, tags, priority, due date or assignee (a workspace member).
+ * @summary Update issue
+ */
+export const issuesControllerUpdate = (
+  id: string,
+  updateIssueDto: UpdateIssueDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueDetailDto>(
+    {
+      url: `/api/issues/${id}`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: updateIssueDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getIssuesControllerUpdateMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issuesControllerUpdate>>,
+    TError,
+    { id: string; data: UpdateIssueDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issuesControllerUpdate>>,
+  TError,
+  { id: string; data: UpdateIssueDto },
+  TContext
+> => {
+  const mutationKey = ['issuesControllerUpdate'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issuesControllerUpdate>>,
+    { id: string; data: UpdateIssueDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return issuesControllerUpdate(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssuesControllerUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerUpdate>>
+>;
+export type IssuesControllerUpdateMutationBody = UpdateIssueDto;
+export type IssuesControllerUpdateMutationError = unknown;
+
+/**
+ * @summary Update issue
+ */
+export const useIssuesControllerUpdate = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issuesControllerUpdate>>,
+      TError,
+      { id: string; data: UpdateIssueDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issuesControllerUpdate>>,
+  TError,
+  { id: string; data: UpdateIssueDto },
+  TContext
+> => {
+  return useMutation(
+    getIssuesControllerUpdateMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Deletes the issue with its links and comments.
+ * @summary Delete issue
+ */
+export const issuesControllerDelete = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<DefaultMessageResponseDto>(
+    { url: `/api/issues/${id}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getIssuesControllerDeleteMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issuesControllerDelete>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issuesControllerDelete>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ['issuesControllerDelete'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issuesControllerDelete>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return issuesControllerDelete(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssuesControllerDeleteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerDelete>>
+>;
+
+export type IssuesControllerDeleteMutationError = unknown;
+
+/**
+ * @summary Delete issue
+ */
+export const useIssuesControllerDelete = <TError = unknown, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issuesControllerDelete>>,
+      TError,
+      { id: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issuesControllerDelete>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(
+    getIssuesControllerDeleteMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Moves an issue between open, in_progress, resolved and closed. Resolved and closed need a resolution. Writes a system comment.
+ * @summary Change issue status
+ */
+export const issuesControllerChangeStatus = (
+  id: string,
+  changeIssueStatusDto: ChangeIssueStatusDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueDetailDto>(
+    {
+      url: `/api/issues/${id}/status`,
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      data: changeIssueStatusDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getIssuesControllerChangeStatusMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issuesControllerChangeStatus>>,
+    TError,
+    { id: string; data: ChangeIssueStatusDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issuesControllerChangeStatus>>,
+  TError,
+  { id: string; data: ChangeIssueStatusDto },
+  TContext
+> => {
+  const mutationKey = ['issuesControllerChangeStatus'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issuesControllerChangeStatus>>,
+    { id: string; data: ChangeIssueStatusDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return issuesControllerChangeStatus(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssuesControllerChangeStatusMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerChangeStatus>>
+>;
+export type IssuesControllerChangeStatusMutationBody = ChangeIssueStatusDto;
+export type IssuesControllerChangeStatusMutationError = unknown;
+
+/**
+ * @summary Change issue status
+ */
+export const useIssuesControllerChangeStatus = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issuesControllerChangeStatus>>,
+      TError,
+      { id: string; data: ChangeIssueStatusDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issuesControllerChangeStatus>>,
+  TError,
+  { id: string; data: ChangeIssueStatusDto },
+  TContext
+> => {
+  return useMutation(
+    getIssuesControllerChangeStatusMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * Links vulnerabilities, assets, targets, projects or runs of the workspace. Already linked resources are skipped.
+ * @summary Link resources to issue
+ */
+export const issuesControllerAddLinks = (
+  id: string,
+  addIssueLinksDto: AddIssueLinksDto,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueDetailDto>(
+    {
+      url: `/api/issues/${id}/links`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      data: addIssueLinksDto,
+      signal,
+    },
+    options,
+  );
+};
+
+export const getIssuesControllerAddLinksMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issuesControllerAddLinks>>,
+    TError,
+    { id: string; data: AddIssueLinksDto },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issuesControllerAddLinks>>,
+  TError,
+  { id: string; data: AddIssueLinksDto },
+  TContext
+> => {
+  const mutationKey = ['issuesControllerAddLinks'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issuesControllerAddLinks>>,
+    { id: string; data: AddIssueLinksDto }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return issuesControllerAddLinks(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssuesControllerAddLinksMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerAddLinks>>
+>;
+export type IssuesControllerAddLinksMutationBody = AddIssueLinksDto;
+export type IssuesControllerAddLinksMutationError = unknown;
+
+/**
+ * @summary Link resources to issue
+ */
+export const useIssuesControllerAddLinks = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issuesControllerAddLinks>>,
+      TError,
+      { id: string; data: AddIssueLinksDto },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issuesControllerAddLinks>>,
+  TError,
+  { id: string; data: AddIssueLinksDto },
+  TContext
+> => {
+  return useMutation(
+    getIssuesControllerAddLinksMutationOptions(options),
+    queryClient,
+  );
+};
+
+/**
+ * @summary Unlink resource from issue
+ */
+export const issuesControllerRemoveLink = (
+  id: string,
+  linkId: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<IssueDetailDto>(
+    { url: `/api/issues/${id}/links/${linkId}`, method: 'DELETE', signal },
+    options,
+  );
+};
+
+export const getIssuesControllerRemoveLinkMutationOptions = <
+  TError = unknown,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof issuesControllerRemoveLink>>,
+    TError,
+    { id: string; linkId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof orvalClient>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof issuesControllerRemoveLink>>,
+  TError,
+  { id: string; linkId: string },
+  TContext
+> => {
+  const mutationKey = ['issuesControllerRemoveLink'];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      'mutationKey' in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof issuesControllerRemoveLink>>,
+    { id: string; linkId: string }
+  > = (props) => {
+    const { id, linkId } = props ?? {};
+
+    return issuesControllerRemoveLink(id, linkId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IssuesControllerRemoveLinkMutationResult = NonNullable<
+  Awaited<ReturnType<typeof issuesControllerRemoveLink>>
+>;
+
+export type IssuesControllerRemoveLinkMutationError = unknown;
+
+/**
+ * @summary Unlink resource from issue
+ */
+export const useIssuesControllerRemoveLink = <
+  TError = unknown,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof issuesControllerRemoveLink>>,
+      TError,
+      { id: string; linkId: string },
+      TContext
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseMutationResult<
+  Awaited<ReturnType<typeof issuesControllerRemoveLink>>,
+  TError,
+  { id: string; linkId: string },
+  TContext
+> => {
+  return useMutation(
+    getIssuesControllerRemoveLinkMutationOptions(options),
+    queryClient,
+  );
+};
 
 /**
  * Comments of an issue, oldest first.

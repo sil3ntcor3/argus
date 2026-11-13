@@ -1,3 +1,4 @@
+import { IssueStatus, IssueType, IssuePriority, IssueLinkResourceType } from '@/common/enums/enum';
 import z from 'zod';
 
 /**
@@ -264,13 +265,45 @@ export const listIssuesSchema = z
     search: z
       .string()
       .optional()
-      .describe('Search query to filter issues by title or their content.'),
+      .describe('Search issues by title, or by number (e.g. "#12").'),
     status: z
-      .array(z.string())
+      .array(z.nativeEnum(IssueStatus))
+      .optional()
+      .describe('Only issues in these statuses.'),
+    type: z
+      .array(z.nativeEnum(IssueType))
+      .optional()
+      .describe('Only issues of these types.'),
+    priority: z
+      .array(z.nativeEnum(IssuePriority))
+      .optional()
+      .describe('Only issues with these priorities (p1 = most urgent).'),
+    assigneeId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe('Only issues assigned to this user ID.'),
+    mine: z
+      .boolean()
       .optional()
       .describe(
-        'Filter issues by their status (e.g., OPEN, IN_PROGRESS, RESOLVED).',
+        'Only issues assigned to the user running this conversation.',
       ),
+    overdue: z
+      .boolean()
+      .optional()
+      .describe('Only open or in-progress issues past their due date.'),
+    resourceType: z
+      .nativeEnum(IssueLinkResourceType)
+      .optional()
+      .describe(
+        'With resourceId: only issues linked to this resource (e.g. vulnerability).',
+      ),
+    resourceId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe('With resourceType: ID of the linked resource.'),
   })
   .extend(getManyBaseRequestSchema.shape);
 

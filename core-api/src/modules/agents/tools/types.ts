@@ -74,6 +74,8 @@ export type Deps<K extends keyof AgentToolDeps> = Pick<AgentToolDeps, K>;
  * project-aware tool to it; elsewhere the model picks one with `projectId`.
  */
 export interface ToolScope {
+  /** Set only by the authenticated workspace API-key MCP entry point. */
+  workspaceApiKey?: boolean;
   projectId?: string | null;
   /** Whose run it is: write tools check this member's workspace permissions. */
   userId?: string;

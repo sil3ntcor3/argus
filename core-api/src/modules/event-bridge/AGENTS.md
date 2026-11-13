@@ -16,3 +16,5 @@ Use `task api:test` for catalog-policy parity, boot wiring, publish redaction, r
 Proposal/review audit events exclude proof and notes. `vulnerability.detected`
 may omit `jobId` for a human-approved proposal; project dispatch must validate
 the durable approval event rather than trusting that transport payload.
+
+The issues lane consumes committed finding facts using private durable proof receipts. Redis markers are only a delivery optimization; do not truncate proof IDs or restore the legacy source queue.

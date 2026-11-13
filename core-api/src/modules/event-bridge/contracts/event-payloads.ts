@@ -131,6 +131,8 @@ export interface EventPayloadMap {
   'project.assets.added': ProjectAssetsAddedPayload;
   'project.run.completed': ProjectRunCompletedPayload;
   'vulnerability.detected': VulnerabilityDetectedPayload;
+  'vulnerability.resurfaced': VulnerabilityDetectedPayload;
+  'vulnerability.fixed': { vulnerabilityIds: string[]; jobId?: string; jobHistoryId?: string; assetId?: string; targetId?: string };
   'workflow.run.completed': WorkflowRunCompletedPayload;
   'vulnerability.analysis.completed': VulnerabilityAnalysisCompletedPayload;
   'asset.url.discovered': UrlDiscoveredPayload;

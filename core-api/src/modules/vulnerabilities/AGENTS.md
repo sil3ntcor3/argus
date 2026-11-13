@@ -40,3 +40,5 @@ and cited calls at execution time; AI evidence never creates scanner coverage.
 Use `findingDetectedAt` for detection-date aggregates and the projections in
 `vulnerability-review-read.ts` for authorized source references and limited user
 objects. See `docs/operations/finding-proposal-review-rollout.md`.
+
+Finding list/detail openIssue references require effective workspace access. issue_linked is public timeline activity; issue_automation proof receipts remain private. Dedicated CommentsService continues to own discussions.

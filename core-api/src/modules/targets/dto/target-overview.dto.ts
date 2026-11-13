@@ -89,7 +89,16 @@ class TargetProjectRefDto {
   assets: number;
 }
 
+export class TargetIssueRefDto {
+  @ApiProperty() id: string;
+  @ApiProperty() no: number;
+  @ApiProperty() title: string;
+  @ApiProperty() status: string;
+  @ApiProperty() priority: string;
+}
+
 export class TargetOverviewDto {
+  @ApiProperty({ type: [TargetIssueRefDto] }) issues: TargetIssueRefDto[];
   @ApiProperty({ description: 'Enabled assets on the target' })
   totalAssets: number;
 

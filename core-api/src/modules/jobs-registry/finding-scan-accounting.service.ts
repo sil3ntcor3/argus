@@ -13,6 +13,7 @@ import {
 } from './finding-scan-evidence';
 
 interface ClosedFinding {
+  proofId: string;
   id: string;
   assetId: string;
   targetId: string;
@@ -140,8 +141,8 @@ export class FindingScanAccountingService {
                     jsonb_build_object('reason','not_detected_by_covering_scan','coverageVersion',1,
                       'scanClaimedAt',updated.cutoff,'missedScans',updated.misses,
                       'fixClaimVerified',updated."fixClaimedAt" IS NOT NULL AND updated.cutoff > updated."fixClaimedAt")
-             FROM updated WHERE updated.closes RETURNING "vulnerabilityId"
-           ) SELECT updated.id, updated."assetId", target.id AS "targetId",
+             FROM updated WHERE updated.closes RETURNING id, "vulnerabilityId"
+           ) SELECT updated.id, recorded.id AS "proofId", updated."assetId", target.id AS "targetId",
                     updated."latestRun", updated."latestJob"
              FROM updated JOIN recorded ON recorded."vulnerabilityId" = updated.id
              JOIN assets asset ON asset.id = updated."assetId"
@@ -162,7 +163,7 @@ export class FindingScanAccountingService {
       for (const rows of groups.values()) await this.eventBridge.publishSafely(
         EVENT_CATALOG.vulnerability.fixed,
         { workspaceId: result.workspaceId, outcome: 'success', resourceType: 'vulnerability',
-          metadata: { count: rows.length }, payload: {
+          metadata: { count: rows.length, findingEventIds: rows.map(value => value.proofId) }, payload: {
             vulnerabilityIds: rows.map(value => value.id), assetId: rows[0].assetId,
             targetId: rows[0].targetId, jobHistoryId: rows[0].latestRun, jobId: rows[0].latestJob,
           } },

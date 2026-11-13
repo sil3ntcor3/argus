@@ -202,6 +202,7 @@ export const EVENT_CATALOG = {
     settings: {
       updated: { name: 'vulnerability.settings.updated', summary: 'Finding management policy changed' },
     },
+    resurfaced: { name: 'vulnerability.resurfaced', summary: 'Findings observed again after a verified fix' },
     fixed: { name: 'vulnerability.fixed', summary: 'Findings fixed by a covering scan' },
     status: {
       updated: {
@@ -420,6 +421,20 @@ export const EVENT_CATALOG = {
     created: { name: 'issue.created', summary: 'Issue created' },
     opened: { name: 'issue.opened', summary: 'Issue reopened' },
     closed: { name: 'issue.closed', summary: 'Issue closed' },
+    updated: { name: 'issue.updated', summary: 'Issue fields changed' },
+    resolved: { name: 'issue.resolved', summary: 'Issue resolved' },
+    assigned: { name: 'issue.assigned', summary: 'Issue assignee changed' },
+    deleted: { name: 'issue.deleted', summary: 'Issue deleted' },
+    link: {
+      added: {
+        name: 'issue.link.added',
+        summary: 'Resources linked to an issue',
+      },
+      removed: {
+        name: 'issue.link.removed',
+        summary: 'Resource unlinked from an issue',
+      },
+    },
     comment: {
       created: {
         name: 'issue.comment.created',

@@ -12,3 +12,5 @@ Run the target service and controller specs and validate summary, overview, chan
 Finding discoveries, weekly buckets and per-run finding totals exclude
 pending/rejected proposals. Approved AI findings use their human approval's
 detection time, without acquiring scanner-run provenance.
+
+Overview issue references require workspace access and scoped resource links. Mask generated finding titles without finding permission and limit results to five current open/in-progress issues.

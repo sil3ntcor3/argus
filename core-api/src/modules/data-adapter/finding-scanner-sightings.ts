@@ -2,6 +2,11 @@ import type { EntityManager } from 'typeorm';
 import { FINDING_SCAN_WORKSPACE } from '../jobs-registry/finding-scan-evidence';
 import { resolveVulnerabilitySettings, VULNERABILITY_SETTINGS_KEY } from '../vulnerabilities/vulnerability-settings';
 
+export interface ScannerFindingProof {
+  id: string; vulnerabilityId: string; workspaceId: string; type: string;
+  fromStatus: string | null; toStatus: string; jobHistoryId: string | null; occurredAt: Date;
+}
+
 /** Lock provenance parents before taking finding row locks, as deletion does. */
 export async function lockFindingScannerSourceParents(
   manager: EntityManager,
@@ -37,8 +42,8 @@ export async function recordFindingScannerSightings(
   manager: EntityManager,
   jobId: string,
   findingIds: string[],
-): Promise<void> {
-  if (findingIds.length === 0) return;
+): Promise<ScannerFindingProof[]> {
+  if (findingIds.length === 0) return [];
   // The caller already holds the workspace KEY SHARE lock. Policy saves take
   // that parent FOR UPDATE before recomputing deadlines, so they serialize.
   const [workspace] = await manager.query<{ settings: unknown }[]>(
@@ -52,7 +57,7 @@ export async function recordFindingScannerSightings(
 
   // Recover detections saved during a staged rollout from their stored date.
   // Only attach the run when it is the original run already locked above.
-  await manager.query(
+  const proofs = await manager.query<ScannerFindingProof[]>(
     `WITH report AS (
        SELECT finding.id AS "vulnerabilityId", job."toolId",
               history.id AS "jobHistoryId", history."projectId", target."workspaceId",
@@ -80,6 +85,7 @@ export async function recordFindingScannerSightings(
            SELECT 1 FROM vulnerability_events AS event
            WHERE event."vulnerabilityId" = report."vulnerabilityId" AND event.type = 'detected'
          )
+       RETURNING id,"vulnerabilityId","workspaceId",type,"fromStatus","toStatus","jobHistoryId","occurredAt"
      ), inserted AS (
        INSERT INTO vulnerability_sources ("vulnerabilityId", kind, "toolId", "jobHistoryId")
        SELECT "vulnerabilityId", 'tool', "toolId", "jobHistoryId" FROM report
@@ -162,11 +168,14 @@ export async function recordFindingScannerSightings(
        RETURNING finding.id, countable."workspaceId", countable."jobHistoryId",
                  COALESCE(countable."fromStatus", finding."detectionStatus") AS "fromStatus",
                  finding."detectionStatus" AS "toStatus"
-     )
+     ), transitioned AS (
      INSERT INTO vulnerability_events
        ("vulnerabilityId", "workspaceId", type, "fromStatus", "toStatus", "jobHistoryId", "occurredAt")
      SELECT id, "workspaceId", 'status_changed', "fromStatus", "toStatus", "jobHistoryId", statement_timestamp()
-     FROM counted WHERE "fromStatus" <> "toStatus"`,
+     FROM counted WHERE "fromStatus" <> "toStatus"
+     RETURNING id,"vulnerabilityId","workspaceId",type,"fromStatus","toStatus","jobHistoryId","occurredAt"
+     ) SELECT * FROM detection UNION ALL SELECT * FROM transitioned`,
     [jobId, findingIds, JSON.stringify(policy.slaDays), policy.slaRestartOnResurface],
   );
+  return proofs;
 }

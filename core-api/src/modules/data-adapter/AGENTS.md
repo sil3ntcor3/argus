@@ -36,3 +36,5 @@ when changing scanner lifecycle behavior.
 Review/discovery status, reviewer ID/relation, review date and note are also
 server-owned and stripped from connector results. `select: false` alone cannot
 protect these columns from an ingestion payload.
+
+Scanner detection/resurfacing bridge events are published only after the ingestion transaction commits. Include exact durable finding event IDs; never infer resurfacing from payload status or publish uncommitted proof.

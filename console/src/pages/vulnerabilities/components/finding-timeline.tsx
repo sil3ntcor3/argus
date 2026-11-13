@@ -40,6 +40,7 @@ const statusLabels = new Map([
 
 const eventLabels = new Map([
   ['detected', 'First detected'],
+  ['issue_linked', 'Linked to an issue'],
   ['dismissed', 'Dismissed'],
   ['reopened', 'Reopened'],
   ['risk_expired', 'Risk acceptance expired'],

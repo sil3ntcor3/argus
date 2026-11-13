@@ -257,6 +257,7 @@ export class TargetsController {
       jobs: canReadTargetData(request.permissions, 'job'),
       findings: canReadTargetData(request.permissions, 'vulnerability'),
       projects: canReadTargetData(request.permissions, 'project'),
+      issues: request.permissions?.some(key => ['*','workspace.read','workspace.write'].includes(key)) ?? false,
     });
   }
 
