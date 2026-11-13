@@ -113,6 +113,17 @@ describe('Files settings actions', () => {
     }
   });
 
+  it.each(['list', 'grid'])('identifies template files in the %s view', async view => {
+    localStorage.setItem('argus.files.view', view);
+    mocks.files.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { data: [{ ...owned, name: 'custom-check.yaml', source: 'template', sizeBytes: 10, createdAt: '2026-01-02T00:00:00Z' }] },
+    });
+    show(['artifact.read']);
+    expect(await screen.findByText('Template', { exact: true })).toBeVisible();
+    expect(screen.getByText('custom-check.yaml', { exact: true })).toBeVisible();
+  });
+
   it.each([
     [0, 0, 100, 0],
     [40, 10, 100, 50],

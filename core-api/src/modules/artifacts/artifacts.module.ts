@@ -15,6 +15,7 @@ import { ArtifactFolder } from './entities/artifact-folder.entity';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 import { WorkspaceStorageUsage } from './entities/workspace-storage-usage.entity';
 import { PublicArtifactsController } from './public-artifacts.controller';
+import { TemplateRevisionSweepService } from './template-revision-sweep.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([WorkspaceStorageUsage, WorkspaceArtifact, ArtifactFolder]), ArtifactQuotaModule, ArtifactWriteModule],
@@ -27,6 +28,7 @@ import { PublicArtifactsController } from './public-artifacts.controller';
     ArtifactExpirySweepService,
     ArtifactFoldersService,
     ArtifactStagingSweepService,
+    TemplateRevisionSweepService,
   ],
 })
 export class ArtifactsModule {}

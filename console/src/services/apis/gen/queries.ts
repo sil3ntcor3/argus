@@ -6121,6 +6121,7 @@ export type ArtifactListItemDtoSource =
 export const ArtifactListItemDtoSource = {
   upload: 'upload',
   agent: 'agent',
+  template: 'template',
 } as const;
 
 /**
@@ -6166,6 +6167,7 @@ export type ArtifactSourceUsageDtoSource =
 export const ArtifactSourceUsageDtoSource = {
   upload: 'upload',
   agent: 'agent',
+  template: 'template',
 } as const;
 
 export type ArtifactSourceUsageDto = {
