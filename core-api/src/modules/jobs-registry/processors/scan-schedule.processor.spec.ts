@@ -1,3 +1,4 @@
+import { ProjectArchivedException } from '@/modules/projects/project-archive-state';
 import type { ProjectTriggerRuntimeService } from '@/modules/projects/project-trigger-runtime.service';
 import { JobRunType } from '@/common/enums/enum';
 import type { AssetGroupWorkflowService } from '@/modules/asset-group/asset-group-workflow.service';
@@ -117,6 +118,7 @@ describe('AssetGroupsScheduleConsumer', () => {
       'agw-1',
       JobRunType.SCHEDULED,
       'workspace-1',
+      'repeat:agw-1:1',
     );
     expect(mockAssetGroupWorkflowService.removeGroupWorkflowScheduler).not.toHaveBeenCalled();
   });
@@ -132,6 +134,13 @@ describe('AssetGroupsScheduleConsumer', () => {
     expect(mockAssetGroupWorkflowService.removeGroupWorkflowScheduler).toHaveBeenCalledWith(
       'repeat:agw-1:1',
     );
+  });
+
+  it('cleans an archived legacy repeat that survived a Redis cleanup failure', async () => {
+    mockAssetGroupWorkflowService.runGroupWorkflowScheduler.mockRejectedValueOnce(new ProjectArchivedException());
+    const job = createMockJob('agw-1', 'pre-archive-key');
+    await expect(consumer.process(job)).resolves.toBeUndefined();
+    expect(mockAssetGroupWorkflowService.removeGroupWorkflowScheduler).toHaveBeenCalledWith('pre-archive-key');
   });
 
   it('removes the current job when not found and no repeat key exists', async () => {

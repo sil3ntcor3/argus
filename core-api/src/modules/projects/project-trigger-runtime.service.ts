@@ -39,6 +39,11 @@ import {
 } from './project-trigger-matching';
 import { triggerChainDepth, runOutcomeOf } from './project-trigger-eligibility';
 import { lockEditableProjectWorkflow } from './project-workflow-write-context';
+import { ProjectLegacyScheduleService } from './project-legacy-schedule.service';
+import {
+  ARCHIVE_PENDING, EVENT_EPOCH, INACTIVE_TRIGGER, ProjectArchivedException,
+  triggerEpoch, triggerCutoff,
+} from './project-archive-state';
 
 interface RuntimeTrigger extends ProjectWorkflowTrigger {
   projectId: string;
@@ -90,6 +95,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
     @InjectQueue(BullMQName.ASSET_GROUPS_WORKFLOW_SCHEDULE)
     private readonly schedules: Queue,
     private readonly batches: ProjectTriggerBatchService,
+    private readonly legacy: ProjectLegacyScheduleService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -108,12 +114,22 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
       await manager.query(
         "SELECT pg_advisory_xact_lock(hashtext('argus-project-trigger-schedulers'))",
       );
+      await this.legacy.reconcileWithManager(manager);
       const rows = await manager.query<RuntimeTrigger[]>(TRIGGERS);
       const existing = await this.schedules.getJobSchedulers();
       const existingKeys = new Set(existing.map((scheduler) => scheduler.key));
       const wanted = new Set<string>();
       for (const row of rows) {
-        const key = `project-trigger:${row.id}`;
+        const previous = row.schedulerId;
+        const epoch = triggerEpoch(previous);
+        const pending = Boolean(previous?.startsWith(ARCHIVE_PENDING));
+        if (pending) {
+          // Keep the durable pending marker if Redis fails; do not reactivate
+          // a trigger until its pre-archive windows have been discarded.
+          await this.batches.clear(row.id, epoch);
+          row.schedulerId = (row.type === 'event' ? EVENT_EPOCH : INACTIVE_TRIGGER) + epoch;
+        }
+        const key = `project-trigger:${row.id}${epoch ? ':' + epoch : ''}`;
         const active =
           this.active(row) &&
           row.type === 'cron' &&
@@ -132,7 +148,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
             { pattern: row.cron!, tz: 'UTC' },
             {
               name: 'project-trigger',
-              data: { triggerId: row.id, cron: row.cron },
+              data: { triggerId: row.id, cron: row.cron, ...(epoch ? { epoch } : {}) },
               opts: {
                 attempts: 5,
                 backoff: { type: 'exponential', delay: 1000 },
@@ -142,13 +158,13 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
             },
           );
         }
-        if (row.schedulerId !== (active ? key : null))
-          await manager.update(
-            ProjectWorkflowTrigger,
-            { id: row.id },
-            { schedulerId: active ? key : null },
-          );
-        if (!this.active(row)) await this.batches.clear(row.id);
+        const desired = active ? key : epoch ? (row.type === 'event' ? EVENT_EPOCH : INACTIVE_TRIGGER) + epoch : null;
+        if (previous !== desired)
+          await manager.createQueryBuilder().update(ProjectWorkflowTrigger).set({ schedulerId: desired })
+            .where('id=:id AND "schedulerId" IS NOT DISTINCT FROM :previous', { id: row.id, previous })
+            .andWhere('enabled=:enabled AND type=:type AND cron IS NOT DISTINCT FROM :cron AND event IS NOT DISTINCT FROM :event AND config=CAST(:config AS jsonb)', { enabled: row.enabled, type: row.type, cron: row.cron, event: row.event, config: JSON.stringify(row.config) })
+            .execute();
+        if (!this.active(row) && !pending) await this.batches.clear(row.id, epoch);
       }
       for (const scheduler of existing)
         if (
@@ -159,11 +175,13 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
     });
   }
   async clear(id: string): Promise<void> {
-    await this.batches.clear(id);
+    const row = await this.load(id);
+    await this.batches.clear(id, triggerEpoch(row?.schedulerId));
   }
   private active(row: RuntimeTrigger): boolean {
     return (
       row.enabled &&
+      !row.schedulerId?.startsWith(ARCHIVE_PENDING) &&
       !row.archivedAt &&
       row.isCanEdit &&
       isGroupOwnedWorkflow(row, row.projectId)
@@ -197,12 +215,14 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
     triggerId: string,
     deliveryId: string,
     expectedCron?: string,
+    expectedEpoch?: string,
   ): Promise<void> {
     const row = await this.load(triggerId);
     if (
       !row ||
       !this.active(row) ||
       row.type !== 'cron' ||
+      triggerEpoch(row.schedulerId) !== expectedEpoch ||
       (expectedCron !== undefined && row.cron !== expectedCron)
     )
       return;
@@ -213,7 +233,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
       runIdFor(`cron:${triggerId}:${deliveryId}`),
     );
   }
-  async fireEvent({ triggerId, token }: ProjectTriggerEventJob): Promise<void> {
+  async fireEvent({ triggerId, token, epoch }: ProjectTriggerEventJob): Promise<void> {
     const row = await this.load(triggerId);
     if (
       !row ||
@@ -221,14 +241,16 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
       row.type !== 'event' ||
       !isTriggerEvent(row.event)
     ) {
-      await this.batches.clear(triggerId);
+      await this.batches.clear(triggerId, epoch);
       return;
     }
+    if (triggerEpoch(row.schedulerId) !== epoch) return;
     const config = normalizeEventConfig(row.event, row.config);
     const batch = await this.batches.take(
       triggerId,
       token,
       config.maxAssets ?? 200,
+      epoch,
     );
     if (batch.assetIds.length === 0) return;
     // Chunk the original stable snapshot, then intersect current membership per
@@ -244,7 +266,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
         batch.cause,
         runIdFor(`event:${triggerId}:${token}:${index}`),
       );
-    await this.batches.acknowledge(triggerId, token);
+    await this.batches.acknowledge(triggerId, token, epoch);
   }
   private async launch(
     row: RuntimeTrigger,
@@ -283,6 +305,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
         });
         if (
           !current?.enabled ||
+          triggerEpoch(current.schedulerId) !== triggerEpoch(row.schedulerId) ||
           definitionOf(current) !== definitionOf(row) ||
           locked.workflow.updatedAt.getTime() !== workflow.updatedAt.getTime()
         )
@@ -329,7 +352,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
           { lastFiredAt: new Date() },
         );
     } catch (error) {
-      if (error instanceof TriggerUnavailable) return;
+      if (error instanceof TriggerUnavailable || error instanceof ProjectArchivedException) return;
       throw error;
     }
   }
@@ -480,7 +503,13 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
     );
     for (const { trigger } of matchTriggers(
       fact,
-      rows.filter((row) => this.active(row)),
+      rows.filter((row) => {
+        if (!this.active(row)) return false;
+        const cutoff = triggerCutoff(row.schedulerId);
+        if (cutoff === undefined) return true;
+        const occurred = event.occurredAt && /(?:Z|[+-]\d{2}:\d{2})$/i.test(event.occurredAt) ? Date.parse(event.occurredAt) : NaN;
+        return Number.isFinite(occurred) && occurred >= cutoff;
+      }),
       assets,
     )) {
       const depth = triggerChainDepth(
@@ -502,6 +531,7 @@ export class ProjectTriggerRuntimeService implements OnApplicationBootstrap {
         cause ? { runId: cause.id, depth } : null,
         config.windowMinutes ?? 10,
         deliveryId,
+        triggerEpoch(trigger.schedulerId),
       );
     }
   }

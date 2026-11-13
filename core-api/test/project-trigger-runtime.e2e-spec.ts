@@ -171,7 +171,7 @@ describe('Project trigger management and dispatch (Docker)', () => {
       [project],
     );
 
-  it('manages schedules atomically without changing legacy bindings or authored content', async () => {
+  it('manages schedules atomically while preserving legacy preferences and authored content', async () => {
     const legacy = `legacy-proof-${randomUUID()}`;
     legacyKeys.push(legacy);
     await schedules.upsertJobScheduler(
@@ -217,9 +217,9 @@ describe('Project trigger management and dispatch (Docker)', () => {
     expect(await schedules.getJobScheduler(legacy)).toMatchObject({
       pattern: '0 6 * * *',
     });
-    expect(
-      (await q('SELECT * FROM project_workflows WHERE id=$1', [binding]))[0],
-    ).toEqual(before);
+    const [after] = await q<{ id: string; projectId: string; workflowId: string; schedule: string; jobId: string }>('SELECT * FROM project_workflows WHERE id=$1', [binding]);
+    expect(after).toMatchObject({ id: before.id, projectId: before.projectId, workflowId: before.workflowId, schedule: before.schedule, createdAt: before.createdAt });
+    expect(await schedules.getJobScheduler(after.jobId)).toMatchObject({ name: binding, pattern: '0 6 * * *' });
     expect(
       (
         await q<{ content: object }>(
@@ -637,9 +637,9 @@ describe('Project trigger management and dispatch (Docker)', () => {
       cron: '0 6 * * *',
       enabled: true,
     });
-    expect(
-      await schedules.getJobScheduler(`project-trigger:${row.id}`),
-    ).toMatchObject({ pattern: '0 6 * * *' });
+    const [restored] = await q<{ jobId: string }>('SELECT "jobId" FROM project_workflows WHERE id=$1', [binding]);
+    expect(await schedules.getJobScheduler(restored.jobId)).toMatchObject({ name: binding, pattern: '0 6 * * *' });
+    expect((await schedules.getJobSchedulers()).filter(item => item.name === binding || item.key === `project-trigger:${row.id}`)).toHaveLength(1);
   });
   it('emits project completion for a real no-inputs run with no job rows', async () => {
     const source = await addBinding('No services'),

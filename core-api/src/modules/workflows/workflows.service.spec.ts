@@ -23,6 +23,7 @@ describe('WorkflowsService', () => {
     getRepository: (entity: unknown) =>
       entity === Tool ? transactionTools : workflowRepository,
     save: (_entity: unknown, value: Workflow) => workflowRepository.save(value),
+    remove: (_entity: unknown, value: Workflow) => workflowRepository.remove(value),
   };
 
   const mockWorkflow = {
@@ -240,6 +241,7 @@ describe('WorkflowsService', () => {
           .mockImplementation((w) => Promise.resolve(w as Workflow));
         manager.query
           .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([])
           .mockResolvedValueOnce(
             kind === 'no rows' ? [] : [{ projectId: project }],
           );
@@ -261,7 +263,7 @@ describe('WorkflowsService', () => {
         expect(transactionTools.find).toHaveBeenCalled();
         expect(toolRepository.find).not.toHaveBeenCalled();
         expect(manager.query).toHaveBeenNthCalledWith(
-          2,
+          3,
           expect.stringContaining('project_workflow_triggers'),
           [workflow.id, workspace],
         );

@@ -1,4 +1,6 @@
 import { UserId } from '@/common/decorators/app.decorator';
+import { ProjectArchiveService } from './project-archive.service';
+import { GetProjectsQueryDto } from './dto/project-list.dto';
 import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
 import { ProjectWorkflowActionsService } from './project-workflow-actions.service';
 import { ProjectWorkflowBindingDto, ProjectWorkflowRemovedDto, ProjectWorkflowRunReceiptDto, RunProjectWorkflowDto } from './dto/project-workflow-actions.dto';
@@ -49,7 +51,6 @@ import {
 import { AssetGroupService } from '../asset-group/asset-group.service';
 import { AssetGroupAssetService } from '../asset-group/asset-group-asset.service';
 import { Asset } from '../assets/entities/assets.entity';
-import { GetAllAssetGroupsQueryDto } from '../asset-group/dto/get-all-asset-groups-dto.dto';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
 import { ProjectMetadataReadService } from './project-metadata-read.service';
@@ -100,6 +101,7 @@ import {
 export class ProjectsController {
   constructor(
     private readonly files: ProjectFilesService,
+    private readonly archiveService: ProjectArchiveService,
     private readonly projects: AssetGroupService,
     private readonly metadata: ProjectMetadataReadService,
     private readonly scopePreview: ProjectScopePreviewService,
@@ -120,6 +122,18 @@ export class ProjectsController {
     private readonly findingTimeline: ProjectFindingTimelineService,
     private readonly overviewRead: ProjectOverviewReadService,
   ) {}
+
+  @Doc({ summary: 'Archive a project and pause its schedules', response: { serialization: ProjectViewDto, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @PublishEvent(EVENT_CATALOG.project.archived, { resourceIdFromRoute: true })
+  @WorkspaceAccess('project.write')
+  @Post(':id/archive')
+  archive(@Param('id', ParseUUIDPipe) id: string, @WorkspaceId() workspaceId: string) { return this.archiveService.setArchived(id, workspaceId, true); }
+
+  @Doc({ summary: 'Reopen an archived project', response: { serialization: ProjectViewDto, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @PublishEvent(EVENT_CATALOG.project.unarchived, { resourceIdFromRoute: true })
+  @WorkspaceAccess('project.write')
+  @Post(':id/unarchive')
+  unarchive(@Param('id', ParseUUIDPipe) id: string, @WorkspaceId() workspaceId: string) { return this.archiveService.setArchived(id, workspaceId, false); }
 
   @Doc({ summary: 'List project workflow bindings', response: { serialization: ProjectWorkflowBindingDto, isArray: true }, request: { getWorkspaceId: true } })
   @WorkspaceAccess('project.read')
@@ -152,7 +166,7 @@ export class ProjectsController {
   @WorkspaceAccess('project.read')
   @Get()
   getMany(
-    @Query() query: GetAllAssetGroupsQueryDto,
+    @Query() query: GetProjectsQueryDto,
     @WorkspaceId() workspaceId: string,
   ) {
     return this.metadata.getMany(query, workspaceId);

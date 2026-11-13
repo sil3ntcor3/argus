@@ -11,6 +11,7 @@ export interface TriggerBatchCause {
 export interface ProjectTriggerEventJob {
   triggerId: string;
   token: string;
+  epoch?: string;
 }
 const TTL = 2 * 24 * 60 * 60;
 // Gathering and draining are atomic across API replicas. A distinct token for
@@ -50,9 +51,9 @@ export class ProjectTriggerBatchService {
     private readonly redis: RedisService,
     @InjectQueue('project-trigger-events') private readonly queue: Queue,
   ) {}
-  private keys(id: string): [string, string, string, string] {
+  private keys(id: string, epoch?: string): [string, string, string, string] {
     return ['pending', 'causes', 'queued', 'inflight'].map(
-      (suffix) => `project-trigger:${id}:${suffix}`,
+      (suffix) => `project-trigger:${id}${epoch ? ':' + epoch : ''}:${suffix}`,
     ) as [string, string, string, string];
   }
   async gather(
@@ -61,9 +62,10 @@ export class ProjectTriggerBatchService {
     cause: TriggerBatchCause | null,
     windowMinutes: number,
     deliveryId: string,
+    epoch?: string,
   ): Promise<void> {
     if (!assets.length) return;
-    const keys = this.keys(id),
+    const keys = this.keys(id, epoch),
       token = randomUUID();
     const seen = `project-trigger:${id}:seen:${createHash('sha256').update(deliveryId).digest('hex')}`;
     const queuedToken = await this.redis.client.eval(
@@ -83,7 +85,7 @@ export class ProjectTriggerBatchService {
     // redelivery retries it; a concurrent gatherer cannot strand the window.
     const job = await this.queue.add(
       'project-trigger',
-      { triggerId: id, token: queuedToken },
+      { triggerId: id, token: queuedToken, ...(epoch ? { epoch } : {}) },
       {
         jobId: queuedToken,
         delay: windowMinutes * 60000,
@@ -102,6 +104,7 @@ export class ProjectTriggerBatchService {
     id: string,
     token: string,
     maxAssets?: number,
+    epoch?: string,
   ): Promise<{
     assetIds: string[];
     cause: TriggerBatchCause | null;
@@ -110,7 +113,7 @@ export class ProjectTriggerBatchService {
     const result = (await this.redis.client.eval(
       TAKE,
       4,
-      ...this.keys(id),
+      ...this.keys(id, epoch),
       token,
       TTL,
       maxAssets ?? 0,
@@ -125,10 +128,10 @@ export class ProjectTriggerBatchService {
           : null,
     };
   }
-  async acknowledge(id: string, token: string): Promise<void> {
-    await this.redis.client.hdel(this.keys(id)[3], token);
+  async acknowledge(id: string, token: string, epoch?: string): Promise<void> {
+    await this.redis.client.hdel(this.keys(id, epoch)[3], token);
   }
-  async clear(id: string): Promise<void> {
-    await this.redis.client.del(...this.keys(id));
+  async clear(id: string, epoch?: string): Promise<void> {
+    await this.redis.client.del(...this.keys(id, epoch));
   }
 }

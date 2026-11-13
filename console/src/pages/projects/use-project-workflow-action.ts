@@ -8,7 +8,7 @@ export function useProjectWorkflowAction(
   workspaceId: string,
   projectId: string,
   bindingId: string,
-  action: 'run' | 'remove',
+  action: 'run' | 'remove' | 'archive' | 'unarchive',
 ) {
   const client = useQueryClient();
   const key = [

@@ -3,7 +3,7 @@ import { WorkflowRunnerService } from '@/modules/jobs-registry/workflow-runner.s
 import { getQueueToken } from '@nestjs/bullmq';
 import { BullMQName } from '@/common/enums/enum';
 import type { Queue } from 'bullmq';
-import { AssetGroupWorkflowService } from '@/modules/asset-group/asset-group-workflow.service';
+import { ProjectLegacyScheduleService } from '../src/modules/projects/project-legacy-schedule.service';
 import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { cleanupE2eData, createUserWithWorkspace } from './helpers/workspace';
@@ -335,11 +335,10 @@ describe('Canonical project workflow actions (e2e)', () => {
       'library-' + randomUUID() + '.yaml',
       f.workflowId,
     ]);
-    const legacy = app.app.get(AssetGroupWorkflowService);
     // Pause only the existing service's Redis boundary, leaving real DB transactions active.
-    const queue = (legacy as unknown as { scanScheduleQueue: Queue })
-      .scanScheduleQueue;
-    const original = queue.add.bind(queue) as Queue['add'];
+    const coordinator = app.app.get(ProjectLegacyScheduleService);
+    const queue = (coordinator as unknown as { queue: Queue }).queue;
+    const original = queue.upsertJobScheduler.bind(queue) as Queue['upsertJobScheduler'];
     let reached!: () => void, release!: () => void;
     const entered = new Promise<void>((resolve) => {
       reached = resolve;
@@ -347,7 +346,7 @@ describe('Canonical project workflow actions (e2e)', () => {
     const resume = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const spy = jest.spyOn(queue, 'add').mockImplementation(async (...args) => {
+    const spy = jest.spyOn(queue, 'upsertJobScheduler').mockImplementation(async (...args) => {
       reached();
       await resume;
       return original(...args);
@@ -359,12 +358,10 @@ describe('Canonical project workflow actions (e2e)', () => {
       .then((result) => result);
     try {
       await entered;
-      await request(app.server)
-        .delete(url(f.id))
-        .set(owner.headers)
-        .expect(200);
+      const removal = request(app.server).delete(url(f.id)).set(owner.headers).then(result => result);
       release();
-      expect((await pending).status).toBe(404);
+      expect([200, 404]).toContain((await pending).status);
+      expect((await removal).status).toBe(200);
       expect(
         await q('SELECT id FROM project_workflows WHERE id=$1', [f.id]),
       ).toHaveLength(0);

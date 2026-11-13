@@ -174,6 +174,8 @@ export const EVENT_CATALOG = {
     deleted: { name: 'asset_group.deleted', summary: 'Asset group deleted' },
   },
   project: {
+    archived: { name: 'project.archived', summary: 'Project archived' },
+    unarchived: { name: 'project.unarchived', summary: 'Project reopened' },
     created: { name: 'project.created', summary: 'Project created' },
     updated: { name: 'project.updated', summary: 'Project settings or scope changed' },
     deleted: { name: 'project.deleted', summary: 'Project deleted' },

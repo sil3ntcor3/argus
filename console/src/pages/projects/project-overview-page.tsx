@@ -1,3 +1,4 @@
+import { ProjectArchivedNotice } from './project-archive-dialog';
 import AccessDenied from '@/components/common/access-denied';
 import { FindingTrends } from '@/components/common/finding-trends';
 import Page from '@/components/common/page';
@@ -252,7 +253,8 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
             count={overview.data.workflows}
           />
         </div>
-        <ProjectAgentContext key={`${state.selectedWorkspaceId}:${projectId}:context`} project={project.data} workspaceId={state.selectedWorkspaceId!} canEdit={permission.hasPermission('project.write') || permission.hasPermission('group.write')} canChat={permission.hasPermission('agent.read')} />
+        <ProjectArchivedNotice archivedAt={project.data.archivedAt} />
+        <ProjectAgentContext key={`${state.selectedWorkspaceId}:${projectId}:context`} project={project.data} workspaceId={state.selectedWorkspaceId!} canEdit={!project.data.archivedAt && (permission.hasPermission('project.write') || permission.hasPermission('group.write'))} canChat={permission.hasPermission('agent.read')} />
         <FindingTrends weeks={overview.data.weekly} />
         <ProjectOverviewRuns
           lastRun={overview.data.lastRun}

@@ -1,4 +1,5 @@
 import { ProjectAgentService } from './project-agent.service';
+import { ProjectArchiveService } from './project-archive.service';
 import { ProjectWorkflowActionsService } from './project-workflow-actions.service';
 import { BullModule } from '@nestjs/bullmq';
 import { BullMQName } from '@/common/enums/enum';
@@ -36,6 +37,7 @@ import { ProjectOverviewReadService } from './project-overview-read.service';
   imports: [BullModule.registerQueue({ name: BullMQName.ASSET_GROUPS_WORKFLOW_SCHEDULE }), ArtifactWriteModule, ProjectTriggerRuntimeModule, AssetGroupModule, ProjectScopeModule, ConnectorsModule],
   controllers: [ProjectsController],
   providers: [
+    ProjectArchiveService,
     ProjectWorkflowActionsService,
     ProjectAgentService, ProjectFilesService,
     ProjectTriggerReadService,

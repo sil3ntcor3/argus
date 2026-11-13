@@ -104,6 +104,16 @@ describe('ProjectWorkflowsPage', () => {
     ).toHaveAttribute('href', '/jobs/runs/' + runId);
     expect(screen.getByText('No run summary available')).toBeVisible();
   });
+  it('keeps archived workflows readable and hides their write and run controls', () => {
+    mock.permission.mockReturnValue({ hasPermission: () => true });
+    mock.project().data.archivedAt = '2026-11-13T10:00:00Z';
+    render(<QueryClientProvider client={new QueryClient()}><ProjectWorkflowsPage projectId={projectId} /></QueryClientProvider>);
+    expect(screen.getByRole('heading', { name: 'Discovery' })).toBeVisible();
+    expect(screen.getByText(/Archived project/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Create workflow' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Run workflow for/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Edit schedule/ })).toBeNull();
+  });
 
   it('offers rename only for editable workflows owned by this project', () => {
     mock.permission.mockReturnValue({ hasPermission: () => true });

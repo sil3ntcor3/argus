@@ -78,7 +78,7 @@ describe('event catalog', () => {
     // The tree is the authored source; EVENT_DEFINITIONS is derived. If the
     // walk ever stops matching the shape, these fail rather than the bridge
     // publishing half a catalog.
-    it('exposes 114 leaves', () => {
+    it('exposes 116 leaves', () => {
       // Four proposal/review audit events are added by the v0.12.1 port.
       // The resource discussion port adds vulnerability.comment.created.
       // Two lifecycle events add policy saves and trusted scanner fixes.
@@ -89,7 +89,7 @@ describe('event catalog', () => {
       // and the two tool install/uninstall audit events.
       // Asserting the count means the removal cannot be half-reverted without
       // failing here.
-      expect(EVENT_DEFINITIONS).toHaveLength(114);
+      expect(EVENT_DEFINITIONS).toHaveLength(116);
     });
 
     it('has no worker.alive leaf, so nothing can publish a heartbeat', () => {
@@ -187,7 +187,7 @@ describe('event catalog', () => {
     });
 
     it('carries the audit action count', () => {
-      expect(AUDIT_ACTION_CATALOG).toHaveLength(53);
+      expect(AUDIT_ACTION_CATALOG).toHaveLength(55);
     });
   });
 

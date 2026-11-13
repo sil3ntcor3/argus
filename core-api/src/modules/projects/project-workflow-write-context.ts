@@ -3,6 +3,7 @@ import { isGroupOwnedWorkflow } from '@/modules/asset-group/workflow-ownership';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { Workflow } from '../workflows/entities/workflow.entity';
+import { ProjectArchivedException } from './project-archive-state';
 
 /**
  * Lock an editable project-owned workflow and binding in parent-to-child order.
@@ -39,7 +40,7 @@ export async function lockProjectWorkflow(
     [projectId, workspaceId],
   );
   if (!project) throw new NotFoundException('Project not found');
-  if (project.archivedAt) throw new BadRequestException('Project is archived');
+  if (project.archivedAt) throw new ProjectArchivedException();
 
   const workflow = await manager
     .getRepository(Workflow)
