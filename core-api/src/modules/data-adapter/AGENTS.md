@@ -12,6 +12,10 @@ payload. Integration connectors can call `upsertAssetsByTargetId` directly.
   present. Changing the host formula would split existing findings.
 - The adapter removes supplied `detectionStatus`, `timesDetected`,
   `resurfacedCount`, `missedScans`, `fixedAt`, and `lastScannerObservedAt`.
+  Resolution run references, fix-claim actor/date, their relation objects and
+  `dueAt` are also server-owned and stripped before insertion.
+  Adding a private finding column also requires updating this exclusion list:
+  `select: false` controls reads and does not prevent result-payload inserts.
   It takes scope only from the claimed job. Preserve stored enrichment when a
   repeat scan omits it.
 - `finding-scanner-sightings.ts` locks provenance parents before findings, and
