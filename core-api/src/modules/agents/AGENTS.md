@@ -15,3 +15,7 @@ existing plan/todo/approval gates. Pass trusted user/chat/project scope and Stop
 to `VulnerabilityProposalService`; model arguments cannot set ownership or approve
 a finding. Subagents pass their actual name for attribution. Only pentest,
 exploit-verifier and retester built-ins include the release's proposal tool.
+
+Generic issue read tools pass the current actor for fresh workspace/domain checks.
+Only the authenticated workspace-key MCP entry point sets workspaceApiKey;
+missing conversation actor context must not fall back to privileged reads.

@@ -26,6 +26,7 @@ import {
   NEWEST_FIRST,
   assetsInProject,
   defineTool,
+  failSoft,
   pageOf,
   projectFor,
   projectIdInput,
@@ -282,47 +283,27 @@ export function getTlsTool(
   });
 }
 
-export function listIssuesTool(
-  deps: Deps<'issuesService'>,
-  workspaceId: string,
-): Tool {
+/** Generic issue filters always run under the authenticated caller's current permissions. */
+export function listIssuesTool(deps: Deps<'issuesService'>, workspaceId: string, scope: ToolScope = {}): Tool {
   return defineTool({
-    description:
-      'List security issues with status. Params: page, limit, search, status (OPEN/IN_PROGRESS/RESOLVED).',
+    description: 'List workspace work items by title or #number, status, type, priority, assigneeId, mine, overdue or resourceType/resourceId. Status: open, in_progress, resolved, closed. Types: vulnerability_remediation, task, asset_review, scan_failure.',
     inputSchema: listIssuesSchema,
-    execute: async (params: z.infer<typeof listIssuesSchema>) => {
-      const response = await deps.issuesService.getMany(
-        {
-          ...pageOf(params),
-          ...NEWEST_FIRST,
-          search: params.search,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-          status: params.status as any,
-        },
-        workspaceId,
-      );
-      return {
-        ...response,
-        data: response.data.map((i) => ({
-          id: i.id,
-          title: i.title,
-          status: i.status,
-          tags: i.tags,
-        })),
-      };
-    },
+    execute: (params: z.infer<typeof listIssuesSchema>) => failSoft('read issues', async () => {
+      if (!scope.userId && !scope.workspaceApiKey) throw new Error('Issue reads require authenticated user context');
+      return deps.issuesService.getMany({ ...params, ...pageOf(params), sortBy: 'updatedAt', sortOrder: SortOrder.DESC }, workspaceId, scope.userId);
+    }),
   });
 }
 
-export function detailIssueTool(
-  deps: Deps<'issuesService'>,
-  workspaceId: string,
-): Tool {
+/** Issue details contain only the resource summaries the caller may currently read. */
+export function detailIssueTool(deps: Deps<'issuesService'>, workspaceId: string, scope: ToolScope = {}): Tool {
   return defineTool({
-    description: 'Get full details of a single issue by issueId.',
+    description: 'Get a workspace work item by issueId, with its fields, progress and authorized resource links.',
     inputSchema: detailIssueSchema,
-    execute: (params: z.infer<typeof detailIssueSchema>) =>
-      deps.issuesService.getById(params.issueId, workspaceId),
+    execute: (params: z.infer<typeof detailIssueSchema>) => failSoft('read issue', async () => {
+      if (!scope.userId && !scope.workspaceApiKey) throw new Error('Issue reads require authenticated user context');
+      return deps.issuesService.getById(params.issueId, workspaceId, scope.userId);
+    }),
   });
 }
 

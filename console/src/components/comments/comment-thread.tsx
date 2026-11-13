@@ -30,9 +30,9 @@ export const commentThreadQueryKey = (subject: CommentSubject, workspaceId: stri
   ['comments', workspaceId, subject.type, subject.id] as const;
 
 /** Discussion authors expose only their public display identity. */
-function UserAvatar({ user }: { user: CommentAuthorDto | null }) {
+export function UserAvatar({ user, className }: { user: CommentAuthorDto | null; className?: string }) {
   const initials = user?.name.trim().split(/\s+/).map(part => part[0]).slice(0, 2).join('').toUpperCase() || '?';
-  return <Avatar className="size-7 shrink-0">
+  return <Avatar className={'size-7 shrink-0 ' + (className ?? '')}>
     {user?.image && <AvatarImage src={user.image} alt={user.name} />}
     <AvatarFallback className="text-[10px]">{initials}</AvatarFallback>
   </Avatar>;

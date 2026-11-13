@@ -337,7 +337,7 @@ export class AgentTool {
       Object.entries(WORKSPACE_TOOLS)
         .filter(([name]) => MCP_TOOLS.has(name) && READ_ONLY_TOOLS.has(name))
         .filter(([name]) => !!userId || !PROJECT_READ_TOOLS.has(name))
-        .map(([name, build]) => [name, withProjectAccess(name, build(deps, workspaceId, {}), deps, workspaceId, { userId })]),
+        .map(([name, build]) => [name, withProjectAccess(name, build(deps, workspaceId, { userId, workspaceApiKey: !userId }), deps, workspaceId, { userId })]),
     );
   }
 

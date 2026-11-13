@@ -143,6 +143,13 @@ export const EVENT_POLICY: Record<EventName, EventPolicy> = {
   'scan.schedule.deleted': { persist: false, severity: 'normal' },
   'scan.schedule.fired': { persist: false, severity: 'normal' },
 
+  'issue.updated': { persist: false, severity: 'normal' },
+  'issue.resolved': { persist: false, severity: 'normal' },
+  'issue.assigned': { persist: false, severity: 'normal' },
+  'issue.deleted': { persist: false, severity: 'normal' },
+  'issue.link.added': { persist: false, severity: 'normal' },
+  'issue.link.removed': { persist: false, severity: 'normal' },
+  'vulnerability.resurfaced': { persist: false, severity: 'important' },
   'issue.created': { persist: false, severity: 'normal' },
   'issue.opened': { persist: false, severity: 'normal' },
   'issue.closed': { persist: false, severity: 'normal' },

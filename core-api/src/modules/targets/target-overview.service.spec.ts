@@ -35,6 +35,7 @@ describe('TargetOverviewService', () => {
     query.mockResolvedValueOnce([
       {
         ...counts,
+        issues: [],
         scanSchedule: CronSchedule.DAILY,
         jobId: null,
         stale: false,
@@ -48,6 +49,7 @@ describe('TargetOverviewService', () => {
     await expect(service.getOverview(id, workspaceId, access)).resolves.toEqual(
       {
         ...counts,
+        issues: [],
         openVulnerabilities: null,
         newVulnerabilities: null,
         topVulnerabilities: null,

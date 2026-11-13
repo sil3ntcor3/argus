@@ -33,3 +33,7 @@ the same run lock. A step with no input can complete without creating jobs.
 Run `task api:test` for API behavior and `task worker:test-race` when changing
 worker result delivery or concurrency. Regenerate worker stubs with `task proto`
 for changes to the gRPC schema.
+
+Trusted fixed events publish exact committed lifecycle event IDs for the issue
+automation lane. Keep proof identity and database fix time aligned; a transport
+payload is not evidence and must never close remediation work on its own.

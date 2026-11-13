@@ -1,3 +1,5 @@
+import type { WrapperType } from '@/common/types/app.types';
+import { Inject, forwardRef } from '@nestjs/common';
 import type { ReviewReader } from './vulnerability-review-read';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
@@ -69,7 +71,8 @@ export class VulnerabilitiesService {
     private jobRegistryService: JobsRegistryService,
     private toolsService: ToolsService,
     private workflowService: WorkflowsService,
-    private agentsCompletionsService: AgentsCompletionsService,
+    @Inject(forwardRef(() => AgentsCompletionsService))
+    private agentsCompletionsService: WrapperType<AgentsCompletionsService>,
     private notificationsService: NotificationsService,
     @InjectRepository(Target)
     private targetRepository: Repository<Target>,

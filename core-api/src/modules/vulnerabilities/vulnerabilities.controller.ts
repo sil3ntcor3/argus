@@ -138,7 +138,7 @@ export class VulnerabilitiesController {
   ) {
     return this.vulnerabilitiesService.getVulnerabilities(query, workspaceId,
       request?.permissions?.some(permission => ['*', 'job.read', 'job.write'].includes(permission)) ?? false,
-      { userId: request?.user?.id, canReadAgents: request?.permissions?.some(permission => ['*','agent.read','agent.write'].includes(permission)) ?? false });
+      { canReadIssues: request?.permissions?.some(permission => ['*','workspace.read','workspace.write'].includes(permission)) ?? false, userId: request?.user?.id, canReadAgents: request?.permissions?.some(permission => ['*','agent.read','agent.write'].includes(permission)) ?? false });
   }
 
   @Doc({
@@ -225,7 +225,7 @@ export class VulnerabilitiesController {
   ) {
     return this.vulnerabilitiesService.getVulnerability(id, workspaceId,
       request?.permissions?.some(permission => ['*', 'job.read', 'job.write'].includes(permission)) ?? false,
-      { userId: request?.user?.id, canReadAgents: request?.permissions?.some(permission => ['*','agent.read','agent.write'].includes(permission)) ?? false });
+      { canReadIssues: request?.permissions?.some(permission => ['*','workspace.read','workspace.write'].includes(permission)) ?? false, userId: request?.user?.id, canReadAgents: request?.permissions?.some(permission => ['*','agent.read','agent.write'].includes(permission)) ?? false });
   }
 
   @Doc({

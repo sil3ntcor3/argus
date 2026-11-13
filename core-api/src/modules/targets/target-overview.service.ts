@@ -15,6 +15,7 @@ import {
   TargetInsightLevel,
   type TargetOverviewDto,
   type TargetTopVulnerabilityDto,
+  type TargetIssueRefDto,
 } from './dto/target-overview.dto';
 import type { TargetRunDto } from './dto/target-runs.dto';
 import { staleTargetCondition } from './stale-target-condition';
@@ -77,6 +78,7 @@ function toTargetRunDto(run: TargetRunJson): TargetRunDto {
 type TargetOverviewRow = Omit<
   TargetOverviewDto,
   | 'insights'
+  | 'issues'
   | 'nextScanAt'
   | 'lastRun'
   | 'activeRuns'
@@ -157,7 +159,7 @@ export class TargetOverviewService {
   async getOverview(
     id: string,
     workspaceId: string,
-    access: { jobs: boolean; findings: boolean; projects: boolean },
+    access: { jobs: boolean; findings: boolean; projects: boolean; issues?: boolean },
   ): Promise<TargetOverviewDto> {
     const now = new Date();
     const monday = new Date(now);
@@ -327,6 +329,18 @@ export class TargetOverviewService {
       ],
     );
     if (!overview) throw new NotFoundException('Target not found');
+    const issues = access.issues ? await this.dataSource.query<TargetIssueRefDto[]>(`SELECT issue.id,issue.no,issue.status,issue.priority,
+      CASE WHEN NOT $3::boolean AND issue.type='vulnerability_remediation'
+        AND (issue."ruleId" IS NOT NULL OR issue."groupKey" IS NOT NULL OR issue."sourceType" IS NOT NULL)
+        THEN 'Remediation issue #' || issue.no::text ELSE issue.title END AS title
+      FROM issues issue WHERE issue."workspaceId"=$2 AND issue.status IN ('open','in_progress')
+      AND EXISTS (SELECT 1 FROM issue_links link WHERE link."issueId"=issue.id AND (
+        (link."resourceType"='target' AND link."resourceId"=$1) OR
+        (link."resourceType"='asset' AND EXISTS(SELECT 1 FROM assets a WHERE a.id=link."resourceId" AND a."targetId"=$1)) OR
+        ($3::boolean AND link."resourceType"='vulnerability' AND EXISTS(
+          SELECT 1 FROM vulnerabilities v JOIN assets a ON a.id=v."assetId" WHERE v.id=link."resourceId" AND a."targetId"=$1))))
+      ORDER BY issue."createdAt" DESC,issue.id DESC LIMIT 5`, [id,workspaceId,access.findings]) : [];
+
 
     const {
       jobId,
@@ -386,6 +400,7 @@ export class TargetOverviewService {
     }
     return {
       ...metrics,
+      issues,
       nextScanAt: await this.getNextScanAt(id, jobId, scanSchedule),
       lastRun: run ? toTargetRunDto(run) : null,
       activeRuns: runs?.activeRuns.map(toTargetRunDto) ?? null,

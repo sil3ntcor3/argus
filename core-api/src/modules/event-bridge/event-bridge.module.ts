@@ -1,3 +1,4 @@
+import { IssuesSink } from './sinks/issues/issues.sink';
 import { ProjectTriggerRuntimeModule } from '../projects/project-trigger-runtime.module';
 import { ServicesModule } from '@/services/services.module';
 import { Global, Module } from '@nestjs/common';
@@ -26,6 +27,7 @@ import { ProjectScopeModule } from '../projects/project-scope.module';
  * `EVENT_SINKS`.
  */
 export const SINKS = [
+  IssuesSink,
   ProjectsSink,
   AuditSink,
   ProjectionSink,

@@ -1,3 +1,4 @@
+import { IssuesSink } from './sinks/issues/issues.sink';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { BullMQName, EventBusGroup } from '@/common/enums/enum';
 import { EventConsumersService } from './consuming/event-consumers.service';
@@ -40,7 +41,7 @@ describe('EventBridgeModule wiring', () => {
         (provider as { provide?: unknown }).provide === token,
     );
 
-  const allSinks = [AuditSink, ProjectionSink, NotificationsSink, IntegrationsSink, ProjectsSink];
+  const allSinks = [IssuesSink, AuditSink, ProjectionSink, NotificationsSink, IntegrationsSink, ProjectsSink];
 
   it('registers every sink as a provider', () => {
     for (const sink of allSinks) {
@@ -63,6 +64,7 @@ describe('EventBridgeModule wiring', () => {
     // never touched by the getters read here, so dummies suffice.
     const dummy = {} as never;
     const groups = [
+      new IssuesSink(dummy, dummy),
       new AuditSink(dummy),
       new ProjectionSink(),
       new NotificationsSink(dummy, dummy, dummy, dummy),

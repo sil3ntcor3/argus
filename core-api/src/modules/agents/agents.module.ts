@@ -60,7 +60,7 @@ import { HttpModule } from '@nestjs/axios';
     AssetsModule,
     TargetsModule,
     forwardRef(() => VulnerabilitiesModule),
-    StatisticModule,
+    forwardRef(() => StatisticModule),
     RemoteExecuteModule,
     HttpModule,
     WorkersModule,

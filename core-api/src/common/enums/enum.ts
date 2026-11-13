@@ -211,7 +211,46 @@ export enum Language {
 
 export enum IssueStatus {
   OPEN = 'open',
+  IN_PROGRESS = 'in_progress',
+  RESOLVED = 'resolved',
   CLOSED = 'closed',
+}
+
+export enum IssueType {
+  VULNERABILITY_REMEDIATION = 'vulnerability_remediation',
+  TASK = 'task',
+  ASSET_REVIEW = 'asset_review',
+  SCAN_FAILURE = 'scan_failure',
+}
+
+export enum IssuePriority {
+  P1 = 'p1',
+  P2 = 'p2',
+  P3 = 'p3',
+  P4 = 'p4',
+}
+
+export enum IssueResolution {
+  FIXED = 'fixed',
+  ACCEPTED = 'accepted',
+  DUPLICATE = 'duplicate',
+  WONT_FIX = 'wont_fix',
+  OTHER = 'other',
+}
+
+export enum IssueLinkResourceType {
+  VULNERABILITY = 'vulnerability',
+  ASSET = 'asset',
+  TARGET = 'target',
+  PROJECT = 'project',
+  JOB_HISTORY = 'job_history',
+}
+
+export enum IssueRuleGroupBy {
+  NONE = 'none',
+  VULNERABILITY_NAME = 'vulnerability_name',
+  ASSET = 'asset',
+  TARGET = 'target',
 }
 
 export enum IssueSourceType {
@@ -222,6 +261,7 @@ export enum IssueCommentType {
   CONTENT = 'content',
   OPEN = 'open',
   CLOSED = 'closed',
+  SYSTEM = 'system',
 }
 
 export enum DismissReason {
@@ -320,6 +360,7 @@ export enum IntegrationType {
  * matching sink together, never one without the other.
  */
 export enum EventBusGroup {
+  Issues = 'issues',
   /** Keeps rule-based project membership current after discovery. */
   Projects = 'projects',
   /** Materializes the stream into `audit_events`; strictly ordered. */
