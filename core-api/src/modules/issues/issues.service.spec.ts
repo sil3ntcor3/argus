@@ -132,6 +132,15 @@ describe('IssuesService', () => {
     expect(service).toBeDefined();
   });
 
+  it('does not look up an arbitrary issue for a finding-only comment', async () => {
+    const lookup = jest.spyOn(repository, 'findOne');
+    const legacyAssistant = service as unknown as {
+      processCaiRequest(comment: Partial<IssueComment>): Promise<void>;
+    };
+    await legacyAssistant.processCaiRequest({ issueId: null });
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
   describe('findExistingOpenIssueBySource', () => {
     it('should return existing open issue when found', async () => {
       const existingIssue = {

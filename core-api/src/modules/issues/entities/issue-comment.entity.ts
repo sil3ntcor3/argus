@@ -1,8 +1,10 @@
 import { BaseEntity } from '@/common/entities/base.entity';
 import { IssueCommentType } from '@/common/enums/enum';
 import { User } from '@/modules/auth/entities/user.entity';
-import { ApiProperty } from '@nestjs/swagger';
+import { Vulnerability } from '@/modules/vulnerabilities/entities/vulnerability.entity';
+import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import {
+  Check,
   Column,
   DeleteDateColumn,
   Entity,
@@ -13,8 +15,12 @@ import {
 } from 'typeorm';
 import { Issue } from './issue.entity';
 
-@Entity('issue_comments')
-@Index('IDX_issue_comments_issueId', ['issue', 'createdAt'])
+// Retain the internal class name while legacy issue operations use this store.
+// Public resource-comment contracts follow in a separate batch.
+@Entity('comments')
+@Index('IDX_comments_issueId', ['issue', 'createdAt'])
+@Index('IDX_comments_vulnerabilityId', ['vulnerability', 'createdAt'])
+@Check('CHK_comments_one_subject', '("issueId" IS NOT NULL)::int + ("vulnerabilityId" IS NOT NULL)::int = 1')
 export class IssueComment extends BaseEntity {
   @ApiProperty()
   @Column()
@@ -30,12 +36,22 @@ export class IssueComment extends BaseEntity {
 
   @ManyToOne(() => Issue, (issue) => issue.comments, {
     onDelete: 'CASCADE',
+    nullable: true,
   })
   @JoinColumn({ name: 'issueId' })
-  issue: Relation<Issue>;
+  issue: Relation<Issue> | null;
 
-  @Column({ nullable: false })
-  issueId: string;
+  @Column({ type: 'uuid', nullable: true })
+  issueId: string | null;
+
+  @ApiHideProperty()
+  @ManyToOne(() => Vulnerability, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'vulnerabilityId' })
+  vulnerability?: Relation<Vulnerability> | null;
+
+  @ApiHideProperty()
+  @Column({ type: 'uuid', nullable: true, select: false })
+  vulnerabilityId?: string | null;
 
   @ApiProperty()
   @Column({ default: true })
