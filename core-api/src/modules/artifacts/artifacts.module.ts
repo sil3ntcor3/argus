@@ -30,5 +30,6 @@ import { TemplateRevisionSweepService } from './template-revision-sweep.service'
     ArtifactStagingSweepService,
     TemplateRevisionSweepService,
   ],
+  exports: [ArtifactReadService],
 })
 export class ArtifactsModule {}

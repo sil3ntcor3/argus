@@ -929,6 +929,7 @@ describe('JobsRegistryService', () => {
       mockJobHistoryRepository.findOne.mockResolvedValue(mockJobHistory);
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -1000,6 +1001,7 @@ describe('JobsRegistryService', () => {
       mockJobHistoryRepository.findOne.mockResolvedValue(mockJobHistory);
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -1040,6 +1042,7 @@ describe('JobsRegistryService', () => {
       mockJobHistoryRepository.findOne.mockResolvedValue(mockJobHistory);
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -1140,6 +1143,7 @@ describe('JobsRegistryService', () => {
       mockJobHistoryRepository.findOne.mockResolvedValue(dagHistory);
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -1213,6 +1217,7 @@ describe('JobsRegistryService', () => {
       });
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -1294,6 +1299,7 @@ describe('JobsRegistryService', () => {
         });
         const authorization = {
           innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
           select: jest.fn().mockReturnThis(),
@@ -1425,6 +1431,7 @@ describe('JobsRegistryService', () => {
         });
         mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
           innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
           select: jest.fn().mockReturnThis(),
@@ -1439,6 +1446,7 @@ describe('JobsRegistryService', () => {
         mockToolsService.getInstalledTools.mockResolvedValue({ data: [] });
         const logs = {
           innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
           where: jest.fn().mockReturnThis(),
           andWhere: jest.fn().mockReturnThis(),
           select: jest.fn().mockReturnThis(),
@@ -1488,6 +1496,7 @@ describe('JobsRegistryService', () => {
       mockJobHistoryRepository.findOne.mockResolvedValue(mockJobHistory);
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -1506,6 +1515,7 @@ describe('JobsRegistryService', () => {
       });
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -1552,6 +1562,7 @@ describe('JobsRegistryService', () => {
       mockJobHistoryRepository.findOne.mockResolvedValue(mockJobHistory);
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
@@ -1672,6 +1683,7 @@ describe('JobsRegistryService', () => {
     it('should throw NotFoundException when the run is not in the workspace', async () => {
       mockJobHistoryRepository.createQueryBuilder.mockReturnValue({
         innerJoin: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),

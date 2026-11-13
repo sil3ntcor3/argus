@@ -347,7 +347,7 @@ export class WorkflowRunnerService {
         .where('job_history.id = :id', { id: jobHistoryId })
         .getOne();
 
-      if (!jobHistory?.workflow) {
+      if (!jobHistory) {
         await queryRunner.rollbackTransaction();
         return { dispatched: 0, completed: false };
       }
@@ -355,6 +355,23 @@ export class WorkflowRunnerService {
       if (jobHistory.isCompleted) {
         await queryRunner.rollbackTransaction();
         return { dispatched: 0, completed: true };
+      }
+
+      if (!jobHistory.workflow) {
+        const templates = await queryRunner.manager.createQueryBuilder(Job, 'job')
+          .where('job.jobHistoryId = :id', { id: jobHistoryId })
+          .andWhere("job.inputs ? '__argus_saved_template_selection_v1'").getExists();
+        const active = await queryRunner.manager.count(Job, { where: {
+          jobHistory: { id: jobHistoryId }, status: In([JobStatus.PENDING, JobStatus.IN_PROGRESS]),
+        } });
+        const closed = templates && active === 0;
+        if (closed) {
+          await queryRunner.manager.update(JobHistory, { id: jobHistoryId }, { isCompleted: true });
+          completionJob = await this.loadCompletionJob(queryRunner, jobHistoryId);
+        }
+        await queryRunner.commitTransaction();
+        if (completionJob) this.eventEmitter.emit(EventTriggerType.WORKFLOW_END, completionJob);
+        return { dispatched: 0, completed: closed };
       }
 
       const workflow = jobHistory.workflow;

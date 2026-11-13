@@ -132,6 +132,8 @@ const orderJob = (job: WorkflowStepDefinition): WorkflowJob => ({
   ...(job.configProfileId ? { configProfileId: job.configProfileId } : {}),
 });
 
+import { prepareSavedTemplates, SAVED_TEMPLATE_SELECTION } from './saved-template-dispatch';
+
 const JOB_HISTORY_SORTABLE_COLUMNS: string[] = [
   'id',
   'createdAt',
@@ -266,6 +268,8 @@ export class JobsRegistryService {
     config,
     category,
     input,
+    customTemplateIds,
+    customTemplateActorId,
   }: CreateJobs): Promise<Job[]> {
     if (!tool) {
       throw new Error('Tool is required for creating a job');
@@ -302,7 +306,7 @@ export class JobsRegistryService {
         );
 
         // If no config resolved but tool requires config (has schema), fail fast.
-        if (!mergedConfig && (!config || Object.keys(config).length === 0)) {
+        if (!mergedConfig && (!config || Object.keys(config).length === 0) && !(tool.name === 'nuclei' && customTemplateIds?.length && customTemplateActorId)) {
           const entry = this.connectorRegistry.getConnector(tool.name);
           const schema = entry?.configSchema;
           if (schema) {
@@ -341,6 +345,17 @@ export class JobsRegistryService {
     } else if (!priority) {
       priority = tool.priority || JobPriority.BACKGROUND;
     }
+    const planInputs = async () => {
+      const targetTypes = resolveToolTargetTypes(categorySpec);
+      const inputs = resolveStepInputs(tool.name, categorySpec, input);
+      const loaded = await this.stepScope.load(inputs, { targetIds, assetIds, assetServiceIds, workspaceId, targetTypes });
+      return { loaded, planned: planStepInputs(inputs, loaded.scope) };
+    };
+    // A rejected template run must not leave an invisible, never-finishing
+    // history or emit WORKFLOW_START when no enabled input can run.
+    const templatePlan = customTemplateIds?.length ? await planInputs() : undefined;
+    if (templatePlan && templatePlan.planned.length === 0) return [];
+
     // Step 1: create job history
     let jobHistory: JobHistory;
 
@@ -375,14 +390,7 @@ export class JobsRegistryService {
     // host scanner never sees a repository (and vice versa) — whether the run
     // came from a trigger, a schedule, an asset group or a manual dispatch.
     // A step left with no eligible asset produces no job and is skipped.
-    const targetTypes = resolveToolTargetTypes(categorySpec);
-
-    // Plan the first available input kind independently for each asset.
-    const inputs = resolveStepInputs(tool.name, categorySpec, input);
-    const loaded = await this.stepScope.load(inputs, {
-      targetIds, assetIds, assetServiceIds, workspaceId, targetTypes,
-    });
-    const planned = planStepInputs(inputs, loaded.scope);
+    const { loaded, planned } = templatePlan ?? await planInputs();
 
     // Step 3: iterate tools and create jobs
     const defaultCommand = builtInTools.find(
@@ -394,7 +402,12 @@ export class JobsRegistryService {
         id: randomUUID(),
         asset: loaded.assets.get(input.assetId)!,
         assetService: input.serviceId ? loaded.services.get(input.serviceId) : undefined,
-        inputs: isConnector ? input.connectorInputs : null,
+        inputs: isConnector ? {
+          ...input.connectorInputs,
+          ...(customTemplateIds?.length && customTemplateActorId ? {
+            [SAVED_TEMPLATE_SELECTION]: JSON.stringify({ ids: customTemplateIds, actorId: customTemplateActorId }),
+          } : {}),
+        } : null,
         jobName: tool.name,
         status: JobStatus.PENDING,
         category: jobCategory,
@@ -681,6 +694,18 @@ export class JobsRegistryService {
   }
 
   /** Stores private evidence only for the exact claim being handed to a worker. */
+  prepareCustomTemplates(job: GetNextJobResult, config: Record<string, unknown> | undefined) {
+    return prepareSavedTemplates(this.dataSource, this.workspaceService, this.storageService, job, config);
+  }
+
+  async failTemplateDispatch(job: GetNextJobResult, workerId: string): Promise<void> {
+    if (!job.dispatchClaimAt) return;
+    await this.dataSource.transaction(async manager => {
+      const failed = await manager.update(Job, { id: job.id, workerId, status: JobStatus.IN_PROGRESS, pickJobAt: job.dispatchClaimAt }, { status: JobStatus.FAILED });
+      if (failed.affected) await manager.getRepository(JobErrorLog).save({ jobId: job.id, logMessage: 'Saved templates are unavailable or no longer authorized. Run again from Templates.', payload: '{}' });
+    });
+  }
+
   async recordFindingScanScope(
     job: GetNextJobResult,
     workerId: string,
@@ -762,6 +787,7 @@ export class JobsRegistryService {
   ): GetNextJobResult {
     const base: GetNextJobResult = {
       id: job.id,
+      dispatchClaimAt: claimedAt,
       // Results carry the job ID but no attempt ID. A delayed response from
       // an older attempt must never inherit a different scope after reclaim.
       claimedAt: job.pickJobAt ? undefined : claimedAt,
@@ -1303,10 +1329,17 @@ export class JobsRegistryService {
 
     const provenance = await this.jobHistoryRepo
       .createQueryBuilder('jobHistory')
-      .innerJoin('jobHistory.workflow', 'workflow')
-      .innerJoin('workflow.workspace', 'workspace')
+      .leftJoin('jobHistory.workflow', 'workflow')
+      .leftJoin('workflow.workspace', 'workspace')
       .where('jobHistory.id = :id', { id })
-      .andWhere('workspace.id = :workspaceId', { workspaceId })
+      .andWhere(`(workspace.id = :workspaceId OR (workflow.id IS NULL AND EXISTS (
+        SELECT 1 FROM jobs j JOIN assets a ON a.id = j."assetId" JOIN targets t ON t.id = a."targetId"
+        WHERE j."jobHistoryId" = jobHistory.id AND t."workspaceId" = :workspaceId
+          AND j.inputs ? :templateSelection
+      ) AND NOT EXISTS (
+        SELECT 1 FROM jobs j JOIN assets a ON a.id = j."assetId" JOIN targets t ON t.id = a."targetId"
+        WHERE j."jobHistoryId" = jobHistory.id AND t."workspaceId" <> :workspaceId
+      )))`, { workspaceId, templateSelection: SAVED_TEMPLATE_SELECTION })
       .select([
         'jobHistory.projectId AS "projectId"',
         'jobHistory.projectWorkflowId AS "projectWorkflowId"',
@@ -1673,6 +1706,7 @@ export class JobsRegistryService {
     try {
       const job = await this.repo
         .createQueryBuilder('job')
+        .addSelect('job.inputs')
         .innerJoin('job.asset', 'asset')
         .innerJoin('asset.target', 'target')
         .innerJoin('target.workspace', 'workspace')
@@ -1705,6 +1739,10 @@ export class JobsRegistryService {
     try {
       // Verify job exists and belongs to workspace
       const job = await this.verifyJobBelongsToWorkspace(jobId, workspaceId);
+
+      if (job.inputs?.[SAVED_TEMPLATE_SELECTION] !== undefined) {
+        throw new BadRequestException('Run saved templates again from Templates to check your current access');
+      }
 
       // Update job status, clear workerId, and increment retryCount
       job.status = JobStatus.PENDING;

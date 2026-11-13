@@ -10,7 +10,9 @@ import { DataSource, In, type EntityManager } from 'typeorm';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 import { readTemplateRetirements, TEMPLATE_RETIREMENTS_KEY, type TemplateRetirements } from './template-retirements';
 
-export const TEMPLATE_REVISION_GRACE_MS = 15 * 60_000;
+// Worker dispatch URLs live for one hour. Observe retirement after commit and
+// retain revisions longer than any newly issued worker URL can remain valid.
+export const TEMPLATE_REVISION_GRACE_MS = 75 * 60_000;
 export const TEMPLATE_REVISION_CURSOR = 'artifacts:template-revisions:cursor:v1';
 type Candidate = { key: string; workspaceId: string; artifactId: string; revision: boolean; modified: Date };
 

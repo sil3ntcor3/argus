@@ -69,6 +69,7 @@ import {
 import { RetryRunResponseDto } from './dto/retry-run-response.dto';
 import { JobsRegistryService } from './jobs-registry.service';
 import { WorkflowRunnerService } from './workflow-runner.service';
+import { SAVED_TEMPLATE_SELECTION } from './saved-template-dispatch';
 
 /**
  * Packs a single JSON-ish value into a `google.protobuf.Value` wire object.
@@ -186,6 +187,7 @@ export class JobsRegistryController {
     delete response.inputs;
     delete response.claimedAt;
     delete response.scanClaimInstant;
+    delete response.dispatchClaimAt;
     return response;
   }
 
@@ -529,7 +531,7 @@ export class JobsRegistryController {
       jobs.map((job) => this.mapJobToGrpcJob(job, request.id)),
     );
 
-    return { values };
+    return { values: values.filter(value => value.id) };
   }
 
   /**
@@ -553,7 +555,9 @@ export class JobsRegistryController {
     };
     if (!isRepositoryAsset(asset)) {
       // Planned service/URL targets survive dispatch; older jobs use the asset.
-      return job.inputs ?? buildConnectorInputs(asset);
+      const inputs = { ...(job.inputs ?? buildConnectorInputs(asset)) };
+      delete inputs[SAVED_TEMPLATE_SELECTION];
+      return inputs;
     }
 
     const integrationId = asset.target?.integrationId;
@@ -614,13 +618,26 @@ export class JobsRegistryController {
       );
 
       const inputs = await this.resolveConnectorInputs(job);
+      let scopeConfig = config;
+      if (job.inputs?.[SAVED_TEMPLATE_SELECTION] !== undefined || [config, job.config].some(value => value && ('customTemplateIds' in value || 'customTemplates' in value))) {
+        try {
+          if (!configResolved) throw new Error('Template profile unavailable');
+          const prepared = await this.jobsRegistryService.prepareCustomTemplates(job, config);
+          config = prepared.config;
+          scopeConfig = prepared.scopeConfig;
+        } catch {
+          // Never broaden a selected scan to the builtin template set.
+          await this.jobsRegistryService.failTemplateDispatch(job, workerId);
+          return { id: '', asset: {}, command: '' };
+        }
+      }
       if (configResolved && job.category === ToolCategory.VULNERABILITIES) {
         await this.jobsRegistryService.recordFindingScanScope(
           job,
           workerId,
           connectorEntry.image,
           inputs,
-          config,
+          scopeConfig,
         );
       }
       const response: Record<string, unknown> = {

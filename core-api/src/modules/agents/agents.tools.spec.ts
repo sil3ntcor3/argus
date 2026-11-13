@@ -292,6 +292,29 @@ describe('AgentTool run_tool_connector', () => {
     agentTool.getTools('w1', AgentMode.AGENT, undefined, 'c1')
       .read_tool_output as Runnable;
 
+  it('sends validated inline Nuclei documents only for this invocation', async () => {
+    const agent = createAgentTool();
+    const templates = ['id: argus-inline\ninfo:\n  name: Inline'];
+    await runnable(agent).execute({ tool: 'nuclei', target: 'example.test', templates }, {});
+    const wait = (agent as any).remoteExecuteService.waitForToolRun as jest.Mock;
+    expect(JSON.parse(wait.mock.calls[0][1].configJson)).toEqual({ rate: 10, customTemplates: [{ content: templates[0] }] });
+    await runnable(agent).execute({ tool: 'nuclei', target: 'example.test' }, {});
+    expect(JSON.parse(wait.mock.calls[1][1].configJson)).toEqual({ rate: 10 });
+  });
+
+  it.each([
+    { tool: 'nmap', templates: ['id: valid'] },
+    { tool: 'nuclei', templates: ['- not-a-mapping'] },
+    { tool: 'nuclei', templates: ['id: 123'] },
+    { tool: 'nuclei', templates: Array(21).fill('id: valid') },
+    { tool: 'nuclei', templates: ['id: valid\n#' + 'é'.repeat(32768)] },
+  ])('rejects invalid inline templates before worker dispatch (case %#)', async (input) => {
+    const agent = createAgentTool();
+    const result = await runnable(agent).execute({ target: 'example.test', ...input }, {});
+    expect(result).toHaveProperty('error');
+    expect((agent as any).remoteExecuteService.waitForToolRun).not.toHaveBeenCalled();
+  });
+
   it('is offered in AGENT mode only, and only with a conversation', () => {
     const agentTool = createAgentTool();
     expect(

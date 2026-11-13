@@ -5,6 +5,7 @@ import { useEffect, useMemo, type JSX } from 'react';
 import {
   Building2,
   FolderOpen,
+  FileCode,
   KeyRound,
   Loader2,
   Plug,
@@ -21,6 +22,7 @@ import MembersSettings from './components/members-settings';
 import Preferences from './components/preferences';
 import SecuritySettings from './components/security-settings';
 import WorkspaceSettings from './components/workspace-settings';
+import Templates from '@/pages/templates/templates';
 
 interface TabContentProps {
   title: string;
@@ -115,6 +117,12 @@ export const settingsTabGroups: SettingsTabGroup[] = [
         },
         component: <FilesSettings />,
         permission: 'artifact.read',
+      },
+      {
+        id: 'templates', label: 'Templates', path: '/settings/templates',
+        icon: <FileCode />,
+        content: { title: 'Templates', description: 'Create, share and run custom Nuclei templates.' },
+        component: <Templates />, permission: 'artifact.read',
       },
     ],
   },
@@ -237,7 +245,7 @@ const Settings = ({ defaultTab = 'general' }: SettingsProps) => {
   return (
     <div
       className={
-        activeTab?.id === 'audit' || activeTab?.id === 'files'
+        activeTab?.id === 'templates' ? 'w-full min-w-0' : activeTab?.id === 'audit' || activeTab?.id === 'files'
           ? 'mx-auto w-full sm:w-5/6 xl:w-2/3'
           : 'mx-auto w-full sm:w-3/4 xl:w-1/2'
       }

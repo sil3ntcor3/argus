@@ -33,6 +33,8 @@ const UNSCOPED_QUERY_ROOTS = new Set([
   '/api/metadata',
   '/api/workspaces',
   'workspaces',
+  // Drafts include their workspace explicitly, including late save callbacks.
+  'template-tabs',
 ]);
 
 /** `queryKeyHashFn` that puts the selected workspace into every scoped key. */

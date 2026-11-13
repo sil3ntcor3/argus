@@ -194,7 +194,7 @@ describe('JobsRegistryController', () => {
       async (inputs) => {
         const job = {
           id: 'job-1', asset: { value: 'app.example.com' }, inputs,
-          claimedAt: new Date(), scanClaimInstant: new Date(),
+          claimedAt: new Date(), scanClaimInstant: new Date(), dispatchClaimAt: new Date(),
         };
         mockJobsRegistryService.getNextJob.mockResolvedValue(job);
         expect(await controller.getNextJob({ workerId: 'worker-1' })).toEqual({

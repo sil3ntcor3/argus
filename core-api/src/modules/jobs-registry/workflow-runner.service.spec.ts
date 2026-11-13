@@ -152,9 +152,11 @@ function createFakeDb(overrides: Partial<JobHistory> = {}): FakeDb {
     getOne: jest.fn(() => Promise.resolve(lastJob)),
     getRawMany: jest.fn(() => Promise.resolve(summaries)),
     getCount: jest.fn(() => Promise.resolve(activeCount)),
+    getExists: jest.fn(() => Promise.resolve(false)),
   };
 
   const manager = {
+    count: jest.fn(() => Promise.resolve(activeCount)),
     create: jest.fn(
       (entity: unknown, data: Record<string, unknown>): unknown => {
         if (entity === JobHistory) {

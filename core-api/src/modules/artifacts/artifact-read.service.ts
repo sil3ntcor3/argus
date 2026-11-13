@@ -169,7 +169,7 @@ export class ArtifactReadService {
     });
   }
 
-  private toMetadata(row: WorkspaceArtifact, userId: string): ArtifactListItemDto {
+  toMetadata(row: WorkspaceArtifact, userId: string): ArtifactListItemDto {
     return {
       id: row.id,
       name: row.name,
