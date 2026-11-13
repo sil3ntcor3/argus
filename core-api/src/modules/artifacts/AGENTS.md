@@ -43,6 +43,8 @@ This module owns workspace files, quota accounting, and cleanup. The console cal
 
 ## File lifecycle
 
+- `AllowTemplateArtifactRevisions` adds database-only support for source `template` and canonical `workspaces/<workspaceId>/<artifactId>/revisions/<UUID>` keys. Only template records can use revision keys; uploads and agent files retain `/file`. This foundation does not expose template writes, change DTOs, or enable revision cleanup. The Templates runtime must add immutable publication and cleanup together before writing revisions.
+- The migration replaces the two CHECK constraints with distinct names because TypeORM does not detect expression changes under an unchanged name. It preserves legacy `templates` rows and objects. Reverting with template rows present fails transactionally rather than deleting data; export/migrate those rows before a database downgrade.
 - Reservation allocates a UUID and signs a 15-minute POST for `workspaces/<workspaceId>/<artifactId>/upload`. It returns the form only after the pending row and quota reservation commit. The display name never contributes to an object key.
 - Completion locks the workspace and owned artifact in that order, verifies the live reservation, and copies staged content to `workspaces/<workspaceId>/<artifactId>/file`. A replay of the signed form can only write to staging. Quota moves from reserved to used in the same transaction that marks the row ready. The publish helper supports retry after a copy succeeds and the database transaction rolls back.
 - `ArtifactQuotaService` changes counters inside the caller's transaction with conditional updates. Keep byte values within the safe integer range. Postgres returns the stored `bigint` values as strings.
