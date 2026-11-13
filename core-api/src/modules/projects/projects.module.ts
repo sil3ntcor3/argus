@@ -1,3 +1,6 @@
+import { ProjectAgentService } from './project-agent.service';
+import { ProjectFilesService } from './project-files.service';
+import { ArtifactWriteModule } from '../artifacts/artifact-write.module';
 import { Module } from '@nestjs/common';
 import { ProjectTriggerReadService } from './project-trigger-read.service';
 import { ProjectTriggerCreateService } from './project-trigger-create.service';
@@ -27,9 +30,10 @@ import { ProjectOverviewActivityService } from './project-overview-activity.serv
 import { ProjectOverviewReadService } from './project-overview-read.service';
 
 @Module({
-  imports: [ProjectTriggerRuntimeModule, AssetGroupModule, ProjectScopeModule, ConnectorsModule],
+  imports: [ArtifactWriteModule, ProjectTriggerRuntimeModule, AssetGroupModule, ProjectScopeModule, ConnectorsModule],
   controllers: [ProjectsController],
   providers: [
+    ProjectAgentService, ProjectFilesService,
     ProjectTriggerReadService,
     ProjectTriggerCreateService,
     ProjectOverviewReadService,
@@ -52,5 +56,6 @@ import { ProjectOverviewReadService } from './project-overview-read.service';
     ProjectScopeReadService,
     ProjectScopeWriteService,
   ],
+  exports: [ProjectAgentService, ProjectFilesService, ProjectScopeReadService, ProjectTriggerCreateService, ProjectWorkflowTemplatesService],
 })
 export class ProjectsModule {}

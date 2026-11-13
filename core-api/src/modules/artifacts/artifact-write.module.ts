@@ -7,6 +7,6 @@ import { ArtifactUploadReservationService } from './artifact-upload-reservation.
 @Module({
   imports: [ArtifactQuotaModule],
   providers: [ArtifactUploadReservationService, ArtifactUploadCompletionService, ArtifactBufferService],
-  exports: [ArtifactBufferService],
+  exports: [ArtifactBufferService, ArtifactUploadReservationService, ArtifactUploadCompletionService],
 })
 export class ArtifactWriteModule {}

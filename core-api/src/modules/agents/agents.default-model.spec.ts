@@ -41,6 +41,7 @@ function buildService(defaultId?: string, existing?: AgentLLMConfig) {
     findOne: jest.fn(async () => existing ?? null),
     create: jest.fn((v) => ({ id: 'new', ...v })),
     save: jest.fn(async (v) => v),
+    update: jest.fn(async (_where, patch) => { if (existing) Object.assign(existing, patch); }),
     remove: jest.fn(async () => undefined),
   };
   const service = Object.assign(Object.create(AgentsService.prototype), {

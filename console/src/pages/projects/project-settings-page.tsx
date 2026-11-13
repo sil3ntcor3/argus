@@ -23,6 +23,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, type ReactNode, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ProjectDeleteDialog } from './project-delete-dialog';
+import { ProjectAgentContext } from './project-agent-context';
 import { projectRouteId } from './project-route-id';
 
 type Draft = {
@@ -41,6 +42,7 @@ function SettingsForm({
   workspaceId: string;
 }) {
   const [draft, setDraft] = useState<Draft>();
+  const permission = usePermission();
   const [saving, setSaving] = useState(false);
   const lock = useRef(false);
   const nameInput = useRef<HTMLInputElement>(null);
@@ -192,6 +194,7 @@ function SettingsForm({
   return (
     <div className="max-w-xl space-y-6">
       {form}
+      <ProjectAgentContext project={project} workspaceId={workspaceId} canEdit canChat={permission.hasPermission('agent.read')} />
       <section
         className="space-y-2 border-t pt-4"
         aria-label="Project deletion"

@@ -1,3 +1,4 @@
+vi.mock('@/utils/workspaceState', () => ({ getGlobalWorkspaceId: () => 'ws-1' }));
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -254,5 +255,27 @@ describe('ModelsManager', () => {
     await user.click(await screen.findByRole('option', { name: 'Inherit from agent' }));
 
     expect(mutate.mock.calls[0][0].data.modelsConfig.subagents).toEqual([]);
+  });
+
+  it('saves the new chat defaults on their own, without the models', async () => {
+    const user = userEvent.setup();
+    await setup({ default: DEFAULT });
+
+    await user.click(
+      await screen.findByRole('combobox', { name: 'Default reasoning effort' }),
+    );
+    await user.click(await screen.findByRole('option', { name: 'Extra high' }));
+    expect(mutate.mock.calls[0][0]).toEqual({
+      data: { defaultReasoningEffort: 'xhigh' },
+    });
+
+    await user.click(
+      screen.getByRole('combobox', { name: 'Default approval mode' }),
+    );
+    await user.click(await screen.findByRole('option', { name: 'Auto' }));
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(2));
+    expect(mutate.mock.calls[1][0]).toEqual({
+      data: { defaultApprovalMode: 'auto' },
+    });
   });
 });

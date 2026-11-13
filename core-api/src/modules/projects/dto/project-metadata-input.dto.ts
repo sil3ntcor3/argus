@@ -11,6 +11,10 @@ import { CreateAssetGroupDto } from '@/modules/asset-group/dto/create-asset-grou
 import { UpdateAssetGroupDto } from '@/modules/asset-group/dto/update-asset-group.dto';
 
 class ProjectMetadataInputDto {
+  @ApiProperty({ required: false, nullable: true, type: String, maxLength: 2000 })
+  @IsOptional() @IsString() @MaxLength(2000)
+  instruction?: string | null;
+
   @ApiProperty({
     required: false,
     nullable: true,

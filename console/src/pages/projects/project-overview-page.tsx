@@ -15,6 +15,7 @@ import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useId } from 'react';
 import { ProjectOverviewActivity } from './project-overview-activity';
+import { ProjectAgentContext } from './project-agent-context';
 import { ProjectOverviewFindings } from './project-overview-findings';
 import { ProjectOverviewRuns } from './project-overview-runs';
 import { projectRouteId } from './project-route-id';
@@ -195,7 +196,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
         description="Check the project link and selected workspace."
       />
     );
-  } else if (project.isError || overview.isError) {
+  } else if ((project.isError && !project.data) || (overview.isError && !overview.data)) {
     content = (
       <OverviewNotice
         title="Unable to load the project overview"
@@ -251,6 +252,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
             count={overview.data.workflows}
           />
         </div>
+        <ProjectAgentContext key={`${state.selectedWorkspaceId}:${projectId}:context`} project={project.data} workspaceId={state.selectedWorkspaceId!} canEdit={permission.hasPermission('project.write') || permission.hasPermission('group.write')} canChat={permission.hasPermission('agent.read')} />
         <FindingTrends weeks={overview.data.weekly} />
         <ProjectOverviewRuns
           lastRun={overview.data.lastRun}

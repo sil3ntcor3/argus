@@ -7,6 +7,7 @@ import { ProjectViewDto } from './dto/project-view.dto';
 interface ProjectMetadata {
   id: string;
   description: string | null;
+  instruction: string | null;
   autoAddAssets: boolean;
 }
 
@@ -24,7 +25,7 @@ export class ProjectMetadataReadService {
   ): Promise<Map<string, ProjectMetadata>> {
     if (ids.length === 0) return new Map<string, ProjectMetadata>();
     const rows = await this.dataSource.query<ProjectMetadata[]>(
-      `SELECT id, description, "autoAddAssets" FROM projects
+      `SELECT id, description, instruction, "autoAddAssets" FROM projects
        WHERE "workspaceId" = $1 AND id = ANY($2::uuid[])`,
       [workspaceId, ids],
     );
@@ -34,10 +35,11 @@ export class ProjectMetadataReadService {
   private view(project: object, metadata: ProjectMetadata): ProjectViewDto {
     const fields: Record<string, unknown> = {};
     Object.assign(fields, project);
-    for (const key of ['description', 'autoAddAssets', 'archivedAt'])
+    for (const key of ['description', 'instruction', 'autoAddAssets', 'archivedAt'])
       delete fields[key];
     return Object.assign(new ProjectViewDto(), fields, {
       description: metadata.description,
+      instruction: metadata.instruction ?? null,
       autoAddAssets: metadata.autoAddAssets,
     });
   }

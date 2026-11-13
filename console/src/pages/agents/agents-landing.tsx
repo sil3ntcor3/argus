@@ -4,16 +4,24 @@ import TypewriterText from '@/components/typewriter-text';
 
 import BorderBeam from '@/components/ui/border-beam';
 import { Button } from '@/components/ui/button';
-import { restoreApprovalMode } from '@/hooks/use-approval-mode';
+import {
+  getApprovalModeVersion,
+  restoreApprovalMode,
+  setDefaultApprovalMode,
+} from '@/hooks/use-approval-mode';
 import { useLLMConfigs } from '@/hooks/use-llm-configs';
 import { useAgentSettingsDialog } from '@/hooks/useAgentSettingsDialog';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { cn } from '@/lib/utils';
 import { useConnectWorkerState } from '@/hooks/useConnectWorkerState';
+import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import {
   agentsControllerGetAgentModes,
   getAgentsControllerGetAgentModesQueryKey,
   SendMessageDtoAgentMode,
+  useAgentsControllerGetAgentConfig,
+  useProjectsControllerGetById,
+  type ConversationProjectDto,
 } from '@/services/apis/gen/queries';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -29,7 +37,9 @@ import {
   ASK_PROMPT_GROUPS,
   CONVERSATION_STARTERS,
 } from './components/landing-constants';
+import { ProjectScopeSelect } from './components/project-scope-select';
 import { PromptGroups } from './components/prompt-groups';
+import { WorkerSelect } from './components/worker-select';
 
 const WORKER_READY_POLL_MS = 500;
 const WORKER_READY_TIMEOUT_MS = 10_000;
@@ -62,17 +72,46 @@ export default function AgentsLandingPage({
 }: AgentsLandingPageProps) {
   const navigate = useNavigate();
   const { open: openSettings } = useAgentSettingsDialog();
+  const { state: { selectedWorkspaceId } } = useWorkspaceState();
   // Shared by the /aistudio and /aistudio/agents routes, which both take ?text=
-  const { text: queryText } = useSearch({ strict: false });
+  // ?projectId= comes from a project's "Chat with Agent"
+  const { text: queryText, projectId: queryProjectId } = useSearch({
+    strict: false,
+  });
   const [isSending, setIsSending] = useState(false);
   const [selectedModel, setSelectedModel] = useState<{
     provider: string;
     model: string;
     configId: string;
   } | null>(null);
-  // Set by the route: the page has no switch for it
-  const agentMode = initialAgentMode;
+  // Route sets the opening mode; the toggle in the input switches it from here
+  const [agentMode, setAgentMode] = useState<string>(initialAgentMode);
+  // The page stays mounted when only the search changes (sidebar project links)
+  useEffect(() => {
+    setAgentMode(initialAgentMode);
+  }, [initialAgentMode]);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
+  // The new chat's project: its tools then stay inside it
+  const [project, setProject] = useState<ConversationProjectDto | null>(null);
+  const { data: linkedProject, isError: linkedProjectError } = useProjectsControllerGetById(
+    queryProjectId ?? '',
+    { query: { enabled: !!queryProjectId && !!selectedWorkspaceId, queryKey: ['project-chat-source', selectedWorkspaceId, queryProjectId], retry: false } },
+  );
+  const requestedScope = useRef({ workspaceId: selectedWorkspaceId, projectId: queryProjectId ?? project?.id ?? null });
+  requestedScope.current = { workspaceId: selectedWorkspaceId, projectId: queryProjectId ?? project?.id ?? null };
+  const projectPending = !!queryProjectId && (linkedProject?.id !== queryProjectId || project?.id !== queryProjectId);
+  useEffect(() => { setProject(null); setIsSending(false); }, [selectedWorkspaceId]);
+  useEffect(() => { setIsSending(false); }, [queryProjectId]);
+  useEffect(() => {
+    // Back to a plain New Chat: drop the project the link had picked
+    if (!queryProjectId) setProject(null);
+  }, [queryProjectId]);
+  useEffect(() => {
+    if (linkedProject) {
+      const { id, name, hexColor } = linkedProject;
+      setProject({ id, name, hexColor });
+    }
+  }, [linkedProject]);
   // Starter prompt under the pointer, previewed as the input placeholder
   const [previewPrompt, setPreviewPrompt] = useState<string | null>(null);
   // The halo behind the input appears once the load-time border beam ends
@@ -83,10 +122,6 @@ export default function AgentsLandingPage({
   const [inputText, setInputText] = useState('');
   const inputWrapperRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
-
-  const {
-    state: { selectedWorkspaceId },
-  } = useWorkspaceState();
 
   const { hasProviderConnected } = useLLMConfigs({
     enabled: !!selectedWorkspaceId,
@@ -106,6 +141,7 @@ export default function AgentsLandingPage({
 
   const startConversation = useCallback(
     (content: string, mode: string, workerId: string | null) => {
+      if (!selectedWorkspaceId || selectedWorkspaceId !== getGlobalWorkspaceId() || projectPending) { setIsSending(false); return; }
       setIsSending(true);
 
       // Generate UUID v7 for new conversation and navigate immediately
@@ -115,6 +151,7 @@ export default function AgentsLandingPage({
         ...(selectedModel && { selectedModel }),
         agentMode: mode,
         workerId,
+        project,
       };
       void navigate({
         to: '/aistudio/conversations/$conversationId',
@@ -122,7 +159,7 @@ export default function AgentsLandingPage({
         state: navState,
       });
     },
-    [navigate, selectedModel],
+    [navigate, selectedModel, project, selectedWorkspaceId, projectPending],
   );
   // The resume after a worker joins runs later; it must use the latest one.
   const startConversationRef = useRef(startConversation);
@@ -136,13 +173,13 @@ export default function AgentsLandingPage({
    * it and sends. If it is not ready in time, sends with Auto instead.
    */
   const resumeWithWorker = useCallback(
-    async (content: string, mode: string, workerId: string) => {
+    async (content: string, mode: string, workerId: string, submittedScope: typeof requestedScope.current) => {
+      if (submittedScope.workspaceId !== getGlobalWorkspaceId() || submittedScope.projectId !== requestedScope.current.projectId) return;
       setIsSending(true);
       const ready = await waitForAgentWorker(workerId);
-      void queryClient.invalidateQueries({
-        queryKey: getAgentsControllerGetAgentModesQueryKey(),
-      });
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || submittedScope.workspaceId !== getGlobalWorkspaceId()) return;
+      if (submittedScope.projectId !== requestedScope.current.projectId) { setIsSending(false); return; }
+      void queryClient.invalidateQueries({ queryKey: getAgentsControllerGetAgentModesQueryKey() });
       if (ready) setSelectedWorkerId(workerId);
       startConversationRef.current(content, mode, ready ? workerId : null);
     },
@@ -151,7 +188,8 @@ export default function AgentsLandingPage({
 
   const handleSendMessage = useCallback(
     async (content: string, options?: { agentMode?: string }) => {
-      if (!content.trim() || isSending || checkingWorkersRef.current) return;
+      if (!content.trim() || isSending || checkingWorkersRef.current || projectPending) return;
+      const submittedScope = { ...requestedScope.current };
       const mode = options?.agentMode ?? agentMode;
 
       // Agent mode needs a worker: with none chosen and none online, connect
@@ -167,12 +205,12 @@ export default function AgentsLandingPage({
         } finally {
           checkingWorkersRef.current = false;
         }
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || submittedScope.workspaceId !== getGlobalWorkspaceId() || submittedScope.projectId !== requestedScope.current.projectId) return;
         if (!hasOnlineWorker) {
           // Keep the message in the input in case the dialog is dismissed.
           setInputText(content);
           openConnectWorker(undefined, (workerId: string) => {
-            void resumeWithWorker(content, mode, workerId);
+            void resumeWithWorker(content, mode, workerId, submittedScope);
           });
           return;
         }
@@ -187,26 +225,37 @@ export default function AgentsLandingPage({
       openConnectWorker,
       resumeWithWorker,
       startConversation,
+      projectPending,
     ],
   );
 
-  // A new chat starts from the user's last explicit choice, not a past conversation's
+  // A new chat starts from the settings default, else the user's last
+  // explicit choice, never a past conversation's
+  const { data: agentConfig } = useAgentsControllerGetAgentConfig({
+    query: { enabled: !!selectedWorkspaceId },
+  });
+  const defaultApprovalMode = agentConfig?.defaultApprovalMode;
+  const approvalVersionAtMount = useRef(getApprovalModeVersion());
   useEffect(() => {
-    restoreApprovalMode();
-  }, []);
+    setDefaultApprovalMode(defaultApprovalMode);
+    // A pick made here before the settings loaded wins
+    if (getApprovalModeVersion() === approvalVersionAtMount.current) {
+      restoreApprovalMode();
+    }
+  }, [defaultApprovalMode]);
 
   // Once per ?text= value: a submit held for a worker leaves isSending false,
   // and re-running would open the connect dialog again.
   const handledQueryTextRef = useRef<string | null>(null);
   useEffect(() => {
-    if (queryText && !isSending && handledQueryTextRef.current !== queryText) {
+    if (queryText && !projectPending && !isSending && handledQueryTextRef.current !== queryText) {
       handledQueryTextRef.current = queryText;
       void handleSendMessage(queryText);
       const url = new URL(window.location.href);
       url.searchParams.delete('text');
       window.history.replaceState({}, '', url.toString());
     }
-  }, [queryText, isSending, handleSendMessage]);
+  }, [queryText, isSending, handleSendMessage, projectPending]);
 
   const handleSuggestionClick = (suggestion: string) => {
     // Agent mode runs real tools, so a suggestion is a starting point: fill it
@@ -300,7 +349,7 @@ export default function AgentsLandingPage({
         <div className="flex h-full flex-col items-center justify-center pb-24">
           <div className="relative w-full max-w-2xl md:w-2/3 lg:w-1/2">
             {/* Hero */}
-            <div className="absolute inset-x-0 bottom-full mb-8 flex flex-col items-center gap-3 text-center">
+            <div className="absolute inset-x-0 bottom-full mb-12 flex flex-col items-center gap-3 text-center">
               <TypewriterText
                 texts={
                   isAgentMode
@@ -314,15 +363,26 @@ export default function AgentsLandingPage({
             {/* Input area: rounder box and a round send button. A gradient beam
                 runs once around the box when it first appears. */}
             <div ref={inputWrapperRef} className="relative rounded-2xl">
+              {/* Above the box, out of the flow so the input stays centred */}
+              <div className="absolute bottom-full left-1 mb-1 flex items-center gap-1">
+                <ProjectScopeSelect value={project} onChange={value => { setProject(value); if (queryText) setInputText(queryText); void navigate({ to: '/aistudio', search: { projectId: value?.id, mode: isAgentMode ? 'agent' : 'ask' }, replace: true }); }} />
+                {isAgentMode && (
+                  <WorkerSelect
+                    value={selectedWorkerId}
+                    onChange={setSelectedWorkerId}
+                  />
+                )}
+              </div>
               <AgentPromptInput
                 onSubmit={handleSendMessage}
                 isSending={isSending}
+                submitDisabled={projectPending}
                 selectedModel={selectedModel}
                 onSelectModel={(provider, model, configId) => {
                   setSelectedModel({ provider, model, configId });
                 }}
                 agentMode={agentMode}
-                selectedWorkerId={selectedWorkerId}
+                onAgentModeChange={setAgentMode}
                 onWorkerSelect={setSelectedWorkerId}
                 showSettingsButton={false}
                 placeholder={previewPrompt ?? undefined}
@@ -330,6 +390,7 @@ export default function AgentsLandingPage({
                 onValueChange={setInputText}
                 className="[&_[data-slot=input-group]]:rounded-2xl [&_[data-slot=input-group]]:bg-card [&_[data-slot=input-group]]:dark:bg-card [&_button[type=submit]]:rounded-full"
               />
+              {projectPending && <p role="status" className="mt-2 text-sm text-muted-foreground">{linkedProjectError ? 'Unable to load this project. Select a project you can access before sending.' : 'Loading project context…'}</p>}
               <BorderBeam playKey={1} onComplete={showHalo} />
             </div>
 

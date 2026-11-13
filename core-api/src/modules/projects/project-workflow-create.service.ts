@@ -33,7 +33,9 @@ export class ProjectWorkflowCreateService {
     projectId: string,
     workspaceId: string,
     dto: CreateProjectWorkflowDto,
+    abortSignal?: AbortSignal,
   ): Promise<CreatedProjectWorkflowDto> {
+    abortSignal?.throwIfAborted();
     if (
       [dto.template, dto.jobs, dto.copyFromProjectWorkflowId].filter(
         (source) => source !== undefined,
@@ -58,6 +60,7 @@ export class ProjectWorkflowCreateService {
         [projectId, workspaceId],
       );
       if (!project) throw new NotFoundException('Project not found');
+      abortSignal?.throwIfAborted();
       if (project.archivedAt)
         throw new BadRequestException('Project is archived');
 
@@ -134,6 +137,7 @@ export class ProjectWorkflowCreateService {
         jobId: null,
       });
       if (dto.on !== undefined) await this.triggers.replaceOn(manager, workflow, binding, dto.on);
+      abortSignal?.throwIfAborted();
       return {
         id: binding.id,
         workflowId: workflow.id,

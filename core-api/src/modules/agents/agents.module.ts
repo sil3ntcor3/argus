@@ -1,6 +1,8 @@
 import { ArtifactWriteModule } from '@/modules/artifacts/artifact-write.module';
 import { AssetsModule } from '@/modules/assets/assets.module';
 import { ConnectorsModule } from '@/modules/connectors/connectors.module';
+import { AssetGroup as Project } from '@/modules/asset-group/entities/asset-groups.entity';
+import { ProjectsModule } from '@/modules/projects/projects.module';
 import { StatisticModule } from '@/modules/statistic/statistic.module';
 import { TargetsModule } from '@/modules/targets/targets.module';
 import { VulnerabilitiesModule } from '@/modules/vulnerabilities/vulnerabilities.module';
@@ -52,6 +54,7 @@ import { HttpModule } from '@nestjs/axios';
       AgentConfig,
       AgentSubagent,
       AgentDefinition,
+      Project,
     ]),
     ArtifactWriteModule,
     AssetsModule,
@@ -62,6 +65,7 @@ import { HttpModule } from '@nestjs/axios';
     HttpModule,
     WorkersModule,
     ConnectorsModule,
+    ProjectsModule,
   ],
   controllers: [AgentsController],
   providers: [
