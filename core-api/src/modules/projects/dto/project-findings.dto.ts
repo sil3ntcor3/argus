@@ -8,7 +8,6 @@ import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsEnum,
-  IsIn,
   IsInt,
   IsOptional,
   IsUUID,
@@ -60,12 +59,12 @@ export class GetProjectFindingsQueryDto extends PickType(
   provenance?: ProjectFindingProvenance;
 
   @ApiPropertyOptional({
-    enum: [VulnerabilityStatus.OPEN, VulnerabilityStatus.DISMISSED, VulnerabilityStatus.ALL],
+    enum: VulnerabilityStatus,
     default: VulnerabilityStatus.OPEN,
-    description: 'Open excludes archived and dismissed findings',
+    description: 'Open excludes archived, fixed and dismissed findings. Review statuses require vulnerability read access; all includes approved findings only.',
   })
   @IsOptional()
-  @IsIn([VulnerabilityStatus.OPEN, VulnerabilityStatus.DISMISSED, VulnerabilityStatus.ALL])
+  @IsEnum(VulnerabilityStatus)
   status?: VulnerabilityStatus;
 
   @ApiPropertyOptional({ type: String, format: 'uuid' })
@@ -111,11 +110,11 @@ export class ProjectFindingDto {
   @ApiProperty() assetValue: string;
   @ApiProperty({ type: String, nullable: true }) toolName: string | null;
   @ApiProperty({
-    enum: [VulnerabilityStatus.OPEN, VulnerabilityStatus.DISMISSED],
+    enum: [VulnerabilityStatus.OPEN, VulnerabilityStatus.DISMISSED, VulnerabilityStatus.FIXED],
     description:
-      'Dismissal state. Archived findings without a dismissal can be returned with status=all.',
+      'Resolution state; fixed takes precedence over dismissal. Proposal review state is identified by the selected review filter. Archived findings are included with status=all.',
   })
-  status: VulnerabilityStatus.OPEN | VulnerabilityStatus.DISMISSED;
+  status: VulnerabilityStatus.OPEN | VulnerabilityStatus.DISMISSED | VulnerabilityStatus.FIXED;
   @ApiProperty({ enum: ProjectFindingProvenance })
   provenance: ProjectFindingProvenance;
   @ApiProperty({ type: 'integer', minimum: 0 }) timesSeen: number;

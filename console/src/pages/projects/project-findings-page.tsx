@@ -35,14 +35,17 @@ type FindingsProps = FindingsSearch & {
   onChange: (search: FindingsSearch) => void;
 };
 
+/** Present resolution and provenance independently; review rows have no run timeline. */
 function FindingCard({
   projectId,
   finding,
+  reviewStatus,
   canOpen,
   canOpenRuns,
 }: {
   projectId: string;
   finding: ProjectFindingDto;
+  reviewStatus?: 'pending_review' | 'rejected';
   canOpen: boolean;
   canOpenRuns: boolean;
 }) {
@@ -72,6 +75,8 @@ function FindingCard({
             {finding.severity}
           </Badge>
           <Badge variant="outline">{provenance}</Badge>
+          {reviewStatus && <Badge variant="outline">{reviewStatus === 'pending_review' ? 'Pending review' : 'Rejected'}</Badge>}
+          {finding.status === 'fixed' && <Badge variant="outline">Fixed</Badge>}
           {finding.status === 'dismissed' && (
             <Badge variant="outline">Dismissed</Badge>
           )}
@@ -95,15 +100,16 @@ function FindingCard({
           </time>
         </span>
       </div>
-      <ProjectFindingTimeline
+      {!reviewStatus && <ProjectFindingTimeline
         projectId={projectId}
         finding={finding}
         canOpenRuns={canOpenRuns}
-      />
+      />}
     </li>
   );
 }
 
+/** Preserve filters and pagination while retrieving the selected lifecycle/review view. */
 function FindingList({
   projectId,
   page,
@@ -173,6 +179,7 @@ function FindingList({
             key={finding.id}
             projectId={projectId}
             finding={finding}
+            reviewStatus={findingStatus === 'pending_review' || findingStatus === 'rejected' ? findingStatus : undefined}
             canOpen={canOpen}
             canOpenRuns={canOpenRuns}
           />
@@ -217,6 +224,7 @@ function FindingList({
       />
       <ProjectFindingFacets
         {...facets}
+        canReadReview={canOpen}
         severityCounts={data?.severityCounts}
         provenanceCounts={data?.provenanceCounts}
         onChange={(next) => onChange({ ...filters, ...next, page: 1 })}
@@ -263,15 +271,17 @@ export function ProjectFindingsPage(props: FindingsProps) {
   const canRead =
     permission.hasPermission('project.read') ||
     permission.hasPermission('group.read');
+  const reviewOnly = props.status === 'pending_review' || props.status === 'rejected';
 
   let content: ReactNode;
   if (!state.selectedWorkspaceId)
     content = <p role="status">Select a workspace</p>;
-  else if (permission.isLoading)
+  else if (permission.isLoading || (reviewOnly && permission.isFetching))
     content = <p role="status">Loading project access</p>;
   else if (permission.error)
     content = <p role="status">Unable to load project access</p>;
-  else if (!canRead) content = <AccessDenied />;
+  else if (!canRead || (reviewOnly && !permission.hasPermission('vulnerability.read')))
+    content = <AccessDenied />;
   else if (!projectRouteId.safeParse(props.projectId).success)
     content = <p role="status">Project not found</p>;
   else

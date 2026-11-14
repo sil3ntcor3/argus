@@ -37,6 +37,7 @@ deleting the proposal. Bulk items commit separately; a failed response does not
 prove nothing saved. Review decisions lock parents before fingerprint/ID-ordered
 findings. `VulnerabilityProposalService` validates current chat/project ownership
 and cited calls at execution time; AI evidence never creates scanner coverage.
+List `createdFrom`/`createdTo` filters use first detection with a legacy creation-date fallback and a UTC end-of-day upper bound. Bind the timestamp and timestamptz branches separately to preserve legacy clocks.
 Use `findingDetectedAt` for detection-date aggregates and the projections in
 `vulnerability-review-read.ts` for authorized source references and limited user
 objects. See `docs/operations/finding-proposal-review-rollout.md`.

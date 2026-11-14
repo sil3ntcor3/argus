@@ -104,10 +104,10 @@ describe('AI finding lifecycle reads (Docker)', () => {
       targetIds: [targetId], createdFrom: '2020-01-01', createdTo: '2020-01-31' });
     expect(result.total).toBe(1);
     expect(result.data).toEqual([expect.objectContaining({ id: wanted, detectionStatus: 'active', discoveredBy: 'ai', timesDetected: 2 })]);
-    // Existing HTTP clients retain their creation-date filtering contract.
+    // HTTP and model clients now share first-detection date filtering.
     const legacy = await request(app.server).get('/api/vulnerabilities').set(owner.headers)
       .query({ createdFrom: '2020-01-01', createdTo: '2020-01-31' }).expect(200);
-    expect((legacy.body as { total: number }).total).toBe(0);
+    expect((legacy.body as { total: number }).total).toBe(5);
     const fallback = await finding('Legacy date', { detected: null });
     expect((await read({ createdFrom: '2010-01-01', createdTo: '2010-01-31' })).data.map(row => row.id)).toEqual([fallback]);
   });
@@ -161,7 +161,7 @@ describe('AI finding lifecycle reads (Docker)', () => {
     await expect(read({}, limited.userId)).rejects.toThrow();
   });
 
-  it('adds internal project lifecycle/review reads without expanding project REST contracts', async () => {
+  it('aligns project REST and internal lifecycle reads while all remains approved-only', async () => {
     const project = await insert('INSERT INTO projects(name,"workspaceId") VALUES($1,$2)', ['Model lifecycle', owner.workspace.id]);
     const fixed = await finding('Project fixed', { state: 'fixed' });
     const pending = await finding('Project pending', { review: 'pending_review' });
@@ -174,10 +174,10 @@ describe('AI finding lifecycle reads (Docker)', () => {
       expect(result.data.map(row => row.id)).toEqual([id]);
       if (status === 'fixed') expect(result.data[0]).toMatchObject({ status: 'fixed', cveId: ['CVE-2020-0001'], tool: null });
     }
-    await request(app.server).get('/api/projects/' + project + '/vulnerabilities').set(owner.headers).query({ status: 'fixed' }).expect(400);
+    await request(app.server).get('/api/projects/' + project + '/vulnerabilities').set(owner.headers).query({ status: 'fixed' }).expect(200);
     const legacy = await request(app.server).get('/api/projects/' + project + '/vulnerabilities').set(owner.headers).query({ status: 'all' }).expect(200);
     expect((legacy.body as { data: { id: string }[] }).data.map(row => row.id)).toEqual([fixed]);
-    expect((legacy.body as { data: { status: string }[] }).data[0].status).toBe('open');
+    expect((legacy.body as { data: { status: string }[] }).data[0].status).toBe('fixed');
     await expect(read({}, other.user.userId, project)).rejects.toThrow();
   });
 });

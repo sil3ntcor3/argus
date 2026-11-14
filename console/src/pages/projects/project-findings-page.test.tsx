@@ -93,6 +93,55 @@ describe('ProjectFindingsPage', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('offers lifecycle filters and resets paging without losing the active facets', () => {
+    const onChange = vi.fn();
+    render(<ProjectFindingsPage projectId={projectId} page={3} query="redirect" severity={['high']}
+      provenance="recurring" onChange={onChange} />);
+    expect(screen.getByRole('option', { name: 'Fixed' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Resurfaced' })).toBeVisible();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'fixed' } });
+    expect(onChange).toHaveBeenLastCalledWith({ page: 1, query: 'redirect', severity: ['high'], provenance: 'recurring', status: 'fixed' });
+  });
+
+  it('labels scan-fixed findings independently of their provenance', () => {
+    mock.findings.mockReturnValue({ data: { data: [{ ...finding, status: 'fixed' }] } });
+    render(<ProjectFindingsPage projectId={projectId} page={1} status="all" onChange={vi.fn()} />);
+    expect(screen.getByText('Fixed', { selector: 'span' })).toBeVisible();
+    expect(screen.getByText('Recurring ×3')).toBeVisible();
+  });
+
+  it.each([['pending_review', 'Pending review'], ['rejected', 'Rejected']] as const)(
+    'labels %s results and hides approved-only run timeline actions', (status, label) => {
+      render(<ProjectFindingsPage projectId={projectId} page={1} status={status} onChange={vi.fn()} />);
+      expect(screen.getByRole('combobox', { name: 'Status' })).toHaveDisplayValue(label);
+      expect(screen.getByText(label, { selector: 'span' })).toBeVisible();
+      expect(screen.queryByRole('button', { name: /View timeline/ })).not.toBeInTheDocument();
+    },
+  );
+
+  it('does not offer review-only statuses to project-only readers', () => {
+    mock.permission.mockReturnValue({ hasPermission: (key: string) => key === 'project.read' });
+    render(<ProjectFindingsPage projectId={projectId} page={1} onChange={vi.fn()} />);
+    expect(screen.getByRole('option', { name: 'Fixed' })).toBeVisible();
+    expect(screen.queryByRole('option', { name: 'Pending review' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Rejected' })).not.toBeInTheDocument();
+  });
+
+  it('blocks review-only queries before rendering cached data for project-only readers', () => {
+    mock.permission.mockReturnValue({ hasPermission: (key: string) => key === 'project.read' });
+    render(<ProjectFindingsPage projectId={projectId} page={1} status="pending_review" onChange={vi.fn()} />);
+    expect(mock.findings).not.toHaveBeenCalled();
+    expect(screen.queryByText('Open redirect')).not.toBeInTheDocument();
+  });
+
+  it('waits for an in-flight permission refresh before mounting review queries', () => {
+    mock.permission.mockReturnValue({ isFetching: true, hasPermission: () => true });
+    render(<ProjectFindingsPage projectId={projectId} page={1} status="pending_review" onChange={vi.fn()} />);
+    expect(mock.findings).not.toHaveBeenCalled();
+    expect(screen.getByText('Loading project access')).toBeVisible();
+    expect(screen.queryByText('Open redirect')).not.toBeInTheDocument();
+  });
+
   it('gates the query before accessing project data', () => {
     mock.permission.mockReturnValue({ hasPermission: () => false });
     render(

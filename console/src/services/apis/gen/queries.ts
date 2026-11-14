@@ -6114,7 +6114,7 @@ export const ProjectFindingDtoSeverity = {
 } as const;
 
 /**
- * Dismissal state. Archived findings without a dismissal can be returned with status=all.
+ * Resolution state; fixed takes precedence over dismissal. Proposal review state is identified by the selected review filter. Archived findings are included with status=all.
  */
 export type ProjectFindingDtoStatus =
   (typeof ProjectFindingDtoStatus)[keyof typeof ProjectFindingDtoStatus];
@@ -6122,6 +6122,7 @@ export type ProjectFindingDtoStatus =
 export const ProjectFindingDtoStatus = {
   open: 'open',
   dismissed: 'dismissed',
+  fixed: 'fixed',
 } as const;
 
 export type ProjectFindingDtoProvenance =
@@ -6145,7 +6146,7 @@ export type ProjectFindingDto = {
   assetValue: string;
   /** @nullable */
   toolName: string | null;
-  /** Dismissal state. Archived findings without a dismissal can be returned with status=all. */
+  /** Resolution state; fixed takes precedence over dismissal. Proposal review state is identified by the selected review filter. Archived findings are included with status=all. */
   status: ProjectFindingDtoStatus;
   provenance: ProjectFindingDtoProvenance;
   /** @minimum 0 */
@@ -8309,11 +8310,11 @@ export type VulnerabilitiesControllerGetVulnerabilitiesParams = {
    */
   severity?: VulnerabilitiesControllerGetVulnerabilitiesSeverityItem[];
   /**
-   * Filter by creation date from (ISO 8601 format, e.g., 2026-01-01)
+   * First detection from (inclusive ISO 8601 date; legacy findings fall back to creation date)
    */
   createdFrom?: string;
   /**
-   * Filter by creation date to (ISO 8601 format, e.g., 2026-01-31)
+   * First detection through the end of this UTC day (ISO 8601; legacy findings fall back to creation date)
    */
   createdTo?: string;
   /**
@@ -8551,7 +8552,7 @@ export type ProjectsControllerGetFindingsParams = {
   severity?: ProjectsControllerGetFindingsSeverityItem[];
   provenance?: ProjectsControllerGetFindingsProvenance;
   /**
-   * Open excludes archived and dismissed findings
+   * Open excludes archived, fixed and dismissed findings. Review statuses require vulnerability read access; all includes approved findings only.
    */
   status?: ProjectsControllerGetFindingsStatus;
   assetId?: string;
@@ -8589,9 +8590,15 @@ export type ProjectsControllerGetFindingsStatus =
   (typeof ProjectsControllerGetFindingsStatus)[keyof typeof ProjectsControllerGetFindingsStatus];
 
 export const ProjectsControllerGetFindingsStatus = {
+  pending_review: 'pending_review',
+  rejected: 'rejected',
   open: 'open',
   dismissed: 'dismissed',
   all: 'all',
+  new: 'new',
+  active: 'active',
+  resurfaced: 'resurfaced',
+  fixed: 'fixed',
 } as const;
 
 export type AssetGroupControllerGetAllParams = {
