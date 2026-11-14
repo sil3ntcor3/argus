@@ -1,3 +1,4 @@
+import { projectRunContextJoin, PROJECT_RUN_CONTEXT_SELECT, PROJECT_TRIGGER_EVENT_SELECT, type ProjectRunContext } from './project-run-context';
 import type { JobRunType, JobStatus } from '@/common/enums/enum';
 import { getManyResponse } from '@/utils/getManyResponse';
 import {
@@ -22,7 +23,7 @@ interface ProjectRunQuery {
   jobRunType?: JobRunType;
 }
 
-interface RunRow {
+interface RunRow extends ProjectRunContext {
   id: string;
   createdAt: Date;
   updatedAt: Date;
@@ -46,6 +47,7 @@ type ActivityRunRow = Pick<
   | 'workflowName'
   | 'scope'
   | 'jobRunType'
+  | 'triggerEvent'
   | 'newVulnerabilities'
   | 'recurringVulnerabilities'
 > & { at: Date; runStatus: JobStatus };
@@ -101,7 +103,7 @@ export class ProjectRunReadService {
   constructor(private readonly dataSource: DataSource) {}
 
   /** Pages owned run history before computing status, steps and findings. */
-  async list(projectId: string, workspaceId: string, query: ProjectRunQuery) {
+  async list(projectId: string, workspaceId: string, query: ProjectRunQuery, canReadJobs = false) {
     const { page, limit } = query;
     const offset = (page - 1) * limit;
     if (
@@ -119,6 +121,7 @@ export class ProjectRunReadService {
       JOIN workflows w ON w.id = jh."workflowId"
       LEFT JOIN project_workflows pw ON pw.id = jh."projectWorkflowId"
         AND pw."projectId" = jh."projectId" AND pw."workflowId" = jh."workflowId"
+      ${projectRunContextJoin('jh', 'pw')}
       WHERE jh."projectId" = $1 AND w."workspaceId" = $2
       ${query.projectWorkflowId ? `AND pw.id = $${params.push(query.projectWorkflowId)}` : ''}
       ${query.jobRunType ? `AND jh."jobRunType" = $${params.push(query.jobRunType)}` : ''}`;
@@ -129,7 +132,7 @@ export class ProjectRunReadService {
         matching AS NOT MATERIALIZED (
           SELECT jh.id, jh."createdAt", jh."updatedAt", jh."isCompleted", jh."jobRunType",
                  pw.id AS "projectWorkflowId", jh.scope, jh.steps,
-                 w.name AS "workflowName", w.content AS "workflowContent"
+                 w.name AS "workflowName", w.content AS "workflowContent", ${PROJECT_RUN_CONTEXT_SELECT}
           ${base}
         ), page AS MATERIALIZED (
           SELECT * FROM matching ORDER BY "createdAt" DESC, id DESC
@@ -156,6 +159,8 @@ export class ProjectRunReadService {
             : [];
         return {
           ...run,
+          causedByRunId: canReadJobs ? run.causedByRunId : null,
+          causedByWorkflowName: canReadJobs ? run.causedByWorkflowName : null,
           scopeSize: savedScopeSize(scope),
           stepsTotal: Math.max(
             states.length,
@@ -188,9 +193,11 @@ export class ProjectRunReadService {
         page AS MATERIALIZED (
           -- Convert the saved wall clock to an instant for the combined feed.
           SELECT h.id, h."createdAt"::timestamptz AS at, h."jobRunType", h.scope,
-                 w.name AS "workflowName"
+                 w.name AS "workflowName", ${PROJECT_TRIGGER_EVENT_SELECT}
           FROM owned p JOIN job_histories h ON h."projectId" = p.id
           JOIN workflows w ON w.id = h."workflowId" AND w."workspaceId" = $2
+          LEFT JOIN project_workflows pw ON pw.id=h."projectWorkflowId" AND pw."projectId"=p.id AND pw."workflowId"=h."workflowId"
+          ${projectRunContextJoin('h', 'pw')}
           WHERE h."createdAt" <= LOCALTIMESTAMP
           ORDER BY h."createdAt" DESC, h.id DESC LIMIT ${PROJECT_ACTIVITY_LIMIT}
         ), ${RUN_FINDING_COUNTS}
@@ -205,8 +212,9 @@ export class ProjectRunReadService {
     if (rows.length === 0) throw new NotFoundException('Project not found');
     return rows
       .filter((row) => row.id !== null)
-      .map(({ id, scope, ...run }) => ({
+      .map(({ id, scope, triggerEvent, ...run }) => ({
         ...run,
+        ...(triggerEvent ? { triggerEvent } : {}),
         kind: 'run' as const,
         ref: id,
         scopeSize: savedScopeSize(scope),

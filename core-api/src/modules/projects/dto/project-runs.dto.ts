@@ -1,3 +1,4 @@
+import { ProjectTriggerDto, PROJECT_TRIGGER_EVENTS } from './project-trigger-read.dto';
 import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
 import { JobRunType, JobStatus } from '@/common/enums/enum';
 import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
@@ -25,6 +26,11 @@ export class GetProjectRunsQueryDto extends PickType(GetManyBaseQueryParams, [
 }
 
 export class ProjectRunDto {
+  @ApiProperty({ enum: ['cron','event'], nullable: true }) triggerType: ProjectTriggerDto['type'] | null;
+  @ApiProperty({ enum: PROJECT_TRIGGER_EVENTS, nullable: true }) triggerEvent: ProjectTriggerDto['event'];
+  @ApiProperty({ type: String, format: 'uuid', nullable: true, description: 'Same-workspace causal run, or null without job read access' }) causedByRunId: string | null;
+  @ApiProperty({ type: String, nullable: true, description: 'Causal workflow name, or null without job read access' }) causedByWorkflowName: string | null;
+
   @ApiProperty({ type: String, format: 'uuid' })
   id: string;
 

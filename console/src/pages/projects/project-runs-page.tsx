@@ -1,3 +1,4 @@
+import { projectRunTrigger } from './project-summary-context';
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
 import { Button } from '@/components/ui/button';
@@ -63,12 +64,7 @@ function ProjectRunCard({
   canOpen: boolean;
 }) {
   const name = run.workflowName.trim() || 'Workflow run';
-  const trigger =
-    run.jobRunType === 'scheduled'
-      ? 'Scheduled'
-      : run.jobRunType === 'event'
-        ? 'Event'
-        : 'Manual';
+  const trigger = projectRunTrigger(run.jobRunType, run.triggerEvent) ?? 'Manual';
   const started = startedAt.format(new Date(run.createdAt));
 
   return (
@@ -92,6 +88,10 @@ function ProjectRunCard({
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
         <span>{trigger}</span>
+        {canOpen && run.causedByRunId && <Link to="/jobs/runs/$id" params={{ id: run.causedByRunId }}
+          className="text-primary underline-offset-4 hover:underline" aria-label={`Started by ${run.causedByWorkflowName?.trim() || 'workflow run'}`}>
+          Started by {run.causedByWorkflowName?.trim() || 'workflow run'}
+        </Link>}
         <time dateTime={run.createdAt}>{started}</time>
         <span>Duration {formatRunDuration(run)}</span>
         <span>{run.scopeSize} in scope</span>

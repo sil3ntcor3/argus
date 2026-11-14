@@ -1,8 +1,12 @@
 import { GetAllAssetGroupsQueryDto } from '@/modules/asset-group/dto/get-all-asset-groups-dto.dto';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsInt, IsOptional } from 'class-validator';
 
 export class GetProjectsQueryDto extends GetAllAssetGroupsQueryDto {
+  @ApiProperty({ required: false, description: 'Sort field; risk orders open critical/high/medium counts and requires vulnerability read access' })
+  declare sortBy: string;
+  @IsInt() declare page: number;
+  @IsInt() declare limit: number;
   @ApiProperty({
     required: false,
     enum: ['active', 'archived', 'all'],

@@ -1,7 +1,8 @@
+import { projectActivityChanges, type ProjectActivityChangesDto } from './dto/project-activity-changes.dto';
+import { FINDING_DISMISS_REASONS, type FindingDismissalReason } from '../vulnerabilities/finding-dismissal-reason';
 import {
   AuditActorType,
   AuditOutcome,
-  DismissReason,
   ProjectChange,
 } from '@/common/enums/enum';
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -34,6 +35,7 @@ export type ProjectNonRunActivity = ActivityBase &
   (
     | {
         kind: 'audit';
+        changes?: ProjectActivityChangesDto;
         ref: string;
         change?: ProjectChange;
         added?: number;
@@ -44,7 +46,7 @@ export type ProjectNonRunActivity = ActivityBase &
         kind: 'dismissed';
         ref: 'dismissed';
         count: number;
-        reason: DismissReason;
+        reason: FindingDismissalReason;
       }
   );
 
@@ -52,13 +54,14 @@ type ActivityRow =
   | ({ at: Date; actorName: string | null } & (
       | {
           kind: 'audit';
+          rawChanges: unknown;
           ref: string;
           change: ProjectChange | null;
           added: number | null;
           removed: number | null;
           workflowName: string | null;
         }
-      | { kind: 'dismissed'; count: number; reason: DismissReason }
+      | { kind: 'dismissed'; count: number; reason: FindingDismissalReason }
     ))
   | { kind: null };
 
@@ -85,7 +88,7 @@ export class ProjectOverviewActivityService {
       `WITH owned AS (
         SELECT id FROM projects WHERE id = $1 AND "workspaceId" = $2
       ), audit_source AS (
-        SELECT a.id::text AS tie, a."occurredAt" AS at, a.action AS ref,
+        SELECT a.id::text AS tie, a."occurredAt" AS at, a.action AS ref, a.changes AS "rawChanges",
                -- Older API-key events can contain credentials in the actor name.
                CASE WHEN a."actorType" = $8 THEN 'API key' ELSE a."actorName" END AS "actorName",
                CASE WHEN a.action = 'project.updated' THEN a.metadata->>'change' END AS change,
@@ -102,7 +105,7 @@ export class ProjectOverviewActivityService {
                OR (a.action = 'project.updated' AND (a.metadata->>'change' = ANY($4::text[])
                                                     OR a.metadata->>'change' = ANY($5::text[]))))
       ), audits AS (
-        SELECT 'audit' AS kind, tie, at, ref, "actorName", change, added, removed, "workflowName",
+        SELECT 'audit' AS kind, tie, at, ref, "actorName", change, added, removed, "workflowName", "rawChanges",
                NULL::text AS reason, NULL::int AS count
         FROM audit_source
         WHERE change IS NULL OR change = ANY($4::text[]) OR added > 0 OR removed > 0
@@ -111,7 +114,7 @@ export class ProjectOverviewActivityService {
         SELECT 'dismissed' AS kind, MIN(d.id::text) AS tie, MAX(d."createdAt")::timestamptz AS at,
                'dismissed' AS ref, u.name AS "actorName", NULL::text AS change,
                NULL::int AS added, NULL::int AS removed, NULL::text AS "workflowName",
-               d.reason, COUNT(*)::int AS count
+               NULL::jsonb AS "rawChanges", d.reason, COUNT(*)::int AS count
         FROM owned p JOIN project_vulnerabilities pv ON pv."projectId" = p.id
         JOIN LATERAL (
           SELECT v.id FROM vulnerabilities v JOIN assets a ON a.id = v."assetId"
@@ -127,7 +130,7 @@ export class ProjectOverviewActivityService {
         SELECT * FROM audits UNION ALL SELECT * FROM dismissals
         ORDER BY at DESC, kind, tie DESC LIMIT ${PROJECT_ACTIVITY_LIMIT}
       )
-      SELECT kind, at, ref, "actorName", change, added, removed, "workflowName", reason, count
+      SELECT kind, at, ref, "actorName", change, added, removed, "workflowName", reason, count, "rawChanges"
       FROM owned LEFT JOIN recent ON true ORDER BY at DESC, kind, tie DESC`,
       [
         projectId,
@@ -135,7 +138,7 @@ export class ProjectOverviewActivityService {
         lifecycleActions,
         workflowChanges,
         assetChanges,
-        Object.values(DismissReason),
+        FINDING_DISMISS_REASONS,
         AuditOutcome.Success,
         AuditActorType.ApiKey,
       ],
@@ -161,6 +164,7 @@ export class ProjectOverviewActivityService {
           ...base,
           kind: row.kind,
           ref: row.ref,
+          ...(projectActivityChanges(row.rawChanges) ? { changes: projectActivityChanges(row.rawChanges) } : {}),
           ...(row.change === null ? {} : { change: row.change }),
           ...(row.added === null ? {} : { added: row.added }),
           ...(row.removed === null ? {} : { removed: row.removed }),

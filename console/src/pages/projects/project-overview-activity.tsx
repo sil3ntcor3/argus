@@ -1,3 +1,4 @@
+import { projectRunTrigger } from './project-summary-context';
 import JobStatusBadge from '@/components/ui/job-status';
 import type {
   ProjectOverviewActivityDto,
@@ -35,6 +36,7 @@ const changeDestinations = new Map<
   ['workflow.removed', '/projects/$id/workflows'],
 ]);
 const dismissalLabels: Record<ProjectOverviewActivityDtoReason, string> = {
+  risk_accepted: 'Risk accepted',
   false_positive: 'False positive',
   used_in_test: 'Used in test',
   wont_fix: 'Won’t fix',
@@ -141,6 +143,15 @@ function ActivityChange({
         )}
       </p>
       {detail && <p className="mt-1 text-xs text-muted-foreground">{detail}</p>}
+      {event.changes && <dl aria-label="Recorded project changes" className="mt-1 space-y-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+        {(['name','description','hexColor','autoAddAssets'] as const).flatMap(key => {
+          const value = event.changes?.[key];
+          if (!value) return [];
+          const scalar = (v: unknown) => typeof v === 'string' ? v : typeof v === 'boolean' ? (v ? 'On' : 'Off') : v === null ? 'Cleared' : undefined;
+          const before = scalar(value.before), after = scalar(value.after);
+          return before === undefined && after === undefined ? [] : [<div key={key}><dt className="inline font-medium">{{ name: 'Name', description: 'Description', hexColor: 'Color', autoAddAssets: 'Automatic membership' }[key]}: </dt><dd className="inline">{[before, after].filter(v => v !== undefined).join(' → ')}</dd></div>];
+        })}
+      </dl>}
     </div>
   );
 }
@@ -156,14 +167,7 @@ function ActivityRun({
   date: string;
 }) {
   const name = event.workflowName?.trim() || 'Workflow run';
-  const trigger =
-    event.jobRunType === 'scheduled'
-      ? 'Scheduled'
-      : event.jobRunType === 'event'
-        ? 'Event'
-        : event.jobRunType === 'manual'
-          ? 'Manual'
-          : undefined;
+  const trigger = projectRunTrigger(event.jobRunType, event.triggerEvent);
   const detail = runDetails(event, trigger);
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">

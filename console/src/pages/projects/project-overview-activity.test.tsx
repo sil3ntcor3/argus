@@ -70,6 +70,16 @@ const events: ProjectOverviewActivityDto[] = [
 ];
 
 describe('ProjectOverviewActivity', () => {
+  it('renders recognized event context, risk acceptances and recorded change details', () => {
+    render(<ProjectOverviewActivity projectId={projectId} canOpenRuns events={[
+      { ...events[0], jobRunType: 'event', triggerEvent: 'project.run.completed' },
+      { ...events[2], reason: 'risk_accepted' },
+      { ...events[1], ref: 'project.created', change: undefined, changes: { name: { after: 'Recorded name' } } },
+    ]} />);
+    expect(screen.getByText(/Run completed/)).toBeVisible();
+    expect(screen.getByText(/Risk accepted/)).toBeVisible();
+    expect(screen.getByText(/Recorded name/)).toBeVisible();
+  });
   it('shows run, project change, and dismissal summaries in response order', () => {
     render(
       <ProjectOverviewActivity

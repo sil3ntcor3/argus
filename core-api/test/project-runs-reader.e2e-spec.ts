@@ -380,6 +380,10 @@ describe('Private project run reader (e2e)', () => {
     });
     expect(Object.keys(scheduled.body.data[0]).sort()).toEqual(
       [
+        'triggerType',
+        'triggerEvent',
+        'causedByRunId',
+        'causedByWorkflowName',
         'id',
         'createdAt',
         'updatedAt',
