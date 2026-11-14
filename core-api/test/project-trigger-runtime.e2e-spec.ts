@@ -417,7 +417,16 @@ describe('Project trigger management and dispatch (Docker)', () => {
     expect(await runs()).toHaveLength(2);
     const listed = await request(app.server).get(`/api/projects/${project}/runs?jobRunType=event`).set(owner.headers).expect(200);
     expect(listed.body.data).toHaveLength(2);
-    for (const item of listed.body.data as Record<string, unknown>[]) for (const field of ['triggerId','causedByRunId','chainDepth']) expect(item).not.toHaveProperty(field);
+    for (const item of listed.body.data as Record<string, unknown>[]) {
+      expect(item).toMatchObject({
+        triggerType: 'event',
+        triggerEvent: 'project.assets.added',
+        causedByRunId: null,
+        causedByWorkflowName: null,
+      });
+      for (const field of ['triggerId', 'chainDepth'])
+        expect(item).not.toHaveProperty(field);
+    }
     expect((await runs()).flatMap((run) => run.scope.assetIds).sort()).toEqual(
       domainAssets.sort(),
     );

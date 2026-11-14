@@ -1,4 +1,6 @@
 import { ProjectListItemDto } from './dto/project-list-item.dto';
+import { ProjectCreatedDto } from './dto/project-create-response.dto';
+import { ProjectCreationService } from './project-creation.service';
 import { ProjectListReadService } from './project-list-read.service';
 import { UserId } from '@/common/decorators/app.decorator';
 import { ProjectArchiveService } from './project-archive.service';
@@ -109,6 +111,7 @@ export class ProjectsController {
     private readonly projects: AssetGroupService,
     private readonly metadata: ProjectMetadataReadService,
     private readonly listRead: ProjectListReadService,
+    private readonly creation: ProjectCreationService,
     private readonly scopePreview: ProjectScopePreviewService,
     private readonly scopeRead: ProjectScopeReadService,
     private readonly scopeWrite: ProjectScopeWriteService,
@@ -296,7 +299,7 @@ export class ProjectsController {
 
   @Doc({
     summary: 'Create project',
-    response: { serialization: ProjectViewDto, httpStatus: HttpStatus.CREATED },
+    response: { serialization: ProjectCreatedDto, httpStatus: HttpStatus.CREATED },
     request: { getWorkspaceId: true },
   })
   @PublishEvent(EVENT_CATALOG.project.created, {
@@ -306,13 +309,16 @@ export class ProjectsController {
     }),
   })
   @WorkspaceAccess('project.write')
+  @ApiBody({ type: CreateProjectDto })
   @Post()
   async create(
-    @Body() dto: CreateProjectDto,
+    @Body(new ProjectWorkflowTriggerInputPipe(CreateProjectDto)) body: unknown,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ) {
-    const saved = await this.projects.create(dto, workspaceId, dto);
-    return this.metadata.getById(saved.id, workspaceId);
+    const dto = body as CreateProjectDto;
+    const canLaunch = request.permissions?.some(permission => ['*', 'workflow.write'].includes(permission)) ?? false;
+    return this.creation.create(dto, workspaceId, canLaunch);
   }
 
   @Doc({
