@@ -48,6 +48,7 @@ import { TargetOverviewService } from './target-overview.service';
 import { TargetRunHistoryService } from './target-run-history.service';
 import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
+import { TargetListEnrichmentService } from './target-list-enrichment.service';
 
 function canReadTargetData(
   permissions: RequestWithMetadata['permissions'],
@@ -72,6 +73,7 @@ export class TargetsController {
     private readonly targetRunHistoryService: TargetRunHistoryService,
     private readonly targetChangesService: TargetChangesService,
     private readonly auditService: AuditService,
+    private readonly targetListEnrichment: TargetListEnrichmentService,
   ) {}
 
   @Doc({
@@ -123,8 +125,9 @@ export class TargetsController {
     },
   })
   @WorkspaceAccess('target.read')
+  @Header('Cache-Control', 'private, no-store')
   @Get()
-  getTargetsInWorkspace(
+  async getTargetsInWorkspace(
     @Query() query: GetManyWorkspaceQueryParamsDto,
     @WorkspaceId() workspaceId: string,
     @Req() request: RequestWithMetadata,
@@ -138,7 +141,18 @@ export class TargetsController {
         );
       }
     }
-    return this.targetsService.getTargetsInWorkspace(query, workspaceId);
+    const page = await this.targetsService.getTargetsInWorkspace(
+      query,
+      workspaceId,
+    );
+    return {
+      ...page,
+      data: await this.targetListEnrichment.enrich(page.data, workspaceId, {
+        jobs: canReadTargetData(request.permissions, 'job'),
+        findings: canReadTargetData(request.permissions, 'vulnerability'),
+        projects: canReadTargetData(request.permissions, 'project'),
+      }),
+    };
   }
 
   @Doc({

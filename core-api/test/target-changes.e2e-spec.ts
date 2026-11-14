@@ -211,7 +211,7 @@ describe('Target changes API (e2e)', () => {
   });
 
   it('validates input and returns the same response for missing and foreign targets', async () => {
-    await read(target, owner.headers, '?kind=fixed').expect(400);
+    await read(target, owner.headers, '?kind=unknown').expect(400);
     await read(target, owner.headers, '?page=1.5').expect(400);
     await read(target, owner.headers, '?limit=101').expect(400);
     await read('invalid', owner.headers).expect(400);

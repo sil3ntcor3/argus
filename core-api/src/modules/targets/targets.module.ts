@@ -14,6 +14,7 @@ import { TargetOverviewService } from './target-overview.service';
 import { TargetRunHistoryService } from './target-run-history.service';
 import { TargetSummaryService } from './target-summary.service';
 import { TargetsService } from './targets.service';
+import { TargetListEnrichmentService } from './target-list-enrichment.service';
 
 @Global()
 @Module({
@@ -28,6 +29,7 @@ import { TargetsService } from './targets.service';
   providers: [
     TargetsService,
     TargetSummaryService,
+    TargetListEnrichmentService,
     TargetOverviewService,
     TargetRunHistoryService,
     TargetChangesService,

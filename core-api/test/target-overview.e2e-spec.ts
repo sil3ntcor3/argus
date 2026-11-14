@@ -43,6 +43,7 @@ describe('Target overview API (e2e)', () => {
   const redactedFindings = {
     openVulnerabilities: null,
     newVulnerabilities: null,
+    fixedVulnerabilities: null,
     topVulnerabilities: null,
     weekly: null,
     insights: discoveryInsights,
@@ -52,6 +53,8 @@ describe('Target overview API (e2e)', () => {
     newVulnerabilities: 3,
   };
   const metrics = {
+    issues: [],
+    fixedVulnerabilities: 0,
     totalAssets: 2,
     newAssets: 1,
     totalServices: 4,
@@ -227,6 +230,8 @@ describe('Target overview API (e2e)', () => {
       .expect(200, metrics)
       .expect('Cache-Control', 'private, no-store');
     await overview(emptyTarget, owner.headers).expect(200, {
+      issues: [],
+      fixedVulnerabilities: 0,
       totalAssets: 0,
       newAssets: 0,
       totalServices: 0,
@@ -244,6 +249,8 @@ describe('Target overview API (e2e)', () => {
       insights: [missingSchedule],
     });
     await overview(foreignTarget, other.headers).expect(200, {
+      issues: [],
+      fixedVulnerabilities: 0,
       totalAssets: 1,
       newAssets: 1,
       totalServices: 1,

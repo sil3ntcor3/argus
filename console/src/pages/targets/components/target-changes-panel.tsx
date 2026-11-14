@@ -16,11 +16,13 @@ const filters = [
   { label: 'Assets', kind: TargetChangeKind.asset },
   { label: 'Services', kind: TargetChangeKind.service },
   { label: 'Findings', kind: TargetChangeKind.vulnerability },
+  { label: 'Fixed findings', kind: TargetChangeKind.fixed },
 ] as const;
 const changeLabels: Record<TargetChangeKind, string> = {
   [TargetChangeKind.asset]: 'Asset discovered',
   [TargetChangeKind.service]: 'Service discovered',
   [TargetChangeKind.vulnerability]: 'Finding discovered',
+  [TargetChangeKind.fixed]: 'Finding fixed',
 };
 const dateFormat = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -58,7 +60,10 @@ function TargetChangesList({
   });
   const { page, kind } = view;
   const visibleFilters = filters.filter(
-    ({ kind }) => canReadFindings || kind !== TargetChangeKind.vulnerability,
+    ({ kind }) =>
+      canReadFindings ||
+      (kind !== TargetChangeKind.vulnerability &&
+        kind !== TargetChangeKind.fixed),
   );
   const title = useRef<HTMLHeadingElement>(null);
   const retryButton = useRef<HTMLButtonElement>(null);
@@ -95,7 +100,10 @@ function TargetChangesList({
     !failed && changes.isFetchedAfterMount ? changes.data : undefined;
   const rows =
     data?.data.filter(
-      ({ kind }) => canReadFindings || kind !== TargetChangeKind.vulnerability,
+      ({ kind }) =>
+        canReadFindings ||
+        (kind !== TargetChangeKind.vulnerability &&
+          kind !== TargetChangeKind.fixed),
     ) ?? [];
   useEffect(() => {
     if (changes.isFetching || !retryButton.current) return;
@@ -174,7 +182,8 @@ function TargetChangesList({
                   key={`${change.kind}-${change.id}`}
                   className="space-y-1 p-3 sm:px-4"
                 >
-                  {change.kind === TargetChangeKind.vulnerability ? (
+                  {change.kind === TargetChangeKind.vulnerability ||
+                  change.kind === TargetChangeKind.fixed ? (
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
                         to="/vulnerabilities/$id"
