@@ -22,7 +22,10 @@ actor, review time and finding/asset/workspace; deduplicate by that durable even
 ID. This path supplies no scanner coverage or causal run. Preserve the existing
 job-backed detection path and its evidence checks.
 
-Public finding feeds stay approved-only. The private `listForAgent` path also
-supports explicit lifecycle and proposal-review statuses for authenticated,
-project-authorized tools. Keep it separate from REST filters/response semantics
-and scope every row through the project's workspace and recorded finding links.
+`ProjectFindingReadService` shares lifecycle predicates across REST and model
+reads. Lists default to open; all includes approved findings, including archived.
+Explicit pending_review/rejected REST filters additionally require effective
+vulnerability read access in `ProjectsController.getFindings`. Timeline reads
+remain approved-only. Resolution labels prefer fixed over dismissal; proposal
+review state comes from the selected filter. Scope rows and facets through the
+project workspace and recorded finding links; preserve exact run/workflow filters.

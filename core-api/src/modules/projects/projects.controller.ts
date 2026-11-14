@@ -29,6 +29,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -63,6 +64,7 @@ import { CreatedProjectWorkflowDto, CreateProjectWorkflowDto } from './dto/proje
 import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
 import { GetProjectRunsQueryDto, ProjectRunDto } from './dto/project-runs.dto';
 import { ProjectRunReadService } from './project-run-read.service';
+import { VulnerabilityStatus } from '../vulnerabilities/dto/get-vulnerability.dto';
 import { ProjectFindingReadService } from './project-finding-read.service';
 import { ProjectFindingTimelineService } from './project-finding-timeline.service';
 import { ProjectFindingTimelineDto } from './dto/project-finding-timeline.dto';
@@ -473,7 +475,13 @@ export class ProjectsController {
     @Param() { id }: IdQueryParamDto,
     @Query() query: GetProjectFindingsQueryDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ): Promise<ProjectFindingsResponseDto> {
+    if (
+      query.status &&
+      [VulnerabilityStatus.PENDING_REVIEW, VulnerabilityStatus.REJECTED].includes(query.status) &&
+      !request.permissions?.some(permission => ['*', 'vulnerability.read', 'vulnerability.write'].includes(permission))
+    ) throw new ForbiddenException('Vulnerability read access is required for review filters');
     return this.findingRead.list(id, workspaceId, query);
   }
 

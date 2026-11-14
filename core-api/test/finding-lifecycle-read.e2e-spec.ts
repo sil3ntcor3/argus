@@ -124,7 +124,9 @@ describe('Finding lifecycle reads (e2e)', () => {
     const report = await app.app.get(VulnerabilityReportService).getVulnerabilityReportData(owner.workspace.id, { targetIds: [targetId] });
     expect(report.summary.activeCount).toBe(1);
     expect(report.allVulnerabilities.map(row => row.id)).toEqual([active]);
-    await request(app.server).get(`/api/projects/${project}/vulnerabilities?status=fixed`).set(owner.headers).expect(400);
+    const fixedFindings = await request(app.server).get(`/api/projects/${project}/vulnerabilities?status=fixed`).set(owner.headers).expect(200);
+    expect(fixedFindings.body.data.map((row: { id: string }) => row.id)).toEqual([fixed]);
+    expect(fixedFindings.body.data[0].status).toBe('fixed');
   });
 
   it.each(['maybe', '1', 'null'])('rejects invalid overdue filter %s', async overdue => {

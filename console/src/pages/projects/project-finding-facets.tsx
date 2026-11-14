@@ -30,6 +30,7 @@ export type FindingFacets = {
 };
 
 type FacetProps = FindingFacets & {
+  canReadReview?: boolean;
   provenanceCounts?: ProjectFindingProvenanceCountsDto;
   severityCounts?: SeverityCountsDto;
   onChange: (facets: FindingFacets) => void;
@@ -39,11 +40,13 @@ function withCount(label: string, count?: number) {
   return count === undefined ? label : `${label} (${count.toLocaleString()})`;
 }
 
+/** Filter lifecycle states, exposing proposal-review choices only to finding readers. */
 export function ProjectFindingFacets({
   provenance,
   severity = [],
   status,
   provenanceCounts,
+  canReadReview = false,
   severityCounts,
   onChange,
 }: FacetProps) {
@@ -67,8 +70,14 @@ export function ProjectFindingFacets({
           }
         >
           <option value="open">Open</option>
+          <option value="new">New</option>
+          <option value="active">Active</option>
+          <option value="resurfaced">Resurfaced</option>
+          <option value="fixed">Fixed</option>
           <option value="dismissed">Dismissed</option>
-          <option value="all">All, including archived</option>
+          {canReadReview && <option value="pending_review">Pending review</option>}
+          {canReadReview && <option value="rejected">Rejected</option>}
+          <option value="all">All approved, including archived</option>
         </select>
       </label>
       <label className="flex w-fit items-center gap-2 text-sm">

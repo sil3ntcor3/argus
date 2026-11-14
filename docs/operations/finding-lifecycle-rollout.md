@@ -67,6 +67,24 @@ Expired risk acceptances stop suppressing a finding before cleanup runs.
 Detection filters/counts agree; fixed counts describe stored scanner-fixed
 rows. Remediation averages cover valid fixes from the last 90 days.
 
+REST `createdFrom` and `createdTo` now filter first detection, falling back to
+creation time only when a legacy finding has no detection timestamp. The lower
+bound is inclusive and the upper bound includes the full UTC day. Console date
+links preserve calendar dates in local time; the filter is labeled First detected.
+Consumers that previously used these parameters for insertion time must update
+their interpretation. There is no new query parameter or data rewrite.
+
+Project finding lists accept open, new, active, resurfaced, fixed, dismissed,
+pending_review, rejected and all. Open remains the default; all includes only
+approved findings, including archived ones. Explicit review filters additionally
+require effective vulnerability read access; approved project reads still need
+only project read. Resolution labels prefer fixed over dismissal. Review state
+is identified by the selected filter, and review rows do not offer run timelines.
+Project timelines remain approved-only and retain tenant and run redaction.
+
+These REST and console changes require coordinated API/client deployment. A
+rollback restores the previous filter/label behavior without changing stored data.
+
 Mark fixed records an atomic workspace-scoped claim for 1–1000 IDs, with an
 optional private note. It neither closes a finding nor launches a scan. A
 covering scan begun after the claim can verify it. Timeline output includes

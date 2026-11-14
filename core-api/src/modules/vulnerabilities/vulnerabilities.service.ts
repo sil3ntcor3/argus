@@ -262,9 +262,8 @@ export class VulnerabilitiesService {
       });
     }
 
-    // Tools use first detection; preserve existing REST creation-date semantics.
+    // Date filters follow first detection, with a creation-date fallback for legacy findings.
     const dateFilter = (operator: '>=' | '<=', parameter: 'createdFrom' | 'createdTo', value: Date) => {
-      if (view === 'rest') return queryBuilder.andWhere(`vulnerabilities.createdAt ${operator} :${parameter}`, { [parameter]: value });
       // Separate timestamp/timestamptz bindings preserve legacy clocks on non-UTC hosts.
       return queryBuilder.andWhere(new Brackets(date => date
         .where(`vulnerabilities.firstDetectedDate ${operator} :detected_${parameter}`, { [`detected_${parameter}`]: value })
@@ -276,8 +275,7 @@ export class VulnerabilitiesService {
     if (createdTo) {
       // Set time to end of day (23:59:59.999) to include the entire day
       const endDate = new Date(createdTo);
-      if (view === 'model') endDate.setUTCHours(23, 59, 59, 999);
-      else endDate.setHours(23, 59, 59, 999);
+      endDate.setUTCHours(23, 59, 59, 999);
       dateFilter('<=', 'createdTo', endDate);
     }
 
