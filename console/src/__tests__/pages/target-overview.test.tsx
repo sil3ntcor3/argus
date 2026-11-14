@@ -895,6 +895,16 @@ describe('Target Overview top findings', () => {
 });
 
 describe('Target Overview findings', () => {
+  it.each([true, false])('shows recent fixed totals only with finding access (%s)', async allowed => {
+    canReadFindings.mockReturnValue(allowed);
+    server.use(http.get(`/api${path}/overview`, () => HttpResponse.json({
+      ...metrics, openVulnerabilities: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
+      newVulnerabilities: 1, fixedVulnerabilities: 2,
+    })));
+    show(); await screen.findByRole('region', { name: 'Target overview' });
+    if (allowed) expect(await screen.findByText('2 fixed in the last 7 days')).toBeVisible();
+    else expect(screen.queryByText('2 fixed in the last 7 days')).not.toBeInTheDocument();
+  });
   const findings = { critical: 1, high: 2, medium: 0, low: 0, info: 0 };
 
   it.each([true, false])(
@@ -1239,6 +1249,32 @@ describe('Target Overview weekly findings', () => {
 });
 
 describe('Target discovery changes', () => {
+  it.each([true, false])('keeps fixed and discovery entries distinct and gates both (%s)', async allowed => {
+    canReadFindings.mockReturnValue(allowed);
+    const requests: string[] = [];
+    const rows = [
+      { kind: 'fixed', id: 'shared-finding', label: 'A repaired finding', at: '2026-11-13T08:00:00.000Z', assetValue: 'host.example.test', severity: 'high' },
+      { kind: 'vulnerability', id: 'shared-finding', label: 'A repaired finding', at: '2026-11-12T08:00:00.000Z', assetValue: 'host.example.test', severity: 'high' },
+    ];
+    server.use(http.get(`/api${path}/changes`, ({ request }) => {
+      const kind = new URL(request.url).searchParams.get('kind') ?? '';
+      requests.push(kind);
+      return HttpResponse.json({ data: kind ? rows.filter(row => row.kind === kind) : rows, page: 1, total: 2 });
+    }));
+    const { user } = show('activity');
+    const feed = within(await screen.findByRole('region', { name: 'Target changes' }));
+    if (allowed) {
+      expect(await feed.findByText('Finding fixed')).toBeVisible();
+      expect(feed.getAllByRole('link', { name: /A repaired finding/ })).toHaveLength(2);
+      await user.click(feed.getByRole('button', { name: 'Fixed findings', exact: true }));
+      await waitFor(() => expect(requests.at(-1)).toBe('fixed'));
+      expect(feed.queryByText('Finding discovered')).not.toBeInTheDocument();
+    } else {
+      await screen.findByText('No discoveries on this page.');
+      expect(feed.queryByRole('button', { name: 'Fixed findings' })).not.toBeInTheDocument();
+      expect(feed.queryByRole('link', { name: /A repaired finding/ })).not.toBeInTheDocument();
+    }
+  });
   const changesPath = `/api${path}/changes`;
   const asset = {
     kind: 'asset',

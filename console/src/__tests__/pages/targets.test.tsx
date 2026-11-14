@@ -11,6 +11,9 @@ import StartDiscovery from '@/pages/targets/start-discovery';
 import Targets from '@/pages/targets/targets';
 
 const canReadFindings = vi.hoisted(() => vi.fn(() => true));
+const canReadJobs = vi.hoisted(() => vi.fn(() => true));
+const canReadProjects = vi.hoisted(() => vi.fn(() => true));
+const refreshingAccess = vi.hoisted(() => vi.fn(() => false));
 const criticalAccessNotice = /critical findings view requires vulnerability read access/i;
 const summary = {
   total: 2,
@@ -37,10 +40,11 @@ vi.mock('@/hooks/usePermission', () => ({
   usePermission: () => ({
     permissions: ['*'],
     isOwner: true,
-    hasPermission: (key: string) =>
-      key !== 'vulnerability.read' || canReadFindings(),
+    hasPermission: (key: string) => key.startsWith('vulnerability.') ? canReadFindings()
+      : key.startsWith('job.') ? canReadJobs()
+        : key.startsWith('project.') ? canReadProjects() : true,
     isLoading: false,
-    isFetching: false,
+    isFetching: refreshingAccess(),
     error: null,
     refetch: vi.fn(),
   }),
@@ -49,9 +53,56 @@ vi.mock('@/hooks/usePermission', () => ({
 describe('Targets Page', () => {
   beforeEach(() => {
     canReadFindings.mockReturnValue(true);
+    canReadJobs.mockReturnValue(true);
+    canReadProjects.mockReturnValue(true);
+    refreshingAccess.mockReturnValue(false);
     server.use(
       http.get('/api/targets/summary', () => HttpResponse.json(summary)),
     );
+  });
+
+  it('shows authorized row finding counts, settled progress, next firing and project references', async () => {
+    server.use(http.get('/api/targets', () => HttpResponse.json({ data: [{ ...mockTargets[0],
+      openVulnerabilities: { critical: 2, high: 1, medium: 0, low: 0, info: 0 },
+      scanProgress: { done: 3, total: 5 }, nextScanAt: '2026-11-20T08:00:00.000Z',
+      projects: [{ id: 'project-row-1', name: 'Argus row project', hexColor: '#123456', assets: 2 }],
+    }], total: 1 })));
+    renderWithProviders(<Targets />, { routePath: '/_authed/targets/' });
+    const row = within(await screen.findByRole('row', { name: /example\.com/ }));
+    expect(await row.findByText('2 critical')).toBeVisible();
+    expect(row.getByText('1 high')).toBeVisible();
+    expect(row.getByRole('progressbar', { name: 'Target scan progress' })).toHaveAttribute('aria-valuenow', '3');
+    expect(row.getByRole('progressbar')).toHaveAttribute('aria-valuemax', '5');
+    expect(row.getByText('3/5 jobs settled')).toBeVisible();
+    expect(row.getByRole('link', { name: /Argus row project/ })).toHaveAttribute('href', '/projects/project-row-1');
+    expect(row.getByText(/Next scan/)).toBeVisible();
+  });
+
+  it('keeps redacted and idle row fields from inventing finding totals or progress', async () => {
+    server.use(http.get('/api/targets', () => HttpResponse.json({ data: [{ ...mockTargets[0],
+      openVulnerabilities: null, scanProgress: null, nextScanAt: null, projects: null,
+    }], total: 1 })));
+    renderWithProviders(<Targets />, { routePath: '/_authed/targets/' });
+    const row = within(await screen.findByRole('row', { name: /example\.com/ }));
+    expect(row.queryByText(/\d critical|jobs settled|No open findings/)).not.toBeInTheDocument();
+    expect(row.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(row.queryByText(/Next scan/)).not.toBeInTheDocument();
+  });
+
+  it('hides cached enrichment while effective permissions are being refreshed', async () => {
+    let responseVersion = 0;
+    server.use(http.get('/api/targets', () => HttpResponse.json({ data: [{ ...mockTargets[0],
+      reScanCount: ++responseVersion,
+      openVulnerabilities: { critical: 2, high: 0, medium: 0, low: 0, info: 0 }, scanProgress: { done: 1, total: 2 },
+      projects: [{ id: 'project-row-2', name: 'Sensitive row project', assets: 1 }],
+    }], total: 1 })));
+    const { queryClient } = renderWithProviders(<Targets />, { routePath: '/_authed/targets/' });
+    expect(await screen.findByText('Sensitive row project')).toBeVisible();
+    refreshingAccess.mockReturnValue(true);
+    await act(() => queryClient.refetchQueries({ queryKey: ['targets', 'ws-1'] }));
+    await waitFor(() => expect(screen.queryByText('Sensitive row project')).not.toBeInTheDocument());
+    expect(screen.queryByText('2 critical')).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
 
   it('shows workspace target counts and includes a real zero', async () => {

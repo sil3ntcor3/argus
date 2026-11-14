@@ -52,6 +52,7 @@ describe('TargetOverviewService', () => {
         issues: [],
         openVulnerabilities: null,
         newVulnerabilities: null,
+        fixedVulnerabilities: null,
         topVulnerabilities: null,
         weekly: null,
         projects: null,
@@ -73,6 +74,7 @@ describe('TargetOverviewService', () => {
         expect.any(Date),
         expect.any(Array),
         false,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
       ],
     );
     expect(getJobScheduler).not.toHaveBeenCalled();

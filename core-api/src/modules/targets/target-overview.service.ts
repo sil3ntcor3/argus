@@ -55,7 +55,7 @@ type ScheduleLookup = ReturnType<ScheduleReader['getScheduler']>;
 
 type FindingCounts = Pick<
   TargetOverviewDto,
-  'openVulnerabilities' | 'newVulnerabilities' | 'weekly'
+  'openVulnerabilities' | 'newVulnerabilities' | 'fixedVulnerabilities' | 'weekly'
 >;
 
 type TopFindingJson = Omit<TargetTopVulnerabilityDto, 'createdAt'> & {
@@ -137,7 +137,7 @@ export class TargetOverviewService {
   }
 
   /** Reads the saved schedule without letting Redis delays block Overview. */
-  private async getNextScanAt(
+  async getNextScanAt(
     id: string,
     jobId: string | null,
     scanSchedule: CronSchedule | null,
@@ -234,7 +234,7 @@ export class TargetOverviewService {
               ) END AS runs,
               CASE WHEN $4::boolean THEN (
                 WITH open_findings AS MATERIALIZED (
-                  SELECT v.id, v.severity, COALESCE(v."firstDetectedDate",v."createdAt") AS "createdAt",
+                  SELECT v.id, v.severity, COALESCE(v."firstDetectedDate",v."createdAt" AT TIME ZONE $9) AS "createdAt",
                          CASE v.severity
                            WHEN '${Severity.CRITICAL}' THEN 5 WHEN '${Severity.HIGH}' THEN 4
                            WHEN '${Severity.MEDIUM}' THEN 3 WHEN '${Severity.LOW}' THEN 2
@@ -259,7 +259,13 @@ export class TargetOverviewService {
                     'info', COUNT(*) FILTER (WHERE severity = 'info')
                   ),
                   'newVulnerabilities', COUNT(*) FILTER (WHERE "createdAt"
-                    BETWEEN LOCALTIMESTAMP - INTERVAL '${RECENT_DISCOVERY_DAYS} days' AND LOCALTIMESTAMP),
+                    BETWEEN statement_timestamp() - INTERVAL '${RECENT_DISCOVERY_DAYS * 24} hours' AND statement_timestamp()),
+                  'fixedVulnerabilities', (
+                    SELECT COUNT(*)::int FROM assets a JOIN vulnerabilities v ON v."assetId"=a.id
+                    WHERE a."targetId"=t.id AND v."reviewStatus"='approved' AND v."detectionStatus"='fixed'
+                    AND v."fixedAt">statement_timestamp()-INTERVAL '${RECENT_DISCOVERY_DAYS * 24} hours'
+                    AND v."fixedAt"<=statement_timestamp()
+                  ),
                   'weekly', (
                     SELECT jsonb_agg(jsonb_build_object('week', s.week,
                                       ${WEEKLY_OUTPUT_FIELDS_SQL}) ORDER BY s.week_number)
@@ -326,6 +332,7 @@ export class TargetOverviewService {
         now,
         weekStarts.map((week) => week.toISOString().slice(0, 10)),
         access.projects,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
       ],
     );
     if (!overview) throw new NotFoundException('Target not found');
@@ -406,6 +413,7 @@ export class TargetOverviewService {
       activeRuns: runs?.activeRuns.map(toTargetRunDto) ?? null,
       openVulnerabilities: findings?.openVulnerabilities ?? null,
       newVulnerabilities: findings?.newVulnerabilities ?? null,
+      fixedVulnerabilities: findings?.fixedVulnerabilities ?? null,
       weekly: findings?.weekly ?? null,
       topVulnerabilities:
         findings?.topVulnerabilities.map((finding) => ({

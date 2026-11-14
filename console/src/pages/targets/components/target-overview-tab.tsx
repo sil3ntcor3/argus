@@ -222,6 +222,7 @@ export function TargetOverviewTab({
             targetId={targetId}
             counts={data.openVulnerabilities}
             newCount={data.newVulnerabilities}
+            fixedCount={data.fixedVulnerabilities}
             onKeyboardNavigate={() => onKeyboardNavigate('vulnerabilities')}
           />
         )}

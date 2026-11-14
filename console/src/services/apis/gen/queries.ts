@@ -454,6 +454,41 @@ export type CreateMultipleTargetsDto = {
   targets: CreateTargetDto[];
 };
 
+export type SeverityCountsDto = {
+  /** @minimum 0 */
+  critical: number;
+  /** @minimum 0 */
+  high: number;
+  /** @minimum 0 */
+  medium: number;
+  /** @minimum 0 */
+  low: number;
+  /** @minimum 0 */
+  info: number;
+};
+
+export type TargetScanProgressDto = {
+  /**
+   * Settled target jobs in active runs
+   * @minimum 0
+   */
+  done: number;
+  /**
+   * All target jobs in active runs
+   * @minimum 1
+   */
+  total: number;
+};
+
+export type TargetProjectRefDto = {
+  id: string;
+  name: string;
+  /** @nullable */
+  hexColor: string | null;
+  /** @minimum 1 */
+  assets: number;
+};
+
 export type TargetSourceDto = {
   /** Human-readable label of the target source */
   source: string;
@@ -482,6 +517,27 @@ export const GetManyTargetResponseDtoStatus = {
 } as const;
 
 export type GetManyTargetResponseDto = {
+  /**
+   * Open finding counts, or null without vulnerability read access
+   * @nullable
+   */
+  openVulnerabilities: SeverityCountsDto | null;
+  /**
+   * Active target job progress, or null when idle or without job read access
+   * @nullable
+   */
+  scanProgress: TargetScanProgressDto | null;
+  /**
+   * Next recorded target discovery firing time, or null when unavailable
+   * @nullable
+   */
+  nextScanAt: string | null;
+  /**
+   * Active workspace projects containing target assets, or null without project read access
+   * @maxItems 6
+   * @nullable
+   */
+  projects: TargetProjectRefDto[] | null;
   id: string;
   value: string;
   type: TargetType;
@@ -520,19 +576,6 @@ export const TargetScopeType = {
   INTERNAL: 'INTERNAL',
   EXTERNAL: 'EXTERNAL',
 } as const;
-
-export type SeverityCountsDto = {
-  /** @minimum 0 */
-  critical: number;
-  /** @minimum 0 */
-  high: number;
-  /** @minimum 0 */
-  medium: number;
-  /** @minimum 0 */
-  low: number;
-  /** @minimum 0 */
-  info: number;
-};
 
 export type TargetSummaryDto = {
   /** @minimum 0 */
@@ -693,15 +736,6 @@ export type ProjectOverviewWeekDto = {
   week: string;
 };
 
-export type TargetProjectRefDto = {
-  id: string;
-  name: string;
-  /** @nullable */
-  hexColor: string | null;
-  /** @minimum 1 */
-  assets: number;
-};
-
 export type TargetExposureCountDto = {
   name: string;
   /**
@@ -790,6 +824,12 @@ export type TargetOverviewDto = {
    */
   newVulnerabilities: number | null;
   /**
+   * Approved scan-fixed findings recorded in the last seven days, or null without vulnerability read access
+   * @minimum 0
+   * @nullable
+   */
+  fixedVulnerabilities: number | null;
+  /**
    * Open findings ranked by severity and discovery time, or null without vulnerability read access
    * @maxItems 5
    * @nullable
@@ -830,6 +870,7 @@ export const TargetChangeKind = {
   asset: 'asset',
   service: 'service',
   vulnerability: 'vulnerability',
+  fixed: 'fixed',
 } as const;
 
 export type TargetChangeDto = {

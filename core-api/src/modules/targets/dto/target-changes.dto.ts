@@ -7,6 +7,7 @@ export enum TargetChangeKind {
   ASSET = 'asset',
   SERVICE = 'service',
   VULNERABILITY = 'vulnerability',
+  FIXED = 'fixed',
 }
 
 export class GetTargetChangesQueryDto extends PickType(GetManyBaseQueryParams, [

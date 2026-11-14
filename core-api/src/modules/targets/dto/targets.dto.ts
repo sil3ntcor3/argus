@@ -1,5 +1,10 @@
 import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
-import { CronSchedule, JobStatus, ScanStatus, TargetScopeType } from '@/common/enums/enum';
+import {
+  CronSchedule,
+  JobStatus,
+  ScanStatus,
+  TargetScopeType,
+} from '@/common/enums/enum';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
@@ -15,6 +20,24 @@ import {
 import { Target, TargetType } from '../entities/target.entity';
 import { TargetSourceDto } from '../target-source.dto';
 import { parseBooleanQuery } from './parse-boolean-query';
+import { SeverityCountsDto } from '@/modules/projects/dto/project-assets-read.dto';
+import { TargetProjectRefDto } from './target-overview.dto';
+
+export class TargetScanProgressDto {
+  @ApiProperty({
+    type: 'integer',
+    minimum: 0,
+    description: 'Settled target jobs in active runs',
+  })
+  done: number;
+
+  @ApiProperty({
+    type: 'integer',
+    minimum: 1,
+    description: 'All target jobs in active runs',
+  })
+  total: number;
+}
 
 export class GitOrgTargetSettingsDto {
   @ApiProperty({
@@ -132,6 +155,40 @@ export class BulkTargetResultDto {
 }
 
 export class GetManyTargetResponseDto {
+  @ApiProperty({
+    type: SeverityCountsDto,
+    nullable: true,
+    description:
+      'Open finding counts, or null without vulnerability read access',
+  })
+  openVulnerabilities: SeverityCountsDto | null;
+
+  @ApiProperty({
+    type: TargetScanProgressDto,
+    nullable: true,
+    description:
+      'Active target job progress, or null when idle or without job read access',
+  })
+  scanProgress: TargetScanProgressDto | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Next recorded target discovery firing time, or null when unavailable',
+  })
+  nextScanAt: Date | null;
+
+  @ApiProperty({
+    type: [TargetProjectRefDto],
+    maxItems: 6,
+    nullable: true,
+    description:
+      'Active workspace projects containing target assets, or null without project read access',
+  })
+  projects: TargetProjectRefDto[] | null;
+
   @ApiProperty()
   @IsUUID('4')
   id: string;
@@ -252,7 +309,8 @@ export class UpdateTargetDto {
   @ApiProperty({
     required: false,
     type: GitOrgTargetSettingsDto,
-    description: 'GIT_ORG only. Applied by a repository sync started right away.',
+    description:
+      'GIT_ORG only. Applied by a repository sync started right away.',
   })
   @IsOptional()
   @ValidateNested()
