@@ -73,7 +73,7 @@ export class ProjectAgentService {
   list(id: string, workspaceId: string, query: GetManyBaseQueryParams) { return this.assets.list(id, workspaceId, query); }
   candidates(id: string, workspaceId: string, query: GetManyBaseQueryParams) { return this.candidatesService.getAssetsNotInAssetGroup(id, query, workspaceId); }
   runs(id: string, workspaceId: string, query: GetManyBaseQueryParams) { return this.runRead.list(id, workspaceId, query); }
-  vulnerabilities(id: string, workspaceId: string, query: GetProjectFindingsQueryDto) { return this.findingRead.list(id, workspaceId, query); }
+  vulnerabilities(id: string, workspaceId: string, query: GetProjectFindingsQueryDto) { return this.findingRead.listForAgent(id, workspaceId, query); }
   overview(id: string, workspaceId: string): ReturnType<ProjectOverviewReadService['read']> { return this.overviewRead.read(id, workspaceId); }
 
   private writable(id: string, workspaceId: string) { return findProjectOrFail(this.db.getRepository(AssetGroup), id, workspaceId, { writable: true }); }

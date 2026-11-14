@@ -38,7 +38,7 @@ interface FindingRow {
   assetId: string;
   assetValue: string;
   toolName: string | null;
-  status: VulnerabilityStatus.OPEN | VulnerabilityStatus.DISMISSED;
+  status: VulnerabilityStatus.OPEN | VulnerabilityStatus.DISMISSED | VulnerabilityStatus.FIXED;
   provenance: ProjectFindingProvenance;
   timesSeen: number;
   firstRunId: string | null;
@@ -66,6 +66,13 @@ const RANK_SQL = `CASE v.severity
   WHEN '${Severity.CRITICAL}' THEN 5 WHEN '${Severity.HIGH}' THEN 4
   WHEN '${Severity.MEDIUM}' THEN 3 WHEN '${Severity.LOW}' THEN 2 ELSE 1 END`;
 
+/** REST exposes dismissal state; model-only fixed labels must not escape it. */
+function legacyFindingStatus<T extends { status: FindingRow['status'] }>(row: T) {
+  const status: VulnerabilityStatus.OPEN | VulnerabilityStatus.DISMISSED =
+    row.status === VulnerabilityStatus.DISMISSED ? VulnerabilityStatus.DISMISSED : VulnerabilityStatus.OPEN;
+  return { ...row, status };
+}
+
 @Injectable()
 export class ProjectFindingReadService {
   constructor(private readonly dataSource: DataSource) {}
@@ -87,11 +94,17 @@ export class ProjectFindingReadService {
       findingId,
     );
     if (!finding) throw new NotFoundException('Project finding not found');
-    return finding;
+    return legacyFindingStatus(finding);
   }
 
-  list(projectId: string, workspaceId: string, query: ProjectFindingQuery) {
-    return this.readPage(projectId, workspaceId, query, this.dataSource);
+  async list(projectId: string, workspaceId: string, query: ProjectFindingQuery) {
+    const page = await this.readPage(projectId, workspaceId, query, this.dataSource);
+    return { ...page, data: page.data.map(legacyFindingStatus) };
+  }
+
+  /** Model-only lifecycle reads; public project reads retain their approved-only contract. */
+  listForAgent(projectId: string, workspaceId: string, query: ProjectFindingQuery) {
+    return this.readPage(projectId, workspaceId, query, this.dataSource, undefined, true);
   }
 
   private async readPage(
@@ -100,6 +113,7 @@ export class ProjectFindingReadService {
     query: ProjectFindingQuery,
     executor: Pick<DataSource, 'query'>,
     findingId?: string,
+    lifecycle = false,
   ) {
     const { page, limit } = query;
     const offset = (page - 1) * limit;
@@ -121,6 +135,10 @@ export class ProjectFindingReadService {
       conditions.push(openVulnerabilityCondition('v'));
     else if (status === VulnerabilityStatus.DISMISSED)
       conditions.push(DISMISSED_SQL);
+    else if (lifecycle && status === VulnerabilityStatus.FIXED)
+      conditions.push("v.\"detectionStatus\" = 'fixed'");
+    else if (lifecycle && [VulnerabilityStatus.NEW, VulnerabilityStatus.ACTIVE, VulnerabilityStatus.RESURFACED].includes(status))
+      conditions.push(openVulnerabilityCondition('v'), `v."detectionStatus" = ${add(status)}`);
     if (query.search) {
       const pattern = add(`%${query.search.replace(/[\\%_]/g, '\\$&')}%`);
       conditions.push(
@@ -183,9 +201,10 @@ export class ProjectFindingReadService {
       ${RANK_SQL} AS rank, ${severitySelected} AS "severitySelected"`;
     // Keep each lookup on its unique key even when table statistics
     // underestimate newly ingested findings on one asset.
+    const reviewStatus = lifecycle && [VulnerabilityStatus.PENDING_REVIEW, VulnerabilityStatus.REJECTED].includes(status) ? status : 'approved';
     const findingJoins = `CROSS JOIN LATERAL (
         SELECT id, severity, "assetId", "toolId", name, "cveId", "isArchived", "detectionStatus", "reviewStatus"
-        FROM vulnerabilities WHERE id = pv."vulnerabilityId" AND "reviewStatus"='approved' LIMIT 1
+        FROM vulnerabilities WHERE id = pv."vulnerabilityId" AND "reviewStatus"=${add(reviewStatus)} LIMIT 1
       ) v
       CROSS JOIN LATERAL (
         SELECT id, value, "targetId" FROM assets WHERE id = v."assetId" LIMIT 1
@@ -255,7 +274,8 @@ export class ProjectFindingReadService {
         SELECT counts.total, counts."provenanceCounts", severity_counts."severityCounts",
                v.id, v.name, v.severity, v."cveId", v."affectedUrl",
                a.id AS "assetId", a.value AS "assetValue", tool.name AS "toolName",
-               CASE WHEN ${DISMISSED_SQL} THEN 'dismissed' ELSE 'open' END AS status,
+               CASE ${lifecycle ? 'WHEN v."detectionStatus" = \'fixed\' THEN \'fixed\'' : ''}
+                 WHEN ${DISMISSED_SQL} THEN 'dismissed' ELSE 'open' END AS status,
                page.provenance, page."timesSeen",
                first_run.id AS "firstRunId", page."firstSeenAt",
                page."lastRunId", page."lastSeenAt"

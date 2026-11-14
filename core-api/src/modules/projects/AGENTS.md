@@ -21,3 +21,8 @@ validates its private `approvalEventId` against the committed approval event,
 actor, review time and finding/asset/workspace; deduplicate by that durable event
 ID. This path supplies no scanner coverage or causal run. Preserve the existing
 job-backed detection path and its evidence checks.
+
+Public finding feeds stay approved-only. The private `listForAgent` path also
+supports explicit lifecycle and proposal-review statuses for authenticated,
+project-authorized tools. Keep it separate from REST filters/response semantics
+and scope every row through the project's workspace and recorded finding links.
