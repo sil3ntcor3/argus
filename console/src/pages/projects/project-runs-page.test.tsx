@@ -49,6 +49,10 @@ vi.mock('@tanstack/react-router', () => ({
 const projectId = '6b1639b1-62ea-487f-892b-1288e4cf6767';
 const workflowId = 'ed5cfdd9-189e-49cf-a3d1-4f8a3e0a565d';
 const run: ProjectRunDto = {
+  triggerType: null,
+  triggerEvent: null,
+  causedByRunId: null,
+  causedByWorkflowName: null,
   id: 'd59e5709-7834-4595-bcc6-3cc104795e5c',
   createdAt: '2026-11-07T10:00:00Z',
   updatedAt: '2026-11-07T10:01:00Z',
@@ -101,7 +105,16 @@ describe('ProjectRunsPage', () => {
     expect(screen.getByText('Duration 1m 0s')).toBeVisible();
   });
 
+  it('shows event context and a permission-gated causal run link', () => {
+    mock.runs.mockReturnValue({ data: { data: [{ ...run, jobRunType: 'event', triggerType: 'event',
+      triggerEvent: 'project.run.completed', causedByRunId: projectId, causedByWorkflowName: 'Discovery scan' }] } });
+    render(<ProjectRunsPage projectId={projectId} page={1} onChange={vi.fn()} />);
+    expect(screen.getByText('Run completed')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Started by Discovery scan' })).toHaveAttribute('href', '/jobs/runs/' + projectId);
+  });
+
   it('keeps project run summaries readable without exposing job detail links', () => {
+    mock.runs.mockReturnValue({ data: { data: [{ ...run, causedByRunId: projectId, causedByWorkflowName: 'Cached private source' }] } });
     mock.permission.mockReturnValue({
       hasPermission: (key: string) => key === 'project.read',
     });
@@ -109,6 +122,7 @@ describe('ProjectRunsPage', () => {
       <ProjectRunsPage projectId={projectId} page={1} onChange={vi.fn()} />,
     );
     expect(screen.getByText('Perimeter scan')).toBeVisible();
+    expect(screen.queryByText(/Cached private source/)).not.toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: /^Perimeter scan,/ }),
     ).not.toBeInTheDocument();

@@ -5702,8 +5702,51 @@ export type ProjectWorkflowRemovedDto = {
   name: string;
 };
 
-export type GetManyProjectViewDtoDto = {
-  data: ProjectViewDto[];
+export type ProjectTriggerSummaryDto = {
+  id: string;
+  projectWorkflowId: string;
+  type: ProjectTriggerType;
+  /** @nullable */
+  cron: string | null;
+  event: ProjectTriggerEvent | null;
+  enabled: boolean;
+};
+
+export type ProjectListItemDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  hexColor?: string;
+  assetGroupWorkflows?: AssetGroupWorkflow[];
+  totalAssets: number;
+  /** @nullable */
+  lastRunAt?: string | null;
+  /** @nullable */
+  readonly description: string | null;
+  /** @nullable */
+  readonly instruction: string | null;
+  readonly autoAddAssets: boolean;
+  /** @nullable */
+  readonly archivedAt: string | null;
+  /** @minimum 0 */
+  workflowCount: number;
+  /**
+   * Open approved findings; null without vulnerability read access
+   * @nullable
+   */
+  openVulnerabilities: SeverityCountsDto | null;
+  /**
+   * Open findings first attributed to the project in the last seven days; null without vulnerability read access
+   * @minimum 0
+   * @nullable
+   */
+  newVulnerabilities: number | null;
+  triggers: ProjectTriggerSummaryDto[];
+};
+
+export type GetManyProjectListItemDtoDto = {
+  data: ProjectListItemDto[];
   total: number;
   page: number;
   limit: number;
@@ -6054,6 +6097,31 @@ export type GetManyAssetDto = {
   pageCount: number;
 };
 
+/**
+ * @nullable
+ */
+export type ProjectRunDtoTriggerType =
+  | (typeof ProjectRunDtoTriggerType)[keyof typeof ProjectRunDtoTriggerType]
+  | null;
+
+export const ProjectRunDtoTriggerType = {
+  cron: 'cron',
+  event: 'event',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ProjectRunDtoTriggerEvent =
+  | (typeof ProjectRunDtoTriggerEvent)[keyof typeof ProjectRunDtoTriggerEvent]
+  | null;
+
+export const ProjectRunDtoTriggerEvent = {
+  projectassetsadded: 'project.assets.added',
+  projectruncompleted: 'project.run.completed',
+  vulnerabilitydetected: 'vulnerability.detected',
+} as const;
+
 export type ProjectRunDtoJobRunType =
   (typeof ProjectRunDtoJobRunType)[keyof typeof ProjectRunDtoJobRunType];
 
@@ -6064,6 +6132,20 @@ export const ProjectRunDtoJobRunType = {
 } as const;
 
 export type ProjectRunDto = {
+  /** @nullable */
+  triggerType: ProjectRunDtoTriggerType;
+  /** @nullable */
+  triggerEvent: ProjectRunDtoTriggerEvent;
+  /**
+   * Same-workspace causal run, or null without job read access
+   * @nullable
+   */
+  causedByRunId: string | null;
+  /**
+   * Causal workflow name, or null without job read access
+   * @nullable
+   */
+  causedByWorkflowName: string | null;
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -6229,6 +6311,44 @@ export type ProjectOverviewRunRefDto = {
   status: ProjectOverviewRunRefDtoStatus;
 };
 
+export type ProjectTextChangeDto = {
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  before?: string | null;
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  after?: string | null;
+};
+
+export type ProjectBooleanChangeDto = {
+  before?: boolean;
+  after?: boolean;
+};
+
+export type ProjectActivityChangesDto = {
+  name?: ProjectTextChangeDto;
+  description?: ProjectTextChangeDto;
+  hexColor?: ProjectTextChangeDto;
+  autoAddAssets?: ProjectBooleanChangeDto;
+};
+
+/**
+ * @nullable
+ */
+export type ProjectOverviewActivityDtoTriggerEvent =
+  | (typeof ProjectOverviewActivityDtoTriggerEvent)[keyof typeof ProjectOverviewActivityDtoTriggerEvent]
+  | null;
+
+export const ProjectOverviewActivityDtoTriggerEvent = {
+  projectassetsadded: 'project.assets.added',
+  projectruncompleted: 'project.run.completed',
+  vulnerabilitydetected: 'vulnerability.detected',
+} as const;
+
 export type ProjectOverviewActivityDtoKind =
   (typeof ProjectOverviewActivityDtoKind)[keyof typeof ProjectOverviewActivityDtoKind];
 
@@ -6281,9 +6401,13 @@ export const ProjectOverviewActivityDtoReason = {
   false_positive: 'false_positive',
   used_in_test: 'used_in_test',
   wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
 } as const;
 
 export type ProjectOverviewActivityDto = {
+  /** @nullable */
+  triggerEvent?: ProjectOverviewActivityDtoTriggerEvent;
+  changes?: ProjectActivityChangesDto;
   kind: ProjectOverviewActivityDtoKind;
   /** Run ID, audit action or dismissal */
   ref: string;
@@ -8479,6 +8603,9 @@ export type ProjectsControllerGetManyParams = {
   search?: string;
   page?: number;
   limit?: number;
+  /**
+   * Sort field; risk orders open critical/high/medium counts and requires vulnerability read access
+   */
   sortBy?: string;
   sortOrder?: string;
   targetIds?: string[];
@@ -45004,7 +45131,7 @@ export const projectsControllerGetMany = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<GetManyProjectViewDtoDto>(
+  return orvalClient<GetManyProjectListItemDtoDto>(
     { url: `/api/projects`, method: 'GET', params, signal },
     options,
   );

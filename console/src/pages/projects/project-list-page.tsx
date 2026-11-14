@@ -1,3 +1,4 @@
+import { ProjectSummaryFindings, ProjectSummaryTriggers } from './project-summary-context';
 import { ProjectArchiveDialog } from './project-archive-dialog';
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
@@ -7,7 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { usePermission } from '@/hooks/usePermission';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
-  type ProjectViewDto,
+  type ProjectListItemDto,
+  getProjectsControllerGetManyQueryKey,
   useProjectsControllerGetMany,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
@@ -19,7 +21,15 @@ const grid = 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3';
 const countFormat = new Intl.NumberFormat();
 
 type ProjectStatus = 'active' | 'archived' | 'all';
-type ListParams = { page: number; search: string; status?: ProjectStatus };
+export type ProjectSort = 'name' | 'risk' | 'newest' | 'lastRun' | 'assets';
+type ListParams = { page: number; search: string; status?: ProjectStatus; sort?: ProjectSort };
+const sorts = {
+  name: { label: 'Name', sortBy: 'name', sortOrder: 'ASC' },
+  risk: { label: 'Highest risk', sortBy: 'risk', sortOrder: 'DESC' },
+  newest: { label: 'Newest', sortBy: 'createdAt', sortOrder: 'DESC' },
+  lastRun: { label: 'Last run', sortBy: 'lastRunAt', sortOrder: 'DESC' },
+  assets: { label: 'Most assets', sortBy: 'totalAssets', sortOrder: 'DESC' },
+} as const;
 type ListProps = ListParams & { onChange: (params: ListParams) => void };
 
 /** Keeps the loading state in the same grid as the eventual results. */
@@ -37,8 +47,10 @@ function ProjectListLoading() {
 function ProjectCard({
   project,
   workspaceId,
+  canReadFindings,
 }: {
-  project: ProjectViewDto;
+  project: ProjectListItemDto;
+  canReadFindings: boolean;
   workspaceId?: string;
 }) {
   return (
@@ -69,12 +81,17 @@ function ProjectCard({
           {project.description}
         </p>
       )}
+      <div className="mt-3"><ProjectSummaryFindings project={project} canRead={canReadFindings} /></div>
       <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
         <div>
           <dt className="text-xs text-muted-foreground">Assets</dt>
           <dd className="font-medium tabular-nums">
             {countFormat.format(project.totalAssets)}
           </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Workflows</dt>
+          <dd className="font-medium tabular-nums">{countFormat.format(project.workflowCount ?? 0)}</dd>
         </div>
         <div>
           <dt className="text-xs text-muted-foreground">Last run</dt>
@@ -89,6 +106,7 @@ function ProjectCard({
           </dd>
         </div>
       </dl>
+      <div className="mt-3"><ProjectSummaryTriggers project={project} /></div>
     </li>
   );
 }
@@ -98,24 +116,21 @@ function WorkspaceProjectList({
   page,
   search,
   status = 'active',
+  sort = 'name',
   onChange,
   workspaceId,
-}: ListProps & { workspaceId?: string }) {
+  canReadFindings,
+}: ListProps & { workspaceId?: string; canReadFindings: boolean }) {
   const [draft, setDraft] = useState(search);
-  const { data, error, isError, isPending, isFetching, refetch } =
-    useProjectsControllerGetMany({
-      page,
-      status,
-      limit: 12,
-      sortBy: 'name',
-      sortOrder: 'ASC',
-      search: search || undefined,
-    });
+  const params = { page, status, limit: 12, sortBy: sorts[sort].sortBy, sortOrder: sorts[sort].sortOrder, search: search || undefined };
+  const { data, error, isError, isPending, isFetching, refetch } = useProjectsControllerGetMany(params, {
+    query: { queryKey: [...getProjectsControllerGetManyQueryKey(params), canReadFindings], retry: false },
+  });
   const beyondLastPage = data && page > Math.max(1, data.pageCount);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    onChange({ search: draft.trim(), status, page: 1 });
+    onChange({ search: draft.trim(), status, sort, page: 1 });
   }
 
   if (isAxiosError(error) && error.response?.status === 403) {
@@ -157,6 +172,7 @@ function WorkspaceProjectList({
             key={project.id}
             project={project}
             workspaceId={workspaceId}
+            canReadFindings={canReadFindings}
           />
         ))}
       </ul>
@@ -176,12 +192,20 @@ function WorkspaceProjectList({
               page: 1,
               search,
               status: event.target.value as ProjectStatus,
+              sort,
             })
           }
         >
           <option value="active">Active</option>
           <option value="archived">Archived</option>
           <option value="all">All</option>
+        </select>
+      </label>
+      <label className="flex flex-wrap items-center gap-2 text-sm">Sort projects
+        <select className="rounded-md border bg-background px-3 py-2" value={sort}
+          onChange={event => { const next = Object.keys(sorts).find(key => key === event.target.value) as ProjectSort | undefined;
+            if (next) onChange({ page: 1, search, status, sort: next }); }}>
+          {(Object.keys(sorts) as ProjectSort[]).filter(key => key !== 'risk' || canReadFindings).map(key => <option key={key} value={key}>{sorts[key].label}</option>)}
         </select>
       </label>
       <form className="flex max-w-md gap-2" onSubmit={submitSearch}>
@@ -205,7 +229,7 @@ function WorkspaceProjectList({
             variant="outline"
             disabled={page <= 1}
             onClick={() =>
-              onChange({ search, status, page: beyondLastPage ? 1 : page - 1 })
+              onChange({ search, status, sort, page: beyondLastPage ? 1 : page - 1 })
             }
           >
             {beyondLastPage ? 'First page' : 'Previous'}
@@ -217,7 +241,7 @@ function WorkspaceProjectList({
             type="button"
             variant="outline"
             disabled={page >= (data?.pageCount ?? 0)}
-            onClick={() => onChange({ search, status, page: page + 1 })}
+            onClick={() => onChange({ search, status, sort, page: page + 1 })}
           >
             Next
           </Button>
@@ -233,11 +257,12 @@ export function ProjectListPage(props: ListProps) {
     state: { selectedWorkspaceId },
   } = useWorkspaceState();
   const permission = usePermission();
+  const canReadFindings = permission.hasPermission('vulnerability.read');
   let content: ReactNode;
   let canCreate = false;
   if (!selectedWorkspaceId) {
     content = <p role="status">Select a workspace to view projects.</p>;
-  } else if (permission.isLoading) {
+  } else if (permission.isLoading || (props.sort === 'risk' && permission.isFetching)) {
     content = <ProjectListLoading />;
   } else if (permission.error) {
     content = <p role="status">Unable to load project access</p>;
@@ -246,6 +271,8 @@ export function ProjectListPage(props: ListProps) {
     !permission.hasPermission('group.read')
   ) {
     content = <AccessDenied />;
+  } else if (props.sort === 'risk' && !canReadFindings) {
+    content = <div className="space-y-3"><AccessDenied /><Button variant="outline" onClick={() => props.onChange({ search: props.search, status: props.status, sort: 'name', page: 1 })}>Sort by name</Button></div>;
   } else {
     canCreate =
       permission.hasPermission('project.write') ||
@@ -254,6 +281,7 @@ export function ProjectListPage(props: ListProps) {
       <WorkspaceProjectList
         key={`${selectedWorkspaceId}:${props.search}:${props.status ?? 'active'}`}
         workspaceId={canCreate ? selectedWorkspaceId : undefined}
+        canReadFindings={canReadFindings}
         {...props}
       />
     );

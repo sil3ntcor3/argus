@@ -1,5 +1,7 @@
+import { FINDING_DISMISS_REASONS, type FindingDismissalReason } from '../../vulnerabilities/finding-dismissal-reason';
+import { ProjectActivityChangesDto } from './project-activity-changes.dto';
+import { PROJECT_TRIGGER_EVENTS, type ProjectTriggerDto } from './project-trigger-read.dto';
 import {
-  DismissReason,
   JobRunType,
   JobStatus,
   ProjectChange,
@@ -30,6 +32,8 @@ export class ProjectOverviewWeekDto extends SeverityCountsDto {
 }
 
 export class ProjectOverviewActivityDto {
+  @ApiPropertyOptional({ enum: PROJECT_TRIGGER_EVENTS, nullable: true }) triggerEvent?: ProjectTriggerDto['event'];
+  @ApiPropertyOptional({ type: ProjectActivityChangesDto }) changes?: ProjectActivityChangesDto;
   @ApiProperty({ enum: ['run', 'audit', 'dismissed'] })
   kind: 'run' | 'audit' | 'dismissed';
 
@@ -41,7 +45,7 @@ export class ProjectOverviewActivityDto {
   @ApiPropertyOptional() workflowName?: string;
   @ApiPropertyOptional({ enum: JobRunType }) jobRunType?: JobRunType;
   @ApiPropertyOptional({ enum: JobStatus }) runStatus?: JobStatus;
-  @ApiPropertyOptional({ enum: DismissReason }) reason?: DismissReason;
+  @ApiPropertyOptional({ enum: FINDING_DISMISS_REASONS }) reason?: FindingDismissalReason;
   @ApiPropertyOptional({ type: 'integer', minimum: 0 }) added?: number;
   @ApiPropertyOptional({ type: 'integer', minimum: 0 }) removed?: number;
   @ApiPropertyOptional({ type: 'integer', minimum: 1 }) count?: number;

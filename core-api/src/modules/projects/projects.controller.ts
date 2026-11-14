@@ -1,3 +1,5 @@
+import { ProjectListItemDto } from './dto/project-list-item.dto';
+import { ProjectListReadService } from './project-list-read.service';
 import { UserId } from '@/common/decorators/app.decorator';
 import { ProjectArchiveService } from './project-archive.service';
 import { GetProjectsQueryDto } from './dto/project-list.dto';
@@ -106,6 +108,7 @@ export class ProjectsController {
     private readonly archiveService: ProjectArchiveService,
     private readonly projects: AssetGroupService,
     private readonly metadata: ProjectMetadataReadService,
+    private readonly listRead: ProjectListReadService,
     private readonly scopePreview: ProjectScopePreviewService,
     private readonly scopeRead: ProjectScopeReadService,
     private readonly scopeWrite: ProjectScopeWriteService,
@@ -162,7 +165,7 @@ export class ProjectsController {
 
   @Doc({
     summary: 'List projects',
-    response: { serialization: GetManyResponseDto(ProjectViewDto) },
+    response: { serialization: GetManyResponseDto(ProjectListItemDto) },
     request: { getWorkspaceId: true },
   })
   @WorkspaceAccess('project.read')
@@ -170,8 +173,10 @@ export class ProjectsController {
   getMany(
     @Query() query: GetProjectsQueryDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ) {
-    return this.metadata.getMany(query, workspaceId);
+    const canReadFindings = request.permissions?.some(p => ['*','vulnerability.read','vulnerability.write'].includes(p)) ?? false;
+    return this.listRead.list(query, workspaceId, canReadFindings);
   }
 
   @ApiOperation({
@@ -458,8 +463,10 @@ export class ProjectsController {
     @Param() { id }: IdQueryParamDto,
     @Query() query: GetProjectRunsQueryDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ): Promise<GetManyBaseResponseDto<ProjectRunDto>> {
-    return this.runRead.list(id, workspaceId, query);
+    const canReadJobs = request.permissions?.some(p => ['*','job.read','job.write'].includes(p)) ?? false;
+    return this.runRead.list(id, workspaceId, query, canReadJobs);
   }
 
   @ApiOperation({
