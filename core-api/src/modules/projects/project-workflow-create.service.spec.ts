@@ -15,6 +15,7 @@ describe('ProjectWorkflowCreateService', () => {
 
   function setup() {
     const manager = {
+      queryRunner: { isTransactionActive: true },
       query: jest.fn().mockResolvedValue([{ id: projectId, archivedAt: null }]),
       findOne: jest.fn().mockResolvedValue({
         name: 'Probe',

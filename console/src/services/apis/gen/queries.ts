@@ -5878,6 +5878,53 @@ export type UpdateProjectWorkflowDto = {
   on?: ProjectWorkflowOnDto;
 };
 
+export type ProjectInitialRunDtoStatus =
+  (typeof ProjectInitialRunDtoStatus)[keyof typeof ProjectInitialRunDtoStatus];
+
+export const ProjectInitialRunDtoStatus = {
+  started: 'started',
+  empty_scope: 'empty_scope',
+  failed: 'failed',
+} as const;
+
+export type ProjectInitialRunDto = {
+  status: ProjectInitialRunDtoStatus;
+  jobHistoryId?: string;
+};
+
+export type ProjectCreationOutcomeDtoTriggerSync =
+  (typeof ProjectCreationOutcomeDtoTriggerSync)[keyof typeof ProjectCreationOutcomeDtoTriggerSync];
+
+export const ProjectCreationOutcomeDtoTriggerSync = {
+  complete: 'complete',
+  pending: 'pending',
+} as const;
+
+export type ProjectCreationOutcomeDto = {
+  initialRun?: ProjectInitialRunDto;
+  triggerSync?: ProjectCreationOutcomeDtoTriggerSync;
+};
+
+export type ProjectCreatedDto = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  name: string;
+  hexColor?: string;
+  assetGroupWorkflows?: AssetGroupWorkflow[];
+  totalAssets: number;
+  /** @nullable */
+  lastRunAt?: string | null;
+  /** @nullable */
+  readonly description: string | null;
+  /** @nullable */
+  readonly instruction: string | null;
+  readonly autoAddAssets: boolean;
+  /** @nullable */
+  readonly archivedAt: string | null;
+  creation?: ProjectCreationOutcomeDto;
+};
+
 /**
  * Inline config override for this tool
  */
@@ -5899,50 +5946,6 @@ export type AssetGroupToolInput = {
    * @maximum 20
    */
   stage?: number;
-};
-
-export type CreateProjectDto = {
-  /**
-   * Name of the project
-   * @maxLength 120
-   */
-  name: string;
-  /** Hex color of the asset group */
-  hexColor?: string;
-  /** Array of asset (host) IDs to add to the group */
-  hostIds?: string[];
-  /** Cron schedule for the group workflow (e.g. "0 0 *\/3 * *"). Requires toolIds. */
-  schedule?: string;
-  /** Tool IDs used to build the group workflow. When provided, a workflow is created and assigned to the group. */
-  toolIds?: string[];
-  /** Per-tool config inputs for the group workflow. When provided, overrides toolIds — each entry specifies a tool ID plus optional inline config or a config profile reference. */
-  tools?: AssetGroupToolInput[];
-  /**
-   * @maxLength 2000
-   * @nullable
-   */
-  instruction?: string | null;
-  /**
-   * @maxLength 2000
-   * @nullable
-   */
-  description?: string | null;
-  autoAddAssets?: boolean;
-};
-
-export type ScopePreviewResultDto = {
-  /**
-   * Selected rule assets union owned manual members
-   * @minimum 0
-   */
-  total: number;
-  /**
-   * Assets selected by include rules after exclusions
-   * @minimum 0
-   */
-  ruleAssets: number;
-  /** Per original input row: include matches, or include matches removed by an exclusion */
-  perRule: number[];
 };
 
 export type ProjectScopeRuleMode =
@@ -5971,6 +5974,65 @@ export type ScopeRuleInputDto = {
    * @maxLength 255
    */
   value: string;
+};
+
+export type CreateProjectDtoJobs = { [key: string]: WorkflowJob };
+
+export type CreateProjectDto = {
+  /**
+   * Name of the project
+   * @maxLength 120
+   */
+  name: string;
+  /** Hex color of the asset group */
+  hexColor?: string;
+  /** Array of asset (host) IDs to add to the group */
+  hostIds?: string[];
+  /** Cron schedule for the group workflow (e.g. "0 0 *\/3 * *"). Requires toolIds. */
+  schedule?: string;
+  /** Tool IDs used to build the group workflow. When provided, a workflow is created and assigned to the group. */
+  toolIds?: string[];
+  /** Per-tool config inputs for the group workflow. When provided, overrides toolIds — each entry specifies a tool ID plus optional inline config or a config profile reference. */
+  tools?: AssetGroupToolInput[];
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  instruction?: string | null;
+  /**
+   * @maxLength 2000
+   * @nullable
+   */
+  description?: string | null;
+  autoAddAssets?: boolean;
+  /** @maxItems 100 */
+  scopeRules?: ScopeRuleInputDto[];
+  /**
+   * Workspace default workflow filename; one initial pipeline source
+   * @maxLength 255
+   */
+  template?: string;
+  /** @maxLength 120 */
+  workflowName?: string;
+  jobs?: CreateProjectDtoJobs;
+  /** Explicit managed triggers; new entries default disabled */
+  on?: ProjectWorkflowOnDto;
+  runNow?: boolean;
+};
+
+export type ScopePreviewResultDto = {
+  /**
+   * Selected rule assets union owned manual members
+   * @minimum 0
+   */
+  total: number;
+  /**
+   * Assets selected by include rules after exclusions
+   * @minimum 0
+   */
+  ruleAssets: number;
+  /** Per original input row: include matches, or include matches removed by an exclusion */
+  perRule: number[];
 };
 
 export type ScopePreviewDto = {
@@ -45488,7 +45550,7 @@ export const projectsControllerCreate = (
   options?: SecondParameter<typeof orvalClient>,
   signal?: AbortSignal,
 ) => {
-  return orvalClient<ProjectViewDto>(
+  return orvalClient<ProjectCreatedDto>(
     {
       url: `/api/projects`,
       method: 'POST',

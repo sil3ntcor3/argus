@@ -1,4 +1,5 @@
 import { WorkerType } from '@/common/enums/enum';
+import { parseCiphertext } from '@/common/utils/encryption.util';
 import {
   BadRequestException,
   Injectable,
@@ -48,6 +49,7 @@ export class ProjectWorkflowJobsService {
     input: Record<string, WorkflowJob>,
     previous: WorkflowJobsInput,
     dek: Buffer | null,
+    options: { preserveOnlyCiphertext?: boolean } = {},
   ): Promise<Record<string, WorkflowJob>> {
     const values = Object.values(input);
     if (
@@ -126,6 +128,9 @@ export class ProjectWorkflowJobsService {
       const keep = sensitive.filter(
         (field) =>
           Object.hasOwn(stored, field) &&
+          (!options.preserveOnlyCiphertext ||
+            (typeof stored[field] === 'string' &&
+              parseCiphertext(stored[field]) !== null)) &&
           (config[field] === stored[field] || isMaskedValue(config[field])),
       );
       const preserved = Object.fromEntries(

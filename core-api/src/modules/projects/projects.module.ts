@@ -1,4 +1,5 @@
 import { ProjectListReadService } from './project-list-read.service';
+import { ProjectCreationService } from './project-creation.service';
 import { ProjectAgentService } from './project-agent.service';
 import { ProjectArchiveService } from './project-archive.service';
 import { ProjectWorkflowActionsService } from './project-workflow-actions.service';
@@ -38,6 +39,7 @@ import { ProjectOverviewReadService } from './project-overview-read.service';
   imports: [BullModule.registerQueue({ name: BullMQName.ASSET_GROUPS_WORKFLOW_SCHEDULE }), ArtifactWriteModule, ProjectTriggerRuntimeModule, AssetGroupModule, ProjectScopeModule, ConnectorsModule],
   controllers: [ProjectsController],
   providers: [
+    ProjectCreationService,
     ProjectListReadService,
     ProjectArchiveService,
     ProjectWorkflowActionsService,
