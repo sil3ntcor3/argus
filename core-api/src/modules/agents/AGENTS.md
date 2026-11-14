@@ -19,3 +19,10 @@ exploit-verifier and retester built-ins include the release's proposal tool.
 Generic issue read tools pass the current actor for fresh workspace/domain checks.
 Only the authenticated workspace-key MCP entry point sets workspaceApiKey;
 missing conversation actor context must not fall back to privileged reads.
+
+`discover_vulnerabilities` uses open-by-default lifecycle/review filters and
+severity ordering. Recheck current vulnerability access; linked issue context
+also needs effective workspace read access. MCP workspace-key reads use only the
+explicit trusted scope. Return bounded finding context, never raw source/actor
+data. Workspace date filters use first detection with legacy fallback and UTC
+end-of-day; project calls use only q/status/severity and retain the project lock.

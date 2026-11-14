@@ -2,9 +2,8 @@ import type { Tool } from 'ai';
 import { z } from 'zod';
 
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
-import type { Severity } from '@/common/enums/enum';
 import { WorkerScope } from '@/common/enums/enum';
-import type { VulnerabilityStatus } from '@/modules/vulnerabilities/dto/get-vulnerability.dto';
+import { VulnerabilityStatus } from '@/modules/vulnerabilities/dto/get-vulnerability.dto';
 import {
   detailAssetSchema,
   detailIssueSchema,
@@ -72,16 +71,33 @@ export function getAssetsTool(
 }
 
 export function getVulnerabilitiesTool(
-  deps: Deps<'vulnerabilitiesService' | 'projectResultsService'>,
+  deps: Deps<'vulnerabilitiesService' | 'projectResultsService' | 'workspacesService'>,
   workspaceId: string,
   scope: ToolScope = {},
 ): Tool {
   return defineTool({
-    description:
-      'List security vulnerabilities with severity. Params: page, limit, q (search e.g. "XSS", "CVE-2024"), projectId. With a project: the ones its runs reported, open by default (status and severity apply).',
+    description: [
+      'List security findings, highest severity first, open by default. AI proposals require explicit pending_review/rejected status.',
+      'Params: page, limit, q, status, severity, overdue, discoveredBy, tags, targetIds, createdFrom/createdTo (first detection), projectId.',
+      'Workspace rows include asset, lifecycle/review state, discovery source, SLA deadline, detection count, detection dates, CVEs/CVSS, active dismissal and authorized linked issue context.',
+      'With a project: only its recorded findings; q/status/severity apply. Workspace-only overdue/source/tag/target/date filters do not apply. Project rows include status, provenance, CVEs and tool.',
+    ].join('\n'),
     inputSchema: getVulnerabilitiesInput,
-    execute: async (params: z.infer<typeof getVulnerabilitiesInput>) => {
+    execute: async (params: z.infer<typeof getVulnerabilitiesInput>, options = { toolCallId: 'mcp' }) => {
+      options.abortSignal?.throwIfAborted();
       const projectId = projectFor(scope, params);
+      let canReadIssues = scope.workspaceApiKey === true;
+      if (scope.userId) {
+        const { permissionKeys } = await deps.workspacesService.getMembershipWithPermissions(workspaceId, scope.userId);
+        const has = (key: string) => permissionKeys.includes('*') || permissionKeys.includes(key)
+          || permissionKeys.includes(key.replace(/\.read$/, '.write'));
+        if (!has('vulnerability.read')) throw new Error('Requires vulnerability.read');
+        if (projectId && !has('project.read')) throw new Error('Requires project.read');
+        canReadIssues = has('workspace.read');
+      } else if (!scope.workspaceApiKey || projectId) {
+        throw new Error('Finding reads require authenticated user context');
+      }
+      options.abortSignal?.throwIfAborted();
       if (projectId) {
         const found = await deps.projectResultsService.vulnerabilities(
           projectId,
@@ -90,10 +106,11 @@ export function getVulnerabilitiesTool(
             ...pageOf(params),
             ...NEWEST_FIRST,
             search: params.q ?? '',
-            status: params.status as VulnerabilityStatus | undefined,
-            severity: params.severity as Severity[] | undefined,
+            status: params.status ?? VulnerabilityStatus.OPEN,
+            severity: params.severity,
           },
         );
+        options.abortSignal?.throwIfAborted();
         return {
           total: found.total,
           page: found.page,
@@ -107,19 +124,33 @@ export function getVulnerabilitiesTool(
             asset: i.assetValue,
             status: i.status,
             provenance: i.provenance,
+            cveId: i.cveId ?? null,
+            tool: i.toolName ?? null,
           })),
         };
       }
       const response = await deps.vulnerabilitiesService.getVulnerabilities(
-        { ...pageOf(params), ...NEWEST_FIRST, q: params.q },
-        workspaceId,
+        { ...pageOf(params), sortBy: 'severity', sortOrder: SortOrder.DESC, q: params.q,
+          status: params.status ?? VulnerabilityStatus.OPEN, severity: params.severity,
+          overdue: params.overdue, discoveredBy: params.discoveredBy, tags: params.tags,
+          targetIds: params.targetIds?.length ? params.targetIds : undefined,
+          createdFrom: params.createdFrom, createdTo: params.createdTo },
+        workspaceId, false, { userId: scope.userId, canReadIssues }, 'model',
       );
+      options.abortSignal?.throwIfAborted();
       return {
         ...response,
         data: response.data.map((i) => ({
           id: i.id,
           name: i.name,
           severity: i.severity,
+          asset: i.asset?.value ?? null,
+          detectionStatus: i.detectionStatus, reviewStatus: i.reviewStatus, discoveredBy: i.discoveredBy,
+          dueAt: i.dueAt ?? null, timesDetected: i.timesDetected,
+          firstDetectedDate: i.firstDetectedDate ?? null, lastSeenDate: i.lastSeenDate ?? null,
+          cveId: i.cveId ?? null, cvssScore: i.cvssScore ?? null,
+          dismissal: i.vulnerabilityDismissal ? { reason: i.vulnerabilityDismissal.reason, expiresAt: i.vulnerabilityDismissal.expiresAt ?? null } : null,
+          openIssue: canReadIssues && i.openIssue ? { id: i.openIssue.id, no: i.openIssue.no, status: i.openIssue.status } : null,
         })),
       };
     },

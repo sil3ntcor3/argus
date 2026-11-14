@@ -22,7 +22,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { isISO8601 } from 'class-validator';
-import { In, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import { AgentsCompletionsService } from '../agents/agents.completions';
 import { User } from '../auth/entities/user.entity';
 import { JobsRegistryService } from '../jobs-registry/jobs-registry.service';
@@ -172,6 +172,7 @@ export class VulnerabilitiesService {
     workspaceId: string,
     canReadJobs = false,
     reader: ReviewReader = {},
+    view: 'rest' | 'model' = 'rest',
   ) {
     const {
       limit,
@@ -207,6 +208,9 @@ export class VulnerabilitiesService {
       .where('workspaces.id = :workspaceId', { workspaceId })
       .skip((page - 1) * limit)
       .take(limit);
+
+    // Expiry is private on the relation; select it only for the approved tool projection.
+    if (view === 'model') queryBuilder.addSelect('dismissal.expiresAt');
 
     // Handle severity sorting with proper order
     if (sortBy === 'severity') {
@@ -258,19 +262,23 @@ export class VulnerabilitiesService {
       });
     }
 
-    // Filter by creation date range
+    // Tools use first detection; preserve existing REST creation-date semantics.
+    const dateFilter = (operator: '>=' | '<=', parameter: 'createdFrom' | 'createdTo', value: Date) => {
+      if (view === 'rest') return queryBuilder.andWhere(`vulnerabilities.createdAt ${operator} :${parameter}`, { [parameter]: value });
+      // Separate timestamp/timestamptz bindings preserve legacy clocks on non-UTC hosts.
+      return queryBuilder.andWhere(new Brackets(date => date
+        .where(`vulnerabilities.firstDetectedDate ${operator} :detected_${parameter}`, { [`detected_${parameter}`]: value })
+        .orWhere(`vulnerabilities.firstDetectedDate IS NULL AND vulnerabilities.createdAt ${operator} :${parameter}`, { [parameter]: value })));
+    };
     if (createdFrom) {
-      queryBuilder.andWhere('vulnerabilities.createdAt >= :createdFrom', {
-        createdFrom: new Date(createdFrom),
-      });
+      dateFilter('>=', 'createdFrom', new Date(createdFrom));
     }
     if (createdTo) {
       // Set time to end of day (23:59:59.999) to include the entire day
       const endDate = new Date(createdTo);
-      endDate.setHours(23, 59, 59, 999);
-      queryBuilder.andWhere('vulnerabilities.createdAt <= :createdTo', {
-        createdTo: endDate,
-      });
+      if (view === 'model') endDate.setUTCHours(23, 59, 59, 999);
+      else endDate.setHours(23, 59, 59, 999);
+      dateFilter('<=', 'createdTo', endDate);
     }
 
     // Filter by tags (using overlap operator with raw SQL)
