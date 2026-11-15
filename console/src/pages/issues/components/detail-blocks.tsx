@@ -41,7 +41,7 @@ export function DetailSection({
 }) {
   return (
     <section className="flex flex-col gap-3 px-5 py-5" data-testid={testId}>
-      <div className="flex min-h-8 items-center justify-between gap-2">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
         <h3 className="flex items-center gap-2.5 text-sm font-semibold">
           <span className="flex size-7 items-center justify-center rounded-md bg-muted text-muted-foreground [&>svg]:size-4">
             {icon}

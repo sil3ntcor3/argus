@@ -46,6 +46,7 @@ export function CreateIssueDialog({
   links,
   defaultType = 'task',
   defaultTitle = '',
+  linkSummary,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,6 +54,8 @@ export function CreateIssueDialog({
   links?: IssueLinkInputDto[];
   defaultType?: CreatableType;
   defaultTitle?: string;
+  /** Describe an immutable selection supplied by the calling resource list. */
+  linkSummary?: string;
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -101,12 +104,12 @@ export function CreateIssueDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <IssueWriteHint />
         <DialogHeader>
           <DialogTitle>New issue</DialogTitle>
           <DialogDescription>
-            Track work on findings, assets or anything else in this workspace.
+            {linkSummary ?? 'Track work on findings, assets or anything else in this workspace.'}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
@@ -121,7 +124,7 @@ export function CreateIssueDialog({
               autoFocus
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label htmlFor="issue-type">Type</Label>
               <Select
@@ -161,7 +164,7 @@ export function CreateIssueDialog({
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label htmlFor="issue-due">Due date</Label>
               <Input

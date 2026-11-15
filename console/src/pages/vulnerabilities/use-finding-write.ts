@@ -52,12 +52,14 @@ export function useFindingWrite<Input, Output>({ workspaceId, operation, canWrit
     state.current.locked = true; state.current.controller = new AbortController(); setMessage(undefined);
     try {
       const result = await mutation.mutateAsync({ input, request: { signal: state.current.controller.signal, timeout: 20_000 } });
+      const refetch = current(generation);
+      // A refresh can remove the action's selected rows and unmount its caller.
+      if (refetch) onSuccess?.(result);
       await client.invalidateQueries({
         predicate: ({ queryKey: [path] }) => typeof path === 'string' &&
           (path === 'vulnerabilities' || /^\/api\/(vulnerabilities|targets|projects|statistic)(\/|$)/i.test(path)),
-        refetchType: current(generation) ? 'active' : 'none',
+        refetchType: refetch ? 'active' : 'none',
       });
-      if (current(generation)) onSuccess?.(result);
     } catch (error) {
       if (current(generation)) setMessage(unknownOutcome(error)
         ? 'Outcome unknown. Check saved state before trying again.' : 'Unable to save changes. Review the selection and try again.');
@@ -68,13 +70,16 @@ export function useFindingWrite<Input, Output>({ workspaceId, operation, canWrit
     if (!navigator.onLine) { setMessage('Reconnect before checking saved state.'); return; }
     const generation = state.current.generation;
     state.current.locked = true; setChecking(true);
+    // Keep observing until reload settles, even if its new rows unmount us.
+    let workspaceChanged = false;
+    const unsubscribe = subscribeGlobalWorkspaceId(() => { workspaceChanged = true; });
     try {
       await reload();
-      if (!current(generation)) return;
+      if (workspaceChanged || getGlobalWorkspaceId() !== workspaceId) return;
       for (const failure of failures) client.getMutationCache().remove(failure);
-      mutation.reset(); setMessage(undefined);
+      if (current(generation)) { mutation.reset(); setMessage(undefined); }
     } catch { if (current(generation)) setMessage('Unable to check saved state. Try again when connected.'); }
-    finally { state.current.locked = false; if (current(generation)) setChecking(false); }
+    finally { unsubscribe(); state.current.locked = false; if (current(generation)) setChecking(false); }
   }
   return { run, checkSaved, busy: pending || checking, uncertain,
     error: message ?? (uncertain ? 'Outcome unknown. Check saved state before trying again.' : undefined) };
