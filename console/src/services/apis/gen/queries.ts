@@ -3704,6 +3704,8 @@ export type ClaimFixDto = {
 export type VulnerabilityToolRefDto = {
   id: string;
   name: string;
+  /** @nullable */
+  logoUrl: string | null;
 };
 
 export type ProposalEvidenceDto = {
@@ -3873,6 +3875,56 @@ export type VulnerabilityLifecycleDetailDto = {
   fixClaimedByUser: VulnerabilityUserRefDto | null;
 };
 
+export type VulnerabilityTimelineDataDtoReason =
+  (typeof VulnerabilityTimelineDataDtoReason)[keyof typeof VulnerabilityTimelineDataDtoReason];
+
+export const VulnerabilityTimelineDataDtoReason = {
+  detected_by_scan: 'detected_by_scan',
+  not_detected_by_covering_scan: 'not_detected_by_covering_scan',
+} as const;
+
+export type VulnerabilityTimelineDataDtoSeverity =
+  (typeof VulnerabilityTimelineDataDtoSeverity)[keyof typeof VulnerabilityTimelineDataDtoSeverity];
+
+export const VulnerabilityTimelineDataDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type VulnerabilityTimelineDataDtoProposedSeverity =
+  (typeof VulnerabilityTimelineDataDtoProposedSeverity)[keyof typeof VulnerabilityTimelineDataDtoProposedSeverity];
+
+export const VulnerabilityTimelineDataDtoProposedSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type VulnerabilityTimelineDataDto = {
+  reason?: VulnerabilityTimelineDataDtoReason;
+  /** @maxLength 5000 */
+  comment?: string;
+  /** @maxLength 5000 */
+  note?: string;
+  severity?: VulnerabilityTimelineDataDtoSeverity;
+  proposedSeverity?: VulnerabilityTimelineDataDtoProposedSeverity;
+  /** @maxLength 200 */
+  agentName?: string;
+  agentConversationId?: string;
+  /** @maxLength 300 */
+  proposalName?: string;
+  /** @minimum 0 */
+  movedSources?: number;
+  issueId?: string;
+  /** @minimum 0 */
+  issueNo?: number;
+};
+
 export type VulnerabilityTimelineEventDtoType =
   (typeof VulnerabilityTimelineEventDtoType)[keyof typeof VulnerabilityTimelineEventDtoType];
 
@@ -3919,6 +3971,9 @@ export type VulnerabilityTimelineEventDto = {
   toStatus: string | null;
   /** @nullable */
   jobHistoryId: string | null;
+  /** @nullable */
+  actor: VulnerabilityUserRefDto | null;
+  data?: VulnerabilityTimelineDataDto;
   dismissalReason?: VulnerabilityTimelineEventDtoDismissalReason;
   expiresAt?: string;
   verification?: VulnerabilityTimelineEventDtoVerification;
@@ -36750,7 +36805,7 @@ export function useVulnerabilitiesControllerGetVulnerabilityById<
 }
 
 /**
- * Returns up to 500 detection and status events, newest first.
+ * Returns up to 500 recorded lifecycle/review events, newest first, with safe actor and authorized typed context.
  * @summary Get vulnerability timeline
  */
 export const vulnerabilitiesControllerGetVulnerabilityTimeline = (

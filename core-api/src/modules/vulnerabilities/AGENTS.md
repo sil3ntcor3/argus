@@ -12,7 +12,11 @@ run in that workspace.
   before background cleanup removes the dismissal. Cleanup records a private
   event and uses locked, bounded batches. Legacy dismissals are indefinite.
 - Timeline events describe recorded transitions and decisions. The public
-  timeline maps recognized fields and never returns raw metadata or actor IDs.
+  timeline uses `readFindingTimeline` to project a limited actor (`id`, `name`,
+  `image`) and type-specific `VulnerabilityTimelineDataDto` fields; never return
+  raw event metadata. Conversation context needs effective agent read, current
+  ownership and the selected workspace. Issue references need effective
+  workspace read and a current issue in that workspace.
 - Scanner sighting counts and resurface events are written in the data adapter.
   A late or ambiguous result may contribute a positive sighting without
   reopening a fixed finding. Absence closes a finding only through the trusted
@@ -22,7 +26,8 @@ run in that workspace.
   ingestion and claims take a workspace parent lock before finding locks.
   Finding locks use fingerprint then ID order, including dismissal/reopen.
 - Lifecycle reads use dedicated DTOs and scoped run references. Keep raw scope,
-  observation times, cached misses and claim notes out of public responses.
+  observation times and cached misses private. Claim notes are exposed only as
+  bounded plain-text context on their recorded `fix_claimed` timeline event.
 
 See `docs/operations/finding-lifecycle-rollout.md` for evidence, cutoff and
 rollback requirements.
@@ -41,5 +46,11 @@ List `createdFrom`/`createdTo` filters use first detection with a legacy creatio
 Use `findingDetectedAt` for detection-date aggregates and the projections in
 `vulnerability-review-read.ts` for authorized source references and limited user
 objects. See `docs/operations/finding-proposal-review-rollout.md`.
+
+New approval/rejection, proposal/AI verification and merge events record their
+decision or source context atomically with the existing write. Do not fill
+missing historic context from current mutable finding/source values.
+`projectFindingReview` adds only `logoUrl` to detail source tool references;
+list source summaries remain compact. See `docs/operations/finding-timeline-context.md`.
 
 Finding list/detail openIssue references require effective workspace access. issue_linked is public timeline activity; issue_automation proof receipts remain private. Dedicated CommentsService continues to own discussions.
