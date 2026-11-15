@@ -1,3 +1,4 @@
+import { FindingSearchService } from './finding-search.service';
 import { Module } from '@nestjs/common';
 import { SearchService } from './search.service';
 import { SearchController } from './search.controller';
@@ -15,6 +16,6 @@ import { StatisticModule } from '../statistic/statistic.module';
     StatisticModule,
   ],
   controllers: [SearchController],
-  providers: [SearchService],
+  providers: [SearchService, FindingSearchService],
 })
 export class SearchModule {}

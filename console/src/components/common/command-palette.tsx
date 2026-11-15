@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { CloudCheck, Search, Target } from 'lucide-react';
+import { Bug, CloudCheck, Search, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -18,6 +18,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import useDebounce from '@/hooks/use-debounce';
+import { parseFindingSearch } from '@/lib/finding-search-query';
+import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { usePermission } from '@/hooks/usePermission';
 import { useSearchControllerSearchAssetsTargets } from '@/services/apis/gen/queries';
 import { useSession } from '@/utils/authClient';
@@ -27,6 +29,10 @@ import { getVisibleNavGroups, menu } from './layout/menu-bar';
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [searchSession, setSearchSession] = useState(0);
+  const {
+    state: { selectedWorkspaceId },
+  } = useWorkspaceState();
   const returnFocus = useRef<HTMLElement | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const focusSearch = () => input.current?.focus();
@@ -35,6 +41,7 @@ export function CommandPalette() {
   const {
     hasPermission,
     isLoading: permissionsLoading,
+    isFetching: permissionsRefreshing,
     error: permissionsError,
   } = usePermission();
   const canSearch =
@@ -45,6 +52,7 @@ export function CommandPalette() {
   const changeOpen = useCallback((next: boolean) => {
     setOpen(next);
     if (!next) setQuery('');
+    else setSearchSession((value) => value + 1);
   }, []);
 
   useEffect(() => {
@@ -72,13 +80,50 @@ export function CommandPalette() {
 
   const term = query.trim();
   const debounced = useDebounce(term, 250);
+  const accessReady =
+    !permissionsError && !permissionsLoading && !permissionsRefreshing;
+  const canReadFindings = accessReady && hasPermission('vulnerability.read');
+  const parsed = parseFindingSearch(debounced);
+  const findingFilterDenied =
+    accessReady &&
+    parseFindingSearch(term).severity.length > 0 &&
+    !canReadFindings;
   const searchReady =
-    open && canSearch && term.length > 0 && term === debounced;
-  const { data, isError, isFetching } = useSearchControllerSearchAssetsTargets(
-    { value: debounced, isSaveHistory: false },
-    { query: { enabled: searchReady } },
-  );
-  const results = searchReady && !isError ? data?.data : undefined;
+    open &&
+    Boolean(selectedWorkspaceId) &&
+    accessReady &&
+    canSearch &&
+    !findingFilterDenied &&
+    Boolean(parsed.value || parsed.severity.length) &&
+    term === debounced;
+  const { data, isError, isFetching, isFetchedAfterMount } =
+    useSearchControllerSearchAssetsTargets(
+      {
+        value: parsed.value,
+        severity: parsed.severity.length ? parsed.severity : undefined,
+        isSaveHistory: false,
+      },
+      {
+        query: {
+          enabled: searchReady,
+          retry: false,
+          gcTime: 0,
+          refetchOnMount: 'always',
+          queryKey: [
+            'command-search',
+            selectedWorkspaceId,
+            searchSession,
+            debounced,
+            canReadFindings,
+          ],
+        },
+      },
+    );
+  const results =
+    searchReady && !isError && isFetchedAfterMount ? data?.data : undefined;
+  const findings = canReadFindings
+    ? (results?.vulnerabilities?.slice(0, 5) ?? [])
+    : [];
 
   const pages = getVisibleNavGroups(
     menu,
@@ -92,12 +137,15 @@ export function CommandPalette() {
   let status: string | undefined;
   if (term) {
     if (permissionsError) status = 'Workspace access could not be verified.';
-    else if (permissionsLoading) status = 'Checking workspace access…';
+    else if (!accessReady) status = 'Checking workspace access…';
     else if (!canSearch)
       status = 'Search requires target and asset read access.';
+    else if (findingFilterDenied)
+      status = 'Finding filters require vulnerability read access.';
     else if (!searchReady || isFetching) status = 'Searching…';
     else if (isError) status = 'Search is unavailable. Try again.';
-    else if (data?.total === 0) status = 'No preview matches.';
+    else if (data?.total === 0 && findings.length === 0)
+      status = 'No preview matches.';
   }
 
   const choose = (go: () => Promise<void>) => {
@@ -149,9 +197,13 @@ export function CommandPalette() {
       >
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <DialogDescription className="sr-only">
-          Jump to a page or search this workspace for targets and assets.
+          Jump to a page or search this workspace for targets, assets and
+          authorized findings.
         </DialogDescription>
-        <Command shouldFilter={false} label="Search targets, assets, or pages">
+        <Command
+          shouldFilter={false}
+          label="Search targets, assets, findings, or pages"
+        >
           <CommandInput
             ref={input}
             value={query}
@@ -227,6 +279,35 @@ export function CommandPalette() {
                 ))}
               </CommandGroup>
             )}
+            {findings.length > 0 && (
+              <CommandGroup heading="Findings">
+                {findings.map((finding) => (
+                  <CommandItem
+                    key={finding.id}
+                    value={'finding ' + finding.id}
+                    onSelect={() =>
+                      choose(() =>
+                        navigate({
+                          to: '/vulnerabilities/$id',
+                          params: { id: finding.id },
+                        }),
+                      )
+                    }
+                  >
+                    <Bug className="size-4" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{finding.name}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {finding.affectedUrl || finding.asset.value}
+                      </span>
+                    </span>
+                    <span className="text-xs capitalize text-muted-foreground">
+                      {finding.severity}
+                    </span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
             {canSearch && term && (
               <CommandGroup>
                 <CommandItem
@@ -234,7 +315,9 @@ export function CommandPalette() {
                   onSelect={() => searchAll(term)}
                 >
                   <Search className="size-4" aria-hidden />
-                  Search all targets and assets
+                  {canReadFindings
+                    ? 'Search all targets, assets and findings'
+                    : 'Search all targets and assets'}
                 </CommandItem>
               </CommandGroup>
             )}

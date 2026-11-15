@@ -2,8 +2,17 @@ import { UserContext, WorkspaceId } from '@/common/decorators/app.decorator';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import { Doc } from '@/common/doc/doc.decorator';
 import { GetManyResponseDto } from '@/utils/getManyResponse';
-import { Controller, Delete, Get, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
 import { User } from '../auth/entities/user.entity';
 import { DeleteResponseDto } from './dto/delete-response.dto';
 import {
@@ -20,8 +29,9 @@ export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 
   @Doc({
-    summary: 'Search assets and targets',
-    description: 'Search assets and targets',
+    summary: 'Search assets, targets and finding previews',
+    description:
+      'Search assets and targets, with an independently authorized top-five finding preview',
     response: {
       serialization: SearchResponseDto,
     },
@@ -30,13 +40,27 @@ export class SearchController {
     },
   })
   @WorkspaceAccess('asset.read', 'target.read')
+  @Header('Cache-Control', 'private, no-store')
   @Get()
   searchAssetsTargets(
     @UserContext() user: User,
     @Query() query: SearchAssetsTargetsDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ) {
-    return this.searchService.searchAssetsTargets(user, query, workspaceId);
+    const canReadFindings =
+      request.permissions?.some(
+        (key) =>
+          key === '*' ||
+          key === 'vulnerability.read' ||
+          key === 'vulnerability.write',
+      ) ?? false;
+    return this.searchService.searchAssetsTargets(
+      user,
+      query,
+      workspaceId,
+      canReadFindings,
+    );
   }
 
   @Doc({
