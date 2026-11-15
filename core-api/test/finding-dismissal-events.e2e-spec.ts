@@ -10,6 +10,7 @@ describe('Finding dismissal and reopen history (e2e)', () => {
   let other: typeof owner;
   let ownAsset: string;
   let foreignAsset: string;
+  let ownerActor: { id: string; name: string; image: string | null };
 
   async function insertId(sql: string, values: unknown[]) {
     const [row] = await app.dataSource.query<{ id: string }[]>(
@@ -62,6 +63,9 @@ describe('Finding dismissal and reopen history (e2e)', () => {
     app = await createTestApp();
     await app.app.listen(0);
     owner = await createUserWithWorkspace(app.server, 'dismissal-events-owner');
+    [ownerActor] = await app.dataSource.query<typeof ownerActor[]>(
+      'SELECT id,name,image FROM users WHERE id=$1', [owner.user.userId],
+    );
     other = await createUserWithWorkspace(app.server, 'dismissal-events-other');
     ownAsset = await makeAsset(owner.workspace.id);
     foreignAsset = await makeAsset(other.workspace.id);
@@ -79,7 +83,7 @@ describe('Finding dismissal and reopen history (e2e)', () => {
     }
   });
 
-  it('writes one private event per distinct finding only after a successful dismissal', async () => {
+  it('records each dismissal once and projects only approved timeline context', async () => {
     const id = await finding();
     const second = await finding();
     const foreign = await finding(foreignAsset);
@@ -113,6 +117,8 @@ describe('Finding dismissal and reopen history (e2e)', () => {
               toStatus: null,
               jobHistoryId: null,
               dismissalReason: fields.reason,
+              actor: ownerActor,
+              data: { comment: fields.comment },
             },
           ],
         });
@@ -140,7 +146,7 @@ describe('Finding dismissal and reopen history (e2e)', () => {
     expect(events[1].data).toMatchObject(fields);
   });
 
-  it('reopens by dismissal ID, writes one event per finding, and keeps it private', async () => {
+  it('reopens by dismissal ID and projects one safe timeline event per finding', async () => {
     const id = await finding();
     const second = await finding();
     const expiresAt = new Date(Date.now() + 86_400_000);
@@ -181,6 +187,7 @@ describe('Finding dismissal and reopen history (e2e)', () => {
               toStatus: null,
               jobHistoryId: null,
               dismissalReason: reason,
+              actor: ownerActor,
               ...(expiry ? { expiresAt: expiry } : {}),
             },
           ],

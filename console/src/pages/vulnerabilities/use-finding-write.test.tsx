@@ -64,4 +64,16 @@ describe('Finding write boundaries', () => {
     fireEvent.click(screen.getByText('Check saved state'));
     await waitFor(() => expect(screen.getByText('Save')).not.toBeDisabled());
   });
+  it('retains uncertainty if workspace changes after the checking component unmounts', async () => {
+    perform.mockRejectedValue(new AxiosError('Response lost'));
+    let finish!: () => void;
+    reload.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    const view = mount(); fireEvent.click(screen.getByText('Save')); await screen.findByRole('alert');
+    fireEvent.click(screen.getByText('Check saved state'));
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    view.unmount();
+    act(() => { setGlobalWorkspaceId('B'); setGlobalWorkspaceId('A'); });
+    await act(async () => finish());
+    mount(); expect(screen.getByText('Save')).toBeDisabled();
+  });
 });

@@ -301,7 +301,7 @@ function IssueDetail({ issueId }: { issueId?: string } = {}) {
         <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="flex min-w-0 flex-col divide-y rounded-xl border bg-card">
             {isRemediation && (
-              <fieldset disabled={!canWrite}><RemediationSection
+              <fieldset className="min-w-0" disabled={!canWrite}><RemediationSection
                 issue={issue}
                 removingId={removingId}
                 onRemove={unlink}
