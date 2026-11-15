@@ -70,6 +70,8 @@ import { GetProjectRunsQueryDto, ProjectRunDto } from './dto/project-runs.dto';
 import { ProjectRunReadService } from './project-run-read.service';
 import { VulnerabilityStatus } from '../vulnerabilities/dto/get-vulnerability.dto';
 import { ProjectFindingReadService } from './project-finding-read.service';
+import { ProjectFindingStatisticsService } from './project-finding-statistics.service';
+import { ProjectFindingStatisticsDto } from './dto/project-findings.dto';
 import { ProjectFindingTimelineService } from './project-finding-timeline.service';
 import { ProjectFindingTimelineDto } from './dto/project-finding-timeline.dto';
 import { ProjectOverviewReadService } from './project-overview-read.service';
@@ -127,6 +129,7 @@ export class ProjectsController {
     private readonly workflowActions: ProjectWorkflowActionsService,
     private readonly runRead: ProjectRunReadService,
     private readonly findingRead: ProjectFindingReadService,
+    private readonly findingStatistics: ProjectFindingStatisticsService,
     private readonly findingTimeline: ProjectFindingTimelineService,
     private readonly overviewRead: ProjectOverviewReadService,
   ) {}
@@ -496,6 +499,21 @@ export class ProjectsController {
       !request.permissions?.some(permission => ['*', 'vulnerability.read', 'vulnerability.write'].includes(permission))
     ) throw new ForbiddenException('Vulnerability read access is required for review filters');
     return this.findingRead.list(id, workspaceId, query);
+  }
+
+  @ApiOperation({ summary: 'Project finding lifecycle statistics', description: 'Project-wide approved counts; proposal counts require vulnerability read access.' })
+  @ApiHeader({ name: WORKSPACE_HEADER_NAME, description: 'Workspace ID' })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: ProjectFindingStatisticsDto })
+  @WorkspaceAccess('project.read')
+  @Get(':id/vulnerabilities/statistics')
+  getFindingStatistics(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+  ): Promise<ProjectFindingStatisticsDto> {
+    const canReadReview = request.permissions?.some(permission => ['*', 'vulnerability.read', 'vulnerability.write'].includes(permission)) ?? false;
+    return this.findingStatistics.read(id, workspaceId, canReadReview);
   }
 
   @ApiOperation({

@@ -6372,6 +6372,22 @@ export type ProjectFindingSightingDto = {
   at: string;
 };
 
+export type ProjectFindingDismissalDtoReason =
+  (typeof ProjectFindingDismissalDtoReason)[keyof typeof ProjectFindingDismissalDtoReason];
+
+export const ProjectFindingDismissalDtoReason = {
+  false_positive: 'false_positive',
+  used_in_test: 'used_in_test',
+  wont_fix: 'wont_fix',
+  risk_accepted: 'risk_accepted',
+} as const;
+
+export type ProjectFindingDismissalDto = {
+  id: string;
+  reason: ProjectFindingDismissalDtoReason;
+  expiresAt?: string;
+};
+
 export type ProjectFindingDtoSeverity =
   (typeof ProjectFindingDtoSeverity)[keyof typeof ProjectFindingDtoSeverity];
 
@@ -6404,6 +6420,35 @@ export const ProjectFindingDtoProvenance = {
   not_seen: 'not_seen',
 } as const;
 
+export type ProjectFindingDtoReviewStatus =
+  (typeof ProjectFindingDtoReviewStatus)[keyof typeof ProjectFindingDtoReviewStatus];
+
+export const ProjectFindingDtoReviewStatus = {
+  pending_review: 'pending_review',
+  approved: 'approved',
+  rejected: 'rejected',
+} as const;
+
+export type ProjectFindingDtoDetectionStatus =
+  (typeof ProjectFindingDtoDetectionStatus)[keyof typeof ProjectFindingDtoDetectionStatus];
+
+export const ProjectFindingDtoDetectionStatus = {
+  new: 'new',
+  active: 'active',
+  fixed: 'fixed',
+  resurfaced: 'resurfaced',
+} as const;
+
+export type ProjectFindingDtoDiscoveredBy =
+  (typeof ProjectFindingDtoDiscoveredBy)[keyof typeof ProjectFindingDtoDiscoveredBy];
+
+export const ProjectFindingDtoDiscoveredBy = {
+  tool: 'tool',
+  ai: 'ai',
+  ai_tool: 'ai_tool',
+  manual: 'manual',
+} as const;
+
 export type ProjectFindingDto = {
   id: string;
   name: string;
@@ -6423,6 +6468,20 @@ export type ProjectFindingDto = {
   timesSeen: number;
   firstSeen: ProjectFindingSightingDto;
   lastSeen: ProjectFindingSightingDto;
+  reviewStatus: ProjectFindingDtoReviewStatus;
+  detectionStatus: ProjectFindingDtoDetectionStatus;
+  discoveredBy: ProjectFindingDtoDiscoveredBy;
+  isArchived: boolean;
+  /** @nullable */
+  firstDetectedDate: string | null;
+  /** @nullable */
+  lastSeenDate: string | null;
+  /** @nullable */
+  dueAt: string | null;
+  /** @nullable */
+  fixClaimedAt: string | null;
+  /** @nullable */
+  vulnerabilityDismissal: ProjectFindingDismissalDto | null;
 };
 
 export type ProjectFindingProvenanceCountsDto = {
@@ -6447,6 +6506,21 @@ export type ProjectFindingsResponseDto = {
   provenanceCounts: ProjectFindingProvenanceCountsDto;
   /** Counts under every filter except severity */
   severityCounts: SeverityCountsDto;
+};
+
+export type ProjectFindingStatisticsDto = {
+  data: VulnerabilityStatisticsDto[];
+  byDetectionStatus: VulnerabilityDetectionCountsDto;
+  newLast7Days: number;
+  resurfacedLast30Days: number;
+  fixedLast30Days: number;
+  overdue: number;
+  mttr: VulnerabilityMttrDto[];
+  /**
+   * Null without effective vulnerability read access
+   * @nullable
+   */
+  pendingReview: number | null;
 };
 
 export type ProjectFindingTimelineRunDtoSighting =
@@ -8895,6 +8969,22 @@ export type ProjectsControllerGetFindingsParams = {
    * Seen in a run of this project workflow
    */
   projectWorkflowId?: string;
+  overdue?: boolean;
+  discoveredBy?: ProjectsControllerGetFindingsDiscoveredByItem[];
+  /**
+   * Inclusive first detection, with legacy creation-date fallback
+   */
+  createdFrom?: string;
+  /**
+   * First detection through the end of this UTC day, with legacy creation-date fallback
+   */
+  createdTo?: string;
+  /**
+   * Bounded finding filter tree, using the global finding filter fields and operators
+   */
+  filter?: string;
+  sortBy?: ProjectsControllerGetFindingsSortBy;
+  sortOrder?: ProjectsControllerGetFindingsSortOrder;
 };
 
 export type ProjectsControllerGetFindingsSeverityItem =
@@ -8930,6 +9020,37 @@ export const ProjectsControllerGetFindingsStatus = {
   active: 'active',
   resurfaced: 'resurfaced',
   fixed: 'fixed',
+} as const;
+
+export type ProjectsControllerGetFindingsDiscoveredByItem =
+  (typeof ProjectsControllerGetFindingsDiscoveredByItem)[keyof typeof ProjectsControllerGetFindingsDiscoveredByItem];
+
+export const ProjectsControllerGetFindingsDiscoveredByItem = {
+  tool: 'tool',
+  ai: 'ai',
+  ai_tool: 'ai_tool',
+  manual: 'manual',
+} as const;
+
+export type ProjectsControllerGetFindingsSortBy =
+  (typeof ProjectsControllerGetFindingsSortBy)[keyof typeof ProjectsControllerGetFindingsSortBy];
+
+export const ProjectsControllerGetFindingsSortBy = {
+  severity: 'severity',
+  name: 'name',
+  firstDetectedDate: 'firstDetectedDate',
+  lastSeenDate: 'lastSeenDate',
+  firstSeenAt: 'firstSeenAt',
+  lastSeenAt: 'lastSeenAt',
+  dueAt: 'dueAt',
+} as const;
+
+export type ProjectsControllerGetFindingsSortOrder =
+  (typeof ProjectsControllerGetFindingsSortOrder)[keyof typeof ProjectsControllerGetFindingsSortOrder];
+
+export const ProjectsControllerGetFindingsSortOrder = {
+  ASC: 'ASC',
+  DESC: 'DESC',
 } as const;
 
 export type AssetGroupControllerGetAllParams = {
@@ -48494,6 +48615,184 @@ export function useProjectsControllerGetFindings<
   const queryOptions = getProjectsControllerGetFindingsQueryOptions(
     id,
     params,
+    options,
+  );
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<
+    TData,
+    TError
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Project-wide approved counts; proposal counts require vulnerability read access.
+ * @summary Project finding lifecycle statistics
+ */
+export const projectsControllerGetFindingStatistics = (
+  id: string,
+  options?: SecondParameter<typeof orvalClient>,
+  signal?: AbortSignal,
+) => {
+  return orvalClient<ProjectFindingStatisticsDto>(
+    {
+      url: `/api/projects/${id}/vulnerabilities/statistics`,
+      method: 'GET',
+      signal,
+    },
+    options,
+  );
+};
+
+export const getProjectsControllerGetFindingStatisticsQueryKey = (
+  id: string,
+) => {
+  return [`/api/projects/${id}/vulnerabilities/statistics`] as const;
+};
+
+export const getProjectsControllerGetFindingStatisticsQueryOptions = <
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getProjectsControllerGetFindingStatisticsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>
+  > = ({ signal }) =>
+    projectsControllerGetFindingStatistics(id, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: id !== null && id !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ProjectsControllerGetFindingStatisticsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>
+>;
+export type ProjectsControllerGetFindingStatisticsQueryError = unknown;
+
+export function useProjectsControllerGetFindingStatistics<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+  TError = unknown,
+>(
+  id: string,
+  options: {
+    query: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): DefinedUseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingStatistics<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+        TError,
+        TData
+      >
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+          TError,
+          Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>
+        >,
+        'initialData'
+      >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+export function useProjectsControllerGetFindingStatistics<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+};
+/**
+ * @summary Project finding lifecycle statistics
+ */
+
+export function useProjectsControllerGetFindingStatistics<
+  TData = Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+  TError = unknown,
+>(
+  id: string,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<
+        Awaited<ReturnType<typeof projectsControllerGetFindingStatistics>>,
+        TError,
+        TData
+      >
+    >;
+    request?: SecondParameter<typeof orvalClient>;
+  },
+  queryClient?: QueryClient,
+): UseQueryResult<TData, TError> & {
+  queryKey: DataTag<QueryKey, TData, TError>;
+} {
+  const queryOptions = getProjectsControllerGetFindingStatisticsQueryOptions(
+    id,
     options,
   );
 

@@ -104,7 +104,7 @@ export function getVulnerabilitiesTool(
           workspaceId,
           {
             ...pageOf(params),
-            ...NEWEST_FIRST,
+            // Keep the dedicated project's existing severity/sighting order.
             search: params.q ?? '',
             status: params.status ?? VulnerabilityStatus.OPEN,
             severity: params.severity,

@@ -6,6 +6,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import type { GetProjectFindingsQueryDto, ProjectFindingDto } from './dto/project-findings.dto';
+import { PROJECT_FINDING_SORTS } from './dto/project-findings.dto';
+import { compileVulnerabilityFilter, validateVulnerabilityFilter } from '../vulnerabilities/vulnerability-filter';
 import { VulnerabilityStatus } from '../vulnerabilities/dto/get-vulnerability.dto';
 import {
   activeDismissalCondition,
@@ -17,17 +20,10 @@ import {
   projectFindingReferenceRunJoin,
 } from './project-finding-provenance';
 
-interface ProjectFindingQuery {
-  page: number;
-  limit: number;
-  status?: VulnerabilityStatus;
-  search?: string;
-  severity?: Severity[];
-  provenance?: ProjectFindingProvenance;
-  assetId?: string;
-  jobHistoryId?: string;
-  projectWorkflowId?: string;
-}
+type ProjectFindingQuery = Pick<GetProjectFindingsQueryDto,
+  'page' | 'limit' | 'status' | 'search' | 'severity' | 'provenance' | 'assetId' |
+  'jobHistoryId' | 'projectWorkflowId' | 'overdue' | 'discoveredBy' |
+  'createdFrom' | 'createdTo' | 'filter' | 'sortBy' | 'sortOrder'>;
 
 interface FindingRow {
   id: string;
@@ -45,6 +41,15 @@ interface FindingRow {
   firstSeenAt: Date;
   lastRunId: string | null;
   lastSeenAt: Date;
+  reviewStatus: ProjectFindingDto['reviewStatus'];
+  detectionStatus: ProjectFindingDto['detectionStatus'];
+  discoveredBy: ProjectFindingDto['discoveredBy'];
+  isArchived: boolean;
+  firstDetectedDate: Date | null;
+  lastSeenDate: Date | null;
+  dueAt: Date | null;
+  fixClaimedAt: Date | null;
+  vulnerabilityDismissal: ProjectFindingDto['vulnerabilityDismissal'];
 }
 
 type CountedFindingRow = (FindingRow | { id: null }) & {
@@ -122,6 +127,37 @@ export class ProjectFindingReadService {
     const params: unknown[] = [projectId, workspaceId];
     const add = (value: unknown) => `$${params.push(value)}`;
     const conditions = ['true'];
+    if (query.sortBy && !PROJECT_FINDING_SORTS.includes(query.sortBy))
+      throw new BadRequestException('Invalid project finding sort');
+    if (query.sortOrder && !['ASC', 'DESC'].includes(query.sortOrder))
+      throw new BadRequestException('Invalid project finding sort order');
+    if (query.overdue)
+      conditions.push(openVulnerabilityCondition('v'), 'v."dueAt" < statement_timestamp()');
+    if (query.discoveredBy?.length)
+      conditions.push(`v."discoveredBy" = ANY(${add(query.discoveredBy)}::text[])`);
+    const dateBound = (raw: string, upper: boolean) => {
+      const date = new Date(raw);
+      if (!Number.isFinite(date.getTime())) throw new BadRequestException('Invalid first detection date');
+      if (upper) date.setUTCHours(23, 59, 59, 999);
+      // Keep separate pg bindings for legacy timestamp and timestamptz clocks.
+      const detected = add(date), legacy = add(date), op = upper ? '<=' : '>=';
+      conditions.push(`(v."firstDetectedDate" ${op} ${detected} OR (v."firstDetectedDate" IS NULL AND v."createdAt" ${op} ${legacy}))`);
+    };
+    if (query.createdFrom) dateBound(query.createdFrom, false);
+    if (query.createdTo) dateBound(query.createdTo, true);
+    if (query.filter) {
+      if (validateVulnerabilityFilter(query.filter) !== null) throw new BadRequestException('Invalid finding filter');
+      const compiled = compileVulnerabilityFilter(query.filter, 'pf');
+      if (compiled) {
+        // Only compiler-owned aliases and parameter tokens enter SQL. User values
+        // stay bound, including values containing quotes or parameter-like text.
+        const sql = compiled.sql.replaceAll('"vulnerabilities".', 'v.')
+          .replaceAll('"assets".', 'a.').replaceAll('"targets"."id"', 'a."targetId"')
+          .replaceAll('"tools"."name"', '(SELECT name FROM tools WHERE id=v."toolId")')
+          .replace(/:pf\d+\b/g, token => add(compiled.params[token.slice(1)]));
+        conditions.push(sql);
+      }
+    }
     const status = query.status ?? VulnerabilityStatus.OPEN;
     if (status === VulnerabilityStatus.OPEN)
       conditions.push(openVulnerabilityCondition('v'));
@@ -190,12 +226,16 @@ export class ProjectFindingReadService {
     const findingSelect = `SELECT pv.id, v.id AS vulnerability_id, v.severity, v."assetId", v."toolId",
       pv."projectId", pv."timesSeen", pv."firstSeenAt", pv."lastSeenAt",
       pv."firstSeenJobHistoryId", pv."lastSeenJobHistoryId",
+      v.name, COALESCE(v."firstDetectedDate",v."createdAt") AS "firstDetectedDate",
+      v."lastSeenDate", v."dueAt",
       ${RANK_SQL} AS rank, ${severitySelected} AS "severitySelected"`;
     // Keep each lookup on its unique key even when table statistics
     // underestimate newly ingested findings on one asset.
     const reviewStatus = [VulnerabilityStatus.PENDING_REVIEW, VulnerabilityStatus.REJECTED].includes(status) ? status : 'approved';
     const findingJoins = `CROSS JOIN LATERAL (
-        SELECT id, severity, "assetId", "toolId", name, "cveId", "isArchived", "detectionStatus", "reviewStatus"
+        SELECT id, severity, "assetId", "toolId", name, "cveId", "isArchived", "detectionStatus", "reviewStatus",
+          "firstDetectedDate", "createdAt", "lastSeenDate", "dueAt", "discoveredBy",
+          tags, "ipAddress", ports, "cweId", "affectedUrl", "cvssScore", "epssScore"
         FROM vulnerabilities WHERE id = pv."vulnerabilityId" AND "reviewStatus"=${add(reviewStatus)} LIMIT 1
       ) v
       CROSS JOIN LATERAL (
@@ -218,6 +258,13 @@ export class ProjectFindingReadService {
       : `${findingSelect}
          FROM owned JOIN project_vulnerabilities pv ON pv."projectId" = owned.id
          ${findingJoins} WHERE ${where}`;
+
+    const order = (alias: string) => {
+      const prefix = alias ? `${alias}.` : '';
+      if (!query.sortBy) return `${prefix}rank DESC, ${prefix}"lastSeenAt" DESC, ${prefix}vulnerability_id`;
+      const column = query.sortBy === 'severity' ? 'rank' : `"${query.sortBy}"`;
+      return `${prefix}${column} ${query.sortOrder ?? 'DESC'} NULLS LAST, ${prefix}vulnerability_id`;
+    };
 
     // Reuse one reference per asset/tool across the facet counts and page.
     const rows = await executor.query<CountedFindingRow[]>(
@@ -260,12 +307,19 @@ export class ProjectFindingReadService {
           SELECT jsonb_build_object(${severityCountsSql}) AS "severityCounts" FROM ${severitySource}
         ), page AS MATERIALIZED (
           SELECT * FROM classified WHERE "severitySelected" AND ${provenanceSelected}
-          ORDER BY rank DESC, "lastSeenAt" DESC, vulnerability_id
+          ORDER BY ${order('')}
           ${paging}
         )
         SELECT counts.total, counts."provenanceCounts", severity_counts."severityCounts",
                v.id, v.name, v.severity, v."cveId", v."affectedUrl",
                a.id AS "assetId", a.value AS "assetValue", tool.name AS "toolName",
+               v."reviewStatus", v."detectionStatus", v."discoveredBy", v."isArchived",
+               v."firstDetectedDate", v."lastSeenDate", v."dueAt", v."fixClaimedAt",
+               (SELECT jsonb_build_object('id',vd.id,'reason',vd.reason) ||
+                 CASE WHEN vd.reason='risk_accepted' AND vd."expiresAt" IS NOT NULL
+                   THEN jsonb_build_object('expiresAt',vd."expiresAt") ELSE '{}'::jsonb END
+                 FROM vulnerability_dismissals vd WHERE vd."vulnerabilityId"=v.id
+                   AND ${activeDismissalCondition('vd')} LIMIT 1) AS "vulnerabilityDismissal",
                CASE WHEN v."detectionStatus" = 'fixed' THEN 'fixed'
                  WHEN ${DISMISSED_SQL} THEN 'dismissed' ELSE 'open' END AS status,
                page.provenance, page."timesSeen",
@@ -281,7 +335,7 @@ export class ProjectFindingReadService {
           WHERE h.id = page."firstSeenJobHistoryId" AND h."projectId" = owned.id
             AND w."workspaceId" = $2
         ) first_run ON true
-        ORDER BY page.rank DESC, page."lastSeenAt" DESC, page.vulnerability_id`,
+        ORDER BY ${order('page')}`,
       params,
     );
     if (!rows.length) throw new NotFoundException('Project not found');

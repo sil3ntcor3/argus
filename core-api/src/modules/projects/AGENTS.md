@@ -31,6 +31,15 @@ remain approved-only. Resolution labels prefer fixed over dismissal; proposal
 review state comes from the selected filter. Scope rows and facets through the
 project workspace and recorded finding links; preserve exact run/workflow filters.
 
+Project finding list filters also include first detection with legacy creation
+fallback, source, overdue, bounded finding trees and allowlisted sorting. Reuse
+bound filter compilation; keep stable ID ties, null dates last and the original
+default severity/project-sighting order. The separate project statistics read
+uses one snapshot over recorded links, not current membership or list filters.
+Proposal counts are nullable without effective finding-read access. Action
+context exposes only active dismissal ID/reason/risk expiry, never its comment
+or user. See `docs/operations/project-findings-parity.md`.
+
 `ProjectListReadService` returns the list-only `ProjectListItemDto`; detail and
 mutation receipts keep `ProjectViewDto`. Finding summaries are nullable without
 effective vulnerability read access. Risk sorting requires that access and orders

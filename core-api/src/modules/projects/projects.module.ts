@@ -29,6 +29,7 @@ import { ProjectWorkflowCreateService } from './project-workflow-create.service'
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
 import { ProjectRunReadService } from './project-run-read.service';
 import { ProjectFindingReadService } from './project-finding-read.service';
+import { ProjectFindingStatisticsService } from './project-finding-statistics.service';
 import { ProjectFindingTimelineService } from './project-finding-timeline.service';
 import { ProjectOverviewCountsService } from './project-overview-counts.service';
 import { ProjectOverviewRunsService } from './project-overview-runs.service';
@@ -52,6 +53,7 @@ import { ProjectOverviewReadService } from './project-overview-read.service';
     ProjectOverviewCountsService,
     ProjectFindingTimelineService,
     ProjectFindingReadService,
+    ProjectFindingStatisticsService,
     ProjectRunReadService,
     ProjectWorkflowTemplatesService,
     ProjectWorkflowCreateService,

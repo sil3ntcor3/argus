@@ -1,4 +1,4 @@
-import { useIsMutating, useMutation, useMutationState, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useMutationState, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import { useEffect, useRef, useState } from 'react';
 import { getGlobalWorkspaceId, subscribeGlobalWorkspaceId } from '@/utils/workspaceState';
@@ -26,7 +26,11 @@ export function useReviewWrite<Input, Output>({ workspaceId, canWrite, perform, 
   const [error, setError] = useState<string>();
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [reviewed, setReviewed] = useState(false);
+  // Keep read acknowledgment with the failed attempts: a filtered refresh can
+  // remove the dialog before it settles. This never clears or replays a write.
+  const checkedKey = ['finding-review-checked', workspaceId];
+  const { data: checked } = useQuery<number[]>({ queryKey: checkedKey, queryFn: () => [], initialData: [], enabled: false });
+  const reviewed = failures.length > 0 && failures.every(mutation => checked.includes(mutation.mutationId));
   const state = useRef({ live: true, generation: 0, locked: false, controller: new AbortController() });
   useEffect(() => {
     const scope = state.current; scope.live = true;
@@ -49,17 +53,18 @@ export function useReviewWrite<Input, Output>({ workspaceId, canWrite, perform, 
     if (!navigator.onLine) { setError('Reconnect before reviewing findings.'); return; }
     const generation = scope.generation;
     let committed = false;
-    scope.locked = true; scope.controller = new AbortController(); setSaving(true); setError(undefined); setReviewed(false);
+    scope.locked = true; scope.controller = new AbortController(); setSaving(true); setError(undefined);
     try {
       const result = await mutation.mutateAsync({ input, partial, request: { signal: scope.controller.signal, timeout: 20_000 } });
       committed = true;
       // A merge removes the current detail resource; navigate to its known
       // target before invalidation can unmount the original resource's dialog.
       if (current(generation)) await onPersisted?.(result);
+      const refetch = current(generation);
+      if (refetch) onSuccess(result);
       await client.invalidateQueries({ predicate: ({ queryKey: [path] }) => typeof path === 'string' &&
         (path === 'vulnerabilities' || /^\/api\/(vulnerabilities|targets|projects|statistic)(\/|$)/i.test(path)),
-        refetchType: current(generation) ? 'active' : 'none' });
-      if (current(generation)) onSuccess(result);
+        refetchType: refetch ? 'active' : 'none' });
     } catch (cause) {
       if (current(generation)) setError(committed ? 'Review saved. Refresh the findings to view the result.' : unknownOutcome(cause, partial)
         ? 'Outcome unknown. Some decisions may have saved. Check saved state before reviewing again.'
@@ -72,17 +77,22 @@ export function useReviewWrite<Input, Output>({ workspaceId, canWrite, perform, 
     if (!navigator.onLine) { setError('Reconnect before checking saved state.'); return; }
     const generation = state.current.generation;
     state.current.locked = true; setChecking(true);
+    let workspaceChanged = false;
+    const unsubscribe = subscribeGlobalWorkspaceId(() => { workspaceChanged = true; });
     try {
       await reload();
-      if (current(generation)) { setReviewed(true); setError(undefined); }
+      if (workspaceChanged || getGlobalWorkspaceId() !== workspaceId) return;
+      client.setQueryData<number[]>(checkedKey, previous => [...new Set([...(previous ?? []), ...failures.map(failure => failure.mutationId)])]);
+      if (current(generation)) setError(undefined);
     } catch { if (current(generation)) setError('Unable to check saved state. Try again when connected.'); }
-    finally { state.current.locked = false; if (current(generation)) setChecking(false); }
+    finally { unsubscribe(); state.current.locked = false; if (current(generation)) setChecking(false); }
   }
   /** Explicitly clear the local selection and draft; this never repeats a request. */
   function discard() {
     if (!reviewed || state.current.locked || client.isMutating(filter) || getGlobalWorkspaceId() !== workspaceId) return;
     for (const failure of failures) client.getMutationCache().remove(failure);
-    mutation.reset(); setError(undefined); setReviewed(false); onDiscard();
+    client.setQueryData<number[]>(checkedKey, previous => (previous ?? []).filter(id => !failures.some(failure => failure.mutationId === id)));
+    mutation.reset(); setError(undefined); onDiscard();
   }
   return { run, checkSaved, discard, reviewed, busy: pending || saving || checking, uncertain,
     error: error ?? (uncertain ? 'Outcome unknown. Some decisions may have saved. Check saved state before reviewing again.' : undefined) };
