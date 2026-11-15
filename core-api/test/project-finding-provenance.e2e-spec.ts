@@ -381,6 +381,15 @@ describe('Project finding provenance (e2e)', () => {
           'timesSeen',
           'firstSeen',
           'lastSeen',
+          'reviewStatus',
+          'detectionStatus',
+          'discoveredBy',
+          'isArchived',
+          'firstDetectedDate',
+          'lastSeenDate',
+          'dueAt',
+          'fixClaimedAt',
+          'vulnerabilityDismissal',
         ].sort(),
       );
     });

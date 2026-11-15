@@ -8,15 +8,25 @@ const mock = vi.hoisted(() => ({
   permission: vi.fn(),
   findings: vi.fn(),
   project: vi.fn(),
+  statistics: vi.fn(),
+  workspace: 'fixture',
 }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
-  useWorkspaceState: () => ({ state: { selectedWorkspaceId: 'fixture' } }),
+  useWorkspaceState: () => ({ state: { selectedWorkspaceId: mock.workspace } }),
+  useWorkspaceSelector: () => ({ selectedWorkspace: mock.workspace }),
 }));
 vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
+vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }));
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetFindings: mock.findings,
   useProjectsControllerGetById: mock.project,
+  useProjectsControllerGetFindingStatistics: mock.statistics,
+}));
+vi.mock('./project-finding-actions', () => ({
+  ProjectFindingActions: ({ findings }: { findings: ProjectFindingDto[] }) => (
+    <p>Actions for {findings.map((row) => row.name).join(', ')}</p>
+  ),
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -52,11 +62,33 @@ const finding: ProjectFindingDto = {
   timesSeen: 3,
   firstSeen: { at: '2026-10-01T00:00:00Z', runId: null },
   lastSeen: { at: '2026-11-01T00:00:00Z', runId: null },
+  reviewStatus: 'approved',
+  detectionStatus: 'active',
+  discoveredBy: 'tool',
+  isArchived: false,
+  firstDetectedDate: null,
+  lastSeenDate: null,
+  dueAt: null,
+  fixClaimedAt: null,
+  vulnerabilityDismissal: null,
 };
 
 describe('ProjectFindingsPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mock.workspace = 'fixture';
+    mock.statistics.mockReturnValue({
+      data: {
+        data: [{ severity: 'high', count: 7 }],
+        byDetectionStatus: { new: 2, active: 3, resurfaced: 2, fixed: 4 },
+        pendingReview: 1,
+        overdue: 2,
+        newLast7Days: 1,
+        resurfacedLast30Days: 2,
+        fixedLast30Days: 3,
+        mttr: [],
+      },
+    });
     mock.project.mockReturnValue({ data: { assetGroupWorkflows: [] } });
     mock.permission.mockReturnValue({
       hasPermission: (key: string) =>
@@ -78,6 +110,116 @@ describe('ProjectFindingsPage', () => {
     expect(screen.getByText('argus.example.test · nuclei')).toBeVisible();
   });
 
+  it('opens project-wide summary views and clears incompatible filters', () => {
+    const onChange = vi.fn();
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={3}
+        query="redirect"
+        run={finding.id}
+        provenance="recurring"
+        severity={['high']}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Show fixed findings' }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({ page: 1, status: 'fixed' });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Show overdue findings' }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      status: 'open',
+      overdue: true,
+    });
+  });
+
+  it('keeps new filters when changing facets or pages', () => {
+    const onChange = vi.fn();
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={2}
+        overdue
+        discoveredBy={['ai']}
+        createdFrom="2026-01-01"
+        sortBy="dueAt"
+        sortOrder="ASC"
+        onChange={onChange}
+      />,
+    );
+    expect(mock.findings).toHaveBeenCalledWith(
+      projectId,
+      expect.objectContaining({
+        overdue: true,
+        discoveredBy: ['ai'],
+        createdFrom: '2026-01-01',
+        sortBy: 'dueAt',
+        sortOrder: 'ASC',
+      }),
+      expect.anything(),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        page: 3,
+        overdue: true,
+        discoveredBy: ['ai'],
+        sortBy: 'dueAt',
+      }),
+    );
+  });
+
+  it('selects visible IDs and clears selection when list scope changes', () => {
+    mock.permission.mockReturnValue({ hasPermission: () => true });
+    const props = { projectId, page: 1, onChange: vi.fn() };
+    const view = render(<ProjectFindingsPage {...props} />);
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'Select Open redirect on argus.example.test',
+      }),
+    );
+    expect(screen.getByText('Actions for Open redirect')).toBeVisible();
+    view.rerender(<ProjectFindingsPage {...props} page={2} />);
+    expect(
+      screen.queryByText('Actions for Open redirect'),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each(['archived', 'refresh', 'metadata-error', 'read-only'])(
+    'hides project writes for %s state',
+    (state) => {
+      mock.permission.mockReturnValue({
+        isFetching: state === 'refresh',
+        hasPermission: (key: string) =>
+          state !== 'read-only' || key === 'project.read',
+      });
+      mock.project.mockReturnValue({
+        data:
+          state === 'metadata-error'
+            ? undefined
+            : {
+                assetGroupWorkflows: [],
+                archivedAt: state === 'archived' ? '2026-01-01' : null,
+              },
+        isError: state === 'metadata-error',
+      });
+      render(
+        <ProjectFindingsPage
+          projectId={projectId}
+          page={1}
+          onChange={vi.fn()}
+        />,
+      );
+      expect(
+        screen.queryByRole('checkbox', { name: /Select Open redirect/ }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
   it('keeps findings readable without the workspace finding permission', () => {
     mock.permission.mockReturnValue({
       hasPermission: (key: string) => key === 'project.read',
@@ -91,52 +233,120 @@ describe('ProjectFindingsPage', () => {
         name: 'Open redirect on argus.example.test',
       }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Pending review ·/ })).not.toBeInTheDocument();
   });
 
   it('offers lifecycle filters and resets paging without losing the active facets', () => {
     const onChange = vi.fn();
-    render(<ProjectFindingsPage projectId={projectId} page={3} query="redirect" severity={['high']}
-      provenance="recurring" onChange={onChange} />);
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={3}
+        query="redirect"
+        severity={['high']}
+        provenance="recurring"
+        onChange={onChange}
+      />,
+    );
     expect(screen.getByRole('option', { name: 'Fixed' })).toBeVisible();
     expect(screen.getByRole('option', { name: 'Resurfaced' })).toBeVisible();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), { target: { value: 'fixed' } });
-    expect(onChange).toHaveBeenLastCalledWith({ page: 1, query: 'redirect', severity: ['high'], provenance: 'recurring', status: 'fixed' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+      target: { value: 'fixed' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith({
+      page: 1,
+      query: 'redirect',
+      severity: ['high'],
+      provenance: 'recurring',
+      status: 'fixed',
+    });
   });
 
   it('labels scan-fixed findings independently of their provenance', () => {
-    mock.findings.mockReturnValue({ data: { data: [{ ...finding, status: 'fixed' }] } });
-    render(<ProjectFindingsPage projectId={projectId} page={1} status="all" onChange={vi.fn()} />);
+    mock.findings.mockReturnValue({
+      data: { data: [{ ...finding, status: 'fixed' }] },
+    });
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={1}
+        status="all"
+        onChange={vi.fn()}
+      />,
+    );
     expect(screen.getByText('Fixed', { selector: 'span' })).toBeVisible();
     expect(screen.getByText('Recurring ×3')).toBeVisible();
   });
 
-  it.each([['pending_review', 'Pending review'], ['rejected', 'Rejected']] as const)(
-    'labels %s results and hides approved-only run timeline actions', (status, label) => {
-      render(<ProjectFindingsPage projectId={projectId} page={1} status={status} onChange={vi.fn()} />);
-      expect(screen.getByRole('combobox', { name: 'Status' })).toHaveDisplayValue(label);
+  it.each([
+    ['pending_review', 'Pending review'],
+    ['rejected', 'Rejected'],
+  ] as const)(
+    'labels %s results and hides approved-only run timeline actions',
+    (status, label) => {
+      render(
+        <ProjectFindingsPage
+          projectId={projectId}
+          page={1}
+          status={status}
+          onChange={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByRole('combobox', { name: 'Status' }),
+      ).toHaveDisplayValue(label);
       expect(screen.getByText(label, { selector: 'span' })).toBeVisible();
-      expect(screen.queryByRole('button', { name: /View timeline/ })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /View timeline/ }),
+      ).not.toBeInTheDocument();
     },
   );
 
   it('does not offer review-only statuses to project-only readers', () => {
-    mock.permission.mockReturnValue({ hasPermission: (key: string) => key === 'project.read' });
-    render(<ProjectFindingsPage projectId={projectId} page={1} onChange={vi.fn()} />);
+    mock.permission.mockReturnValue({
+      hasPermission: (key: string) => key === 'project.read',
+    });
+    render(
+      <ProjectFindingsPage projectId={projectId} page={1} onChange={vi.fn()} />,
+    );
     expect(screen.getByRole('option', { name: 'Fixed' })).toBeVisible();
-    expect(screen.queryByRole('option', { name: 'Pending review' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'Rejected' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: 'Pending review' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: 'Rejected' }),
+    ).not.toBeInTheDocument();
   });
 
   it('blocks review-only queries before rendering cached data for project-only readers', () => {
-    mock.permission.mockReturnValue({ hasPermission: (key: string) => key === 'project.read' });
-    render(<ProjectFindingsPage projectId={projectId} page={1} status="pending_review" onChange={vi.fn()} />);
+    mock.permission.mockReturnValue({
+      hasPermission: (key: string) => key === 'project.read',
+    });
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={1}
+        status="pending_review"
+        onChange={vi.fn()}
+      />,
+    );
     expect(mock.findings).not.toHaveBeenCalled();
     expect(screen.queryByText('Open redirect')).not.toBeInTheDocument();
   });
 
   it('waits for an in-flight permission refresh before mounting review queries', () => {
-    mock.permission.mockReturnValue({ isFetching: true, hasPermission: () => true });
-    render(<ProjectFindingsPage projectId={projectId} page={1} status="pending_review" onChange={vi.fn()} />);
+    mock.permission.mockReturnValue({
+      isFetching: true,
+      hasPermission: () => true,
+    });
+    render(
+      <ProjectFindingsPage
+        projectId={projectId}
+        page={1}
+        status="pending_review"
+        onChange={vi.fn()}
+      />,
+    );
     expect(mock.findings).not.toHaveBeenCalled();
     expect(screen.getByText('Loading project access')).toBeVisible();
     expect(screen.queryByText('Open redirect')).not.toBeInTheDocument();

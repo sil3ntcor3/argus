@@ -13,7 +13,9 @@ import { toast } from 'sonner';
 import { useFindingWrite } from '../use-finding-write';
 
 type Props = {
-  findings: VulnerabilityLifecycleDto[];
+  findings: (Pick<VulnerabilityLifecycleDto, 'id' | 'name' | 'reviewStatus'> & {
+    vulnerabilityDismissal: { id: string } | null;
+  })[];
   reload: () => Promise<unknown>;
   onDone: () => void;
 };

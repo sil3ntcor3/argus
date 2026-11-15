@@ -1,12 +1,16 @@
 import {
   GetManyBaseQueryParams,
   GetManyBaseResponseDto,
+  SortOrder,
 } from '@/common/dtos/get-many-base.dto';
 import { Severity } from '@/common/enums/enum';
 import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
+  IsDateString,
+  IsIn,
   IsEnum,
   IsInt,
   IsOptional,
@@ -17,6 +21,14 @@ import {
 import { VulnerabilityStatus } from '../../vulnerabilities/dto/get-vulnerability.dto';
 import { ProjectFindingProvenance } from '../project-finding-provenance';
 import { SeverityCountsDto } from './project-assets-read.dto';
+import { parseFilterParam } from '@/common/utils/filter-tree';
+import { IsVulnerabilityFilter, type VulnerabilityFilter } from '../../vulnerabilities/vulnerability-filter';
+import { DISCOVERY_SOURCES, REVIEW_STATUSES, type DiscoverySource, type ReviewStatus } from '../../vulnerabilities/dto/vulnerability-review.dto';
+import { PUBLIC_DETECTION_STATUSES } from '../../vulnerabilities/dto/vulnerability-lifecycle.dto';
+import { FINDING_DISMISS_REASONS, type FindingDismissalReason } from '../../vulnerabilities/finding-dismissal-reason';
+import { GetVulnerabilitiesStatisticsResponseDto } from '../../vulnerabilities/dto/get-vulnerability-statistics.dto';
+
+export const PROJECT_FINDING_SORTS = ['severity', 'name', 'firstDetectedDate', 'lastSeenDate', 'firstSeenAt', 'lastSeenAt', 'dueAt'] as const;
 
 export class GetProjectFindingsQueryDto extends PickType(
   GetManyBaseQueryParams,
@@ -89,6 +101,47 @@ export class GetProjectFindingsQueryDto extends PickType(
   @IsOptional()
   @IsUUID()
   projectWorkflowId?: string;
+
+  @ApiPropertyOptional({ type: Boolean })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => value === 'true' ? true : value === 'false' ? false : value)
+  @IsBoolean()
+  overdue?: boolean;
+
+  @ApiPropertyOptional({ enum: DISCOVERY_SOURCES, isArray: true })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (Array.isArray(value) ? value as unknown[] : [value]))
+  @IsArray()
+  @IsIn(DISCOVERY_SOURCES, { each: true })
+  discoveredBy?: DiscoverySource[];
+
+  @ApiPropertyOptional({ description: 'Inclusive first detection, with legacy creation-date fallback' })
+  @IsOptional() @IsDateString({ strict: true })
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ description: 'First detection through the end of this UTC day, with legacy creation-date fallback' })
+  @IsOptional() @IsDateString({ strict: true })
+  createdTo?: string;
+
+  @ApiPropertyOptional({ type: String, description: 'Bounded finding filter tree, using the global finding filter fields and operators' })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => parseFilterParam(value))
+  @IsVulnerabilityFilter()
+  filter?: VulnerabilityFilter;
+
+  @ApiPropertyOptional({ enum: PROJECT_FINDING_SORTS })
+  @IsOptional() @IsIn(PROJECT_FINDING_SORTS)
+  sortBy?: (typeof PROJECT_FINDING_SORTS)[number];
+
+  @ApiPropertyOptional({ enum: SortOrder })
+  @IsOptional() @IsEnum(SortOrder)
+  sortOrder?: SortOrder;
+}
+
+export class ProjectFindingDismissalDto {
+  @ApiProperty({ type: String, format: 'uuid' }) id: string;
+  @ApiProperty({ enum: FINDING_DISMISS_REASONS }) reason: FindingDismissalReason;
+  @ApiPropertyOptional({ type: Date }) expiresAt?: Date;
 }
 
 export class ProjectFindingSightingDto {
@@ -122,6 +175,24 @@ export class ProjectFindingDto {
   firstSeen: ProjectFindingSightingDto;
   @ApiProperty({ type: () => ProjectFindingSightingDto })
   lastSeen: ProjectFindingSightingDto;
+
+  @ApiProperty({ enum: REVIEW_STATUSES }) reviewStatus: ReviewStatus;
+  @ApiProperty({ enum: PUBLIC_DETECTION_STATUSES }) detectionStatus: (typeof PUBLIC_DETECTION_STATUSES)[number];
+  @ApiProperty({ enum: DISCOVERY_SOURCES }) discoveredBy: DiscoverySource;
+  @ApiProperty() isArchived: boolean;
+  @ApiProperty({ type: Date, nullable: true }) firstDetectedDate: Date | null;
+  @ApiProperty({ type: Date, nullable: true }) lastSeenDate: Date | null;
+  @ApiProperty({ type: Date, nullable: true }) dueAt: Date | null;
+  @ApiProperty({ type: Date, nullable: true }) fixClaimedAt: Date | null;
+  @ApiProperty({ type: ProjectFindingDismissalDto, nullable: true })
+  vulnerabilityDismissal: ProjectFindingDismissalDto | null;
+}
+
+export class ProjectFindingStatisticsDto extends PickType(GetVulnerabilitiesStatisticsResponseDto, [
+  'data', 'byDetectionStatus', 'newLast7Days', 'resurfacedLast30Days', 'fixedLast30Days', 'overdue', 'mttr',
+] as const) {
+  @ApiProperty({ type: Number, nullable: true, description: 'Null without effective vulnerability read access' })
+  pendingReview: number | null;
 }
 
 export class ProjectFindingProvenanceCountsDto {

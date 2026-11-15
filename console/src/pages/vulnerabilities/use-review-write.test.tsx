@@ -68,4 +68,31 @@ describe('Review write boundaries',()=>{
     mount();fireEvent.click(screen.getByText('Review'));await screen.findByRole('alert');
     expect(screen.getByText('Review')).toBeDisabled();expect(perform).toHaveBeenCalledTimes(1);
   });
+  it('acknowledges known success before invalidation can unmount the selected proposal',async()=>{
+    const view=mount();
+    vi.spyOn(client,'invalidateQueries').mockImplementation(async()=>{ view.unmount(); });
+    fireEvent.click(screen.getByText('Review'));
+    await waitFor(()=>expect(client.invalidateQueries).toHaveBeenCalledOnce());
+    expect(saved).toHaveBeenCalledOnce();
+  });
+  it('keeps explicit discard available when a saved-state refresh removes the selected rows',async()=>{
+    perform.mockRejectedValueOnce(new AxiosError('Response lost'));let view=mount();
+    fireEvent.click(screen.getByText('Review'));await screen.findByRole('alert');
+    reload.mockImplementationOnce(async()=>{ view.unmount(); });
+    fireEvent.click(screen.getByText('Check state'));await waitFor(()=>expect(reload).toHaveBeenCalledOnce());
+    view=mount();
+    expect(screen.getByText('Review')).toBeDisabled();
+    expect(screen.getByText('Discard local attempt')).toBeEnabled();
+    fireEvent.click(screen.getByText('Discard local attempt'));
+    await waitFor(()=>expect(screen.getByText('Review')).toBeEnabled());
+    expect(perform).toHaveBeenCalledOnce();
+  });
+  it('does not acknowledge a refresh after an unmounted A-to-B-to-A workspace switch',async()=>{
+    perform.mockRejectedValueOnce(new AxiosError('Response lost'));const view=mount();
+    fireEvent.click(screen.getByText('Review'));await screen.findByRole('alert');
+    let finish!:()=>void;reload.mockImplementationOnce(()=>new Promise<void>(done=>{ finish=done; }));
+    fireEvent.click(screen.getByText('Check state'));view.unmount();
+    act(()=>{ setGlobalWorkspaceId('B');setGlobalWorkspaceId('A'); });await act(async()=>finish());mount();
+    expect(screen.getByText('Discard local attempt')).toBeDisabled();expect(perform).toHaveBeenCalledOnce();
+  });
 });
