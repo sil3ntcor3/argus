@@ -230,7 +230,7 @@ export class VulnerabilitiesController {
 
   @Doc({
     summary: 'Get vulnerability timeline',
-    description: 'Returns up to 500 detection and status events, newest first.',
+    description: 'Returns up to 500 recorded lifecycle/review events, newest first, with safe actor and authorized typed context.',
     response: { serialization: VulnerabilityTimelineResponseDto },
     request: { getWorkspaceId: true },
   })
@@ -253,6 +253,9 @@ export class VulnerabilitiesController {
       id,
       workspaceId,
       canReadJobs,
+      { userId: request.user?.id,
+        canReadAgents: request.permissions?.some(key => ['*','agent.read','agent.write'].includes(key)) ?? false,
+        canReadIssues: request.permissions?.some(key => ['*','workspace.read','workspace.write'].includes(key)) ?? false },
     );
   }
 

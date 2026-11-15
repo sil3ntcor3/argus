@@ -18,11 +18,11 @@ vi.mock('@tanstack/react-router', () => ({
     children,
   }: {
     to: string;
-    params: { id: string };
+    params: Record<string, string>;
     children: ReactNode;
     'aria-label'?: string;
   }) => (
-    <a href={to.replace('$id', params.id)} aria-label={label}>
+    <a href={Object.entries(params).reduce((path, [key, value]) => path.replace('$' + key, value), to)} aria-label={label}>
       {children}
     </a>
   ),
@@ -36,6 +36,7 @@ const events: VulnerabilityTimelineEventDto[] = [
     fromStatus: 'new',
     toStatus: 'active',
     jobHistoryId: 'run-2',
+    actor: null,
   },
   {
     id: 'first',
@@ -44,6 +45,7 @@ const events: VulnerabilityTimelineEventDto[] = [
     fromStatus: null,
     toStatus: 'new',
     jobHistoryId: null,
+    actor: null,
   },
 ];
 
@@ -195,5 +197,54 @@ describe('FindingTimeline', () => {
     expect(
       dialog.getByRole('region', { name: 'Finding timeline results' }),
     ).toHaveFocus();
+  });
+
+  it('shows limited actor names and literal decision context with a System fallback', () => {
+    useTimeline.mockReturnValue({ data: { data: [
+      { ...events[0], type: 'approved', actor: { id: 'person', name: 'Reviewer', image: null },
+        data: { note: '<b>Confirmed</b>', severity: 'critical', proposedSeverity: 'high' } },
+      { ...events[1], type: 'fix_claimed', actor: null, data: { note: 'Fix deployed' } },
+    ] }, isFetchedAfterMount: true });
+    const rows = open().getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Reviewer');
+    expect(rows[0]).toHaveTextContent(/critical/i);
+    expect(rows[0]).toHaveTextContent(/high/i);
+    expect(rows[0]).toHaveTextContent('<b>Confirmed</b>');
+    expect(rows[0].querySelector('b')).toBeNull();
+    expect(rows[1]).toHaveTextContent('System');
+    expect(rows[1]).toHaveTextContent('Fix deployed');
+  });
+
+  it('renders event-specific details and permission-gated issue/conversation links', () => {
+    useTimeline.mockReturnValue({ data: { data: [
+      { ...events[0], id: 'agent', type: 'proposed', data: { agentName: 'Pentest', agentConversationId: 'conversation' } },
+      { ...events[0], id: 'issue', type: 'issue_linked', data: { issueId: 'issue', issueNo: 42 } },
+      { ...events[0], id: 'merge', type: 'merged', data: { proposalName: 'SQL proof', movedSources: 2 } },
+      { ...events[0], id: 'reason', type: 'status_changed', data: { reason: 'detected_by_scan' } },
+      { ...events[0], id: 'dismiss', type: 'dismissed', data: { comment: 'Accepted after review' } },
+    ] }, isFetchedAfterMount: true });
+    render(<FindingTimeline id="finding-1" name="Open redirect" canOpenRuns={false} canOpenAgents canOpenIssues />);
+    fireEvent.click(screen.getByRole('button', { name: 'Timeline' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Finding timeline' }));
+    expect(dialog.getByRole('link', { name: 'View conversation' })).toHaveAttribute('href', '/aistudio/conversations/conversation');
+    expect(dialog.getByRole('link', { name: 'View issue #42' })).toHaveAttribute('href', '/issues/issue');
+    expect(dialog.getByText(/Pentest/)).toBeVisible();
+    expect(dialog.getByText(/SQL proof/)).toBeVisible();
+    expect(dialog.getByText(/2 source/)).toBeVisible();
+    expect(dialog.getByText('Reported again by a scan.')).toBeVisible();
+    expect(dialog.getByText('Accepted after review')).toBeVisible();
+  });
+
+  it('hides cached linked context when its live permission props are revoked', () => {
+    useTimeline.mockReturnValue({ data: { data: [
+      { ...events[0], type: 'verified_by_ai', data: { agentName: 'Private agent', agentConversationId: 'conversation' } },
+      { ...events[1], type: 'issue_linked', data: { issueId: 'issue', issueNo: 42 } },
+    ] }, isFetchedAfterMount: true });
+    const { rerender } = render(<FindingTimeline id="finding-1" name="Open redirect" canOpenRuns canOpenAgents canOpenIssues />);
+    fireEvent.click(screen.getByRole('button', { name: 'Timeline' }));
+    expect(screen.getByRole('link', { name: 'View conversation' })).toBeVisible();
+    rerender(<FindingTimeline id="finding-1" name="Open redirect" canOpenRuns={false} canOpenAgents={false} canOpenIssues={false} />);
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Private agent/)).not.toBeInTheDocument();
   });
 });
