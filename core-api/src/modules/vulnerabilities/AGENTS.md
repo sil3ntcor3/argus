@@ -35,6 +35,9 @@ rollback requirements.
 Use the controller and service specs for permission and response changes.
 Use Docker Postgres for expiry, row-locking and event ordering checks.
 
+The finding query overrides `sortBy`; keep `@Matches(SAFE_SORT_IDENTIFIER)` on
+that property because its validators suppress the inherited identifier check.
+
 AI proposals have `reviewStatus=pending_review` and enter approved counts only
 through `VulnerabilityReviewService`. Rejection retains proof; merge moves
 sources, comments and history into an approved finding on the same asset before
