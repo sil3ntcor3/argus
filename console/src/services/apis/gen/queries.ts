@@ -2976,7 +2976,37 @@ export type UpdateProfileDto = {
   config?: UpdateProfileDtoConfig;
 };
 
+export type FindingSearchAssetDto = {
+  id: string;
+  value: string;
+};
+
+export type FindingSearchResultDtoSeverity =
+  (typeof FindingSearchResultDtoSeverity)[keyof typeof FindingSearchResultDtoSeverity];
+
+export const FindingSearchResultDtoSeverity = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
+
+export type FindingSearchResultDto = {
+  id: string;
+  name: string;
+  severity: FindingSearchResultDtoSeverity;
+  /** @nullable */
+  affectedUrl: string | null;
+  asset: FindingSearchAssetDto;
+};
+
 export type SearchData = {
+  /**
+   * Top five approved finding previews; empty without finding access. Independent of target/asset pagination.
+   * @maxItems 5
+   */
+  vulnerabilities: FindingSearchResultDto[];
   assets: Asset[];
   targets: Target[];
 };
@@ -8507,7 +8537,23 @@ export type SearchControllerSearchAssetsTargetsParams = {
   sortOrder?: string;
   value: string;
   isSaveHistory?: boolean;
+  /**
+   * Filter the separate finding preview by severity; requires vulnerability read access
+   * @maxItems 5
+   */
+  severity?: SearchControllerSearchAssetsTargetsSeverityItem[];
 };
+
+export type SearchControllerSearchAssetsTargetsSeverityItem =
+  (typeof SearchControllerSearchAssetsTargetsSeverityItem)[keyof typeof SearchControllerSearchAssetsTargetsSeverityItem];
+
+export const SearchControllerSearchAssetsTargetsSeverityItem = {
+  info: 'info',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  critical: 'critical',
+} as const;
 
 export type SearchControllerGetSearchHistoryParams = {
   search?: string;
@@ -32430,8 +32476,8 @@ export const useToolConfigProfilesControllerSetDefault = <
 };
 
 /**
- * Search assets and targets
- * @summary Search assets and targets
+ * Search assets and targets, with an independently authorized top-five finding preview
+ * @summary Search assets, targets and finding previews
  */
 export const searchControllerSearchAssetsTargets = (
   params: SearchControllerSearchAssetsTargetsParams,
@@ -32598,7 +32644,7 @@ export function useSearchControllerSearchAssetsTargetsInfinite<
   queryKey: DataTag<QueryKey, TData, TError>;
 };
 /**
- * @summary Search assets and targets
+ * @summary Search assets, targets and finding previews
  */
 
 export function useSearchControllerSearchAssetsTargetsInfinite<
@@ -32751,7 +32797,7 @@ export function useSearchControllerSearchAssetsTargets<
   queryKey: DataTag<QueryKey, TData, TError>;
 };
 /**
- * @summary Search assets and targets
+ * @summary Search assets, targets and finding previews
  */
 
 export function useSearchControllerSearchAssetsTargets<

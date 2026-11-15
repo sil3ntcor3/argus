@@ -1,5 +1,9 @@
 import { getManyResponse } from '@/utils/getManyResponse';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AssetsService } from '../assets/assets.service';
@@ -11,11 +15,12 @@ import {
   SearchAssetsTargetsDto,
   SearchResponseDto,
 } from './dto/search.dto';
+import { FindingSearchService } from './finding-search.service';
 import { SearchHistory } from './entities/search-history.entity';
 
 /**
  * Service for managing search operations and search history.
- * It allows searching for assets and targets within a workspace,
+ * It allows searching for assets, targets and authorized finding previews within a workspace,
  * retrieving search history, and managing search history entries.
  */
 @Injectable()
@@ -27,10 +32,11 @@ export class SearchService {
     private readonly assetService: AssetsService,
     private readonly targetService: TargetsService,
     private readonly statisticService: StatisticService,
+    private readonly findingSearch: FindingSearchService,
   ) {}
 
   /**
-   * Searches for assets and targets in a workspace based on the provided query.
+   * Keeps the target/asset page intact while adding independently authorized finding previews.
    *
    * @param query - The query parameters for the search, including workspace ID, limit, page, and search value.
    * @returns A promise that resolves to an object containing the combined results of assets and targets, along with pagination information.
@@ -39,7 +45,12 @@ export class SearchService {
     user: User,
     query: SearchAssetsTargetsDto,
     workspaceId: string,
+    canReadFindings = false,
   ): Promise<SearchResponseDto> {
+    if (query.severity?.length && !canReadFindings)
+      throw new ForbiddenException(
+        'Vulnerability read access is required for finding filters',
+      );
     // First, get the total count for both assets and targets
     const [assetsCount, targetsCount] = await Promise.all([
       this.statisticService.getTotalAssets(workspaceId),
@@ -54,7 +65,7 @@ export class SearchService {
     );
 
     // Fetch the actual data with calculated limits
-    const [assets, targets] = await Promise.all([
+    const [assets, targets, vulnerabilities] = await Promise.all([
       assetsLimit > 0
         ? this.assetService.getManyAsssetServices(
             {
@@ -73,12 +84,14 @@ export class SearchService {
             workspaceId,
           )
         : { data: [], total: 0, page: 1, pageCount: 0 },
+      canReadFindings ? this.findingSearch.search(query, workspaceId) : [],
     ]);
 
     // Combine and sort by relevance (you might want to adjust sorting based on your needs)
     const combinedResults = {
       assets: assets.data || [],
       targets: targets.data || [],
+      vulnerabilities,
     };
 
     const response = {
@@ -90,7 +103,10 @@ export class SearchService {
       hasNextPage: query.page * query.limit < totalItems,
     };
 
-    if (query.isSaveHistory === true) {
+    if (
+      query.isSaveHistory === true &&
+      !(query.severity?.length && !query.value.trim())
+    ) {
       const existingHistory = await this.searchHistoryRepo.findOne({
         where: {
           query: query.value,

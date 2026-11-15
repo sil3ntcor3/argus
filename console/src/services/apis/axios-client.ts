@@ -20,13 +20,18 @@ axiosInstance.interceptors.request.use((config) => {
 
   if (config.params) {
     const cleanedParams = { ...config.params };
+    // Finding-only search still requires value=""; every other empty-param
+    // rule stays unchanged, including search requests without severity.
+    const keepEmptySearchValue = config.method === 'get' &&
+      config.url === '/api/search' && Array.isArray(cleanedParams.severity) &&
+      cleanedParams.severity.length > 0;
     for (const key in cleanedParams) {
       const value = cleanedParams[key];
       if (Array.isArray(value)) {
         const filtered = value.filter(cleanValue);
         if (filtered.length === 0) delete cleanedParams[key];
         else cleanedParams[key] = filtered;
-      } else if (!cleanValue(value)) {
+      } else if (!cleanValue(value) && !(keepEmptySearchValue && key === 'value' && value === '')) {
         delete cleanedParams[key];
       }
     }
