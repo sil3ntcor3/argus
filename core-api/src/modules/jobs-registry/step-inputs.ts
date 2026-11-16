@@ -33,7 +33,7 @@ export interface ScopeService {
   port: number;
 }
 
-/** A service that answered HTTP(S); `scheme` is from its last good response. */
+/** A service that answered HTTP(S); `scheme` reflects its latest probe's protocol evidence. */
 export interface ScopeWebService extends ScopeService {
   scheme: 'http' | 'https';
 }

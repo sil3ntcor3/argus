@@ -141,25 +141,39 @@ export class StepScopeLoader {
     return query.getMany();
   }
 
-  /** Uses each service's latest successful HTTP response scheme. */
+  /** Resolves each service's latest probe, including explicit HTTPS-required errors. */
   private async loadWebSchemes(
     serviceIds: string[],
   ): Promise<Map<string, 'http' | 'https'>> {
     if (serviceIds.length === 0) return new Map();
-    const rows: Array<{ id: string; scheme: string | null }> =
+    const rows: Array<{
+      id: string;
+      scheme: string | null;
+      statusCode: number | null;
+      title: string | null;
+    }> =
       await this.dataSource.query(
-        `SELECT DISTINCT ON (hr."assetServiceId") hr."assetServiceId" AS id, hr.scheme
+        `SELECT DISTINCT ON (hr."assetServiceId") hr."assetServiceId" AS id,
+                hr.scheme, hr.status_code AS "statusCode", hr.title
            FROM http_responses hr
           WHERE hr."assetServiceId"::text = ANY($1::text[])
             AND hr.failed = false
           ORDER BY hr."assetServiceId", hr."createdAt" DESC`,
         [serviceIds],
       );
-    return new Map(
-      rows.map((row) => [
-        row.id,
-        row.scheme?.toLowerCase() === 'http' ? 'http' : 'https',
-      ]),
+    return new Map<string, 'http' | 'https'>(
+      rows.map((row) => {
+        const requiresHttps =
+          row.statusCode === 400 &&
+          row.title
+            ?.toLowerCase()
+            .includes('the plain http request was sent to https port');
+        const scheme =
+          row.scheme?.toLowerCase() === 'http' && !requiresHttps
+            ? 'http'
+            : 'https';
+        return [row.id, scheme];
+      }),
     );
   }
 }

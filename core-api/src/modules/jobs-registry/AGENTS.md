@@ -8,6 +8,10 @@ the same run lock. A step with no input can complete without creating jobs.
 - `getNextJobs` claims eligible jobs in batches under a write lock.
   Connector inputs and config resolve at dispatch. Repository credentials must
   stay out of saved inputs and logs.
+- `StepScopeLoader.loadWebSchemes` resolves the latest non-failed probe for
+  `DataKind.WEB`. An HTTP 400 titled "The plain HTTP request was sent to HTTPS
+  port" selects HTTPS on that service's port. Stored probe observations retain
+  their original scheme and response.
 - The private scan digest describes the resolved dispatch. A separate absolute
   PostgreSQL timestamp records when the initial claim started. `pickJobAt`
   distinguishes claim attempts and can be adjusted for ordering; it is not
