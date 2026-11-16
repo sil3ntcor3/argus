@@ -1,5 +1,6 @@
 import { DataKind, TargetType } from '@/common/enums/enum';
 import type { DataSource } from 'typeorm';
+import { planStepInputs } from './step-inputs';
 import { StepScopeLoader } from './step-scope.loader';
 
 /** A chainable query builder whose getMany resolves `rows`. */
@@ -132,6 +133,53 @@ describe('StepScopeLoader', () => {
     ]);
     expect(loaded.get('s-8443')).toBe(services[1]);
   });
+
+  it.each([8443, 9443])(
+    'plans HTTPS on port %i when the HTTP probe explicitly requires it',
+    async (port) => {
+      servicesQB.getMany.mockResolvedValue([
+        { ...services[1], port, value: `${asset.value}:${port}` },
+      ]);
+      query.mockResolvedValueOnce([
+        {
+          id: 's-8443',
+          scheme: 'http',
+          statusCode: 400,
+          title: '400 The plain HTTP request was sent to HTTPS port',
+        },
+      ]);
+
+      const { scope } = await loader.load([DataKind.WEB], {
+        targetTypes: [TargetType.DOMAIN],
+      });
+
+      expect(planStepInputs([DataKind.WEB], scope)[0].connectorInputs).toEqual({
+        target: `https://${asset.value}:${port}`,
+      });
+      expect(query.mock.calls[0][0]).toContain('hr.status_code');
+      expect(query.mock.calls[0][0]).toContain('hr.title');
+    },
+  );
+
+  it.each([
+    ['http', 200, 'Home', 'http'],
+    ['http', 400, '400 Bad Request', 'http'],
+    ['http', 400, null, 'http'],
+    ['http', 200, 'The plain HTTP request was sent to HTTPS port', 'http'],
+    ['https', 400, '400 Bad Request', 'https'],
+    ['HTTP', 400, 'THE PLAIN HTTP REQUEST WAS SENT TO HTTPS PORT', 'https'],
+  ])(
+    'resolves %s %i with title %s to %s',
+    async (scheme, statusCode, title, expected) => {
+      query.mockResolvedValueOnce([{ id: 's-8443', scheme, statusCode, title }]);
+
+      const { scope } = await loader.load([DataKind.WEB], {
+        targetTypes: [TargetType.DOMAIN],
+      });
+
+      expect(scope.web?.get(asset.id)?.[0].scheme).toBe(expected);
+    },
+  );
 
   it('narrows services to the ones asked for', async () => {
     await loader.load([DataKind.SERVICE], {
