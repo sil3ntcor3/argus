@@ -84,15 +84,12 @@ func newDetachedCleanupContext() (context.Context, context.CancelFunc) {
 // health. A var (not const) so tests can shrink it.
 var healthPollInterval = 5 * time.Second
 
-// poolWaitBudget is how long a job queued on a full container pool may wait
-// without the pool freeing a single slot before it is reported back to Core.
+// poolWaitBudget bounds a full pool with no tracked work and no newly freed slot.
 const poolWaitBudget = 10 * time.Minute
 
-// poolWaitDeadline bounds a job's wait for a container slot by pool progress,
-// not total time: a fixed total budget equal to a connector's own timeout
-// (nuclei: 600s) failed every job queued behind one full-length scan (#717).
-// Each freed slot restarts the budget, so a draining queue of any depth keeps
-// waiting while a pool wedged for the whole budget still fails the job.
+// poolWaitDeadline lets jobs queue behind running scans and container creation.
+// Execution timeouts and context cancellation remain unchanged; a stale busy
+// pool with no tracked work still times out.
 type poolWaitDeadline struct {
 	budget time.Duration
 	until  time.Time
@@ -103,10 +100,9 @@ func newPoolWaitDeadline(now time.Time, budget time.Duration) *poolWaitDeadline 
 	return &poolWaitDeadline{budget: budget, until: now.Add(budget)}
 }
 
-// expired reports whether the budget ran out, given the pool's current
-// freed-slot count. A changed count restarts the budget.
-func (d *poolWaitDeadline) expired(now time.Time, freed uint64) bool {
-	if freed != d.freed {
+// expired renews the budget while blocking work exists or a slot was freed.
+func (d *poolWaitDeadline) expired(now time.Time, freed uint64, working bool) bool {
+	if working || freed != d.freed {
 		d.freed = freed
 		d.until = now.Add(d.budget)
 	}
@@ -663,7 +659,7 @@ func processConnectorJob(ctx context.Context, job *pb.Job, grpcClient *grpcclien
 	// The pool wait deadline is armed once per job — re-arming it per submit
 	// attempt would double the real bound (attempt 0 could burn the whole
 	// budget, then attempt 1 would start a fresh one). It restarts only when the
-	// pool frees a slot (see poolWaitDeadline).
+	// pool frees a slot or has tracked blocking work (see poolWaitDeadline).
 	poolWait := newPoolWaitDeadline(time.Now(), poolWaitBudget)
 
 	// The ExecuteJob payload is identical across retries, so build it once.
@@ -696,12 +692,9 @@ func processConnectorJob(ctx context.Context, job *pb.Job, grpcClient *grpcclien
 		for err != nil && errors.Is(err, execution.ErrPoolExhausted) {
 			// A per-image cap drains only when this image frees a slot; the node
 			// budget drains when any image does.
-			imageFreed, nodeFreed := mgr.FreedSlots(spec)
-			freed := imageFreed
-			if errors.Is(err, execution.ErrNodeBudgetExhausted) {
-				freed = nodeFreed
-			}
-			if poolWait.expired(time.Now(), freed) {
+			nodeWide := errors.Is(err, execution.ErrNodeBudgetExhausted)
+			freed, working := mgr.PoolWaitProgress(spec, nodeWide)
+			if poolWait.expired(time.Now(), freed, working) {
 				// Local scheduling gave up on this job: report it so Core can
 				// requeue it, and leave the image alone (a full pool is not an
 				// image defect).
