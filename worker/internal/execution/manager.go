@@ -293,13 +293,7 @@ func (m *Manager) Submit(ctx context.Context, spec JobSpec) (string, error) {
 	// the job, as numbers. Fall back to conservative defaults if a job carries
 	// none (should not happen for connector jobs).
 	cpuStr, memStr := limitsCPUandMemory(spec.Limits)
-	cpuRequestMillis, memRequestBytes := defaultCPURequestMillis, defaultMemRequestBytes
-	if v, err := resource.ParseCPU(cpuStr); err == nil && v > 0 {
-		cpuRequestMillis = v
-	}
-	if v, err := resource.ParseMemoryToBytes(memStr); err == nil && v > 0 {
-		memRequestBytes = v
-	}
+	cpuRequestMillis, memRequestBytes := resourceRequests(cpuStr, memStr)
 
 	var h runtime.Handle
 	reserved := false
@@ -561,14 +555,40 @@ func (m *Manager) cancelTimeout(execID string) {
 	}
 }
 
-// FreedSlots reports how many busy container slots have been freed for spec's
-// pool key and node-wide (see PoolManager.FreedSlots). Zero when the pool is
-// disabled.
-func (m *Manager) FreedSlots(spec JobSpec) (image, node uint64) {
+// PoolWaitProgress reports freed slots and tracked work that can unblock spec.
+// Per-image quota waits only consider the same pool key; node budget waits
+// consider every image. Stale busy entries without a tracked execution or
+// creation reservation do not count as work.
+func (m *Manager) PoolWaitProgress(spec JobSpec, nodeWide bool) (freed uint64, working bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.pool == nil {
-		return 0, 0
+		return 0, false
 	}
-	return m.pool.FreedSlots(poolKeyFor(spec))
+	key := poolKeyFor(spec)
+	canFit := true
+	m.pool.mu.Lock()
+	freed = m.pool.freedByKey[key]
+	working = m.pool.pendingCountLocked(key) > 0
+	if nodeWide {
+		freed = m.pool.freedTotal
+		working = len(m.pool.pendingReplicas) > 0
+		cpuStr, memStr := limitsCPUandMemory(spec.Limits)
+		cpu, mem := resourceRequests(cpuStr, memStr)
+		canFit = (m.pool.cpuBudgetMillis <= 0 || cpu <= m.pool.cpuBudgetMillis) &&
+			(m.pool.memBudgetBytes <= 0 || mem <= m.pool.memBudgetBytes)
+	}
+	m.pool.mu.Unlock()
+	if !canFit {
+		return freed, false
+	}
+	for _, e := range m.execs {
+		if e != nil && e.State == StateRunning && (nodeWide || poolKeyFor(e.Spec) == key) {
+			working = true
+			break
+		}
+	}
+	return freed, working
 }
 
 // SubmitWithTimeout submits and auto-cancels after timeout (0 disables).
@@ -862,4 +882,17 @@ func limitsCPUandMemory(limits map[string]any) (string, string) {
 	cpu, _ := limits[JobCPUKey].(string)
 	mem, _ := limits[JobMemoryKey].(string)
 	return cpu, mem
+}
+
+// resourceRequests resolves the declared admission request, using the same
+// conservative fallback for both replica admission and pool-wait decisions.
+func resourceRequests(cpu, memory string) (cpuMillis, memBytes int) {
+	cpuMillis, memBytes = defaultCPURequestMillis, defaultMemRequestBytes
+	if v, err := resource.ParseCPU(cpu); err == nil && v > 0 {
+		cpuMillis = v
+	}
+	if v, err := resource.ParseMemoryToBytes(memory); err == nil && v > 0 {
+		memBytes = v
+	}
+	return cpuMillis, memBytes
 }
