@@ -1,3 +1,4 @@
+import { findingDetectedAt } from '@/modules/vulnerabilities/open-vulnerability';
 import { Severity } from '@/common/enums/enum';
 import type { ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 
@@ -20,10 +21,10 @@ export function applyReportFindingFilter<T extends ObjectLiteral>(
   targetAlias: 'target' | 't' = 'target',
 ): void {
   if (options?.startDate) {
-    qb.andWhere('v.createdAt >= :reportStartDate', { reportStartDate: options.startDate });
+    qb.andWhere(`${findingDetectedAt('v')} >= :reportStartDate`, { reportStartDate: options.startDate });
   }
   if (options?.endDate) {
-    qb.andWhere('v.createdAt <= :reportEndDate', { reportEndDate: options.endDate });
+    qb.andWhere(`${findingDetectedAt('v')} <= :reportEndDate`, { reportEndDate: options.endDate });
   }
   if (options?.targetIds?.length) {
     qb.andWhere(`${targetAlias}.id IN (:...targetIds)`, { targetIds: options.targetIds });

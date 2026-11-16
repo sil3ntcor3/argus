@@ -76,7 +76,7 @@ export class ArtifactListItemDto {
   @ApiProperty({ minimum: 0 })
   sizeBytes: number;
 
-  @ApiProperty({ enum: ['upload', 'agent'] })
+  @ApiProperty({ enum: ['upload', 'agent', 'template'] })
   source: WorkspaceArtifact['source'];
 
   @ApiProperty({ enum: ['private', 'shared', 'public'], description: 'Stored file access mode.' })

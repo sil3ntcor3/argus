@@ -15,6 +15,7 @@ import {
   TargetInsightLevel,
   type TargetOverviewDto,
   type TargetTopVulnerabilityDto,
+  type TargetIssueRefDto,
 } from './dto/target-overview.dto';
 import type { TargetRunDto } from './dto/target-runs.dto';
 import { staleTargetCondition } from './stale-target-condition';
@@ -54,7 +55,7 @@ type ScheduleLookup = ReturnType<ScheduleReader['getScheduler']>;
 
 type FindingCounts = Pick<
   TargetOverviewDto,
-  'openVulnerabilities' | 'newVulnerabilities' | 'weekly'
+  'openVulnerabilities' | 'newVulnerabilities' | 'fixedVulnerabilities' | 'weekly'
 >;
 
 type TopFindingJson = Omit<TargetTopVulnerabilityDto, 'createdAt'> & {
@@ -77,6 +78,7 @@ function toTargetRunDto(run: TargetRunJson): TargetRunDto {
 type TargetOverviewRow = Omit<
   TargetOverviewDto,
   | 'insights'
+  | 'issues'
   | 'nextScanAt'
   | 'lastRun'
   | 'activeRuns'
@@ -135,7 +137,7 @@ export class TargetOverviewService {
   }
 
   /** Reads the saved schedule without letting Redis delays block Overview. */
-  private async getNextScanAt(
+  async getNextScanAt(
     id: string,
     jobId: string | null,
     scanSchedule: CronSchedule | null,
@@ -157,7 +159,7 @@ export class TargetOverviewService {
   async getOverview(
     id: string,
     workspaceId: string,
-    access: { jobs: boolean; findings: boolean; projects: boolean },
+    access: { jobs: boolean; findings: boolean; projects: boolean; issues?: boolean },
   ): Promise<TargetOverviewDto> {
     const now = new Date();
     const monday = new Date(now);
@@ -232,7 +234,7 @@ export class TargetOverviewService {
               ) END AS runs,
               CASE WHEN $4::boolean THEN (
                 WITH open_findings AS MATERIALIZED (
-                  SELECT v.id, v.severity, v."createdAt",
+                  SELECT v.id, v.severity, COALESCE(v."firstDetectedDate",v."createdAt" AT TIME ZONE $9) AS "createdAt",
                          CASE v.severity
                            WHEN '${Severity.CRITICAL}' THEN 5 WHEN '${Severity.HIGH}' THEN 4
                            WHEN '${Severity.MEDIUM}' THEN 3 WHEN '${Severity.LOW}' THEN 2
@@ -241,11 +243,11 @@ export class TargetOverviewService {
                   FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
                   WHERE a."targetId" = t.id AND ${openVulnerabilityCondition('v')}
                 ), week_counts AS (
-                  SELECT width_bucket(v."createdAt", $5::timestamp[]) AS week_number,
+                  SELECT width_bucket(COALESCE(v."firstDetectedDate",v."createdAt")::timestamp, $5::timestamp[]) AS week_number,
                          ${WEEKLY_COUNT_COLUMNS_SQL}
                   FROM assets a JOIN vulnerabilities v ON v."assetId" = a.id
-                  WHERE a."targetId" = t.id
-                    AND v."createdAt" BETWEEN ($5::timestamp[])[1] AND $6::timestamp
+                  WHERE a."targetId" = t.id AND v."reviewStatus"='approved'
+                    AND COALESCE(v."firstDetectedDate",v."createdAt")::timestamp BETWEEN ($5::timestamp[])[1] AND $6::timestamp
                   GROUP BY 1
                 )
                 SELECT jsonb_build_object(
@@ -257,7 +259,13 @@ export class TargetOverviewService {
                     'info', COUNT(*) FILTER (WHERE severity = 'info')
                   ),
                   'newVulnerabilities', COUNT(*) FILTER (WHERE "createdAt"
-                    BETWEEN LOCALTIMESTAMP - INTERVAL '${RECENT_DISCOVERY_DAYS} days' AND LOCALTIMESTAMP),
+                    BETWEEN statement_timestamp() - INTERVAL '${RECENT_DISCOVERY_DAYS * 24} hours' AND statement_timestamp()),
+                  'fixedVulnerabilities', (
+                    SELECT COUNT(*)::int FROM assets a JOIN vulnerabilities v ON v."assetId"=a.id
+                    WHERE a."targetId"=t.id AND v."reviewStatus"='approved' AND v."detectionStatus"='fixed'
+                    AND v."fixedAt">statement_timestamp()-INTERVAL '${RECENT_DISCOVERY_DAYS * 24} hours'
+                    AND v."fixedAt"<=statement_timestamp()
+                  ),
                   'weekly', (
                     SELECT jsonb_agg(jsonb_build_object('week', s.week,
                                       ${WEEKLY_OUTPUT_FIELDS_SQL}) ORDER BY s.week_number)
@@ -324,9 +332,22 @@ export class TargetOverviewService {
         now,
         weekStarts.map((week) => week.toISOString().slice(0, 10)),
         access.projects,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
       ],
     );
     if (!overview) throw new NotFoundException('Target not found');
+    const issues = access.issues ? await this.dataSource.query<TargetIssueRefDto[]>(`SELECT issue.id,issue.no,issue.status,issue.priority,
+      CASE WHEN NOT $3::boolean AND issue.type='vulnerability_remediation'
+        AND (issue."ruleId" IS NOT NULL OR issue."groupKey" IS NOT NULL OR issue."sourceType" IS NOT NULL)
+        THEN 'Remediation issue #' || issue.no::text ELSE issue.title END AS title
+      FROM issues issue WHERE issue."workspaceId"=$2 AND issue.status IN ('open','in_progress')
+      AND EXISTS (SELECT 1 FROM issue_links link WHERE link."issueId"=issue.id AND (
+        (link."resourceType"='target' AND link."resourceId"=$1) OR
+        (link."resourceType"='asset' AND EXISTS(SELECT 1 FROM assets a WHERE a.id=link."resourceId" AND a."targetId"=$1)) OR
+        ($3::boolean AND link."resourceType"='vulnerability' AND EXISTS(
+          SELECT 1 FROM vulnerabilities v JOIN assets a ON a.id=v."assetId" WHERE v.id=link."resourceId" AND a."targetId"=$1))))
+      ORDER BY issue."createdAt" DESC,issue.id DESC LIMIT 5`, [id,workspaceId,access.findings]) : [];
+
 
     const {
       jobId,
@@ -386,11 +407,13 @@ export class TargetOverviewService {
     }
     return {
       ...metrics,
+      issues,
       nextScanAt: await this.getNextScanAt(id, jobId, scanSchedule),
       lastRun: run ? toTargetRunDto(run) : null,
       activeRuns: runs?.activeRuns.map(toTargetRunDto) ?? null,
       openVulnerabilities: findings?.openVulnerabilities ?? null,
       newVulnerabilities: findings?.newVulnerabilities ?? null,
+      fixedVulnerabilities: findings?.fixedVulnerabilities ?? null,
       weekly: findings?.weekly ?? null,
       topVulnerabilities:
         findings?.topVulnerabilities.map((finding) => ({

@@ -23,7 +23,7 @@ export async function reopenFindings(
      JOIN assets AS asset ON asset.id = finding."assetId"
      JOIN targets AS target ON target.id = asset."targetId"
      WHERE target."workspaceId" = $2 AND dismissal.id = ANY($1::uuid[])
-     ORDER BY finding.id FOR NO KEY UPDATE OF finding`,
+     ORDER BY finding.fingerprint, finding.id FOR NO KEY UPDATE OF finding`,
     [unique, workspaceId],
   );
   // Read again after locking. A competing request may have already removed a row.

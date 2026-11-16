@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import AccessDenied from '@/components/common/access-denied';
 import { FindingTrends } from '@/components/common/finding-trends';
 import { Button } from '@/components/ui/button';
@@ -221,6 +222,7 @@ export function TargetOverviewTab({
             targetId={targetId}
             counts={data.openVulnerabilities}
             newCount={data.newVulnerabilities}
+            fixedCount={data.fixedVulnerabilities}
             onKeyboardNavigate={() => onKeyboardNavigate('vulnerabilities')}
           />
         )}
@@ -240,6 +242,9 @@ export function TargetOverviewTab({
           onKeyboardNavigate={onKeyboardNavigate}
         />
       )}
+      {data?.issues && data.issues.length > 0 && <section className="rounded-lg border p-4" aria-label="Target issues"><h3 className="mb-2 font-semibold">Issues</h3>
+        <ul className="space-y-2">{data.issues.map(issue => <li key={issue.id} className="flex flex-wrap gap-2 text-sm"><Link className="min-w-0 break-words text-primary underline" to="/issues/$id" params={{ id: issue.id }}>#{issue.no} · {issue.title}</Link><span>{issue.status.replace('_', ' ')} · {issue.priority.toUpperCase()}</span></li>)}</ul>
+      </section>}
       {data?.exposure && <TargetExposurePanel exposure={data.exposure} />}
       {canReadProjects && data?.projects != null && (
         <TargetProjectsPanel projects={data.projects} />

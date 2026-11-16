@@ -35,6 +35,10 @@ export class AssetGroup extends BaseEntity {
   @Column({ nullable: true, default: '#78716C' }) // stone-500 tailwind css
   hexColor: string;
 
+  @ApiHideProperty()
+  @Column({ type: 'varchar', length: 2000, nullable: true, select: false })
+  instruction: string | null;
+
   // Private entity fields; canonical project DTOs expose selected metadata.
   @ApiHideProperty()
   @Column({ type: 'text', nullable: true, select: false })
@@ -71,7 +75,7 @@ export class AssetGroup extends BaseEntity {
   toJSON(): Record<string, unknown> {
     const response: Record<string, unknown> = {};
     Object.assign(response, this);
-    for (const key of ['description', 'autoAddAssets', 'archivedAt']) {
+    for (const key of ['description', 'instruction', 'autoAddAssets', 'archivedAt']) {
       delete response[key];
     }
     return response;

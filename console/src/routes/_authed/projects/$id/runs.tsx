@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 const runsSearch = z.object({
   page: z.number().int().min(1).max(10000000).optional().catch(undefined),
-  trigger: z.enum(['manual', 'scheduled']).optional().catch(undefined),
+  trigger: z.enum(['manual', 'scheduled', 'event']).optional().catch(undefined),
   workflow: projectRouteId.optional().catch(undefined),
   pageSize: z
     .union([z.literal(20), z.literal(50), z.literal(100)])

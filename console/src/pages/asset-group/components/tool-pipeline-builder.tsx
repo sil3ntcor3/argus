@@ -52,6 +52,7 @@ import {
 import { toast } from 'sonner';
 import { capabilityOf, pipelineHint } from './tool-io';
 import { ToolIOInfo, ToolInputSelect } from './tool-input-fields';
+import { PipelineToolInstaller } from './pipeline-tool-installer';
 
 /** A selected tool, including saved stage and input preferences. */
 export interface PipelineToolEntry {
@@ -73,6 +74,7 @@ interface ToolPipelineBuilderProps {
   onChange: (next: PipelineToolEntry[]) => void;
   disabled?: boolean;
   emptyMessage?: string;
+  allowInstall?: boolean;
 }
 
 const BLOCKED_MESSAGE = 'This tool needs configuration — add it first, then configure from the panel.';
@@ -640,6 +642,7 @@ function ToolPipelineBuilderComponent({
   onChange,
   disabled = false,
   emptyMessage = 'No scanning tools installed',
+  allowInstall = false,
 }: ToolPipelineBuilderProps) {
   const [search, setSearch] = useState('');
   // Only one selected-tool panel open at a time (tool id).
@@ -842,7 +845,7 @@ function ToolPipelineBuilderComponent({
                 setSearch(e.target.value);
                 setActiveId(null);
               }}
-              placeholder="Search tools..."
+              placeholder="Search installed tools..."
               className="pl-8"
               disabled={disabled}
             />
@@ -960,6 +963,14 @@ function ToolPipelineBuilderComponent({
           <p className="text-xs text-muted-foreground">
             Some tools still need configuration before they can run.
           </p>
+        )}
+        {allowInstall && (
+          <PipelineToolInstaller installedTools={tools} disabled={disabled}
+            onInstalled={(id) => {
+              setSearch('');
+              setActiveId(id);
+            }}
+          />
         )}
       </div>
 

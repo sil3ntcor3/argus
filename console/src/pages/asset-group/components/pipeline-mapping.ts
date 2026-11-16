@@ -1,7 +1,7 @@
-import type { Tool, WorkflowJob } from '@/services/apis/gen/queries';
+import type { DataKind, Tool, WorkflowJob } from '@/services/apis/gen/queries';
 import type { PipelineToolEntry } from './tool-pipeline-builder';
 
-type SavedJob = Omit<WorkflowJob, 'needs'> & { needs?: string[] | string };
+type SavedJob = Omit<WorkflowJob, 'needs' | 'input'> & { needs?: string[] | string; input?: DataKind[] | DataKind };
 type SavedJobs = Record<string, SavedJob> | SavedJob[];
 type ToolRef = Pick<Tool, 'id' | 'name'>;
 
@@ -47,7 +47,7 @@ export function entriesFromContent(
     jobId, toolId: toolsByName.get(job.run)?.id ?? job.run,
     stage: stages.get(jobId) ?? 1,
     ...(job.category ? { category: job.category } : {}),
-    ...(job.input?.length ? { input: [...job.input] } : {}),
+    ...(job.input?.length ? { input: typeof job.input === 'string' ? [job.input] : [...job.input] } : {}),
     ...(job.config ? { config: job.config } : {}),
     ...(job.configProfileId ? { configProfileId: job.configProfileId } : {}),
   }));

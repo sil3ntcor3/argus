@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import { WorkerScope } from '@/common/enums/enum';
+import { VulnerabilityStatus } from '@/modules/vulnerabilities/dto/get-vulnerability.dto';
 import {
   detailAssetSchema,
   detailIssueSchema,
@@ -20,22 +21,45 @@ import {
   listWorkersSchema,
 } from '@/mcp/mcp.schema';
 
-import { NEWEST_FIRST, defineTool, pageOf } from './helpers';
-import type { Deps } from './types';
+import {
+  NEWEST_FIRST,
+  assetsInProject,
+  defineTool,
+  failSoft,
+  pageOf,
+  projectFor,
+  projectIdInput,
+} from './helpers';
+import type { Deps, ToolScope } from './types';
 
-// Tools over the workspace's Argus data, offered in every agent mode.
+// Tools over the workspace's Argus data, offered in every agent mode. The
+// project-aware ones take a projectId, or are locked to the conversation's.
+
+const getAssetsInput = getAssetsSchema.extend(projectIdInput);
+const getVulnerabilitiesInput = getVulnerabilitiesSchema.extend(projectIdInput);
+const listAssetsInTargetInput = listAssetsInTargetSchema.extend(projectIdInput);
+const getPortsInput = getPortsSchema.extend(projectIdInput);
+const getTechnologiesInput = getTechnologiesSchema.extend(projectIdInput);
+const getTlsInput = getTlsSchema.extend(projectIdInput);
+const statisticsInput = z.object(projectIdInput);
 
 export function getAssetsTool(
   deps: Deps<'assetsService'>,
   workspaceId: string,
+  scope: ToolScope = {},
 ): Tool {
   return defineTool({
     description:
-      'List discovered assets (domains, IPs, URLs) in the workspace. Params: page, limit, value (filter text).',
-    inputSchema: getAssetsSchema,
-    execute: async (params: z.infer<typeof getAssetsSchema>) => {
+      'List discovered assets (domains, IPs, URLs) in the workspace. Params: page, limit, value (filter text), projectId.',
+    inputSchema: getAssetsInput,
+    execute: async (params: z.infer<typeof getAssetsInput>) => {
       const response = await deps.assetsService.getManyAsssetServices(
-        { ...pageOf(params), ...NEWEST_FIRST, value: params.value },
+        {
+          ...pageOf(params),
+          ...NEWEST_FIRST,
+          value: params.value,
+          ...assetsInProject(projectFor(scope, params)),
+        },
         workspaceId,
       );
       return {
@@ -47,24 +71,86 @@ export function getAssetsTool(
 }
 
 export function getVulnerabilitiesTool(
-  deps: Deps<'vulnerabilitiesService'>,
+  deps: Deps<'vulnerabilitiesService' | 'projectResultsService' | 'workspacesService'>,
   workspaceId: string,
+  scope: ToolScope = {},
 ): Tool {
   return defineTool({
-    description:
-      'List security vulnerabilities with severity. Params: page, limit, q (search e.g. "XSS", "CVE-2024").',
-    inputSchema: getVulnerabilitiesSchema,
-    execute: async (params: z.infer<typeof getVulnerabilitiesSchema>) => {
+    description: [
+      'List security findings, highest severity first, open by default. AI proposals require explicit pending_review/rejected status.',
+      'Params: page, limit, q, status, severity, overdue, discoveredBy, tags, targetIds, createdFrom/createdTo (first detection), projectId.',
+      'Workspace rows include asset, lifecycle/review state, discovery source, SLA deadline, detection count, detection dates, CVEs/CVSS, active dismissal and authorized linked issue context.',
+      'With a project: only its recorded findings; q/status/severity apply. Workspace-only overdue/source/tag/target/date filters do not apply. Project rows include status, provenance, CVEs and tool.',
+    ].join('\n'),
+    inputSchema: getVulnerabilitiesInput,
+    execute: async (params: z.infer<typeof getVulnerabilitiesInput>, options = { toolCallId: 'mcp' }) => {
+      options.abortSignal?.throwIfAborted();
+      const projectId = projectFor(scope, params);
+      let canReadIssues = scope.workspaceApiKey === true;
+      if (scope.userId) {
+        const { permissionKeys } = await deps.workspacesService.getMembershipWithPermissions(workspaceId, scope.userId);
+        const has = (key: string) => permissionKeys.includes('*') || permissionKeys.includes(key)
+          || permissionKeys.includes(key.replace(/\.read$/, '.write'));
+        if (!has('vulnerability.read')) throw new Error('Requires vulnerability.read');
+        if (projectId && !has('project.read')) throw new Error('Requires project.read');
+        canReadIssues = has('workspace.read');
+      } else if (!scope.workspaceApiKey || projectId) {
+        throw new Error('Finding reads require authenticated user context');
+      }
+      options.abortSignal?.throwIfAborted();
+      if (projectId) {
+        const found = await deps.projectResultsService.vulnerabilities(
+          projectId,
+          workspaceId,
+          {
+            ...pageOf(params),
+            // Keep the dedicated project's existing severity/sighting order.
+            search: params.q ?? '',
+            status: params.status ?? VulnerabilityStatus.OPEN,
+            severity: params.severity,
+          },
+        );
+        options.abortSignal?.throwIfAborted();
+        return {
+          total: found.total,
+          page: found.page,
+          limit: found.limit,
+          pageCount: found.pageCount,
+          hasNextPage: found.hasNextPage,
+          data: found.data.map((i) => ({
+            id: i.id,
+            name: i.name,
+            severity: i.severity,
+            asset: i.assetValue,
+            status: i.status,
+            provenance: i.provenance,
+            cveId: i.cveId ?? null,
+            tool: i.toolName ?? null,
+          })),
+        };
+      }
       const response = await deps.vulnerabilitiesService.getVulnerabilities(
-        { ...pageOf(params), ...NEWEST_FIRST, q: params.q },
-        workspaceId,
+        { ...pageOf(params), sortBy: 'severity', sortOrder: SortOrder.DESC, q: params.q,
+          status: params.status ?? VulnerabilityStatus.OPEN, severity: params.severity,
+          overdue: params.overdue, discoveredBy: params.discoveredBy, tags: params.tags,
+          targetIds: params.targetIds?.length ? params.targetIds : undefined,
+          createdFrom: params.createdFrom, createdTo: params.createdTo },
+        workspaceId, false, { userId: scope.userId, canReadIssues }, 'model',
       );
+      options.abortSignal?.throwIfAborted();
       return {
         ...response,
         data: response.data.map((i) => ({
           id: i.id,
           name: i.name,
           severity: i.severity,
+          asset: i.asset?.value ?? null,
+          detectionStatus: i.detectionStatus, reviewStatus: i.reviewStatus, discoveredBy: i.discoveredBy,
+          dueAt: i.dueAt ?? null, timesDetected: i.timesDetected,
+          firstDetectedDate: i.firstDetectedDate ?? null, lastSeenDate: i.lastSeenDate ?? null,
+          cveId: i.cveId ?? null, cvssScore: i.cvssScore ?? null,
+          dismissal: i.vulnerabilityDismissal ? { reason: i.vulnerabilityDismissal.reason, expiresAt: i.vulnerabilityDismissal.expiresAt ?? null } : null,
+          openIssue: canReadIssues && i.openIssue ? { id: i.openIssue.id, no: i.openIssue.no, status: i.openIssue.status } : null,
         })),
       };
     },
@@ -93,14 +179,20 @@ export function getTargetsTool(
 }
 
 export function getStatisticsTool(
-  deps: Deps<'statisticService'>,
+  deps: Deps<'statisticService' | 'projectResultsService'>,
   workspaceId: string,
+  scope: ToolScope = {},
 ): Tool {
   return defineTool({
     description:
-      'Return security dashboard summary: asset/vulnerability counts, severity breakdown, security score. No params.',
-    inputSchema: z.object({}),
-    execute: () => deps.statisticService.getStatistics(workspaceId),
+      "Return security dashboard summary: asset/vulnerability counts, severity breakdown, security score. Params: projectId (that project's overview instead: assets, open vulnerabilities by severity, runs, recent activity).",
+    inputSchema: statisticsInput,
+    execute: (params: z.infer<typeof statisticsInput>) => {
+      const projectId = projectFor(scope, params);
+      return projectId
+        ? deps.projectResultsService.overview(projectId, workspaceId)
+        : deps.statisticService.getStatistics(workspaceId);
+    },
   });
 }
 
@@ -119,18 +211,20 @@ export function detailAssetTool(
 export function listAssetsInTargetTool(
   deps: Deps<'assetsService'>,
   workspaceId: string,
+  scope: ToolScope = {},
 ): Tool {
   return defineTool({
     description:
-      'List assets discovered from a specific target by targetId. Params: targetId, page, limit, value (filter).',
-    inputSchema: listAssetsInTargetSchema,
-    execute: (params: z.infer<typeof listAssetsInTargetSchema>) =>
+      'List assets discovered from a specific target by targetId. Params: targetId, page, limit, value (filter), projectId.',
+    inputSchema: listAssetsInTargetInput,
+    execute: (params: z.infer<typeof listAssetsInTargetInput>) =>
       deps.assetsService.getManyAsssetServices(
         {
           ...pageOf(params),
           ...NEWEST_FIRST,
           targetIds: [params.targetId],
           value: params.value,
+          ...assetsInProject(projectFor(scope, params)),
         },
         workspaceId,
       ),
@@ -156,14 +250,20 @@ export function detailVulnTool(
 export function getPortsTool(
   deps: Deps<'assetsService'>,
   workspaceId: string,
+  scope: ToolScope = {},
 ): Tool {
   return defineTool({
     description:
-      'List open network ports with asset counts. Params: page, limit, value (port number filter).',
-    inputSchema: getPortsSchema,
-    execute: (params: z.infer<typeof getPortsSchema>) =>
+      'List open network ports with asset counts. Params: page, limit, value (port number filter), projectId.',
+    inputSchema: getPortsInput,
+    execute: (params: z.infer<typeof getPortsInput>) =>
       deps.assetsService.getPortAssets(
-        { ...pageOf(params), ...NEWEST_FIRST, value: params.value },
+        {
+          ...pageOf(params),
+          ...NEWEST_FIRST,
+          value: params.value,
+          ...assetsInProject(projectFor(scope, params)),
+        },
         workspaceId,
       ),
   });
@@ -172,14 +272,20 @@ export function getPortsTool(
 export function getTechnologiesTool(
   deps: Deps<'assetsService'>,
   workspaceId: string,
+  scope: ToolScope = {},
 ): Tool {
   return defineTool({
     description:
-      'List detected technologies (software, frameworks, servers). Params: page, limit, value (filter by name).',
-    inputSchema: getTechnologiesSchema,
-    execute: (params: z.infer<typeof getTechnologiesSchema>) =>
+      'List detected technologies (software, frameworks, servers). Params: page, limit, value (filter by name), projectId.',
+    inputSchema: getTechnologiesInput,
+    execute: (params: z.infer<typeof getTechnologiesInput>) =>
       deps.assetsService.getTechnologyAssets(
-        { ...pageOf(params), ...NEWEST_FIRST, value: params.value },
+        {
+          ...pageOf(params),
+          ...NEWEST_FIRST,
+          value: params.value,
+          ...assetsInProject(projectFor(scope, params)),
+        },
         workspaceId,
       ),
   });
@@ -188,65 +294,47 @@ export function getTechnologiesTool(
 export function getTlsTool(
   deps: Deps<'assetsService'>,
   workspaceId: string,
+  scope: ToolScope = {},
 ): Tool {
   return defineTool({
     description:
-      'List TLS/SSL certificates with issuer, subject, expiry. Params: page, limit, search (host name filter).',
-    inputSchema: getTlsSchema,
-    execute: (params: z.infer<typeof getTlsSchema>) =>
+      'List TLS/SSL certificates with issuer, subject, expiry. Params: page, limit, search (host name filter), projectId.',
+    inputSchema: getTlsInput,
+    execute: (params: z.infer<typeof getTlsInput>) =>
       deps.assetsService.getManyTls(
         {
           ...pageOf(params),
           sortBy: 'not_after',
           sortOrder: SortOrder.ASC,
           search: params.search,
+          ...assetsInProject(projectFor(scope, params)),
         },
         workspaceId,
       ),
   });
 }
 
-export function listIssuesTool(
-  deps: Deps<'issuesService'>,
-  workspaceId: string,
-): Tool {
+/** Generic issue filters always run under the authenticated caller's current permissions. */
+export function listIssuesTool(deps: Deps<'issuesService'>, workspaceId: string, scope: ToolScope = {}): Tool {
   return defineTool({
-    description:
-      'List security issues with status. Params: page, limit, search, status (OPEN/IN_PROGRESS/RESOLVED).',
+    description: 'List workspace work items by title or #number, status, type, priority, assigneeId, mine, overdue or resourceType/resourceId. Status: open, in_progress, resolved, closed. Types: vulnerability_remediation, task, asset_review, scan_failure.',
     inputSchema: listIssuesSchema,
-    execute: async (params: z.infer<typeof listIssuesSchema>) => {
-      const response = await deps.issuesService.getMany(
-        {
-          ...pageOf(params),
-          ...NEWEST_FIRST,
-          search: params.search,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-          status: params.status as any,
-        },
-        workspaceId,
-      );
-      return {
-        ...response,
-        data: response.data.map((i) => ({
-          id: i.id,
-          title: i.title,
-          status: i.status,
-          tags: i.tags,
-        })),
-      };
-    },
+    execute: (params: z.infer<typeof listIssuesSchema>) => failSoft('read issues', async () => {
+      if (!scope.userId && !scope.workspaceApiKey) throw new Error('Issue reads require authenticated user context');
+      return deps.issuesService.getMany({ ...params, ...pageOf(params), sortBy: 'updatedAt', sortOrder: SortOrder.DESC }, workspaceId, scope.userId);
+    }),
   });
 }
 
-export function detailIssueTool(
-  deps: Deps<'issuesService'>,
-  workspaceId: string,
-): Tool {
+/** Issue details contain only the resource summaries the caller may currently read. */
+export function detailIssueTool(deps: Deps<'issuesService'>, workspaceId: string, scope: ToolScope = {}): Tool {
   return defineTool({
-    description: 'Get full details of a single issue by issueId.',
+    description: 'Get a workspace work item by issueId, with its fields, progress and authorized resource links.',
     inputSchema: detailIssueSchema,
-    execute: (params: z.infer<typeof detailIssueSchema>) =>
-      deps.issuesService.getById(params.issueId, workspaceId),
+    execute: (params: z.infer<typeof detailIssueSchema>) => failSoft('read issue', async () => {
+      if (!scope.userId && !scope.workspaceApiKey) throw new Error('Issue reads require authenticated user context');
+      return deps.issuesService.getById(params.issueId, workspaceId, scope.userId);
+    }),
   });
 }
 

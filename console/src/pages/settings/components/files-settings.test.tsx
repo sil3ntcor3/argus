@@ -12,11 +12,17 @@ import FilesSettings from './files-settings';
 
 const mocks = vi.hoisted(() => ({
   permission: vi.fn(),
+  usage: vi.fn(),
   files: vi.fn(),
   folders: vi.fn(),
   folderDetail: vi.fn(),
   download: vi.fn(),
   remove: vi.fn(),
+  metadata: vi.fn(),
+  shares: vi.fn(),
+  updateAccess: vi.fn(),
+  addShares: vi.fn(),
+  removeShare: vi.fn(),
 }));
 
 const owned = { id: 'mine', name: 'My report.txt', isOwner: true };
@@ -28,12 +34,17 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 }));
 vi.mock('@/services/apis/gen/queries', async (original) => ({
   ...(await original<typeof import('@/services/apis/gen/queries')>()),
-  useArtifactsControllerGetUsage: () => ({}),
+  useArtifactsControllerGetUsage: mocks.usage,
   useArtifactsControllerGetMany: mocks.files,
   useArtifactFoldersControllerGetMany: mocks.folders,
   useArtifactFoldersControllerGetById: mocks.folderDetail,
   artifactsControllerDownload: mocks.download,
   artifactsControllerRemove: mocks.remove,
+  useArtifactsControllerGetById: mocks.metadata,
+  useArtifactsControllerGetShares: mocks.shares,
+  artifactsControllerUpdateAccess: mocks.updateAccess,
+  artifactsControllerAddShares: mocks.addShares,
+  artifactsControllerRemoveShare: mocks.removeShare,
 }));
 
 function show(
@@ -54,8 +65,19 @@ function show(
 describe('Files settings actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.usage.mockReturnValue({});
     mocks.download.mockReset();
     mocks.remove.mockReset();
+    mocks.metadata.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { ...owned, shareType: 'private' },
+      refetch: vi.fn(),
+    });
+    mocks.shares.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: [],
+      refetch: vi.fn(),
+    });
     mocks.folders.mockReturnValue({ isFetchedAfterMount: true, data: [] });
     mocks.folderDetail.mockReturnValue({});
     localStorage.removeItem('argus.files.view');
@@ -77,6 +99,61 @@ describe('Files settings actions', () => {
       },
     }));
     setGlobalWorkspaceId('workspace');
+  });
+
+  it('reserves readable filename width beside every owner action', async () => {
+    show(['artifact.read', 'artifact.write']);
+    const table = await screen.findByRole('table', { name: 'Workspace files' });
+    const row = within(table).getByRole('row', { name: /My report.txt/ });
+    expect(within(row).getAllByRole('cell')[0]).toHaveClass('min-w-48');
+    for (const action of ['Share', 'Download', 'Delete']) {
+      expect(
+        within(row).getByRole('button', { name: `${action} My report.txt` }),
+      ).toBeVisible();
+    }
+  });
+
+  it.each(['list', 'grid'])('identifies template files in the %s view', async view => {
+    localStorage.setItem('argus.files.view', view);
+    mocks.files.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { data: [{ ...owned, name: 'custom-check.yaml', source: 'template', sizeBytes: 10, createdAt: '2026-01-02T00:00:00Z' }] },
+    });
+    show(['artifact.read']);
+    expect(await screen.findByText('Template', { exact: true })).toBeVisible();
+    expect(screen.getByText('custom-check.yaml', { exact: true })).toBeVisible();
+  });
+
+  it.each([
+    [0, 0, 100, 0],
+    [40, 10, 100, 50],
+    [80, 60, 100, 100],
+    [0, 0, 0, 100],
+  ])('shows allocated storage for %i used, %i reserved and %i quota', async (used, reserved, quota, percent) => {
+    mocks.usage.mockReturnValue({
+      isFetchedAfterMount: true,
+      data: { usedBytes: used, reservedBytes: reserved, quotaBytes: quota, maxFileBytes: 512, bySource: [], byUser: [] },
+    });
+    show(['artifact.read']);
+    const meter = await screen.findByRole('progressbar', { name: 'Workspace storage allocated' });
+    expect(meter).toHaveAttribute('aria-valuenow', String(percent));
+    expect(meter).toHaveAttribute('aria-valuetext', `${used + reserved} B of ${quota} B allocated`);
+    const summary = screen.getByRole('region', { name: 'Workspace storage' });
+    for (const label of ['Used', 'Quota', 'Reserved', 'Per-file limit']) {
+      expect(within(summary).getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it.each([false, true])('keeps the meter hidden while usage is unverified or failed (%s)', async failed => {
+    mocks.usage.mockReturnValue({
+      isFetchedAfterMount: failed, isError: failed,
+      data: { usedBytes: 50, reservedBytes: 0, quotaBytes: 100, maxFileBytes: 512, bySource: [], byUser: [] },
+      refetch: vi.fn(),
+    });
+    show(['artifact.read']);
+    await screen.findByRole('region', { name: 'Workspace storage' });
+    expect(screen.queryByRole('progressbar', { name: 'Workspace storage allocated' })).toBeNull();
+    expect(screen.getByText(failed ? 'Could not load storage usage.' : 'Loading storage usage…')).toBeInTheDocument();
   });
 
   it('browses personal folders with breadcrumbs and searches across folders', async () => {
@@ -363,6 +440,39 @@ describe('Files settings actions', () => {
       screen.getByRole('table', { name: 'Workspace files' }),
     ).toBeVisible();
     expect(localStorage.getItem('argus.files.view')).toBe('list');
+  });
+
+  it('opens owner sharing controls and restores focus after closing', async () => {
+    show(['artifact.read', 'artifact.write']);
+    const trigger = await screen.findByRole('button', {
+      name: 'Share My report.txt',
+    });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Share My report.txt',
+    });
+    expect(
+      within(dialog).getByRole('combobox', { name: 'General access' }),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByRole('textbox', { name: 'Add people' }),
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByRole('button', { name: 'Copy public link' }),
+    ).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it('withholds sharing controls from readers and from managers viewing another creator’s files', async () => {
+    show(['artifact.read', 'artifact.write', 'artifact.manage']);
+    fireEvent.click(await screen.findByRole('button', { name: 'All files' }));
+    expect(
+      screen.getByRole('button', { name: 'Share My report.txt' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Share Peer report.txt' }),
+    ).toBeNull();
   });
 
   it('browses shared files in table and grid without management controls or folder filters', async () => {

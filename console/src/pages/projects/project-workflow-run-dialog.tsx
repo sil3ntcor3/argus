@@ -9,20 +9,14 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
-  assetGroupControllerRunGroupWorkflowScheduler,
-  getAssetGroupControllerGetByIdQueryKey,
+  projectsControllerRunWorkflow,
   getProjectsControllerGetByIdQueryKey,
-  getProjectsControllerGetManyQueryKey,
-  getProjectsControllerGetOverviewQueryKey,
-  getProjectsControllerGetRunsQueryKey,
-  useAssetGroupControllerRunGroupWorkflowScheduler,
 } from '@/services/apis/gen/queries';
-import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import { useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
-import { isAxiosError } from 'axios';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useId, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { useProjectWorkflowAction } from './use-project-workflow-action';
 
 export function ProjectWorkflowRunDialog({
   projectId,
@@ -31,6 +25,7 @@ export function ProjectWorkflowRunDialog({
   workspaceId,
   hasAssets,
   hasSteps,
+  canOpenRuns = false,
 }: {
   projectId: string;
   bindingId: string;
@@ -38,25 +33,22 @@ export function ProjectWorkflowRunDialog({
   workspaceId: string;
   hasAssets: boolean;
   hasSteps: boolean;
+  canOpenRuns?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const lock = useRef(false);
   const reasonId = useId();
   const queryClient = useQueryClient();
-  const run = useAssetGroupControllerRunGroupWorkflowScheduler({
-    mutation: {
-      networkMode: 'always',
-      retry: false,
-      mutationFn: async ({ id }) => {
-        if (workspaceId !== getGlobalWorkspaceId())
-          throw new Error('The selected workspace changed');
-        return assetGroupControllerRunGroupWorkflowScheduler(id);
-      },
-    },
-  });
-  const invalid = isAxiosError(run.error) && run.error.response?.status === 400;
-  const uncertain = run.isError && !invalid;
+  const navigate = useNavigate();
+  const run = useProjectWorkflowAction(
+    workspaceId,
+    projectId,
+    bindingId,
+    'run',
+  );
+  const finishing = useRef(false);
+  const [settling, setSettling] = useState(false);
+  const starting = run.busy || settling;
+  const uncertain = run.uncertain;
   const unavailable = !hasAssets
     ? 'Add project assets before starting a run'
     : !hasSteps
@@ -64,44 +56,40 @@ export function ProjectWorkflowRunDialog({
       : undefined;
 
   async function start() {
-    if (
-      unavailable ||
-      uncertain ||
-      lock.current ||
-      workspaceId !== getGlobalWorkspaceId()
-    )
-      return;
-    lock.current = true;
-    setStarting(true);
+    if (unavailable || finishing.current) return;
+    finishing.current = true;
+    setSettling(true);
     try {
-      const result = await run
-        .mutateAsync({ id: bindingId })
-        .catch(() => undefined);
-      const runsKey = getProjectsControllerGetRunsQueryKey(projectId);
-      const keys = result
-        ? [
-            runsKey,
-            getProjectsControllerGetByIdQueryKey(projectId),
-            getProjectsControllerGetOverviewQueryKey(projectId),
-            getProjectsControllerGetManyQueryKey(),
-            getAssetGroupControllerGetByIdQueryKey(projectId),
-          ]
-        : [runsKey];
-      await Promise.all(
-        keys.map((queryKey) =>
-          queryClient.invalidateQueries({
-            queryKey,
-            refetchType:
-              workspaceId === getGlobalWorkspaceId() ? 'active' : 'none',
-          }),
+      const result = await run.execute((signal) =>
+        projectsControllerRunWorkflow(
+          projectId,
+          bindingId,
+          {},
+          {
+            signal,
+            timeout: 30_000,
+            headers: { 'X-Workspace-Id': workspaceId },
+          },
         ),
       );
-      if (!result || workspaceId !== getGlobalWorkspaceId()) return;
+      if (!result || !run.current()) return;
+      const root = getProjectsControllerGetByIdQueryKey(projectId)[0];
+      await queryClient.invalidateQueries({
+        predicate: ({ queryKey: [path] }) =>
+          typeof path === 'string' &&
+          (path === root || path.startsWith(root + '/')),
+      });
+      if (!run.current()) return;
       setOpen(false);
-      toast.success('Workflow run requested.');
+      toast.success(`Workflow started for ${result.assets} assets.`);
+      if (canOpenRuns)
+        await navigate({
+          to: '/jobs/runs/$id',
+          params: { id: result.jobHistoryId },
+        });
     } finally {
-      lock.current = false;
-      setStarting(false);
+      finishing.current = false;
+      if (run.current()) setSettling(false);
     }
   }
 
@@ -109,8 +97,8 @@ export function ProjectWorkflowRunDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (lock.current) return;
-        if (next) run.reset();
+        if (finishing.current || run.isLocked()) return;
+        if (next) run.resetSuccess();
         setOpen(next);
       }}
     >
@@ -143,11 +131,11 @@ export function ProjectWorkflowRunDialog({
           </DialogDescription>
         </DialogHeader>
         {unavailable && <p role="status">{unavailable}</p>}
-        {run.isError && (
+        {(run.error || uncertain) && (
           <p role="alert">
-            {invalid
-              ? 'Unable to start the workflow. Check the tools and current project assets.'
-              : 'Could not confirm the workflow started. Check project Runs before trying again.'}
+            {uncertain
+              ? 'Could not confirm the workflow started. Check project Runs before trying again.'
+              : run.error}
           </p>
         )}
         <DialogFooter>
@@ -156,17 +144,22 @@ export function ProjectWorkflowRunDialog({
             aria-disabled={starting}
             className="aria-disabled:opacity-50"
             onClick={() => {
-              if (!lock.current) setOpen(false);
+              if (!finishing.current && !run.isLocked()) setOpen(false);
             }}
           >
             {uncertain ? 'Close' : 'Cancel'}
           </Button>
           {uncertain ? (
-            <Button asChild variant="outline">
-              <Link to="/projects/$id/runs" params={{ id: projectId }}>
-                View project runs
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <Link to="/projects/$id/runs" params={{ id: projectId }}>
+                  View project runs
+                </Link>
+              </Button>
+              <Button variant="outline" onClick={run.acknowledge}>
+                I checked; allow a new request
+              </Button>
+            </div>
           ) : (
             <Button
               disabled={Boolean(unavailable)}

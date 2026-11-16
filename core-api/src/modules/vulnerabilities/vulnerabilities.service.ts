@@ -1,3 +1,6 @@
+import type { WrapperType } from '@/common/types/app.types';
+import { Inject, forwardRef } from '@nestjs/common';
+import type { ReviewReader } from './vulnerability-review-read';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import {
@@ -18,8 +21,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
-import { isISO8601 } from 'class-validator';
-import { In, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import { AgentsCompletionsService } from '../agents/agents.completions';
 import { User } from '../auth/entities/user.entity';
 import { JobsRegistryService } from '../jobs-registry/jobs-registry.service';
@@ -37,23 +39,18 @@ import {
   GetVulnerabilitiesQueryDto,
   VulnerabilityStatus,
 } from './dto/get-vulnerability.dto';
-import {
-  TIMELINE_EVENT_TYPES,
-  type VulnerabilityTimelineEventDto,
-  type VulnerabilityTimelineResponseDto,
-} from './dto/vulnerability-timeline.dto';
+import type { VulnerabilityTimelineResponseDto } from './dto/vulnerability-timeline.dto';
+import { readFindingTimeline } from './vulnerability-timeline-read';
+import { RISK_ACCEPTED } from './finding-dismissal-reason';
 import { dismissFindings, type FindingDismissalInput } from './dismiss-findings';
 import { Vulnerability } from './entities/vulnerability.entity';
-import {
-  FINDING_DISMISS_REASONS,
-  RISK_ACCEPTED,
-} from './finding-dismissal-reason';
 import {
   activeDismissalCondition,
   openVulnerabilityCondition,
 } from './open-vulnerability';
 import { reopenFindings } from './reopen-findings';
 import { compileVulnerabilityFilter } from './vulnerability-filter';
+import { findingLifecycleStatistics, LIFECYCLE_READ_COLUMNS, projectFindingLifecycle } from './vulnerability-lifecycle-read';
 
 @Injectable()
 export class VulnerabilitiesService {
@@ -67,7 +64,8 @@ export class VulnerabilitiesService {
     private jobRegistryService: JobsRegistryService,
     private toolsService: ToolsService,
     private workflowService: WorkflowsService,
-    private agentsCompletionsService: AgentsCompletionsService,
+    @Inject(forwardRef(() => AgentsCompletionsService))
+    private agentsCompletionsService: WrapperType<AgentsCompletionsService>,
     private notificationsService: NotificationsService,
     @InjectRepository(Target)
     private targetRepository: Repository<Target>,
@@ -165,6 +163,9 @@ export class VulnerabilitiesService {
   async getVulnerabilities(
     query: GetVulnerabilitiesQueryDto,
     workspaceId: string,
+    canReadJobs = false,
+    reader: ReviewReader = {},
+    view: 'rest' | 'model' = 'rest',
   ) {
     const {
       limit,
@@ -185,6 +186,7 @@ export class VulnerabilitiesService {
 
     const queryBuilder = this.vulnerabilitiesRepository
       .createQueryBuilder('vulnerabilities')
+      .addSelect(LIFECYCLE_READ_COLUMNS.map(column => `vulnerabilities.${column}`))
       .leftJoin('vulnerabilities.asset', 'assets')
       .addSelect(['assets.id', 'assets.value'])
       .leftJoin('assets.target', 'targets')
@@ -200,6 +202,9 @@ export class VulnerabilitiesService {
       .skip((page - 1) * limit)
       .take(limit);
 
+    // Expiry is private on the relation; select it only for the approved tool projection.
+    if (view === 'model') queryBuilder.addSelect('dismissal.expiresAt');
+
     // Handle severity sorting with proper order
     if (sortBy === 'severity') {
       const { select, orderBy } = this.buildSeverityOrderQuery(sortOrder);
@@ -207,6 +212,7 @@ export class VulnerabilitiesService {
     } else {
       queryBuilder.orderBy(`vulnerabilities.${sortBy}`, sortOrder);
     }
+    queryBuilder.addOrderBy('vulnerabilities.id', 'ASC');
 
     if (targetIds) {
       queryBuilder.andWhere('targets.id IN (:...targetIds)', { targetIds });
@@ -224,12 +230,23 @@ export class VulnerabilitiesService {
       });
     }
 
+    const reviewStatus = [VulnerabilityStatus.PENDING_REVIEW, VulnerabilityStatus.REJECTED].includes(status as VulnerabilityStatus) ? status : 'approved';
+    queryBuilder.andWhere('vulnerabilities.reviewStatus = :reviewStatus', { reviewStatus });
+    if (query.discoveredBy?.length) queryBuilder.andWhere('vulnerabilities.discoveredBy IN (:...discoveredBy)', { discoveredBy: query.discoveredBy });
+
     // Filter by status
     if (status === VulnerabilityStatus.OPEN) {
       queryBuilder.andWhere(openVulnerabilityCondition('vulnerabilities'));
     } else if (status === VulnerabilityStatus.DISMISSED) {
       queryBuilder.andWhere('dismissal.vulnerabilityId IS NOT NULL');
+    } else if (status === VulnerabilityStatus.FIXED) {
+      queryBuilder.andWhere('vulnerabilities.detectionStatus = :detectionStatus', { detectionStatus: 'fixed' });
+    } else if ([VulnerabilityStatus.NEW, VulnerabilityStatus.ACTIVE, VulnerabilityStatus.RESURFACED].includes(status as VulnerabilityStatus)) {
+      queryBuilder.andWhere(openVulnerabilityCondition('vulnerabilities'))
+        .andWhere('vulnerabilities.detectionStatus = :detectionStatus', { detectionStatus: status });
     }
+    if (query.overdue) queryBuilder.andWhere(openVulnerabilityCondition('vulnerabilities'))
+      .andWhere('vulnerabilities.dueAt < statement_timestamp()');
 
     // Filter by severity levels
     if (Array.isArray(severity) && severity.length > 0) {
@@ -238,19 +255,21 @@ export class VulnerabilitiesService {
       });
     }
 
-    // Filter by creation date range
+    // Date filters follow first detection, with a creation-date fallback for legacy findings.
+    const dateFilter = (operator: '>=' | '<=', parameter: 'createdFrom' | 'createdTo', value: Date) => {
+      // Separate timestamp/timestamptz bindings preserve legacy clocks on non-UTC hosts.
+      return queryBuilder.andWhere(new Brackets(date => date
+        .where(`vulnerabilities.firstDetectedDate ${operator} :detected_${parameter}`, { [`detected_${parameter}`]: value })
+        .orWhere(`vulnerabilities.firstDetectedDate IS NULL AND vulnerabilities.createdAt ${operator} :${parameter}`, { [parameter]: value })));
+    };
     if (createdFrom) {
-      queryBuilder.andWhere('vulnerabilities.createdAt >= :createdFrom', {
-        createdFrom: new Date(createdFrom),
-      });
+      dateFilter('>=', 'createdFrom', new Date(createdFrom));
     }
     if (createdTo) {
       // Set time to end of day (23:59:59.999) to include the entire day
       const endDate = new Date(createdTo);
-      endDate.setHours(23, 59, 59, 999);
-      queryBuilder.andWhere('vulnerabilities.createdAt <= :createdTo', {
-        createdTo: endDate,
-      });
+      endDate.setUTCHours(23, 59, 59, 999);
+      dateFilter('<=', 'createdTo', endDate);
     }
 
     // Filter by tags (using overlap operator with raw SQL)
@@ -270,7 +289,8 @@ export class VulnerabilitiesService {
 
     const [vulnerabilities, total] = await queryBuilder.getManyAndCount();
 
-    return getManyResponse({ query, data: vulnerabilities, total });
+    const data = await projectFindingLifecycle(this.vulnerabilitiesRepository.manager, vulnerabilities, workspaceId, canReadJobs, false, reader);
+    return getManyResponse({ query, data, total });
   }
 
   /**
@@ -280,9 +300,12 @@ export class VulnerabilitiesService {
    * @param workspaceId - The ID of the workspace to which the vulnerability belongs.
    * @returns A promise that resolves to the vulnerability entity.
    */
-  async getVulnerability(id: string, workspaceId: string) {
+  async getVulnerability(id: string, workspaceId: string, canReadJobs = false, reader: ReviewReader = {}) {
     const queryBuilder = this.vulnerabilitiesRepository
       .createQueryBuilder('vulnerabilities')
+      .addSelect(LIFECYCLE_READ_COLUMNS.map(column => `vulnerabilities.${column}`))
+      .leftJoin('vulnerabilities.fixClaimedBy', 'fixActor')
+      .addSelect(['fixActor.id', 'fixActor.name', 'fixActor.image'])
       .leftJoin('vulnerabilities.asset', 'assets')
       .addSelect(['assets.id', 'assets.value'])
       .leftJoin('assets.target', 'targets')
@@ -311,7 +334,7 @@ export class VulnerabilitiesService {
     if (dismissal && (dismissal.reason !== RISK_ACCEPTED || !dismissal.expiresAt)) {
       delete dismissal.expiresAt;
     }
-    return vulnerability;
+    return (await projectFindingLifecycle(this.vulnerabilitiesRepository.manager, [vulnerability], workspaceId, canReadJobs, true, reader))[0];
   }
 
   /**
@@ -367,7 +390,9 @@ export class VulnerabilitiesService {
       }),
     );
 
-    return { data: statistics };
+    const [{ pendingReview }] = await this.vulnerabilitiesRepository.manager.query<{ pendingReview: number }[]>(`SELECT COUNT(*)::int AS "pendingReview" FROM vulnerabilities v JOIN assets a ON a.id=v."assetId" JOIN targets t ON t.id=a."targetId" WHERE t."workspaceId"=$1 AND v."reviewStatus"='pending_review' AND ($2::uuid[] IS NULL OR t.id=ANY($2::uuid[]))`, [workspaceId, targetIds?.length ? targetIds : null]);
+    return { data: statistics, pendingReview,
+      ...await findingLifecycleStatistics(this.vulnerabilitiesRepository.manager, workspaceId, targetIds) };
   }
 
   /**
@@ -382,74 +407,9 @@ export class VulnerabilitiesService {
   }
 
   async getVulnerabilityTimeline(
-    id: string,
-    workspaceId: string,
-    canReadJobs: boolean,
+    id: string, workspaceId: string, canReadJobs: boolean, reader: ReviewReader = {},
   ): Promise<VulnerabilityTimelineResponseDto> {
-    type TimelineRow =
-      | (Omit<VulnerabilityTimelineEventDto, 'dismissalReason' | 'expiresAt'> & {
-          rawReason: string | null;
-          rawExpiry: string | null;
-        })
-      | { id: null };
-    // An owned finding with no events still has one row; a missing or foreign
-    // finding has none. Both the finding and the event must be in scope.
-    const rows = await this.vulnerabilitiesRepository.manager.query<
-      TimelineRow[]
-    >(
-      `SELECT event.id, event.type, event."occurredAt",
-              CASE WHEN event.type IN ('detected', 'status_changed') THEN event."fromStatus" END AS "fromStatus",
-              CASE WHEN event.type IN ('detected', 'status_changed') THEN event."toStatus" END AS "toStatus",
-              CASE WHEN workflow."workspaceId" = target."workspaceId" THEN history.id END AS "jobHistoryId",
-              CASE event.type
-                WHEN 'dismissed' THEN event.data ->> 'reason'
-                WHEN 'reopened' THEN event.data ->> 'previousReason'
-                WHEN 'risk_expired' THEN 'risk_accepted'
-              END AS "rawReason",
-              CASE WHEN event.type IN ('dismissed', 'reopened', 'risk_expired')
-                THEN event.data ->> 'expiresAt'
-              END AS "rawExpiry"
-       FROM vulnerabilities AS finding
-       JOIN assets AS asset ON asset.id = finding."assetId"
-       JOIN targets AS target ON target.id = asset."targetId"
-       LEFT JOIN LATERAL (
-         SELECT id, type, "occurredAt", "fromStatus", "toStatus", "jobHistoryId", data
-         FROM vulnerability_events
-         WHERE "vulnerabilityId" = finding.id AND "workspaceId" = target."workspaceId"
-           AND type = ANY($4::varchar[])
-         ORDER BY "occurredAt" DESC, id DESC
-         LIMIT 500
-       ) AS event ON true
-       LEFT JOIN job_histories AS history
-         ON $3::boolean AND event.type IN ('detected', 'status_changed') AND history.id = event."jobHistoryId"
-       LEFT JOIN workflows AS workflow ON workflow.id = history."workflowId"
-       WHERE finding.id = $1 AND target."workspaceId" = $2
-       ORDER BY event."occurredAt" DESC, event.id DESC`,
-      [id, workspaceId, canReadJobs, TIMELINE_EVENT_TYPES],
-    );
-    if (rows.length === 0)
-      throw new NotFoundException('Vulnerability not found');
-    const data: VulnerabilityTimelineEventDto[] = [];
-    for (const row of rows) {
-      if (row.id === null) continue;
-      const { rawReason, rawExpiry, ...event } = row;
-      const dismissalReason = FINDING_DISMISS_REASONS.find(
-        (reason) => reason === rawReason,
-      );
-      const expiresAt =
-        dismissalReason === RISK_ACCEPTED &&
-        rawExpiry &&
-        /(?:Z|[+-]\d{2}:\d{2})$/.test(rawExpiry) &&
-        isISO8601(rawExpiry, { strict: true, strictSeparator: true })
-          ? new Date(rawExpiry)
-          : undefined;
-      data.push({
-        ...event,
-        ...(dismissalReason ? { dismissalReason } : {}),
-        ...(expiresAt && Number.isFinite(expiresAt.getTime()) ? { expiresAt } : {}),
-      });
-    }
-    return { data };
+    return readFindingTimeline(this.vulnerabilitiesRepository.manager, id, workspaceId, canReadJobs, reader);
   }
 
   /**

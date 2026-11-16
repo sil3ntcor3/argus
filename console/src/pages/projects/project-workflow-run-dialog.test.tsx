@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -12,7 +13,7 @@ import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 const mock = vi.hoisted(() => ({ run: vi.fn(), workspace: vi.fn() }));
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
-  assetGroupControllerRunGroupWorkflowScheduler: mock.run,
+  projectsControllerRunWorkflow: mock.run,
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -47,7 +48,7 @@ describe('ProjectWorkflowRunDialog', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mock.workspace.mockReturnValue('fixture');
-    mock.run.mockResolvedValue({ message: 'Started' });
+    mock.run.mockResolvedValue({ jobHistoryId: bindingId, assets: 2 });
   });
 
   it('requires project assets before a user can confirm a run', () => {
@@ -61,7 +62,7 @@ describe('ProjectWorkflowRunDialog', () => {
     expect(mock.run).not.toHaveBeenCalled();
   });
 
-  it('requires fresh confirmation after an ambiguous response', async () => {
+  it('keeps an ambiguous outcome across closing and reopening, without replaying the run', async () => {
     mock.run.mockRejectedValueOnce(new Error('Request failed'));
     const trigger = show();
     fireEvent.click(trigger);
@@ -85,8 +86,53 @@ describe('ProjectWorkflowRunDialog', () => {
     const reopened = within(
       screen.getByRole('dialog', { name: 'Run project workflow' }),
     );
-    fireEvent.click(reopened.getByRole('button', { name: 'Start run' }));
-    await waitFor(() => expect(trigger).toHaveFocus());
-    expect(mock.run.mock.calls).toEqual([[bindingId], [bindingId]]);
+    expect(reopened.queryByRole('button', { name: 'Start run' })).toBeNull();
+    expect(reopened.getByRole('alert')).toHaveTextContent('Could not confirm');
+    expect(mock.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send or queue an offline launch', async () => {
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    fireEvent.click(show());
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/offline/i);
+    expect(mock.run).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('holds confirmation while the successful run refresh is pending', async () => {
+    const client = new QueryClient();
+    let finish!: () => void;
+    vi.spyOn(client, 'invalidateQueries').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(
+      <QueryClientProvider client={client}>
+        <ProjectWorkflowRunDialog
+          projectId={projectId}
+          bindingId={bindingId}
+          workflowName="Discovery"
+          workspaceId="fixture"
+          hasAssets
+          hasSteps
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Run workflow for Discovery' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }));
+    await waitFor(() => expect(client.invalidateQueries).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('dialog')).toBeVisible();
+    await act(async () => {
+      finish();
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mock.run).toHaveBeenCalledTimes(1);
   });
 });

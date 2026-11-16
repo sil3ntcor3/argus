@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
+import type { WrapperType } from '@/common/types/app.types';
 import { jsonSchema, tool } from 'ai';
 import { createHash } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -49,7 +50,7 @@ export class AgentsMcpService {
     { tools: Record<string, unknown>; expiresAt: number }
   >();
 
-  constructor(private readonly agentsService: AgentsService) {}
+  constructor(@Inject(forwardRef(() => AgentsService)) private readonly agentsService: WrapperType<AgentsService>) {}
 
   async getTools(workspaceId: string): Promise<Record<string, unknown>> {
     const mcpConfig = await this.agentsService.getMCPConfig(workspaceId);

@@ -1,9 +1,13 @@
+import { Severity } from '@/common/enums/enum';
 import { GetManyBaseQueryParams } from '@/common/dtos/get-many-base.dto';
 import { Asset } from '@/modules/assets/entities/assets.entity';
 import { Target } from '@/modules/targets/entities/target.entity';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsArray,
+  ArrayMaxSize,
+  IsEnum,
   IsBoolean,
   IsNumber,
   IsOptional,
@@ -30,8 +34,53 @@ export class SearchAssetsTargetsDto extends GetManyBaseQueryParams {
   @IsBoolean()
   @Transform(({ value }) => value === 'true')
   isSaveHistory: boolean;
+
+  @ApiProperty({
+    required: false,
+    isArray: true,
+    enum: Severity,
+    maxItems: 5,
+    description:
+      'Filter the separate finding preview by severity; requires vulnerability read access',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    Array.isArray(value) ? (value as unknown[]) : [value],
+  )
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsEnum(Severity, { each: true })
+  severity?: Severity[];
+}
+
+export class FindingSearchAssetDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id: string;
+  @ApiProperty()
+  value: string;
+}
+
+export class FindingSearchResultDto {
+  @ApiProperty({ type: String, format: 'uuid' })
+  id: string;
+  @ApiProperty()
+  name: string;
+  @ApiProperty({ enum: Severity })
+  severity: Severity;
+  @ApiProperty({ type: String, nullable: true })
+  affectedUrl: string | null;
+  @ApiProperty({ type: FindingSearchAssetDto })
+  asset: FindingSearchAssetDto;
 }
 export class SearchData {
+  @ApiProperty({
+    type: [FindingSearchResultDto],
+    maxItems: 5,
+    description:
+      'Top five approved finding previews; empty without finding access. Independent of target/asset pagination.',
+  })
+  vulnerabilities: FindingSearchResultDto[];
+
   @ApiProperty({ type: [Asset] })
   assets: Asset[];
 

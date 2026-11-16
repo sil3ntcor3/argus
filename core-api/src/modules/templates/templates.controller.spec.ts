@@ -6,12 +6,12 @@ describe('TemplatesController workspace permission guards', () => {
   const reflector = new Reflector();
 
   const cases: Array<[string, string, string[]]> = [
-    ['createTemplate', 'POST /', ['template.write']],
-    ['presignTemplate', 'POST /:templateId/presign', ['template.write']],
-    ['renameFile', 'PATCH /:templateId/rename', ['template.write']],
-    ['getTemplateById', 'GET /:templateId', ['template.read']],
-    ['getAllTemplates', 'GET /', ['template.read']],
-    ['deleteTemplate', 'DELETE /:templateId', ['template.write']],
+    ['create', 'POST /', ['artifact.write']],
+    ['saveContent', 'PUT /:id/content', ['artifact.write']],
+    ['rename', 'PATCH /:id', ['artifact.write']],
+    ['getContent', 'GET /:id/content', ['artifact.read']],
+    ['getMany', 'GET /', ['artifact.read']],
+    ['run', 'POST /run', ['artifact.read', 'vulnerability.write']],
   ];
 
   it.each(cases)('%s (%s) requires %j', (method, route, keys) => {

@@ -12,14 +12,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
-import { useVulnerabilitiesControllerBulkDismissVulnerabilities } from '@/services/apis/gen/queries';
+import { useVulnerabilitiesControllerBulkDismissVulnerabilities, useVulnerabilitiesControllerGetSettings } from '@/services/apis/gen/queries';
 import { addDays, format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
   latestRiskExpiry,
-  MAX_RISK_ACCEPTANCE_DAYS,
   RISK_DATE_FORMAT,
   riskExpiryAt,
 } from '../risk-expiry';
@@ -83,8 +82,11 @@ export function DismissAlertDialog({
 
   const isBulkDismiss = selectedIds.length > 1;
   const isRisk = reason === 'risk_accepted';
+  const policy = useVulnerabilitiesControllerGetSettings({ query: { enabled: open && isRisk, retry: false, refetchOnMount: 'always' } });
+  const maxDays = policy.data?.riskAcceptMaxDays ?? 180;
+  const policyReady = !!policy.data && policy.isFetchedAfterMount && !policy.isError && !policy.isFetching;
   const now = new Date();
-  const selectedExpiry = isRisk ? riskExpiryAt(expiry, now) : null;
+  const selectedExpiry = isRisk ? riskExpiryAt(expiry, now, maxDays) : null;
   const invalidExpiry = isRisk && Boolean(expiry) && !selectedExpiry;
 
   const handleOpenChange = (isOpen: boolean) => {
@@ -103,9 +105,10 @@ export function DismissAlertDialog({
    */
   const handleDismiss = () => {
     if (!reason || selectedIds.length === 0) return;
-    const expiresAt = isRisk ? riskExpiryAt(expiry) : null;
+    if (isRisk && !policyReady) return;
+    const expiresAt = isRisk ? riskExpiryAt(expiry, new Date(), maxDays) : null;
     if (isRisk && !expiresAt) {
-      toast.error('Choose a future expiry date within 180 days.');
+      toast.error(`Choose a future expiry date within ${maxDays} days.`);
       return;
     }
 
@@ -154,7 +157,7 @@ export function DismissAlertDialog({
   const isSubmitDisabled =
     !reason ||
     selectedIds.length === 0 ||
-    (isRisk && !selectedExpiry) ||
+    (isRisk && (!selectedExpiry || !policyReady)) ||
     bulkDismissMutation.isPending;
 
   return (
@@ -209,7 +212,7 @@ export function DismissAlertDialog({
                 required
                 value={expiry}
                 min={format(addDays(now, 1), RISK_DATE_FORMAT)}
-                max={format(latestRiskExpiry(now), RISK_DATE_FORMAT)}
+                max={format(latestRiskExpiry(now, maxDays), RISK_DATE_FORMAT)}
                 onChange={(event) => setExpiry(event.target.value)}
                 aria-invalid={invalidExpiry}
                 aria-describedby={`${expiryId}-hint`}
@@ -224,9 +227,12 @@ export function DismissAlertDialog({
                 }
               >
                 {invalidExpiry
-                  ? `Choose a future date within ${MAX_RISK_ACCEPTANCE_DAYS} days.`
+                  ? `Choose a future date within ${maxDays} days.`
                   : 'The alert reopens at the start of this date in your local timezone.'}
               </p>
+              {!policyReady && (policy.isError ? <div><p role="alert">Unable to load the risk acceptance policy.</p>
+                <Button variant="outline" disabled={policy.isFetching} onClick={() => void policy.refetch()}>Retry policy</Button></div>
+                : <p role="status">Loading risk acceptance policy…</p>)}
             </div>
           )}
 

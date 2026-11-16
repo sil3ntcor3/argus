@@ -16,7 +16,12 @@ function RunReference({
   canOpen: boolean;
 }) {
   const name = run.workflowName.trim() || 'Workflow run';
-  const trigger = run.jobRunType === 'scheduled' ? 'Scheduled' : 'Manual';
+  const trigger =
+    run.jobRunType === 'scheduled'
+      ? 'Scheduled'
+      : run.jobRunType === 'event'
+        ? 'Event'
+        : 'Manual';
   const started = runDate.format(new Date(run.createdAt));
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">

@@ -1,5 +1,9 @@
 import { ARTIFACT_BUCKET, ARTIFACT_UPLOAD_TTL_SECONDS, workspaceArtifactKey, workspaceArtifactUploadKey } from '@/common/constants/artifact-storage';
 import { ArtifactStagingSweepService, ARTIFACT_STAGING_CURSOR } from '@/modules/artifacts/artifact-staging-sweep.service';
+import { ArtifactQuotaService } from '@/modules/artifacts/artifact-quota.service';
+import { ArtifactUploadReservationService } from '@/modules/artifacts/artifact-upload-reservation.service';
+import { ArtifactUploadCompletionService } from '@/modules/artifacts/artifact-upload-completion.service';
+import { WorkspaceStorageUsage } from '@/modules/artifacts/entities/workspace-storage-usage.entity';
 import { WorkspaceArtifact } from '@/modules/artifacts/entities/workspace-artifact.entity';
 import { RustFsClient } from '@/modules/storage/rustfs.client';
 import { StorageService } from '@/modules/storage/storage.service';
@@ -142,6 +146,55 @@ describe('Orphaned artifact staging cleanup (e2e)', () => {
     await sweep.sweepPage(aged());
     await removed(final);
     await removed(staging);
+  });
+
+  it('reclaims expired ready staging bytes while preserving the final file and quota', async () => {
+    const quota = app.app.get(ArtifactQuotaService);
+    const reservations = new ArtifactUploadReservationService(app.dataSource, storage, quota);
+    const completion = new ArtifactUploadCompletionService(app.dataSource, storage, quota);
+    const { artifact, upload } = await reservations.reserveUpload({
+      workspaceId, createdByUserId: owner.userId, name: 'ready.txt', contentType: 'text/plain', sizeBytes: 4,
+    });
+    const staging = await put(workspaceArtifactUploadKey(workspaceId, artifact.id));
+    keys.push(artifact.objectKey);
+    await completion.completeUpload({ workspaceId, userId: owner.userId, artifactId: artifact.id });
+    await sweep.sweepPage(aged());
+    await keep(staging);
+
+    const afterDeadline = new Date(upload.expiresAt.getTime() + 1_000);
+    await sweep.sweepPage(afterDeadline);
+    await removed(staging);
+    await keep(artifact.objectKey);
+    await put(staging);
+    await sweep.sweepPage(afterDeadline);
+    await removed(staging);
+    expect(await app.dataSource.getRepository(WorkspaceArtifact).findOneBy({ id: artifact.id }))
+      .toMatchObject({ status: 'ready', sizeBytes: '4' });
+    expect(await app.dataSource.getRepository(WorkspaceStorageUsage).findOneBy({ workspaceId }))
+      .toMatchObject({ usedBytes: '4', reservedBytes: '0' });
+    const response = await request(app.server).get(`/api/artifacts/${artifact.id}/download`)
+      .set(wsHeaders(owner.cookie, workspaceId)).expect(200);
+    const download = await fetch((response.body as { url: string }).url);
+    expect(download.status).toBe(200);
+    expect(await download.text()).toBe('file');
+  });
+
+  it('retains tracked staging for unknown/live deadlines and pending/deleted files', async () => {
+    const fixtures = [
+      ['ready', null], ['ready', new Date(Date.now() + 60_000)],
+      ['pending', new Date(0)], ['deleted', new Date(0)],
+    ] as const;
+    const staging: string[] = [];
+    for (const [status, expiresAt] of fixtures) {
+      const id = randomUUID();
+      staging.push(await put(workspaceArtifactUploadKey(workspaceId, id)));
+      await app.dataSource.getRepository(WorkspaceArtifact).insert({
+        id, workspaceId, name: 'tracked.txt', mimeType: 'text/plain', sizeBytes: '4',
+        objectKey: workspaceArtifactKey(workspaceId, id), source: 'upload', status, expiresAt,
+      });
+    }
+    await sweep.sweepPage(aged());
+    for (const key of staging) await keep(key);
   });
 
   it('preserves a live workspace even when its ID appears in the deletion audit log', async () => {

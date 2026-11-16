@@ -14,7 +14,12 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectWorkflowsPage } from './project-workflows-page';
 
-const mock = vi.hoisted(() => ({ project: vi.fn(), permission: vi.fn() }));
+const mock = vi.hoisted(() => ({
+  project: vi.fn(),
+  workflows: vi.fn(),
+  permission: vi.fn(),
+  triggers: vi.fn(),
+}));
 
 vi.mock('@/hooks/usePermission', () => ({ usePermission: mock.permission }));
 vi.mock('@/hooks/useWorkspaceSelector', () => ({
@@ -23,6 +28,8 @@ vi.mock('@/hooks/useWorkspaceSelector', () => ({
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetById: mock.project,
+  useProjectsControllerGetWorkflows: mock.workflows,
+  useProjectsControllerGetTriggers: mock.triggers,
 }));
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -49,6 +56,8 @@ const runId = 'e13a3774-14bc-42bb-8d64-46c3680a57aa';
 describe('ProjectWorkflowsPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mock.workflows.mockImplementation(() => ({ ...mock.project(), data: mock.project().data?.assetGroupWorkflows }));
+    mock.triggers.mockReturnValue({ data: [] });
     mock.permission.mockReturnValue({
       hasPermission: (key: string) => ['group.read', 'job.read'].includes(key),
     });
@@ -94,6 +103,56 @@ describe('ProjectWorkflowsPage', () => {
       screen.getByRole('link', { name: /latest run for Discovery/i }),
     ).toHaveAttribute('href', '/jobs/runs/' + runId);
     expect(screen.getByText('No run summary available')).toBeVisible();
+  });
+  it('keeps archived workflows readable and hides their write and run controls', () => {
+    mock.permission.mockReturnValue({ hasPermission: () => true });
+    mock.project().data.archivedAt = '2026-11-13T10:00:00Z';
+    render(<QueryClientProvider client={new QueryClient()}><ProjectWorkflowsPage projectId={projectId} /></QueryClientProvider>);
+    expect(screen.getByRole('heading', { name: 'Discovery' })).toBeVisible();
+    expect(screen.getByText(/Archived project/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Create workflow' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Run workflow for/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Edit schedule/ })).toBeNull();
+  });
+
+  it('offers rename only for editable workflows owned by this project', () => {
+    mock.permission.mockReturnValue({ hasPermission: () => true });
+    const data = mock.project().data;
+    const workflow = data.assetGroupWorkflows[0].workflow;
+    Object.assign(workflow, {
+      id: runId,
+      isCanEdit: true,
+      isCanDelete: true,
+      filePath: `project-${projectId}-pipeline.yaml`,
+    });
+    data.assetGroupWorkflows.push(
+      {
+        id: 'shared',
+        workflow: { ...workflow, name: 'Shared', filePath: 'shared.yaml' },
+        schedule: 'disabled',
+      },
+      {
+        id: 'locked',
+        workflow: { ...workflow, name: 'Locked', isCanEdit: false },
+        schedule: 'disabled',
+      },
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ProjectWorkflowsPage projectId={projectId} />
+      </QueryClientProvider>,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Rename workflow Discovery' }),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Edit pipeline for Discovery' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Edit pipeline for Shared' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Rename workflow Shared' }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Rename workflow Locked' }),
+    ).toBeNull();
   });
 
   it('shows run evidence without a link when job read is absent', () => {

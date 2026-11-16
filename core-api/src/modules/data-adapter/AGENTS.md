@@ -12,6 +12,10 @@ payload. Integration connectors can call `upsertAssetsByTargetId` directly.
   present. Changing the host formula would split existing findings.
 - The adapter removes supplied `detectionStatus`, `timesDetected`,
   `resurfacedCount`, `missedScans`, `fixedAt`, and `lastScannerObservedAt`.
+  Resolution run references, fix-claim actor/date, their relation objects and
+  `dueAt` are also server-owned and stripped before insertion.
+  Adding a private finding column also requires updating this exclusion list:
+  `select: false` controls reads and does not prevent result-payload inserts.
   It takes scope only from the claimed job. Preserve stored enrichment when a
   repeat scan omits it.
 - `finding-scanner-sightings.ts` locks provenance parents before findings, and
@@ -20,9 +24,17 @@ payload. Integration connectors can call `upsertAssetsByTargetId` directly.
   Every positive still updates the private database observation time under
   those locks. Preserve the lock order and the insert chunk limit.
 - A fixed finding resurfaces only with a recorded in-progress scan claim later
-  than its fix timestamp. Archive status is preserved. This path records
+  than the uniquely verified private negative-scan cutoff, falling back to the
+  fix timestamp for ambiguous/invalid legacy events. Keep timestamp parsing and
+  comparisons in PostgreSQL; JavaScript dates lose microseconds. Archive status is preserved. This path records
   observed findings; an omitted finding does not close anything.
 
 Test with `task api:test:one SPEC=src/modules/data-adapter/data-adapter.service.spec.ts`.
 Validate lock order, retries, and timestamp comparisons against local Postgres
 when changing scanner lifecycle behavior.
+
+Review/discovery status, reviewer ID/relation, review date and note are also
+server-owned and stripped from connector results. `select: false` alone cannot
+protect these columns from an ingestion payload.
+
+Scanner detection/resurfacing bridge events are published only after the ingestion transaction commits. Include exact durable finding event IDs; never infer resurfacing from payload status or publish uncommitted proof.

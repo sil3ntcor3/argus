@@ -1,3 +1,4 @@
+import { ProjectLegacyScheduleService } from '../projects/project-legacy-schedule.service';
 import { BullMQName, JobRunType } from '@/common/enums/enum';
 import { Asset } from '@/modules/assets/entities/assets.entity';
 import { JobHistory } from '@/modules/jobs-registry/entities/job-history.entity';
@@ -42,6 +43,7 @@ describe('AssetGroupWorkflowService — runGroupWorkflowScheduler', () => {
     assetGroupWorkflowRepo.createQueryBuilder.mockReturnValue({
       innerJoinAndSelect: jest.fn().mockReturnThis(),
       leftJoinAndSelect: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue({
@@ -71,6 +73,7 @@ describe('AssetGroupWorkflowService — runGroupWorkflowScheduler', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AssetGroupWorkflowService,
+        { provide: ProjectLegacyScheduleService, useValue: { reconcile: jest.fn(), remove: jest.fn() } },
         { provide: getRepositoryToken(AssetGroup), useValue: {} },
         {
           provide: getRepositoryToken(AssetGroupWorkflow),
@@ -106,7 +109,7 @@ describe('AssetGroupWorkflowService — runGroupWorkflowScheduler', () => {
       assetIds: ['asset-1', 'asset-2'],
       projectId: 'group-1',
       projectWorkflowId: 'agw-1',
-    });
+    }, expect.any(Function));
     expect(result.message).toContain('agw-1');
   });
 
@@ -115,6 +118,7 @@ describe('AssetGroupWorkflowService — runGroupWorkflowScheduler', () => {
     assetGroupWorkflowRepo.createQueryBuilder.mockReturnValue({
       innerJoinAndSelect: jest.fn().mockReturnThis(),
       leftJoinAndSelect: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere,
       getOne: jest.fn().mockResolvedValue({
@@ -177,6 +181,7 @@ describe('AssetGroupWorkflowService — runGroupWorkflowScheduler', () => {
     assetGroupWorkflowRepo.createQueryBuilder.mockReturnValue({
       innerJoinAndSelect: jest.fn().mockReturnThis(),
       leftJoinAndSelect: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue(null),

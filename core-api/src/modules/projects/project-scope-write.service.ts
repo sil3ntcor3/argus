@@ -30,6 +30,8 @@ export class ProjectScopeWriteService {
     workspaceId: string,
     input: ScopeRuleInput[],
     autoAddAssets?: boolean,
+    abortSignal?: AbortSignal,
+    change?: { add?: ScopeRuleInput[]; removeRuleIds?: string[] },
   ): Promise<ScopeSyncResult> {
     if (
       !Array.isArray(input) ||
@@ -49,7 +51,14 @@ export class ProjectScopeWriteService {
     let canonicalId = projectId;
     const result = await this.dataSource.transaction(async (manager) => {
       const id = await lockProjectScope(manager, projectId, workspaceId);
+      abortSignal?.throwIfAborted();
       canonicalId = id;
+      if (change) {
+        const current = await manager.find(ProjectScopeRule, { where: { projectId: id }, order: { createdAt: 'ASC', id: 'ASC' } });
+        const removed = new Set(change.removeRuleIds ?? []);
+        input = [...current.filter(rule => !removed.has(rule.id)).map(({ mode, type, value }) => ({ mode, type, value })), ...(change.add ?? [])];
+        if (input.length > 100) throw new BadRequestException('Expected at most 100 scope rules');
+      }
       const rules = await this.normalizer.normalizeRules(
         workspaceId,
         input,
@@ -65,7 +74,9 @@ export class ProjectScopeWriteService {
       if (autoAddAssets !== undefined) {
         await manager.update(AssetGroup, { id }, { autoAddAssets });
       }
-      return syncProjectScope(manager, id, workspaceId);
+      const synced = await syncProjectScope(manager, id, workspaceId);
+      abortSignal?.throwIfAborted();
+      return synced;
     });
     if (result.added.length) {
       await this.bridge.publishSafely(
@@ -84,5 +95,10 @@ export class ProjectScopeWriteService {
       );
     }
     return result;
+  }
+
+  /** AI add/remove operations merge under the same lock as replacement and sync. */
+  patchRules(projectId: string, workspaceId: string, change: { add?: ScopeRuleInput[]; removeRuleIds?: string[]; autoAddAssets?: boolean }, abortSignal?: AbortSignal) {
+    return this.replaceRules(projectId, workspaceId, [], change.autoAddAssets, abortSignal, change);
   }
 }

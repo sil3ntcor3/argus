@@ -9,6 +9,7 @@ import {
 } from '@/components/ai-elements/conversation';
 import { ShieldAlert } from 'lucide-react';
 import type { RemoteExecuteStreamEvent } from '@/hooks/use-remote-execute-stream';
+import type { ConversationProjectDto } from '@/services/apis/gen/queries';
 import type { UIMessage } from 'ai';
 import { motion } from 'framer-motion';
 import type { StickToBottomContext } from 'use-stick-to-bottom';
@@ -21,6 +22,8 @@ import {
   type ReactNode,
 } from 'react';
 import { ChatMessage } from './chat-message';
+import { ProjectScopeSelect } from './project-scope-select';
+import { WorkerSelect } from './worker-select';
 import { LoadingSkeleton } from './chat-skeletons';
 import { StreamError } from './chat-stream-error';
 import { ThinkingLabel, TypingDots, getTextContent } from './chat-helpers';
@@ -29,6 +32,17 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from '@/components/ai-elements/reasoning';
+
+/** The chat scroll pane may use inline overflow rather than utility classes. */
+function findScrollContainer(element: HTMLElement): HTMLElement | null {
+  let parent = element.parentElement;
+  while (parent) {
+    const { overflowY } = getComputedStyle(parent);
+    if (overflowY === 'auto' || overflowY === 'scroll') return parent;
+    parent = parent.parentElement;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -57,6 +71,8 @@ interface ChatConversationProps {
   approvalPrompt?: ReactNode;
   selectedWorkerId?: string | null;
   onWorkerSelect?: (workerId: string | null) => void;
+  /** The project the chat is about, shown above the input */
+  project?: ConversationProjectDto | null;
   todos?: AgentTodoItem[];
   /** Goal of the plan, pinned in the todo panel */
   goal?: string | null;
@@ -90,6 +106,7 @@ export const ChatConversation = ({
   approvalPrompt,
   selectedWorkerId,
   onWorkerSelect,
+  project = null,
   todos,
   goal,
   showTodoAboveInput = true,
@@ -112,6 +129,9 @@ export const ChatConversation = ({
 
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const prevScrollHeightRef = useRef<number>(0);
+  const prevMessageCountRef = useRef<number>(0);
+  const prevFirstMessageRef = useRef<string | undefined>(undefined);
 
   const sentinelRef = useCallback((el: HTMLDivElement | null) => {
     if (observerRef.current) {
@@ -120,12 +140,7 @@ export const ChatConversation = ({
     }
 
     if (el) {
-      if (!scrollContainerRef.current) {
-        const container =
-          el.closest('.overflow-y-auto, .overflow-y-scroll') ||
-          el.parentElement;
-        scrollContainerRef.current = container as HTMLElement;
-      }
+      scrollContainerRef.current = findScrollContainer(el) ?? el.parentElement;
 
       const observer = new IntersectionObserver(
         ([entry]) => {
@@ -135,6 +150,8 @@ export const ChatConversation = ({
             !isLoadingMoreRef.current &&
             onLoadMoreRef.current
           ) {
+            prevScrollHeightRef.current =
+              scrollContainerRef.current?.scrollHeight ?? 0;
             onLoadMoreRef.current();
           }
         },
@@ -149,9 +166,6 @@ export const ChatConversation = ({
     }
   }, []);
 
-  const prevScrollHeightRef = useRef<number>(0);
-  const prevMessageCountRef = useRef<number>(0);
-
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -160,7 +174,8 @@ export const ChatConversation = ({
 
     if (
       messages.length > prevMessageCountRef.current &&
-      prevMessageCountRef.current > 0
+      prevMessageCountRef.current > 0 &&
+      messages[0]?.id !== prevFirstMessageRef.current
     ) {
       const heightDifference =
         container.scrollHeight - prevScrollHeightRef.current;
@@ -171,6 +186,7 @@ export const ChatConversation = ({
 
     prevScrollHeightRef.current = container.scrollHeight;
     prevMessageCountRef.current = messages.length;
+    prevFirstMessageRef.current = messages[0]?.id;
   }, [messages]);
 
   const stickToBottomRef = useRef<StickToBottomContext>(null);
@@ -185,12 +201,7 @@ export const ChatConversation = ({
     // around the call grows the chat, which would pull it back to the end
     stickToBottomRef.current?.stopScroll();
 
-    let scrollContainer: HTMLElement | null = el.parentElement;
-    while (scrollContainer) {
-      const style = getComputedStyle(scrollContainer);
-      if (style.overflowY === 'auto' || style.overflowY === 'scroll') break;
-      scrollContainer = scrollContainer.parentElement;
-    }
+    const scrollContainer = findScrollContainer(el);
 
     if (scrollContainer) {
       const containerRect = scrollContainer.getBoundingClientRect();
@@ -343,6 +354,15 @@ export const ChatConversation = ({
 
       <div className="shrink-0 px-4 pb-4">
         <div className="max-w-3xl mx-auto w-full flex flex-col">
+          <div className="mb-1.5 flex items-center gap-2 px-3">
+            <ProjectScopeSelect value={project} />
+            {agentMode === 'agent' && onWorkerSelect && (
+              <WorkerSelect
+                value={selectedWorkerId ?? null}
+                onChange={onWorkerSelect}
+              />
+            )}
+          </div>
           {/* Starts folded on small screens: the input keeps the room */}
           {showTodoAboveInput && ((todos && todos.length > 0) || goal) && (
             <AgentTodoPanel
@@ -371,8 +391,6 @@ export const ChatConversation = ({
               }
               onSelectModel={onSelectModel}
               agentMode={agentMode}
-              selectedWorkerId={selectedWorkerId}
-              onWorkerSelect={onWorkerSelect}
               showSettingsButton={false}
               placeholder={
                 isStreaming

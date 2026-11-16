@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { ProjectScopeRule } from './entities/project-scope-rule.entity';
 import { scopeRulesSql, SqlParams } from './scope-rules';
@@ -17,11 +17,12 @@ export async function lockProjectScope(
   if (!manager.queryRunner?.isTransactionActive) {
     throw new Error('Project scope sync requires an active transaction');
   }
-  const [project] = await manager.query<{ id: string }[]>(
-    `SELECT id FROM projects WHERE id = $1 AND "workspaceId" = $2 FOR UPDATE`,
+  const [project] = await manager.query<{ id: string; archivedAt?: Date | null }[]>(
+    `SELECT id, "archivedAt" FROM projects WHERE id = $1 AND "workspaceId" = $2 FOR UPDATE`,
     [projectId, workspaceId],
   );
   if (!project) throw new NotFoundException('Project not found');
+  if (project.archivedAt) throw new BadRequestException('Project is archived');
   return project.id;
 }
 

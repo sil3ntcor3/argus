@@ -16,6 +16,7 @@ import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
 import { History } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { FindingTimelineDetails } from './finding-timeline-details';
 
 const date = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -35,13 +36,18 @@ const statusLabels = new Map([
   ['active', 'Active'],
   ['fixed', 'Fixed'],
   ['resurfaced', 'Resurfaced'],
+  ['pending_review', 'Pending review'], ['approved', 'Approved'], ['rejected', 'Rejected'],
 ]);
 
 const eventLabels = new Map([
   ['detected', 'First detected'],
+  ['issue_linked', 'Linked to an issue'],
   ['dismissed', 'Dismissed'],
   ['reopened', 'Reopened'],
   ['risk_expired', 'Risk acceptance expired'],
+  ['fix_claimed', 'Fix claimed'],
+  ['proposed', 'AI proposal submitted'], ['approved', 'Proposal approved'], ['rejected', 'Proposal rejected'],
+  ['merged', 'Proposal merged'], ['verified_by_ai', 'AI verification evidence added'],
 ]);
 
 const reasonLabels = new Map([
@@ -85,12 +91,16 @@ function DismissalDetails({ event }: { event: VulnerabilityTimelineEventDto }) {
   );
 }
 
-type TimelineProps = { id: string; name: string; canOpenRuns: boolean };
+type TimelineProps = { id: string; name: string; canOpenRuns: boolean;
+  canOpenAgents?: boolean; canOpenIssues?: boolean; workspaceId?: string };
 
 /** The sheet mounts the query only when its contents open. */
 function TimelineEvents({
   id,
   canOpenRuns,
+  canOpenAgents = false,
+  canOpenIssues = false,
+  workspaceId = '',
   onRetry,
 }: Omit<TimelineProps, 'name'> & { onRetry: () => void }) {
   const { data, error, isError, isFetchedAfterMount, isFetching, refetch } =
@@ -99,6 +109,9 @@ function TimelineEvents({
         queryKey: [
           ...getVulnerabilitiesControllerGetVulnerabilityTimelineQueryKey(id),
           canOpenRuns,
+          canOpenAgents,
+          canOpenIssues,
+          workspaceId,
         ],
         gcTime: 0,
         refetchOnMount: 'always',
@@ -138,6 +151,7 @@ function TimelineEvents({
         <li key={event.id} className="space-y-1.5 py-3">
           <p className="font-medium">{eventLabel(event)}</p>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
+            <span className="break-words">{event.actor?.name ?? 'System'}</span>
             <time dateTime={event.occurredAt}>
               {date.format(new Date(event.occurredAt))}
             </time>
@@ -153,6 +167,13 @@ function TimelineEvents({
             )}
           </div>
           <DismissalDetails event={event} />
+          <FindingTimelineDetails event={event} canOpenAgents={canOpenAgents} canOpenIssues={canOpenIssues} />
+          {event.type === 'fix_claimed' && event.verification && <p className="text-sm text-muted-foreground">
+            {event.verification === 'next_covering_scan' ? 'Awaiting the next trusted covering scan.' : 'No comparable scan evidence is available for automatic verification.'}
+          </p>}
+          {typeof event.fixClaimVerified === 'boolean' && <p className="text-sm text-muted-foreground">
+            {event.fixClaimVerified ? 'Fix claim verified by a covering scan.' : 'This scan did not verify a fix claim.'}
+          </p>}
         </li>
       ))}
     </ol>
@@ -160,7 +181,7 @@ function TimelineEvents({
 }
 
 /** Opens the finding's history without leaving the detail page. */
-export function FindingTimeline({ id, name, canOpenRuns }: TimelineProps) {
+export function FindingTimeline({ id, name, canOpenRuns, canOpenAgents = false, canOpenIssues = false, workspaceId = '' }: TimelineProps) {
   const [open, setOpen] = useState(false);
   const results = useRef<HTMLDivElement>(null);
   return (
@@ -187,6 +208,9 @@ export function FindingTimeline({ id, name, canOpenRuns }: TimelineProps) {
             <TimelineEvents
               id={id}
               canOpenRuns={canOpenRuns}
+              canOpenAgents={canOpenAgents}
+              canOpenIssues={canOpenIssues}
+              workspaceId={workspaceId}
               onRetry={() => results.current?.focus()}
             />
           )}

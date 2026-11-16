@@ -1,3 +1,4 @@
+import { ArtifactQuotaService } from '@/modules/artifacts/artifact-quota.service';
 import { SortOrder } from '@/common/dtos/get-many-base.dto';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { NotFoundException } from '@nestjs/common';
@@ -33,6 +34,8 @@ const query = (overrides: Partial<GetManyAdminWorkspacesDto> = {}) =>
 
 describe('AdminWorkspacesService', () => {
   let service: AdminWorkspacesService;
+  const quota = { setQuota: jest.fn() };
+  const manager = { findOne: jest.fn() };
   let queryBuilder: Record<string, jest.Mock>;
   let workspacesRepository: {
     createQueryBuilder: jest.Mock;
@@ -40,9 +43,12 @@ describe('AdminWorkspacesService', () => {
     findOneBy: jest.Mock;
     update: jest.Mock;
     query: jest.Mock;
+    manager: { transaction: jest.Mock };
   };
 
   beforeEach(async () => {
+    quota.setQuota.mockReset();
+    manager.findOne.mockReset().mockResolvedValue(workspaceRow);
     queryBuilder = {
       leftJoinAndSelect: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -52,6 +58,9 @@ describe('AdminWorkspacesService', () => {
       getManyAndCount: jest.fn().mockResolvedValue([[workspaceRow], 1]),
     };
     workspacesRepository = {
+      manager: {
+        transaction: jest.fn((callback: (value: typeof manager) => Promise<unknown>) => callback(manager)),
+      },
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
       findOne: jest.fn().mockResolvedValue(workspaceRow),
       findOneBy: jest.fn().mockResolvedValue(workspaceRow),
@@ -64,6 +73,7 @@ describe('AdminWorkspacesService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminWorkspacesService,
+        { provide: ArtifactQuotaService, useValue: quota },
         {
           provide: getRepositoryToken(Workspace),
           useValue: workspacesRepository,
@@ -72,6 +82,20 @@ describe('AdminWorkspacesService', () => {
     }).compile();
 
     service = module.get(AdminWorkspacesService);
+  });
+
+  it.each([null, 0, Number.MAX_SAFE_INTEGER])('sets quota %s under the workspace lock', async value => {
+    await expect(service.setStorageQuota('ws-1', value)).resolves.toEqual({ workspaceId: 'ws-1', quotaBytes: value });
+    expect(manager.findOne).toHaveBeenCalledWith(Workspace, {
+      where: { id: 'ws-1' }, select: { id: true }, lock: { mode: 'for_key_share' },
+    });
+    expect(quota.setQuota).toHaveBeenCalledWith(manager, 'ws-1', value);
+  });
+
+  it('rejects a missing workspace before touching quota', async () => {
+    manager.findOne.mockResolvedValueOnce(null);
+    await expect(service.setStorageQuota('missing', 1)).rejects.toThrow(NotFoundException);
+    expect(quota.setQuota).not.toHaveBeenCalled();
   });
 
   describe('getWorkspaces', () => {

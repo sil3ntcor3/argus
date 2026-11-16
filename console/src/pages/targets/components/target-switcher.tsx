@@ -76,7 +76,7 @@ export function TargetSwitcher({
           aria-label="Switch target"
         >
           <TargetLogo url={currentTargetLogo} className="size-7" />
-          <span className="truncate max-w-[300px]">{currentTargetValue}</span>
+          <span className="truncate max-w-[calc(100vw-10rem)] sm:max-w-[300px]">{currentTargetValue}</span>
           <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" />
         </button>
       </PopoverTrigger>

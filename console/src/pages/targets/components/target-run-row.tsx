@@ -25,7 +25,12 @@ export function TargetRunRow({
 }) {
   const name = run.workflowName.trim() || 'Workflow run';
   const started = runDate.format(new Date(run.createdAt));
-  const trigger = run.jobRunType === 'scheduled' ? 'Scheduled' : 'Manual';
+  const trigger =
+    run.jobRunType === 'scheduled'
+      ? 'Scheduled'
+      : run.jobRunType === 'event'
+        ? 'Event'
+        : 'Manual';
   const newFindings = canReadFindings ? (run.newVulnerabilities ?? 0) : 0;
   const canCancel =
     canCancelRuns &&

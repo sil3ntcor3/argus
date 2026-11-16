@@ -9,10 +9,13 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { AnalyzeStatusButton } from '@/components/vulnerabilities/analyze-status-button';
-import type { Vulnerability } from '@/services/apis/gen/queries';
+import type { VulnerabilityLifecycleDto as Vulnerability } from '@/services/apis/gen/queries';
+import { DetectionStatusBadge, SlaDue } from '@/components/vulnerabilities/lifecycle-badges';
+import { isOpenFinding } from '@/components/vulnerabilities/lifecycle';
+import { FindingSourceBadges } from '@/components/vulnerabilities/finding-sources';
 import { Link } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
-import { BellOff, CircleCheck } from 'lucide-react';
+import { BellOff } from 'lucide-react';
 import BadgeList from '../assets/components/badge-list';
 
 export const vulnerabilityColumns: ColumnDef<Vulnerability, unknown>[] = [
@@ -79,6 +82,7 @@ export const vulnerabilityColumns: ColumnDef<Vulnerability, unknown>[] = [
               <BadgeList list={cveIds} maxDisplay={2} />
             )}
           </div>
+          <FindingSourceBadges discoveredBy={row.original.discoveredBy} reviewStatus={row.original.reviewStatus} sources={row.original.sources} />
         </div>
       );
     },
@@ -137,6 +141,8 @@ export const vulnerabilityColumns: ColumnDef<Vulnerability, unknown>[] = [
         <div className="min-h-[60px] flex items-center">
           {value ? (
             <div>{new Date(value).toLocaleDateString()}</div>
+          ) : row.original.reviewStatus === 'pending_review' || row.original.reviewStatus === 'rejected' ? (
+            <Badge variant="outline">{row.original.reviewStatus === 'pending_review' ? 'Pending review' : 'Rejected'}</Badge>
           ) : (
             <div className="text-muted-foreground">-</div>
           )}
@@ -258,18 +264,17 @@ export const vulnerabilityColumns: ColumnDef<Vulnerability, unknown>[] = [
               </Tooltip>
             </TooltipProvider>
           ) : (
-            <Badge
-              variant="outline"
-              className="h-8 gap-1 border-transparent text-green-500"
-            >
-              <CircleCheck className="h-4 w-4" />
-              Open
-            </Badge>
+            <DetectionStatusBadge status={row.original.detectionStatus} />
           )}
         </div>
       );
     },
     enableSorting: false,
+  },
+  {
+    id: 'dueAt', header: 'SLA', size: 150, enableSorting: false,
+    cell: ({ row }) => <SlaDue dueAt={row.original.dueAt} status={row.original.detectionStatus}
+      paused={!isOpenFinding(row.original)} />,
   },
   {
     id: 'analyzeStatus',

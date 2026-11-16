@@ -1,3 +1,5 @@
+import { isGroupOwnedWorkflow } from '../asset-group/workflow-ownership';
+import { ProjectArchivedException } from '../projects/project-archive-state';
 import { GetManyBaseResponseDto } from '@/common/dtos/get-many-base.dto';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -88,7 +90,7 @@ export class WorkflowsService {
   }
 
   /**
-   * Updates an existing workflow with new data
+   * Serializes generic saves and retains trigger-managed project definitions.
    * @param id The ID of the workflow to update
    * @param updateData The partial data to update
    * @param workspace The workspace containing the workflow
@@ -100,16 +102,51 @@ export class WorkflowsService {
     updateData: Partial<CreateWorkflowDto>,
     workspace: { id: string },
   ): Promise<Workflow> {
-    const workflow = await this.getWorkspaceWorkflow(id, workspace);
+    return this.workflowRepository.manager.transaction(async (manager) => {
+      await manager.query(
+        'SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE',
+        [workspace.id],
+      );
+      const workflow = await manager
+        .getRepository(Workflow)
+        .createQueryBuilder('workflow')
+        .leftJoinAndSelect('workflow.workspace', 'workspace')
+        .leftJoinAndSelect('workflow.createdBy', 'createdBy')
+        .where('workflow.id = :id AND workflow."workspaceId" = :workspaceId', {
+          id,
+          workspaceId: workspace.id,
+        })
+        .setLock('pessimistic_write', undefined, ['workflow'])
+        .getOne();
+      if (!workflow) throw new Error('Workflow not found in this workspace');
+      const owners = await manager.query<{ id: string; archivedAt: Date | null }[]>('SELECT p.id,p."archivedAt" FROM projects p JOIN project_workflows pw ON pw."projectId"=p.id WHERE pw."workflowId"=$1 AND p."workspaceId"=$2', [workflow.id, workspace.id]);
+      if (owners.some(project => project.archivedAt && isGroupOwnedWorkflow(workflow, project.id))) throw new ProjectArchivedException();
 
-    if (updateData.name) workflow.name = updateData.name;
-    if (updateData.content) {
-      workflow.content = this.normalizeContent(updateData.content);
-      await this.assertStepsCanRun(workflow.content);
-    }
-    if (updateData.filePath) workflow.filePath = updateData.filePath;
-
-    return await this.workflowRepository.save(workflow);
+      if (updateData.name) workflow.name = updateData.name;
+      if (updateData.content) {
+        const projects = await manager.query<{ projectId: string }[]>(
+          `
+          SELECT p.id AS "projectId" FROM project_workflows pw JOIN projects p ON p.id=pw."projectId"
+          WHERE pw."workflowId"=$1 AND p."workspaceId"=$2 AND EXISTS (
+            SELECT 1 FROM project_workflow_triggers t WHERE t."projectWorkflowId"=pw.id
+          )`,
+          [workflow.id, workspace.id],
+        );
+        // A project trigger association remains managed across filename changes.
+        const managed = projects.length > 0;
+        workflow.content = this.normalizeContent(
+          managed
+            ? { ...updateData.content, on: workflow.content.on }
+            : updateData.content,
+        );
+        await this.assertStepsCanRun(
+          workflow.content,
+          manager.getRepository(Tool),
+        );
+      }
+      if (updateData.filePath) workflow.filePath = updateData.filePath;
+      return manager.save(Workflow, workflow);
+    });
   }
 
   /**
@@ -152,7 +189,10 @@ export class WorkflowsService {
    *
    * @throws BadRequestException naming every offending job.
    */
-  private async assertStepsCanRun(content: WorkflowContent): Promise<void> {
+  private async assertStepsCanRun(
+    content: WorkflowContent,
+    toolRepository: Repository<Tool> = this.toolRepository,
+  ): Promise<void> {
     const triggerTypes = [
       ...new Set(
         (content.on?.target ?? [])
@@ -170,7 +210,7 @@ export class WorkflowsService {
     if (runs.length === 0) return;
 
     // Unknown tools are not this check's concern: the run reports them.
-    const tools = await this.toolRepository.find({
+    const tools = await toolRepository.find({
       where: { name: In(runs) },
       select: { name: true, categories: true },
     });
@@ -208,8 +248,15 @@ export class WorkflowsService {
    * @throws Error if workflow is not found in the workspace
    */
   async deleteWorkflow(id: string, workspace: { id: string }): Promise<void> {
-    const workflow = await this.getWorkspaceWorkflow(id, workspace);
-    await this.workflowRepository.remove(workflow);
+    await this.workflowRepository.manager.transaction(async manager => {
+      await manager.query('SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE', [workspace.id]);
+      const workflow = await manager.getRepository(Workflow).createQueryBuilder('workflow').leftJoinAndSelect('workflow.workspace', 'workspace')
+        .where('workflow.id=:id AND workflow."workspaceId"=:workspaceId', { id, workspaceId: workspace.id }).setLock('pessimistic_write', undefined, ['workflow']).getOne();
+      if (!workflow) throw new Error('Workflow not found in this workspace');
+      const owners = await manager.query<{ id: string; archivedAt: Date | null }[]>('SELECT p.id,p."archivedAt" FROM projects p JOIN project_workflows pw ON pw."projectId"=p.id WHERE pw."workflowId"=$1 AND p."workspaceId"=$2', [workflow.id, workspace.id]);
+      if (owners.some(project => project.archivedAt && isGroupOwnedWorkflow(workflow, project.id))) throw new ProjectArchivedException();
+      await manager.remove(Workflow, workflow);
+    });
   }
 
   /**
@@ -242,7 +289,9 @@ export class WorkflowsService {
     }
 
     // Apply sorting with whitelist to prevent SQL injection
-    const safeSortBy = (ALLOWED_WORKFLOW_SORT_FIELDS as readonly string[]).includes(sortBy)
+    const safeSortBy = (
+      ALLOWED_WORKFLOW_SORT_FIELDS as readonly string[]
+    ).includes(sortBy)
       ? sortBy
       : 'createdAt';
     queryBuilder.orderBy(`workflow.${safeSortBy}`, sortOrder);

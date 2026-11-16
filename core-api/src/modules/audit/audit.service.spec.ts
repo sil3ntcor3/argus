@@ -14,6 +14,8 @@ import { AuditEvent } from './entities/audit-event.entity';
 // reports.controller transitively imports @react-pdf/renderer (ESM) via
 // ./renderer/pdf-renderer, which cannot load under jest. Mock it the same way
 // reports.controller.spec.ts does so S11 can resolve the controller class.
+// Match the AgentsController specs when resolving its real guard metadata.
+jest.mock('better-auth/node', () => ({ fromNodeHeaders: jest.fn() }));
 jest.mock('@/modules/reports/renderer/pdf-renderer', () => ({
   renderReportPdf: jest.fn().mockResolvedValue(Buffer.from('mock-pdf')),
 }));
@@ -50,10 +52,14 @@ const CONTROLLER_FILES: Record<string, string> = {
   ProjectsController: '@/modules/projects/projects.controller',
   InternalNetworksController: '@/modules/internal-networks/internal-networks.controller',
   VulnerabilitiesController: '@/modules/vulnerabilities/vulnerabilities.controller',
+  FindingScanAccountingService: '@/modules/jobs-registry/finding-scan-accounting.service',
   ReportsController: '@/modules/reports/reports.controller',
   JobsRegistryController: '@/modules/jobs-registry/jobs-registry.controller',
   WorkflowsController: '@/modules/workflows/workflows.controller',
   ToolsController: '@/modules/tools/tools.controller',
+  AgentsController: '@/modules/agents/agents.controller',
+  ArtifactsController: '@/modules/artifacts/artifacts.controller',
+  AdminWorkspacesController: '@/modules/admin/workspaces/admin-workspaces.controller',
   IntegrationsController: '@/modules/integrations/integrations.controller',
   ApiKeysController: '@/modules/apikeys/apikeys.controller',
   AuditEventsController: '@/modules/audit/audit-events.controller',
@@ -98,6 +104,7 @@ const WORKSPACES_REQUIRED_KEYS: Record<string, string[] | undefined> = {
   'permission_group.created': ['workspace.write'],
   'permission_group.updated': ['workspace.write'],
   'permission_group.deleted': ['workspace.write'],
+  'vulnerability.settings.updated': ['workspace.config'],
 };
 
 const reflector = new Reflector();
@@ -290,6 +297,11 @@ describe('AuditService', () => {
   });
 
   describe('S10 event dictionary', () => {
+    it('includes finding policy changes and trusted scanner fixes', () => {
+      expect(AUDIT_EVENTS).toEqual(expect.arrayContaining([
+        'vulnerability.settings.updated', 'vulnerability.fixed',
+      ]));
+    });
     it('every action in AUDIT_EVENTS matches the action regex', () => {
       for (const action of AUDIT_EVENTS) {
         expect(action).toMatch(AUDIT_EVENTS_RE);

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectSettingsPage } from './project-settings-page';
+vi.mock('./project-agent-context', () => ({ ProjectAgentContext: () => <div>Project AI context</div> }));
 
 const mock = vi.hoisted(() => ({
   permission: vi.fn(),

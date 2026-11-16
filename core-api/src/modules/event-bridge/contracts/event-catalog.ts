@@ -174,9 +174,12 @@ export const EVENT_CATALOG = {
     deleted: { name: 'asset_group.deleted', summary: 'Asset group deleted' },
   },
   project: {
+    archived: { name: 'project.archived', summary: 'Project archived' },
+    unarchived: { name: 'project.unarchived', summary: 'Project reopened' },
     created: { name: 'project.created', summary: 'Project created' },
     updated: { name: 'project.updated', summary: 'Project settings or scope changed' },
     deleted: { name: 'project.deleted', summary: 'Project deleted' },
+    run: { completed: { name: 'project.run.completed', summary: 'Project workflow run completed' } },
     assets: {
       added: {
         name: 'project.assets.added',
@@ -189,6 +192,20 @@ export const EVENT_CATALOG = {
     deleted: { name: 'network.deleted', summary: 'Internal network deleted' },
   },
   vulnerability: {
+    proposed: { name: 'vulnerability.proposed', summary: 'AI finding proposed for review' },
+    review: {
+      approved: { name: 'vulnerability.review.approved', summary: 'Finding proposal approved' },
+      rejected: { name: 'vulnerability.review.rejected', summary: 'Finding proposal rejected' },
+      merged: { name: 'vulnerability.review.merged', summary: 'Finding proposal merged' },
+    },
+    comment: {
+      created: { name: 'vulnerability.comment.created', summary: 'Comment added to a vulnerability' },
+    },
+    settings: {
+      updated: { name: 'vulnerability.settings.updated', summary: 'Finding management policy changed' },
+    },
+    resurfaced: { name: 'vulnerability.resurfaced', summary: 'Findings observed again after a verified fix' },
+    fixed: { name: 'vulnerability.fixed', summary: 'Findings fixed by a covering scan' },
     status: {
       updated: {
         name: 'vulnerability.status.updated',
@@ -406,6 +423,20 @@ export const EVENT_CATALOG = {
     created: { name: 'issue.created', summary: 'Issue created' },
     opened: { name: 'issue.opened', summary: 'Issue reopened' },
     closed: { name: 'issue.closed', summary: 'Issue closed' },
+    updated: { name: 'issue.updated', summary: 'Issue fields changed' },
+    resolved: { name: 'issue.resolved', summary: 'Issue resolved' },
+    assigned: { name: 'issue.assigned', summary: 'Issue assignee changed' },
+    deleted: { name: 'issue.deleted', summary: 'Issue deleted' },
+    link: {
+      added: {
+        name: 'issue.link.added',
+        summary: 'Resources linked to an issue',
+      },
+      removed: {
+        name: 'issue.link.removed',
+        summary: 'Resource unlinked from an issue',
+      },
+    },
     comment: {
       created: {
         name: 'issue.comment.created',
@@ -429,7 +460,16 @@ export const EVENT_CATALOG = {
       summary: 'Expired system configs removed',
     },
   },
+  artifact: {
+    created: { name: 'artifact.created', summary: 'File created' },
+    downloaded: { name: 'artifact.downloaded', summary: 'File download URL issued' },
+    deleted: { name: 'artifact.deleted', summary: 'File deleted' },
+    updated: { name: 'artifact.updated', summary: 'File access changed' },
+    shared: { name: 'artifact.shared', summary: 'File shared with members' },
+    unshared: { name: 'artifact.unshared', summary: 'File unshared from a member' },
+  },
   storage: {
+    quota: { updated: { name: 'storage.quota.updated', summary: 'Workspace storage quota changed' } },
     object: {
       deleted: {
         name: 'storage.object.deleted',

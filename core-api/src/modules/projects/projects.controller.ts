@@ -1,3 +1,22 @@
+import { ProjectListItemDto } from './dto/project-list-item.dto';
+import { ProjectCreatedDto } from './dto/project-create-response.dto';
+import { ProjectCreationService } from './project-creation.service';
+import { ProjectListReadService } from './project-list-read.service';
+import { UserId } from '@/common/decorators/app.decorator';
+import { ProjectArchiveService } from './project-archive.service';
+import { GetProjectsQueryDto } from './dto/project-list.dto';
+import type { RequestWithMetadata } from '@/common/interfaces/app.interface';
+import { ProjectWorkflowActionsService } from './project-workflow-actions.service';
+import { ProjectWorkflowBindingDto, ProjectWorkflowRemovedDto, ProjectWorkflowRunReceiptDto, RunProjectWorkflowDto } from './dto/project-workflow-actions.dto';
+import { ProjectFilesService } from './project-files.service';
+import { PresignProjectFileDto, PresignProjectFileResponseDto, ProjectFileDto } from './dto/project-files.dto';
+import { UpdateProjectTriggerDto } from './dto/project-trigger-update.dto';
+import { ProjectTriggerRuntimeService } from './project-trigger-runtime.service';
+import { ProjectTriggerReadService } from './project-trigger-read.service';
+import { CreateProjectTriggerDto } from './dto/project-trigger-create.dto';
+import { ProjectTriggerCreateService } from './project-trigger-create.service';
+import { ProjectTriggerCreatePipe, ProjectWorkflowTriggerInputPipe } from './project-trigger-create.pipe';
+import { ProjectTriggerDto } from './dto/project-trigger-read.dto';
 import { WORKSPACE_HEADER_NAME } from '@/common/constants/app.constants';
 import { WorkspaceAccess } from '@/common/decorators/workspace-access.decorator';
 import { WorkspaceId } from '@/common/decorators/workspace-id.decorator';
@@ -14,6 +33,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -23,9 +43,11 @@ import {
   Post,
   Put,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiHeader,
+  ApiBody,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
@@ -34,17 +56,22 @@ import {
 import { AssetGroupService } from '../asset-group/asset-group.service';
 import { AssetGroupAssetService } from '../asset-group/asset-group-asset.service';
 import { Asset } from '../assets/entities/assets.entity';
-import { GetAllAssetGroupsQueryDto } from '../asset-group/dto/get-all-asset-groups-dto.dto';
 import { EVENT_CATALOG } from '../event-bridge/contracts/event-catalog';
 import { PublishEvent } from '../event-bridge/publishing/publish-event.decorator';
 import { ProjectMetadataReadService } from './project-metadata-read.service';
 import { ProjectWorkflowTemplatesService } from './project-workflow-templates.service';
+import { AssetGroupWorkflow } from '../asset-group/entities/asset-groups-workflows.entity';
+import { UpdateProjectWorkflowDto } from './dto/project-workflow-update.dto';
+import { ProjectWorkflowUpdateService } from './project-workflow-update.service';
 import { ProjectWorkflowCreateService } from './project-workflow-create.service';
 import { CreatedProjectWorkflowDto, CreateProjectWorkflowDto } from './dto/project-workflow-create.dto';
 import { WorkflowTemplateDto } from './dto/project-workflow-template.dto';
 import { GetProjectRunsQueryDto, ProjectRunDto } from './dto/project-runs.dto';
 import { ProjectRunReadService } from './project-run-read.service';
+import { VulnerabilityStatus } from '../vulnerabilities/dto/get-vulnerability.dto';
 import { ProjectFindingReadService } from './project-finding-read.service';
+import { ProjectFindingStatisticsService } from './project-finding-statistics.service';
+import { ProjectFindingStatisticsDto } from './dto/project-findings.dto';
 import { ProjectFindingTimelineService } from './project-finding-timeline.service';
 import { ProjectFindingTimelineDto } from './dto/project-finding-timeline.dto';
 import { ProjectOverviewReadService } from './project-overview-read.service';
@@ -81,34 +108,81 @@ import {
 @Controller('projects')
 export class ProjectsController {
   constructor(
+    private readonly files: ProjectFilesService,
+    private readonly archiveService: ProjectArchiveService,
     private readonly projects: AssetGroupService,
     private readonly metadata: ProjectMetadataReadService,
+    private readonly listRead: ProjectListReadService,
+    private readonly creation: ProjectCreationService,
     private readonly scopePreview: ProjectScopePreviewService,
     private readonly scopeRead: ProjectScopeReadService,
     private readonly scopeWrite: ProjectScopeWriteService,
     private readonly assetCommands: ProjectAssetsCommandService,
     private readonly candidateAssets: AssetGroupAssetService,
     private readonly assetRead: ProjectAssetReadService,
+    private readonly triggerRead: ProjectTriggerReadService,
+    private readonly triggerCreate: ProjectTriggerCreateService,
+    private readonly triggerRuntime: ProjectTriggerRuntimeService,
     private readonly workflowTemplates: ProjectWorkflowTemplatesService,
     private readonly workflowCreate: ProjectWorkflowCreateService,
+    private readonly workflowUpdate: ProjectWorkflowUpdateService,
+    private readonly workflowActions: ProjectWorkflowActionsService,
     private readonly runRead: ProjectRunReadService,
     private readonly findingRead: ProjectFindingReadService,
+    private readonly findingStatistics: ProjectFindingStatisticsService,
     private readonly findingTimeline: ProjectFindingTimelineService,
     private readonly overviewRead: ProjectOverviewReadService,
   ) {}
 
+  @Doc({ summary: 'Archive a project and pause its schedules', response: { serialization: ProjectViewDto, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @PublishEvent(EVENT_CATALOG.project.archived, { resourceIdFromRoute: true })
+  @WorkspaceAccess('project.write')
+  @Post(':id/archive')
+  archive(@Param('id', ParseUUIDPipe) id: string, @WorkspaceId() workspaceId: string) { return this.archiveService.setArchived(id, workspaceId, true); }
+
+  @Doc({ summary: 'Reopen an archived project', response: { serialization: ProjectViewDto, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @PublishEvent(EVENT_CATALOG.project.unarchived, { resourceIdFromRoute: true })
+  @WorkspaceAccess('project.write')
+  @Post(':id/unarchive')
+  unarchive(@Param('id', ParseUUIDPipe) id: string, @WorkspaceId() workspaceId: string) { return this.archiveService.setArchived(id, workspaceId, false); }
+
+  @Doc({ summary: 'List project workflow bindings', response: { serialization: ProjectWorkflowBindingDto, isArray: true }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.read')
+  @Get(':id/workflows')
+  getWorkflows(@Param('id', ParseUUIDPipe) id: string, @WorkspaceId() workspaceId: string, @Req() request: RequestWithMetadata) {
+    const jobs = request.permissions?.some(key => ['*', 'job.read', 'job.write'].includes(key)) ?? false;
+    return this.workflowActions.list(id, workspaceId, jobs);
+  }
+
+  @Doc({ summary: 'Run a project workflow on all or selected enabled assets', response: { serialization: ProjectWorkflowRunReceiptDto, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.write', 'workflow.write')
+  @Post(':id/workflows/:bindingId/run')
+  runWorkflow(@Param('id', ParseUUIDPipe) id: string, @Param('bindingId', ParseUUIDPipe) bindingId: string, @WorkspaceId() workspaceId: string, @Body() dto: RunProjectWorkflowDto) {
+    return this.workflowActions.run(id, workspaceId, bindingId, dto);
+  }
+
+  @Doc({ summary: 'Remove a project workflow binding and its exclusive owned definition', response: { serialization: ProjectWorkflowRemovedDto }, request: { getWorkspaceId: true } })
+  @PublishEvent(EVENT_CATALOG.project.updated, { resourceIdFromRoute: true, metadata: () => ({ change: ProjectChange.WORKFLOW_REMOVED }) })
+  @WorkspaceAccess('project.write')
+  @Delete(':id/workflows/:bindingId')
+  removeWorkflow(@Param('id', ParseUUIDPipe) id: string, @Param('bindingId', ParseUUIDPipe) bindingId: string, @WorkspaceId() workspaceId: string) {
+    return this.workflowActions.remove(id, workspaceId, bindingId);
+  }
+
   @Doc({
     summary: 'List projects',
-    response: { serialization: GetManyResponseDto(ProjectViewDto) },
+    response: { serialization: GetManyResponseDto(ProjectListItemDto) },
     request: { getWorkspaceId: true },
   })
   @WorkspaceAccess('project.read')
   @Get()
   getMany(
-    @Query() query: GetAllAssetGroupsQueryDto,
+    @Query() query: GetProjectsQueryDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ) {
-    return this.metadata.getMany(query, workspaceId);
+    const canReadFindings = request.permissions?.some(p => ['*','vulnerability.read','vulnerability.write'].includes(p)) ?? false;
+    return this.listRead.list(query, workspaceId, canReadFindings);
   }
 
   @ApiOperation({
@@ -124,7 +198,57 @@ export class ProjectsController {
   }
 
   @Doc({
-    summary: 'Create a project workflow from a default template',
+    summary: 'List project workflow triggers',
+    response: { serialization: ProjectTriggerDto, isArray: true },
+    request: { getWorkspaceId: true },
+  })
+  @WorkspaceAccess('project.read')
+  @Get(':id/triggers')
+  getTriggers(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string) {
+    return this.triggerRead.list(id, workspaceId);
+  }
+
+  @Doc({
+    summary: 'Create a project workflow trigger (disabled by default)',
+    response: { serialization: ProjectTriggerDto, httpStatus: HttpStatus.CREATED },
+    request: { getWorkspaceId: true },
+  })
+  @ApiBody({ type: CreateProjectTriggerDto })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: () => ({ change: ProjectChange.TRIGGERS }),
+  })
+  @WorkspaceAccess('project.write')
+  @Post(':id/triggers')
+  createTrigger(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    // Keep the original body for strict validation; the global pipe skips unknown.
+    @Body(new ProjectTriggerCreatePipe()) body: unknown,
+  ) {
+    return this.triggerCreate.create(id, workspaceId, body as CreateProjectTriggerDto);
+  }
+
+  @Doc({ summary: 'Update a project workflow trigger', response: { serialization: ProjectTriggerDto }, request: { getWorkspaceId: true } })
+  @ApiBody({ type: UpdateProjectTriggerDto })
+  @PublishEvent(EVENT_CATALOG.project.updated, { resourceIdFromRoute: true, metadata: () => ({ change: ProjectChange.TRIGGERS }) })
+  @WorkspaceAccess('project.write')
+  @Patch(':id/triggers/:triggerId')
+  updateTrigger(@Param('id', ParseUUIDPipe) id: string, @Param('triggerId', ParseUUIDPipe) triggerId: string,
+    @WorkspaceId() workspaceId: string, @Body(new ProjectTriggerCreatePipe(UpdateProjectTriggerDto)) body: unknown) {
+    return this.triggerCreate.update(id, workspaceId, triggerId, body as UpdateProjectTriggerDto);
+  }
+
+  @Doc({ summary: 'Remove a project workflow trigger', response: { serialization: DefaultMessageResponseDto }, request: { getWorkspaceId: true } })
+  @PublishEvent(EVENT_CATALOG.project.updated, { resourceIdFromRoute: true, metadata: () => ({ change: ProjectChange.TRIGGERS }) })
+  @WorkspaceAccess('project.write')
+  @Delete(':id/triggers/:triggerId')
+  removeTrigger(@Param('id', ParseUUIDPipe) id: string, @Param('triggerId', ParseUUIDPipe) triggerId: string, @WorkspaceId() workspaceId: string) {
+    return this.triggerCreate.remove(id, workspaceId, triggerId);
+  }
+
+  @Doc({
+    summary: 'Create a project workflow from a template, selected jobs or another project binding',
     response: { serialization: CreatedProjectWorkflowDto, httpStatus: HttpStatus.CREATED },
     request: { getWorkspaceId: true },
   })
@@ -136,18 +260,49 @@ export class ProjectsController {
     }),
   })
   @WorkspaceAccess('project.write')
+  @ApiBody({ type: CreateProjectWorkflowDto })
   @Post(':id/workflows')
-  createWorkflow(
+  async createWorkflow(
     @Param() { id }: IdQueryParamDto,
-    @Body() dto: CreateProjectWorkflowDto,
+    @Body(new ProjectWorkflowTriggerInputPipe(CreateProjectWorkflowDto)) body: unknown,
     @WorkspaceId() workspaceId: string,
   ) {
-    return this.workflowCreate.create(id, workspaceId, dto);
+    const dto = body as CreateProjectWorkflowDto;
+    const result = await this.workflowCreate.create(id, workspaceId, dto);
+    if (dto.on !== undefined) await this.triggerRuntime.reconcile();
+    return result;
+  }
+
+  @Doc({
+    summary: 'Update a project workflow name, job graph, or both',
+    response: { serialization: AssetGroupWorkflow },
+    request: { getWorkspaceId: true },
+  })
+  @PublishEvent(EVENT_CATALOG.project.updated, {
+    resourceIdFromRoute: true,
+    metadata: (_body, result) => ({
+      change: ProjectChange.WORKFLOW_UPDATED,
+      ...(result ? { workflow: (result as AssetGroupWorkflow).workflow.name } : {}),
+    }),
+  })
+  @WorkspaceAccess('project.write')
+  @ApiBody({ type: UpdateProjectWorkflowDto })
+  @Patch(':id/workflows/:bindingId')
+  async updateWorkflow(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('bindingId', ParseUUIDPipe) bindingId: string,
+    @Body(new ProjectWorkflowTriggerInputPipe(UpdateProjectWorkflowDto)) body: unknown,
+    @WorkspaceId() workspaceId: string,
+  ) {
+    const dto = body as UpdateProjectWorkflowDto;
+    const result = await this.workflowUpdate.update(id, workspaceId, bindingId, dto);
+    if (dto.on !== undefined) await this.triggerRuntime.reconcile();
+    return result;
   }
 
   @Doc({
     summary: 'Create project',
-    response: { serialization: ProjectViewDto, httpStatus: HttpStatus.CREATED },
+    response: { serialization: ProjectCreatedDto, httpStatus: HttpStatus.CREATED },
     request: { getWorkspaceId: true },
   })
   @PublishEvent(EVENT_CATALOG.project.created, {
@@ -157,13 +312,16 @@ export class ProjectsController {
     }),
   })
   @WorkspaceAccess('project.write')
+  @ApiBody({ type: CreateProjectDto })
   @Post()
   async create(
-    @Body() dto: CreateProjectDto,
+    @Body(new ProjectWorkflowTriggerInputPipe(CreateProjectDto)) body: unknown,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ) {
-    const saved = await this.projects.create(dto, workspaceId, dto);
-    return this.metadata.getById(saved.id, workspaceId);
+    const dto = body as CreateProjectDto;
+    const canLaunch = request.permissions?.some(permission => ['*', 'workflow.write'].includes(permission)) ?? false;
+    return this.creation.create(dto, workspaceId, canLaunch);
   }
 
   @Doc({
@@ -314,8 +472,10 @@ export class ProjectsController {
     @Param() { id }: IdQueryParamDto,
     @Query() query: GetProjectRunsQueryDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ): Promise<GetManyBaseResponseDto<ProjectRunDto>> {
-    return this.runRead.list(id, workspaceId, query);
+    const canReadJobs = request.permissions?.some(p => ['*','job.read','job.write'].includes(p)) ?? false;
+    return this.runRead.list(id, workspaceId, query, canReadJobs);
   }
 
   @ApiOperation({
@@ -331,8 +491,29 @@ export class ProjectsController {
     @Param() { id }: IdQueryParamDto,
     @Query() query: GetProjectFindingsQueryDto,
     @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
   ): Promise<ProjectFindingsResponseDto> {
+    if (
+      query.status &&
+      [VulnerabilityStatus.PENDING_REVIEW, VulnerabilityStatus.REJECTED].includes(query.status) &&
+      !request.permissions?.some(permission => ['*', 'vulnerability.read', 'vulnerability.write'].includes(permission))
+    ) throw new ForbiddenException('Vulnerability read access is required for review filters');
     return this.findingRead.list(id, workspaceId, query);
+  }
+
+  @ApiOperation({ summary: 'Project finding lifecycle statistics', description: 'Project-wide approved counts; proposal counts require vulnerability read access.' })
+  @ApiHeader({ name: WORKSPACE_HEADER_NAME, description: 'Workspace ID' })
+  @ApiParam({ name: 'id', schema: { type: 'string', format: 'uuid' } })
+  @ApiOkResponse({ type: ProjectFindingStatisticsDto })
+  @WorkspaceAccess('project.read')
+  @Get(':id/vulnerabilities/statistics')
+  getFindingStatistics(
+    @Param() { id }: IdQueryParamDto,
+    @WorkspaceId() workspaceId: string,
+    @Req() request: RequestWithMetadata,
+  ): Promise<ProjectFindingStatisticsDto> {
+    const canReadReview = request.permissions?.some(permission => ['*', 'vulnerability.read', 'vulnerability.write'].includes(permission)) ?? false;
+    return this.findingStatistics.read(id, workspaceId, canReadReview);
   }
 
   @ApiOperation({
@@ -429,4 +610,28 @@ export class ProjectsController {
   delete(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string) {
     return this.projects.delete(id, workspaceId);
   }
+  @Doc({ summary: 'Project files', response: { serialization: ProjectFileDto, isArray: true }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.read') @Get(':id/files')
+  getFiles(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string) {
+    return this.files.list(id, workspaceId);
+  }
+
+  @Doc({ summary: 'Start a project context upload', response: { serialization: PresignProjectFileResponseDto, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.write') @Post(':id/files/presign')
+  presignFile(@Param() { id }: IdQueryParamDto, @WorkspaceId() workspaceId: string, @UserId() userId: string, @Body() dto: PresignProjectFileDto) {
+    return this.files.presign(id, workspaceId, userId, dto);
+  }
+
+  @Doc({ summary: 'Complete and attach a project context upload', response: { serialization: ProjectFileDto, isArray: true, httpStatus: HttpStatus.CREATED }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.write') @Post(':id/files/:artifactId/complete')
+  completeFile(@Param('id', ParseUUIDPipe) id: string, @Param('artifactId', ParseUUIDPipe) artifactId: string, @WorkspaceId() workspaceId: string, @UserId() userId: string) {
+    return this.files.complete(id, workspaceId, userId, artifactId);
+  }
+
+  @Doc({ summary: 'Detach a context file without deleting it', response: { serialization: ProjectFileDto, isArray: true }, request: { getWorkspaceId: true } })
+  @WorkspaceAccess('project.write') @Delete(':id/files/:artifactId')
+  removeFile(@Param('id', ParseUUIDPipe) id: string, @Param('artifactId', ParseUUIDPipe) artifactId: string, @WorkspaceId() workspaceId: string) {
+    return this.files.remove(id, workspaceId, artifactId);
+  }
+
 }

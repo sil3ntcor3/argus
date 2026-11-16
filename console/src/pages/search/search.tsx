@@ -1,3 +1,10 @@
+import {
+  FINDING_SEARCH_SEVERITIES,
+  parseFindingSearch,
+  withFindingSeverity,
+  type FindingSearchSeverity,
+} from '@/lib/finding-search-query';
+import { FindingSearchResults } from './finding-search-results';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -105,7 +112,7 @@ export default function Search() {
     <SearchResults
       key={JSON.stringify([selectedWorkspaceId, query])}
       searchQuery={query}
-      hasWorkspace={Boolean(selectedWorkspaceId)}
+      workspaceId={selectedWorkspaceId}
       inputRef={focusSearchInput}
       onQueryChange={changeQuery}
     />
@@ -114,12 +121,12 @@ export default function Search() {
 
 function SearchResults({
   searchQuery,
-  hasWorkspace,
+  workspaceId,
   inputRef,
   onQueryChange,
 }: {
   searchQuery: string;
-  hasWorkspace: boolean;
+  workspaceId: string | null;
   inputRef: (input: HTMLInputElement | null) => void;
   onQueryChange: (query: string) => void;
 }) {
@@ -127,19 +134,51 @@ function SearchResults({
   const [draft, setDraft] = useState(searchQuery);
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState('all');
-  const { hasPermission, isLoading, error } = usePermission();
+  const permission = usePermission();
+  const hasWorkspace = Boolean(workspaceId);
+  const accessReady =
+    !permission.error && !permission.isLoading && !permission.isFetching;
   const canSearch =
     hasWorkspace &&
-    !error &&
-    hasPermission('asset.read') &&
-    hasPermission('target.read');
-  const enabled = canSearch && Boolean(searchQuery);
-  const { data, isFetching, isError, refetch } =
+    !permission.error &&
+    permission.hasPermission('asset.read') &&
+    permission.hasPermission('target.read');
+  const canReadFindings =
+    accessReady && permission.hasPermission('vulnerability.read');
+  const parsed = parseFindingSearch(searchQuery);
+  const findingFilterDenied =
+    accessReady && parsed.severity.length > 0 && !canReadFindings;
+  const enabled =
+    canSearch &&
+    accessReady &&
+    !findingFilterDenied &&
+    Boolean(parsed.value || parsed.severity.length);
+  const { data, isFetching, isError, isFetchedAfterMount, refetch } =
     useSearchControllerSearchAssetsTargets(
-      { value: searchQuery, page, isSaveHistory: true },
-      { query: { enabled } },
+      {
+        value: parsed.value,
+        severity: parsed.severity.length ? parsed.severity : undefined,
+        page,
+        isSaveHistory: true,
+      },
+      {
+        query: {
+          enabled,
+          retry: false,
+          gcTime: 0,
+          refetchOnMount: 'always',
+          queryKey: [
+            'search-results',
+            workspaceId,
+            searchQuery,
+            page,
+            canReadFindings,
+          ],
+        },
+      },
     );
-  const results = enabled && !isError ? data : undefined;
+  const results = enabled && !isError && isFetchedAfterMount ? data : undefined;
+  const findings = canReadFindings ? (results?.data.vulnerabilities ?? []) : [];
   const counts = {
     targets: results?.data.targets.length ?? 0,
     assets: results?.data.assets.length ?? 0,
@@ -147,21 +186,36 @@ function SearchResults({
   const visibleCategories = categories.filter(
     ({ key }) => (tab === 'all' || tab === key) && counts[key] > 0,
   );
+  const showFindings =
+    canReadFindings &&
+    (tab === 'all' || tab === 'findings') &&
+    findings.length > 0;
 
   let message = '';
   if (!hasWorkspace) message = 'Choose a workspace to search.';
-  else if (error) message = 'Workspace access could not be verified.';
-  else if (isLoading) message = 'Checking workspace access…';
+  else if (permission.error)
+    message = 'Workspace access could not be verified.';
+  else if (!accessReady) message = 'Checking workspace access…';
   else if (!canSearch)
     message = 'Search requires target and asset read access.';
-  else if (!searchQuery)
-    message = 'Enter a query to search targets and assets.';
+  else if (findingFilterDenied)
+    message = 'Finding filters require vulnerability read access.';
+  else if (!parsed.value && !parsed.severity.length)
+    message = canReadFindings
+      ? 'Enter a query to search targets, assets and findings.'
+      : 'Enter a query to search targets and assets.';
   else if (isError) message = 'Search is unavailable. Try again.';
 
+  const parsedDraft = parseFindingSearch(draft);
+  const canSubmit =
+    canSearch &&
+    accessReady &&
+    Boolean(parsedDraft.value || parsedDraft.severity.length) &&
+    (canReadFindings || parsedDraft.severity.length === 0);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const query = draft.trim();
-    if (!query || !canSearch) return;
+    if (!canSubmit) return;
     if (query === searchQuery) {
       if (page === 1) void refetch();
       setPage(1);
@@ -186,24 +240,87 @@ function SearchResults({
               ref={inputRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
-              placeholder="Search targets and assets"
+              placeholder={
+                canReadFindings
+                  ? 'Search targets, assets and findings'
+                  : 'Search targets and assets'
+              }
             />
           </div>
-          <Button type="submit" disabled={!canSearch || !draft.trim()}>
+          <Button type="submit" disabled={!canSubmit}>
             Search
           </Button>
         </form>
+        {canReadFindings && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Label htmlFor={inputId + '-severity'}>Finding severity</Label>
+            <select
+              id={inputId + '-severity'}
+              aria-label="Filter findings by severity"
+              className="h-9 max-w-full rounded-md border bg-background px-3 text-sm"
+              value={
+                parsed.severity.length > 1
+                  ? 'multiple'
+                  : (parsed.severity[0] ?? 'all')
+              }
+              onChange={(event) =>
+                onQueryChange(
+                  withFindingSeverity(
+                    draft,
+                    event.target.value as FindingSearchSeverity | 'all',
+                  ),
+                )
+              }
+            >
+              <option value="all">All severities</option>
+              {parsed.severity.length > 1 && (
+                <option value="multiple" disabled>
+                  Multiple severities
+                </option>
+              )}
+              {FINDING_SEARCH_SEVERITIES.map((severity) => (
+                <option key={severity} value={severity}>
+                  {severity}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Finding previews show up to 5 matches, newest first. Use
+              severity:critical or cve:CVE-2026.
+            </p>
+          </div>
+        )}
         {results && (
           <p className="break-all text-sm text-muted-foreground" role="status">
-            {results.total} results for “{searchQuery}”
+            {results.total} target and asset{' '}
+            {results.total === 1 ? 'result' : 'results'} for “{searchQuery}”
+            {canReadFindings && (
+              <span>
+                {' '}
+                · {findings.length} finding{' '}
+                {findings.length === 1 ? 'preview' : 'previews'}
+              </span>
+            )}
           </p>
         )}
       </div>
 
       {message && (
-        <p className="rounded-lg border p-4 text-sm" role="status">
-          {message}
-        </p>
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border p-4 text-sm"
+          role="status"
+        >
+          <p>{message}</p>
+          {isError && (
+            <Button
+              variant="outline"
+              disabled={isFetching || !enabled}
+              onClick={() => void refetch()}
+            >
+              Retry
+            </Button>
+          )}
+        </div>
       )}
       {!message && isFetching && !results && (
         <p className="flex items-center gap-2 p-4 text-sm" role="status">
@@ -214,11 +331,19 @@ function SearchResults({
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList
             aria-label="Search results on this page"
-            className="w-fit max-w-full"
+            className="h-auto w-fit max-w-full flex-wrap"
           >
-            <TabsTrigger value="all" badge={counts.targets + counts.assets}>
+            <TabsTrigger
+              value="all"
+              badge={counts.targets + counts.assets + findings.length}
+            >
               All
             </TabsTrigger>
+            {canReadFindings && (
+              <TabsTrigger value="findings" badge={findings.length}>
+                Findings
+              </TabsTrigger>
+            )}
             {categories.map(({ key, label }) => (
               <TabsTrigger key={key} value={key} badge={counts[key]}>
                 {label}
@@ -226,6 +351,7 @@ function SearchResults({
             ))}
           </TabsList>
           <TabsContent value={tab} className="space-y-4">
+            {showFindings && <FindingSearchResults findings={findings} />}
             {visibleCategories.map((category) => (
               <SearchResultSection
                 key={category.key}
@@ -233,9 +359,11 @@ function SearchResults({
                 items={results.data[category.key]}
               />
             ))}
-            {visibleCategories.length === 0 && (
+            {visibleCategories.length === 0 && !showFindings && (
               <p className="rounded-lg border p-4 text-sm text-muted-foreground">
-                No results on this page for the selected type.
+                {tab === 'findings'
+                  ? 'No matching finding previews.'
+                  : 'No results on this page for the selected type.'}
               </p>
             )}
           </TabsContent>

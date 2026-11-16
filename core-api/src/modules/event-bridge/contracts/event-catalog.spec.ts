@@ -78,15 +78,18 @@ describe('event catalog', () => {
     // The tree is the authored source; EVENT_DEFINITIONS is derived. If the
     // walk ever stops matching the shape, these fail rather than the bridge
     // publishing half a catalog.
-    it('exposes 92 leaves', () => {
-      // 92 = four canonical project events plus the 88 below.
+    it('exposes 116 leaves', () => {
+      // Four proposal/review audit events are added by the v0.12.1 port.
+      // The resource discussion port adds vulnerability.comment.created.
+      // Two lifecycle events add policy saves and trusted scanner fixes.
+      // 99 = the storage quota event, six file events, four project events, and the 88 below.
       // 88 = the 85 left once `worker.alive` was removed (a heartbeat is read
       // from `workers.lastSeenAt`, not streamed, and on the shared stream it
       // would be the entry MAXLEN evicts first), plus `asset.url.discovered`
       // and the two tool install/uninstall audit events.
       // Asserting the count means the removal cannot be half-reverted without
       // failing here.
-      expect(EVENT_DEFINITIONS).toHaveLength(92);
+      expect(EVENT_DEFINITIONS).toHaveLength(116);
     });
 
     it('has no worker.alive leaf, so nothing can publish a heartbeat', () => {
@@ -184,7 +187,7 @@ describe('event catalog', () => {
     });
 
     it('carries the audit action count', () => {
-      expect(AUDIT_ACTION_CATALOG).toHaveLength(40);
+      expect(AUDIT_ACTION_CATALOG).toHaveLength(55);
     });
   });
 

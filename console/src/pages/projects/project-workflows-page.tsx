@@ -1,3 +1,5 @@
+import { ProjectTriggerManageDialog } from './project-trigger-manage-dialog';
+import { ProjectArchivedNotice } from './project-archive-dialog';
 import AccessDenied from '@/components/common/access-denied';
 import Page from '@/components/common/page';
 import {
@@ -11,8 +13,11 @@ import { usePermission } from '@/hooks/usePermission';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import { formatCronLabel } from '@/lib/cron-schedule';
 import {
-  type AssetGroupWorkflow,
+  type Workflow,
   useProjectsControllerGetById,
+  useProjectsControllerGetTriggers,
+  useProjectsControllerGetWorkflows,
+  type ProjectWorkflowBindingDto,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
@@ -21,13 +26,37 @@ import { projectRouteId } from './project-route-id';
 import { ProjectWorkflowCreateDialog } from './project-workflow-create-dialog';
 import { ProjectWorkflowDetachDialog } from './project-workflow-detach-dialog';
 import { projectWorkflowLabel } from './project-workflow-label';
+import { ProjectWorkflowRenameDialog } from './project-workflow-rename-dialog';
+import { ProjectWorkflowPipelineDialog } from './project-workflow-pipeline-dialog';
 import { ProjectWorkflowRunDialog } from './project-workflow-run-dialog';
 import { ProjectWorkflowScheduleDialog } from './project-workflow-schedule-dialog';
+import { ProjectTriggerCronDialog } from './project-trigger-cron-dialog';
+import { ProjectTriggerEventDialog } from './project-trigger-event-dialog';
+import {
+  ProjectWorkflowTriggers,
+  type TriggerQuery,
+} from './project-workflow-triggers';
 
 const runDate = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short',
 });
+
+/** Use the detail payload's existing path and edit flags for ownership. */
+function canRenameWorkflow(workflow: Workflow | undefined, projectId: string) {
+  if (
+    !workflow?.isCanEdit ||
+    !workflow.isCanDelete ||
+    !('filePath' in workflow) ||
+    typeof workflow.filePath !== 'string'
+  )
+    return false;
+  return (
+    workflow.filePath.startsWith(`project-${projectId}-`) ||
+    workflow.filePath === `group-${projectId}.yaml` ||
+    workflow.filePath === `group-workflow---${projectId}.yaml`
+  );
+}
 
 function WorkflowCard({
   binding,
@@ -37,14 +66,18 @@ function WorkflowCard({
   runWorkspaceId,
   hasAssets,
   focusAssignments,
+  triggers,
+  otherWorkflows,
 }: {
-  binding: AssetGroupWorkflow;
+  binding: ProjectWorkflowBindingDto;
   canOpenRuns: boolean;
   projectId: string;
   editWorkspaceId?: string;
   runWorkspaceId?: string;
   hasAssets: boolean;
   focusAssignments: () => void;
+  triggers: TriggerQuery;
+  otherWorkflows: string[];
 }) {
   const [sourceRequested, setSourceRequested] = useState(false);
   const name = projectWorkflowLabel(binding.workflow);
@@ -72,8 +105,47 @@ function WorkflowCard({
             : `${cron} UTC`
           : 'Schedule disabled'}
       </p>
+      <ProjectWorkflowTriggers
+        bindingId={binding.id}
+        workflowName={name}
+        query={triggers}
+        actions={
+          editWorkspaceId && canRenameWorkflow(binding.workflow, projectId)
+            ? (trigger, focusAfterRemove) => (
+                <ProjectTriggerManageDialog
+                  key={`${editWorkspaceId}:${trigger.id}`}
+                  trigger={trigger}
+                  focusAfterRemove={focusAfterRemove}
+                  projectId={projectId}
+                  workspaceId={editWorkspaceId}
+                  workflowName={name}
+                  otherWorkflows={otherWorkflows}
+                />
+              )
+            : undefined
+        }
+      />
       {(editWorkspaceId || definition || runWorkspaceId) && (
         <div className="flex flex-wrap gap-2">
+          {editWorkspaceId &&
+            canRenameWorkflow(binding.workflow, projectId) && (
+              <ProjectTriggerCronDialog
+                projectId={projectId}
+                bindingId={binding.id}
+                workflowName={name}
+                workspaceId={editWorkspaceId}
+              />
+            )}
+          {editWorkspaceId &&
+            canRenameWorkflow(binding.workflow, projectId) && (
+              <ProjectTriggerEventDialog
+                projectId={projectId}
+                bindingId={binding.id}
+                workflowName={name}
+                workspaceId={editWorkspaceId}
+                otherWorkflows={otherWorkflows}
+              />
+            )}
           {runWorkspaceId && (
             <ProjectWorkflowRunDialog
               projectId={projectId}
@@ -81,11 +153,30 @@ function WorkflowCard({
               workflowName={name}
               workspaceId={runWorkspaceId}
               hasAssets={hasAssets}
+              canOpenRuns={canOpenRuns}
               hasSteps={Boolean(
                 definition?.jobs && Object.keys(definition.jobs).length,
               )}
             />
           )}
+          {editWorkspaceId &&
+            canRenameWorkflow(binding.workflow, projectId) && (
+              <ProjectWorkflowRenameDialog
+                projectId={projectId}
+                bindingId={binding.id}
+                workflowName={name}
+                workspaceId={editWorkspaceId}
+              />
+            )}
+          {editWorkspaceId &&
+            canRenameWorkflow(binding.workflow, projectId) && (
+              <ProjectWorkflowPipelineDialog
+                projectId={projectId}
+                binding={binding}
+                workflowName={name}
+                workspaceId={editWorkspaceId}
+              />
+            )}
           {editWorkspaceId && (
             <ProjectWorkflowScheduleDialog
               projectId={projectId}
@@ -99,7 +190,6 @@ function WorkflowCard({
             <ProjectWorkflowDetachDialog
               projectId={projectId}
               bindingId={binding.id}
-              workflowId={binding.workflow.id}
               workflowName={name}
               workspaceId={editWorkspaceId}
               focusAssignments={focusAssignments}
@@ -158,26 +248,35 @@ function WorkflowList({
   const project = useProjectsControllerGetById(projectId, {
     query: { retry: false },
   });
-  const status = isAxiosError(project.error)
-    ? project.error.response?.status
+  const workflows = useProjectsControllerGetWorkflows(projectId, { query: { retry: false } });
+  const triggers = useProjectsControllerGetTriggers(projectId, {
+    query: {
+      retry: false,
+      enabled:
+        !project.isError && Boolean(workflows.data?.length),
+    },
+  });
+  const failure = project.error ?? workflows.error;
+  const status = isAxiosError(failure)
+    ? failure.response?.status
     : undefined;
 
   if (status === 401 || status === 403) return <AccessDenied />;
   if (status === 404) return <p role="status">Project not found</p>;
-  if (project.isError && !project.data)
+  if ((project.isError && !project.data) || workflows.isError)
     return (
       <div className="flex flex-wrap items-center gap-3">
         <p role="status">Unable to load project workflows</p>
         <Button
           variant="outline"
-          disabled={project.isFetching}
-          onClick={() => void project.refetch()}
+          disabled={project.isFetching || workflows.isFetching}
+          onClick={() => { void project.refetch(); void workflows.refetch(); }}
         >
           Retry
         </Button>
       </div>
     );
-  if (!project.data)
+  if (!project.data || !workflows.data)
     return (
       <Skeleton
         role="status"
@@ -185,12 +284,14 @@ function WorkflowList({
         className="h-32 rounded-xl"
       />
     );
-  const bindings = project.data.assetGroupWorkflows ?? [];
+  const bindings = workflows.data;
+  const archived = Boolean(project.data.archivedAt);
   const hasAssets = project.data.totalAssets > 0;
 
   return (
     <section ref={assignments} tabIndex={-1} aria-label="Workflow assignments">
-      {editWorkspaceId && (
+      <ProjectArchivedNotice archivedAt={project.data.archivedAt} />
+      {editWorkspaceId && !archived && (
         <div className="mb-3 flex justify-end">
           <ProjectWorkflowCreateDialog
             projectId={projectId}
@@ -206,9 +307,13 @@ function WorkflowList({
               binding={binding}
               canOpenRuns={canOpenRuns}
               projectId={projectId}
-              editWorkspaceId={editWorkspaceId}
-              runWorkspaceId={runWorkspaceId}
+              editWorkspaceId={archived ? undefined : editWorkspaceId}
+              runWorkspaceId={archived ? undefined : runWorkspaceId}
               hasAssets={hasAssets}
+              triggers={triggers}
+              otherWorkflows={bindings
+                .filter((other) => other.id !== binding.id && other.workflow)
+                .map((other) => projectWorkflowLabel(other.workflow))}
               focusAssignments={() => assignments.current?.focus()}
             />
           ))}
@@ -252,7 +357,8 @@ export function ProjectWorkflowsPage({ projectId }: { projectId: string }) {
           projectId={parsedId.data}
           canOpenRuns={permission.hasPermission('job.read')}
           runWorkspaceId={
-            permission.hasPermission('workflow.write')
+            permission.hasPermission('workflow.write') &&
+            (permission.hasPermission('project.write') || permission.hasPermission('group.write'))
               ? state.selectedWorkspaceId
               : undefined
           }

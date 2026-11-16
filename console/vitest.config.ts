@@ -10,6 +10,9 @@ export default defineConfig({
     },
   },
   test: {
+    // This dependency's ESM uses extensionless imports; transform it through
+    // Vite as the browser build does instead of Node's native ESM loader.
+    server: { deps: { inline: ['codemirror-json-schema'] } },
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],

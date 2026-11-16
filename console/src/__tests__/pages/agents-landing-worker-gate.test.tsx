@@ -1,3 +1,4 @@
+vi.mock('@/utils/workspaceState', () => ({ getGlobalWorkspaceId: () => 'workspace-1' }));
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent } from '@testing-library/react';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
@@ -40,6 +41,7 @@ vi.mock('@/hooks/useConnectWorkerState', () => ({
 vi.mock('@/services/apis/gen/queries', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/apis/gen/queries')>()),
   agentsControllerGetAgentModes: vi.fn(),
+  useAgentsControllerGetAgentConfig: () => ({ data: {} }),
 }));
 
 vi.mock('@/components/typewriter-text', () => ({ default: () => null }));
@@ -56,6 +58,26 @@ vi.mock('@/components/agent-prompt-input', () => ({
       Send
     </button>
   ),
+}));
+
+// Exposes the project picker as a button that picks one.
+vi.mock('@/pages/agents/components/project-scope-select', () => ({
+  ProjectScopeSelect: ({
+    onChange,
+  }: {
+    onChange?: (project: { id: string; name: string }) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => onChange?.({ id: 'p1', name: 'Perimeter' })}
+    >
+      Pick project
+    </button>
+  ),
+}));
+
+vi.mock('@/pages/agents/components/worker-select', () => ({
+  WorkerSelect: () => null,
 }));
 
 const { agentsControllerGetAgentModes } = await import(
@@ -110,6 +132,18 @@ describe('Agents landing — worker gate on submit', () => {
     expect(mockOpenDialog).not.toHaveBeenCalled();
     expect(mockNavigate.mock.calls[0][0].state).toMatchObject({
       workerId: null,
+    });
+  });
+
+  it('starts the chat in the picked project', async () => {
+    renderLanding('ask');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Pick project' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => expect(mockNavigate.mock.calls.some(([args]) => args.state?.project)).toBe(true));
+    expect(mockNavigate.mock.calls.find(([args]) => args.state?.project)?.[0].state).toMatchObject({
+      project: { id: 'p1', name: 'Perimeter' },
     });
   });
 

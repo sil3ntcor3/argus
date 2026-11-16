@@ -111,6 +111,7 @@ describe('Finding lifecycle timeline API (e2e)', () => {
         toStatus: 'active',
         occurredAt,
         jobHistoryId: null,
+        actor: null,
       },
       {
         id: detected,
@@ -119,6 +120,7 @@ describe('Finding lifecycle timeline API (e2e)', () => {
         toStatus: 'new',
         occurredAt,
         jobHistoryId,
+        actor: null,
       },
     ],
   });
@@ -211,6 +213,7 @@ describe('Finding lifecycle timeline API (e2e)', () => {
       fromStatus: null,
       toStatus: null,
       jobHistoryId: null,
+      actor: { id: owner.user.userId, name: 'E2E timeline-owner', image: null },
     });
     await timeline(own, owner.headers).expect(200, {
       data: [
@@ -218,7 +221,7 @@ describe('Finding lifecycle timeline API (e2e)', () => {
         { ...row(malformed, 'dismissed', 4), dismissalReason: 'risk_accepted' },
         { ...row(reopened, 'reopened', 3), dismissalReason: 'wont_fix' },
         { ...row(expired, 'risk_expired', 2), dismissalReason: 'risk_accepted', expiresAt },
-        { ...row(dismissed, 'dismissed', 1), dismissalReason: 'risk_accepted', expiresAt },
+        { ...row(dismissed, 'dismissed', 1), dismissalReason: 'risk_accepted', expiresAt, data: { comment: 'Private note' } },
       ],
     });
   });

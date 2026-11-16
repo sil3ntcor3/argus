@@ -6,3 +6,7 @@
 - Workflow start/end signals are in process. Discovery completion can publish `workflow.run.completed` through the event bridge. Use the same run workspace when invalidating cached statistics or emitting events.
 
 Use the statistics controller, service, and cron specs. Validate dashboard and location requests against local Docker with a workspace reader.
+
+Finding trends and severity totals exclude pending/rejected proposals. Use
+`findingDetectedAt` for discovery trends; storage creation filters and job/scan
+dates retain their own semantics. Review queue size is a separate count.

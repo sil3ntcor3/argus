@@ -5,6 +5,8 @@ import {
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEmail,
   IsEnum,
@@ -18,7 +20,38 @@ import {
   Min,
   ValidateIf,
   ValidateNested,
+  ValidateBy,
 } from 'class-validator';
+import { isIpOrCidr } from '@/common/utils/ip-range.util';
+
+/** Source addresses allowed to use platform administration routes. */
+export class AdminAccessSettingsDto {
+  @ApiPropertyOptional({
+    type: [String],
+    nullable: true,
+    maxItems: 100,
+    description:
+      'IPs or CIDR ranges. Empty permits every IP; a nonempty list must include the requester.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  @ValidateBy(
+    {
+      name: 'isIpOrCidr',
+      validator: {
+        validate: (value: unknown) =>
+          typeof value === 'string' && isIpOrCidr(value.trim()),
+        defaultMessage: () =>
+          'allowedIps must contain only IP addresses or CIDR ranges',
+      },
+    },
+    { each: true },
+  )
+  allowedIps?: string[] | null;
+}
 
 /**
  * Response DTO for system configuration
@@ -178,6 +211,13 @@ export class MailServerSettingsDto {
  * SystemConfigsService; no migration is needed.
  */
 export class SystemSettingsDto {
+  @ApiPropertyOptional({ nullable: true, type: () => AdminAccessSettingsDto })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AdminAccessSettingsDto)
+  adminAccess?: AdminAccessSettingsDto | null;
+
   @ApiPropertyOptional({ nullable: true, type: () => AuthSettingsDto })
   @IsOptional()
   @IsObject()

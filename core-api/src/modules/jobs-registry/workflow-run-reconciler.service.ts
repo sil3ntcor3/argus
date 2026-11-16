@@ -41,7 +41,10 @@ export class WorkflowRunReconcilerService {
       `SELECT h.id
          FROM job_histories h
         WHERE h."isCompleted" = false
-          AND h."workflowId" IS NOT NULL
+          AND (h."workflowId" IS NOT NULL OR EXISTS (
+            SELECT 1 FROM jobs template_job WHERE template_job."jobHistoryId" = h.id
+              AND template_job.inputs ? '__argus_saved_template_selection_v1'
+          ))
           AND h."createdAt" > now() - make_interval(days => $1)
           AND EXISTS (SELECT 1 FROM jobs j WHERE j."jobHistoryId" = h.id)
           AND NOT EXISTS (

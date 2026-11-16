@@ -1,13 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AssetGroupService } from '../asset-group/asset-group.service';
-import { GetAllAssetGroupsQueryDto } from '../asset-group/dto/get-all-asset-groups-dto.dto';
+import type { GetProjectsQueryDto } from './dto/project-list.dto';
 import { ProjectViewDto } from './dto/project-view.dto';
 
 interface ProjectMetadata {
   id: string;
   description: string | null;
+  instruction: string | null;
   autoAddAssets: boolean;
+  archivedAt: Date | null;
 }
 
 /** Canonical reads opt into project provenance without changing legacy callers. */
@@ -24,7 +26,7 @@ export class ProjectMetadataReadService {
   ): Promise<Map<string, ProjectMetadata>> {
     if (ids.length === 0) return new Map<string, ProjectMetadata>();
     const rows = await this.dataSource.query<ProjectMetadata[]>(
-      `SELECT id, description, "autoAddAssets" FROM projects
+      `SELECT id, description, instruction, "autoAddAssets", "archivedAt" FROM projects
        WHERE "workspaceId" = $1 AND id = ANY($2::uuid[])`,
       [workspaceId, ids],
     );
@@ -34,16 +36,18 @@ export class ProjectMetadataReadService {
   private view(project: object, metadata: ProjectMetadata): ProjectViewDto {
     const fields: Record<string, unknown> = {};
     Object.assign(fields, project);
-    for (const key of ['description', 'autoAddAssets', 'archivedAt'])
+    for (const key of ['description', 'instruction', 'autoAddAssets', 'archivedAt'])
       delete fields[key];
     return Object.assign(new ProjectViewDto(), fields, {
       description: metadata.description,
+      instruction: metadata.instruction ?? null,
       autoAddAssets: metadata.autoAddAssets,
+      archivedAt: metadata.archivedAt ?? null,
     });
   }
 
-  async getMany(query: GetAllAssetGroupsQueryDto, workspaceId: string) {
-    const result = await this.groups.getManyAssetGroups(query, workspaceId, true);
+  async getMany(query: GetProjectsQueryDto, workspaceId: string) {
+    const result = await this.groups.getManyAssetGroups(query, workspaceId, true, query.status ?? 'active');
     const metadata = await this.metadata(
       result.data.map((project) => project.id),
       workspaceId,

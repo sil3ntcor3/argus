@@ -1,3 +1,5 @@
+import { ProjectTriggerRuntimeService } from '@/modules/projects/project-trigger-runtime.service';
+import { isTriggerEvent } from '@/modules/projects/project-trigger-config';
 import { Injectable } from '@nestjs/common';
 import { ProjectScopeDiscoveryService } from '@/modules/projects/project-scope-discovery.service';
 import {
@@ -24,11 +26,13 @@ export class ProjectsSink implements EventSink {
   constructor(
     private readonly scope: ProjectScopeDiscoveryService,
     private readonly bridge: EventBridgeService,
+    private readonly triggers: ProjectTriggerRuntimeService,
   ) {}
   accepts(name: EventName): boolean {
-    return name === 'asset.discovered';
+    return name === 'asset.discovered' || isTriggerEvent(name);
   }
   async handle(name: EventName, event: ConsumedEvent): Promise<void> {
+    if (isTriggerEvent(name)) { await this.triggers.handleEvent(name, event); return; }
     if (name !== 'asset.discovered') return;
     const payload = readPayload('asset.discovered', event);
     const assetIds = Array.isArray(payload.assetIds)

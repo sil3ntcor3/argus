@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import { CreateAssetGroup } from '@/pages/asset-group/create-asset-group';
 
+vi.mock('@/pages/asset-group/components/pipeline-tool-installer', () => ({
+  PipelineToolInstaller: () => <div>Inline tool installation</div>,
+}));
+
 const mockHosts = [
   {
     id: 'asset-1',
@@ -108,38 +112,18 @@ describe('CreateAssetGroup wizard page', () => {
     expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
   });
 
-  it('guides users to install and select a tool when none are installed', async () => {
+  it('offers inline installation when no tools are installed and keeps the unsaved name', async () => {
     installedToolsRef.current = [];
-    const { user, router } = renderWithProviders(<CreateAssetGroup />, {
-      routePath: '/groups/create',
-    });
-
+    const { user } = renderWithProviders(<CreateAssetGroup />, { routePath: '/groups/create' });
     await user.type(await screen.findByLabelText('Name'), 'My Group');
     await user.click(screen.getByRole('button', { name: 'Next' }));
     await user.click(screen.getByRole('button', { name: 'Next' }));
-
-    expect(
-      await screen.findByRole('heading', { name: 'No tools installed yet' }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Install a compatible scanner and choose its configuration before adding it to this group.',
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('Return here and add the tool to the group pipeline.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Inline tool installation')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-
-    const toolsLink = screen.getByRole('link', {
-      name: /browse and install tools/i,
-    });
-    expect(toolsLink).toHaveAttribute('href', '/tools');
-
-    await user.click(toolsLink);
-    await waitFor(() => {
-      expect(router.state.location.pathname).toBe('/tools');
-    });
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByLabelText('Name')).toHaveValue('My Group');
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it('offers installed HTTP probes in the pipeline tools step', async () => {

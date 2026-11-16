@@ -3,11 +3,14 @@ import { OpenLink } from '@/components/ui/open-link';
 import type { Vulnerability } from '@/services/apis/gen/queries';
 import { ExternalLink } from 'lucide-react';
 
+type CodeFinding = Pick<Vulnerability, 'asset' | 'filePath' | 'commit' | 'lineStart' | 'lineEnd' |
+  'packageName' | 'installedVersion' | 'fixedVersion'>;
+
 /**
  * Link to the exact lines of a code finding, when the asset is a synced
  * repository (its metadata carries the provider and the repository URL).
  */
-export function codeFindingUrl(vulnerability: Vulnerability): string | null {
+export function codeFindingUrl(vulnerability: CodeFinding): string | null {
   const meta = (vulnerability.asset?.metadata ?? {}) as Record<string, unknown>;
   const repoUrl = typeof meta.url === 'string' ? meta.url.replace(/\/+$/, '') : '';
   const { filePath, commit, lineStart, lineEnd } = vulnerability;
@@ -28,7 +31,7 @@ export function CodeLocation({
   vulnerability,
   labelClassName,
 }: {
-  vulnerability: Vulnerability;
+  vulnerability: CodeFinding;
   labelClassName: string;
 }) {
   const { filePath, lineStart, lineEnd, commit, packageName, installedVersion, fixedVersion } =

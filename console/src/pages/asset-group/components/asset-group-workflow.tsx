@@ -6,7 +6,6 @@ import {
   type PipelineToolEntry,
 } from '@/pages/asset-group/components/tool-pipeline-builder';
 import { entriesFromContent, jobsFromEntries } from './pipeline-mapping';
-import { NoInstalledToolsState } from '@/pages/asset-group/components/no-installed-tools-state';
 import JobStatusBadge from '@/components/ui/job-status';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -393,10 +392,9 @@ export default function AssetGroupWorkflow({
               <LoaderCircleIcon className="size-4 animate-spin" />
               Loading installed tools...
             </div>
-          ) : pipelineTools.length === 0 ? (
-            <NoInstalledToolsState />
           ) : (
             <ToolPipelineBuilder
+              allowInstall
               tools={pipelineTools as Tool[]}
               value={pipeline}
               onChange={handlePipelineChange}

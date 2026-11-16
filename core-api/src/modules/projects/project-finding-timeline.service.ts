@@ -45,7 +45,7 @@ export class ProjectFindingTimelineService {
                  COALESCE(last_run."createdAt", pv."lastSeenAt" AT TIME ZONE 'UTC') AS last_at
           FROM project_vulnerabilities pv
           JOIN projects p ON p.id = pv."projectId" AND p."workspaceId" = $2
-          JOIN vulnerabilities v ON v.id = pv."vulnerabilityId"
+          JOIN vulnerabilities v ON v.id = pv."vulnerabilityId" AND v."reviewStatus"='approved'
           JOIN assets a ON a.id = v."assetId"
           JOIN targets t ON t.id = a."targetId" AND t."workspaceId" = $2
           LEFT JOIN job_histories first_run ON first_run.id = $4 AND first_run."projectId" = p.id

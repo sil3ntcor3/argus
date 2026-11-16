@@ -34,7 +34,9 @@ export class TriggerWorkflowService implements OnModuleInit {
     // captures its result ({ success, error }) and warn-logs failures, so
     // the handler itself only guards against unexpected rejections.
     this.eventEmitter.onAny(
-      (event: string, payload: Target, options?: TriggerOptions) => {
+      (event: string | symbol | (string | symbol)[], payload: Target, options?: TriggerOptions) => {
+        // Internal symbol paths are not target trigger names.
+        if (typeof event !== 'string') return;
         // Every event lands here, so the third argument is not trusted to be
         // a TriggerOptions: anything but SCHEDULED is a manual run.
         const jobRunType =

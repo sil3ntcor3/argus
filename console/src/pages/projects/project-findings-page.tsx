@@ -8,43 +8,49 @@ import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
   type ProjectFindingDto,
   useProjectsControllerGetFindings,
+  useProjectsControllerGetById,
 } from '@/services/apis/gen/queries';
 import { Link } from '@tanstack/react-router';
 import { isAxiosError } from 'axios';
-import { type ReactNode, useRef } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
+import { ProjectFindingSummary } from './project-finding-summary';
+import {
+  ProjectFindingFilters,
+  type FindingsSearch,
+} from './project-finding-filters';
+import { ProjectFindingActions } from './project-finding-actions';
 import { ProjectListSearch } from './project-list-search';
 import { projectRouteId } from './project-route-id';
 import { ProjectWorkflowFilter } from './project-workflow-filter';
 import { ProjectFindingTimeline } from './project-finding-timeline';
 import {
-  type FindingFacets,
   ProjectFindingFacets,
   provenanceLabels,
 } from './project-finding-facets';
 
 const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-type FindingsSearch = FindingFacets & {
-  page: number;
-  query?: string;
-  run?: string;
-  workflow?: string;
-};
-
 type FindingsProps = FindingsSearch & {
   projectId: string;
   onChange: (search: FindingsSearch) => void;
 };
 
+/** Present resolution and provenance independently; review rows have no run timeline. */
 function FindingCard({
   projectId,
   finding,
+  reviewStatus,
   canOpen,
   canOpenRuns,
+  selected,
+  onSelect,
 }: {
   projectId: string;
   finding: ProjectFindingDto;
+  reviewStatus?: 'pending_review' | 'rejected';
   canOpen: boolean;
   canOpenRuns: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
 }) {
   const provenance =
     finding.provenance === 'recurring'
@@ -53,28 +59,54 @@ function FindingCard({
   return (
     <li className="space-y-2 rounded-xl border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-medium">
-          {canOpen ? (
-            <Link
-              to="/vulnerabilities/$id"
-              params={{ id: finding.id }}
-              aria-label={`${finding.name} on ${finding.assetValue}`}
-              className="text-primary underline-offset-4 hover:underline focus-visible:underline"
-            >
-              {finding.name}
-            </Link>
-          ) : (
-            finding.name
+        <div className="flex min-w-0 items-start gap-2">
+          {onSelect && (
+            <input
+              type="checkbox"
+              className="mt-1 shrink-0"
+              checked={selected}
+              onChange={onSelect}
+              aria-label={`Select ${finding.name} on ${finding.assetValue}`}
+            />
           )}
-        </h2>
+          <h2 className="min-w-0 font-medium">
+            {canOpen ? (
+              <Link
+                to="/vulnerabilities/$id"
+                params={{ id: finding.id }}
+                aria-label={`${finding.name} on ${finding.assetValue}`}
+                className="text-primary underline-offset-4 hover:underline focus-visible:underline"
+              >
+                {finding.name}
+              </Link>
+            ) : (
+              finding.name
+            )}
+          </h2>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary" className="capitalize">
             {finding.severity}
           </Badge>
           <Badge variant="outline">{provenance}</Badge>
+          {reviewStatus && (
+            <Badge variant="outline">
+              {reviewStatus === 'pending_review'
+                ? 'Pending review'
+                : 'Rejected'}
+            </Badge>
+          )}
+          {finding.status === 'fixed' && <Badge variant="outline">Fixed</Badge>}
           {finding.status === 'dismissed' && (
             <Badge variant="outline">Dismissed</Badge>
           )}
+          {finding.status === 'open' && !reviewStatus && (
+            <Badge variant="outline" className="capitalize">
+              {finding.detectionStatus}
+            </Badge>
+          )}
+          {finding.isArchived && <Badge variant="outline">Archived</Badge>}
+          {finding.fixClaimedAt && <Badge variant="outline">Fix claimed</Badge>}
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
@@ -89,21 +121,40 @@ function FindingCard({
           </time>
         </span>
         <span>
+          Source:{' '}
+          {finding.discoveredBy === 'tool'
+            ? 'Scanner'
+            : finding.discoveredBy === 'ai_tool'
+              ? 'AI tool'
+              : finding.discoveredBy?.toUpperCase()}
+        </span>
+        {finding.dueAt && (
+          <span>
+            SLA deadline{' '}
+            <time dateTime={finding.dueAt}>
+              {date.format(new Date(finding.dueAt))}
+            </time>
+          </span>
+        )}
+        <span>
           Last seen{' '}
           <time dateTime={finding.lastSeen.at}>
             {date.format(new Date(finding.lastSeen.at))}
           </time>
         </span>
       </div>
-      <ProjectFindingTimeline
-        projectId={projectId}
-        finding={finding}
-        canOpenRuns={canOpenRuns}
-      />
+      {!reviewStatus && (
+        <ProjectFindingTimeline
+          projectId={projectId}
+          finding={finding}
+          canOpenRuns={canOpenRuns}
+        />
+      )}
     </li>
   );
 }
 
+/** Preserve filters and pagination while retrieving the selected lifecycle/review view. */
 function FindingList({
   projectId,
   page,
@@ -116,10 +167,20 @@ function FindingList({
   provenance,
   severity,
   status: findingStatus,
-}: FindingsProps & { canOpen: boolean; canOpenRuns: boolean }) {
+  canSelect,
+  ...lifecycleFilters
+}: FindingsProps & {
+  canOpen: boolean;
+  canOpenRuns: boolean;
+  canSelect: boolean;
+}) {
   const searchInput = useRef<HTMLInputElement>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const project = useProjectsControllerGetById(projectId, {
+    query: { retry: false },
+  });
   const facets = { provenance, severity, status: findingStatus };
-  const filters = { ...facets, query, run, workflow };
+  const filters = { ...facets, query, run, workflow, ...lifecycleFilters };
   const { data, error, isError, isPending, isFetching, refetch } =
     useProjectsControllerGetFindings(
       projectId,
@@ -130,9 +191,25 @@ function FindingList({
         jobHistoryId: run,
         projectWorkflowId: workflow,
         ...facets,
+        ...lifecycleFilters,
       },
       { query: { retry: false } },
     );
+  const writable =
+    canSelect &&
+    !!project.data &&
+    !project.data.archivedAt &&
+    !project.isError &&
+    !project.isPending &&
+    !project.isFetching &&
+    !isError &&
+    !isFetching;
+  const visible = data?.data.filter((row) => selected.includes(row.id)) ?? [];
+  const reload = async () => {
+    const result = await refetch();
+    if (result.isError) throw new Error('Unable to refresh project findings');
+    return result;
+  };
   const status = isAxiosError(error) ? error.response?.status : undefined;
   if (status === 403) return <AccessDenied />;
   if (status === 404) return <p role="status">Project not found</p>;
@@ -173,8 +250,24 @@ function FindingList({
             key={finding.id}
             projectId={projectId}
             finding={finding}
+            reviewStatus={
+              findingStatus === 'pending_review' || findingStatus === 'rejected'
+                ? findingStatus
+                : undefined
+            }
             canOpen={canOpen}
             canOpenRuns={canOpenRuns}
+            selected={selected.includes(finding.id)}
+            onSelect={
+              writable
+                ? () =>
+                    setSelected((ids) =>
+                      ids.includes(finding.id)
+                        ? ids.filter((id) => id !== finding.id)
+                        : [...ids, finding.id],
+                    )
+                : undefined
+            }
           />
         ))}
       </ol>
@@ -183,6 +276,11 @@ function FindingList({
 
   return (
     <div className="space-y-4">
+      {project.data?.archivedAt && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Archived project · findings are read-only here
+        </p>
+      )}
       {run && (
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline">Run {run.slice(0, 8)}</Badge>
@@ -217,10 +315,42 @@ function FindingList({
       />
       <ProjectFindingFacets
         {...facets}
+        canReadReview={canOpen}
         severityCounts={data?.severityCounts}
         provenanceCounts={data?.provenanceCounts}
         onChange={(next) => onChange({ ...filters, ...next, page: 1 })}
       />
+      <ProjectFindingFilters value={{ ...filters, page }} onChange={onChange} />
+      {writable && data && data.data.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              aria-label="Select visible findings"
+              checked={visible.length === data.data.length}
+              onChange={(event) =>
+                setSelected(
+                  event.target.checked ? data.data.map((row) => row.id) : [],
+                )
+              }
+            />
+            Select visible findings
+          </label>
+          {visible.length > 0 && (
+            <>
+              <span className="text-sm">{visible.length} selected</span>
+              <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
+                Clear selection
+              </Button>
+              <ProjectFindingActions
+                findings={visible}
+                reload={reload}
+                onDone={() => setSelected([])}
+              />
+            </>
+          )}
+        </div>
+      )}
       {results}
       <nav
         aria-label="Project finding pages"
@@ -263,15 +393,26 @@ export function ProjectFindingsPage(props: FindingsProps) {
   const canRead =
     permission.hasPermission('project.read') ||
     permission.hasPermission('group.read');
+  const reviewOnly =
+    props.status === 'pending_review' || props.status === 'rejected';
+  const canSelect =
+    !permission.isFetching &&
+    (permission.hasPermission('vulnerability.write') ||
+      (permission.hasPermission('workspace.write') &&
+        permission.hasPermission('workspace.read')));
 
   let content: ReactNode;
   if (!state.selectedWorkspaceId)
     content = <p role="status">Select a workspace</p>;
-  else if (permission.isLoading)
+  else if (permission.isLoading || (reviewOnly && permission.isFetching))
     content = <p role="status">Loading project access</p>;
   else if (permission.error)
     content = <p role="status">Unable to load project access</p>;
-  else if (!canRead) content = <AccessDenied />;
+  else if (
+    !canRead ||
+    (reviewOnly && !permission.hasPermission('vulnerability.read'))
+  )
+    content = <AccessDenied />;
   else if (!projectRouteId.safeParse(props.projectId).success)
     content = <p role="status">Project not found</p>;
   else
@@ -284,10 +425,17 @@ export function ProjectFindingsPage(props: FindingsProps) {
         >
           Back to project overview
         </Link>
+        <ProjectFindingSummary
+          projectId={props.projectId}
+          onChange={props.onChange}
+          canReadReview={!permission.isFetching && permission.hasPermission('vulnerability.read')}
+        />
         <FindingList
+          key={`${state.selectedWorkspaceId}:${props.projectId}:${JSON.stringify({ ...props, onChange: undefined })}`}
           {...props}
           canOpen={permission.hasPermission('vulnerability.read')}
           canOpenRuns={permission.hasPermission('job.read')}
+          canSelect={canSelect}
         />
       </div>
     );

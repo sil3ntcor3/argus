@@ -70,4 +70,9 @@ describe('pipeline workflow mapping', () => {
     expect(jobsFromEntries(entriesFromContent(existing, byName), byId, existing)).toEqual(existing);
     expect(jobsFromEntries([{ toolId: 'probe-id' }, { toolId: 'scan-id' }], byId)).toEqual({ httpx: { run: 'httpx' }, nuclei: { run: 'nuclei' } });
   });
+
+  it('keeps a legacy scalar input as one data kind', () => {
+    const saved = { probe: { run: 'httpx', input: DataKind.host } };
+    expect(entriesFromContent(saved, byName)[0].input).toEqual([DataKind.host]);
+  });
 });

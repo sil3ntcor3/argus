@@ -961,6 +961,7 @@ export class DataAdapterService {
     data,
     job,
   }: DataAdapterInput<Vulnerability[]>): Promise<void> {
+    const deferredEvents: Parameters<EventBridgeService['publishSafely']>[] = [];
     await this.dataSource.transaction(async (manager) => {
       if (data.length === 0) {
         return;
@@ -986,6 +987,20 @@ export class DataAdapterService {
         delete vulnValues.missedScans;
         delete vulnValues.fixedAt;
         delete vulnValues.lastScannerObservedAt;
+        delete vulnValues.lastSeenJobHistoryId;
+        delete vulnValues.lastSeenJobHistory;
+        delete vulnValues.fixedByJobHistoryId;
+        delete vulnValues.fixedByJobHistory;
+        delete vulnValues.fixClaimedAt;
+        delete vulnValues.fixClaimedById;
+        delete vulnValues.fixClaimedBy;
+        delete vulnValues.dueAt;
+        delete vulnValues.reviewStatus;
+        delete vulnValues.discoveredBy;
+        delete vulnValues.reviewedById;
+        delete vulnValues.reviewedBy;
+        delete vulnValues.reviewedAt;
+        delete vulnValues.reviewNote;
         return {
           ...vulnValues,
           ...normalizeCodeFields(vulnValues),
@@ -1079,7 +1094,7 @@ export class DataAdapterService {
 
       const findingIds = insertedVulnerabilities.map((finding) => finding.id);
       // Check prior project observations before this callback can create one.
-      await recordFindingScannerSightings(manager, job.id, findingIds);
+      const scannerProofs = (await recordFindingScannerSightings(manager, job.id, findingIds)) ?? [];
       await recordProjectFindingSightings(manager, job.id, findingIds);
 
       // Only send notifications for truly new vulnerabilities,
@@ -1091,6 +1106,7 @@ export class DataAdapterService {
           vuln.severity,
       );
 
+      const alertIds = new Set(vulsForAlert.map(finding => finding.id));
       if (vulsForAlert.length > 0) {
         this.logger.log(
           `Found ${vulsForAlert.length} new vulns for job ${job.id}, looking up workspace`,
@@ -1119,24 +1135,40 @@ export class DataAdapterService {
         //
         // One event for the whole batch, not one per vulnerability: a scan that
         // finds 200 issues must not push 200 notifications.
-        await this.eventBridge.publishSafely(EVENT_CATALOG.vulnerability.detected, {
+        const [provenance] = await manager.query<{ projectId: string }[]>(
+          `SELECT p.id AS "projectId" FROM jobs j
+           JOIN job_histories h ON h.id=j."jobHistoryId" JOIN workflows w ON w.id=h."workflowId"
+           JOIN projects p ON p.id=h."projectId" AND p."workspaceId"=w."workspaceId"
+           WHERE j.id=$1 AND p."workspaceId"=$2`, [job.id, workspaceId]);
+        deferredEvents.push([EVENT_CATALOG.vulnerability.detected, {
           workspaceId,
           outcome: 'success',
           resourceType: 'vulnerability',
+          metadata: { findingEventIds: scannerProofs.filter(proof => proof.type === 'detected' && alertIds.has(proof.vulnerabilityId)).map(proof => proof.id) },
           payload: {
             jobId: job.id,
+            ...(provenance?.projectId ? { projectId: provenance.projectId } : {}),
             targetId: job.asset.target.id,
             assetId: job.asset.id,
             assetValue: job.asset.value,
             vulnerabilities: vulsForAlert.map(toDetectedVulnerability),
           } satisfies VulnerabilityDetectedPayload,
-        });
+        }]);
       } else {
         this.logger.log(
           `No new vulns to alert for job ${job.id} (${uniqueValues.length} total deduped, ${existingFingerprints.size} already existed)`,
         );
       }
+      const resurfaced = scannerProofs.filter(proof => proof.fromStatus === 'fixed' && proof.toStatus === 'resurfaced');
+      if (resurfaced.length) deferredEvents.push([EVENT_CATALOG.vulnerability.resurfaced, {
+        workspaceId: resurfaced[0].workspaceId, outcome: 'success', resourceType: 'vulnerability',
+        metadata: { findingEventIds: resurfaced.map(proof => proof.id) },
+        payload: { jobId: job.id, targetId: job.asset.target.id, assetId: job.asset.id, assetValue: job.asset.value,
+          vulnerabilities: insertedVulnerabilities.filter(finding => resurfaced.some(proof => proof.vulnerabilityId === finding.id)).map(toDetectedVulnerability) },
+      }]);
     });
+    // Publish only after findings, scanner proof and project provenance commit.
+    for (const event of deferredEvents) await this.eventBridge.publishSafely(...event);
   }
 
   public async screenshot({

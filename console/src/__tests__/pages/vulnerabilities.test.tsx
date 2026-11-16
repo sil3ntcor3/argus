@@ -4,6 +4,7 @@ import { renderWithProviders, screen, waitFor } from '@/test/utils';
 import Vulnerabilities from '@/pages/vulnerabilities/vulnerabilities';
 
 const mockStats = vi.hoisted(() => vi.fn());
+const mockFindings = vi.hoisted(() => vi.fn());
 
 const mockWorkspaces = [{ id: 'ws-1', name: 'Test Workspace' }];
 const mockVulns = [
@@ -117,17 +118,18 @@ vi.mock('@/services/apis/gen/queries', async (importOriginal) => {
     await importOriginal<typeof import('@/services/apis/gen/queries')>();
   return {
     ...actual,
-    useVulnerabilitiesControllerGetVulnerabilities: () => ({
-      data: { data: mockVulns, total: mockVulns.length },
-      isLoading: false,
-      refetch: vi.fn(),
-    }),
+    useVulnerabilitiesControllerGetVulnerabilities: mockFindings,
     useVulnerabilitiesControllerGetVulnerabilitiesStatistics: mockStats,
   };
 });
 
 describe('Vulnerabilities Page', () => {
   beforeEach(() => {
+    mockFindings.mockReset().mockReturnValue({
+      data: { data: mockVulns, total: mockVulns.length },
+      isLoading: false,
+      refetch: vi.fn(),
+    });
     mockStats.mockReset().mockReturnValue({
       data: {
         data: [
@@ -137,6 +139,16 @@ describe('Vulnerabilities Page', () => {
       },
       isLoading: false,
     });
+  });
+
+  it('preserves calendar dates from a shared URL when the browser is west of UTC', async () => {
+    renderWithProviders(<Vulnerabilities />, {
+      initialEntries: ['/?createdFrom=2020-01-31&createdTo=2020-01-31'],
+    });
+    await waitFor(() => expect(mockFindings).toHaveBeenCalledWith(
+      expect.objectContaining({ createdFrom: '2020-01-31', createdTo: '2020-01-31' }),
+      expect.anything(),
+    ));
   });
 
   it('shows all five severity counts, including severities with no findings', async () => {

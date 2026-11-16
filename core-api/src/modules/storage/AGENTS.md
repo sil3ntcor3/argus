@@ -42,6 +42,10 @@ for server operations and URL signing. This module does not own database tables.
   type. `publishArtifactUpload` conditions the copy on the staging ETag and
   checks the final object on retry. See the [artifacts guide](../artifacts/AGENTS.md)
   for the file lifecycle and quota transitions.
+- `publishArtifactRevision` writes a server-generated UUID revision with
+  `If-None-Match: *`, private cache policy and a bounded I/O deadline. A collision
+  fails instead of replacing published bytes. Its caller owns authorization,
+  quota, the artifact pointer transaction and retirement cleanup.
 - `headObject(bucket, key)` takes the bucket first. `getFile`, `deleteFile`, and
   `uploadFile` take the key or filename first. `uploadFile` can create a
   missing bucket on retry, so verify the bucket name before calling it.

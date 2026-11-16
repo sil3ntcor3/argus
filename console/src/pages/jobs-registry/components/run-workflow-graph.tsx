@@ -25,6 +25,7 @@ import '@xyflow/react/dist/style.css';
 import dayjs from 'dayjs';
 import {
   CalendarClock,
+  Zap,
   CircleAlert,
   CircleCheck,
   CircleDashed,
@@ -166,7 +167,9 @@ function WorkflowStepNode({ data }: NodeProps) {
                 />
               )}
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-base font-semibold">{label}</span>
+                <span className="truncate text-base font-semibold">
+                  {label}
+                </span>
                 <div className="flex items-center gap-1.5 text-sm">
                   <span className={cn('shrink-0 font-medium', meta.text)}>
                     {meta.label}
@@ -209,7 +212,9 @@ function WorkflowStepNode({ data }: NodeProps) {
             {label} · {meta.label}
           </p>
           <p className="text-muted-foreground">job id: {id}</p>
-          {status === 'queued' && <p>Waiting for a worker to pick up its jobs</p>}
+          {status === 'queued' && (
+            <p>Waiting for a worker to pick up its jobs</p>
+          )}
           {!!running && running > 0 && (
             <p>
               {running} of {jobs} job(s) running
@@ -230,6 +235,7 @@ const TRIGGER_META: Record<
   RunTrigger,
   { label: string; icon: React.ReactNode }
 > = {
+  event: { label: 'Event', icon: <Zap className="size-5" /> },
   manual: { label: 'Manual', icon: <MousePointerClick className="size-5" /> },
   scheduled: { label: 'Schedule', icon: <CalendarClock className="size-5" /> },
 };

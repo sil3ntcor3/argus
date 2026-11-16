@@ -30,7 +30,7 @@ export class ArtifactStagingSweepService {
     await this.sweepPage(new Date(Date.now() - ARTIFACT_UPLOAD_TTL_SECONDS * 1000));
   }
 
-  /** Retry storage cleanup after a workspace cascade or late staging write. */
+  /** Retry staging cleanup after finalization, workspace cascades, and late writes. */
   async sweepPage(cutoff: Date): Promise<void> {
     const cursor = await this.redis.get(ARTIFACT_STAGING_CURSOR);
     const { objects, nextKey } = await this.storage.listArtifactSweepPage(cursor ?? undefined);
@@ -59,15 +59,17 @@ export class ArtifactStagingSweepService {
       // old enough to appear here cannot acquire a new reservation for its ID.
       const rows = staging.length ? await this.artifacts.find({
         where: { id: In(staging.map(({ artifactId }) => artifactId)) },
-        select: { id: true, workspaceId: true },
+        select: { id: true, workspaceId: true, status: true, expiresAt: true },
       }) : [];
-      const tracked = new Set(rows.map(row => workspaceArtifactUploadKey(row.workspaceId, row.id)));
-      const orphans = [
+      const protectedKeys = new Set(rows
+        .filter(row => row.status !== 'ready' || !row.expiresAt || row.expiresAt > cutoff)
+        .map(row => workspaceArtifactUploadKey(row.workspaceId, row.id)));
+      const removable = [
         ...candidates.filter(({ workspaceId }) => deletedWorkspaces.has(workspaceId)),
-        ...staging.filter(({ key }) => !tracked.has(key)),
+        ...staging.filter(({ key }) => !protectedKeys.has(key)),
       ];
-      if (orphans.length) {
-        const failed = await this.storage.deleteArtifactSweepObjects(orphans.map(({ key }) => key));
+      if (removable.length) {
+        const failed = await this.storage.deleteArtifactSweepObjects(removable.map(({ key }) => key));
         if (failed) this.logger.warn(`${failed} artifact object(s) could not be removed; the next scan will retry`);
       }
     }

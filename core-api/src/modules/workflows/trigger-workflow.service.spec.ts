@@ -117,6 +117,13 @@ describe('TriggerWorkflowService', () => {
       expect(capturedHandler).toBeDefined();
     });
 
+    it('ignores private symbol-path signals in the target-workflow wildcard listener', () => {
+      service.onModuleInit();
+      const trigger = jest.spyOn(service, 'trigger').mockResolvedValue({ workflowId: '', success: true });
+      capturedHandler([Symbol('private-run-closed')], 'run-id');
+      expect(trigger).not.toHaveBeenCalled();
+    });
+
     it('starts a run scoped to the event target', async () => {
       service.onModuleInit();
       await invokeHandler('target.domain.create', mockTarget);

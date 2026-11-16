@@ -74,7 +74,7 @@ export class ArtifactCleanupService {
 
       const repo = manager.getRepository(WorkspaceArtifact);
       const artifact = await repo.findOne({
-        where: { id: artifactId, workspaceId: workspace.id, status, ...(status === 'pending' ? { source: 'upload' } : {}) },
+        where: { id: artifactId, workspaceId: workspace.id, status },
         lock: { mode: 'pessimistic_write' },
       });
       // Recheck under the same row lock as completion. Allow time for requests
@@ -88,6 +88,10 @@ export class ArtifactCleanupService {
       // A signed POST can only write staging. The orphan sweep handles late replays.
       // Keep the row and its charge until both keys have been removed.
       await this.storage.deleteArtifactUploadObjects({ workspaceId: workspace.id, artifactId: artifact.id });
+      if (artifact.source === 'template' && !artifact.objectKey.endsWith('/file')) {
+        const failed = await this.storage.deleteArtifactSweepObjects([artifact.objectKey]);
+        if (failed) throw new InternalServerErrorException('Template content could not be removed');
+      }
       const bytes = Number(artifact.sizeBytes);
       const released = status === 'pending'
         ? await this.quota.releaseReserved(manager, workspace.id, bytes)

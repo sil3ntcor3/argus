@@ -1,3 +1,8 @@
+import { ProjectLegacyScheduleService } from '../projects/project-legacy-schedule.service';
+import { ProjectArchivedException } from '../projects/project-archive-state';
+import { lockProjectScope } from '../projects/project-scope-sync';
+import type { StartRunInput } from '../jobs-registry/workflow-runner.service';
+import { lockProjectWorkflow } from '../projects/project-workflow-write-context';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
 import { BullMQName, CronSchedule, JobRunType, JobStatus } from '@/common/enums/enum';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -40,6 +45,7 @@ export class AssetGroupWorkflowService {
     private scanScheduleQueue: Queue<AssetGroupWorkflow>,
     private toolsService: ToolsService,
     private workflowRunnerService: WorkflowRunnerService,
+    private readonly legacySchedules: ProjectLegacyScheduleService,
   ) {}
 
   /**
@@ -149,95 +155,19 @@ export class AssetGroupWorkflowService {
     workspaceId: string,
   ): Promise<DefaultMessageResponseDto> {
     try {
-      const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id: groupId, workspace: { id: workspaceId } },
-        relations: ['workspace'],
+      const count = await this.assetGroupRepo.manager.transaction(async manager => {
+        await manager.query('SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE', [workspaceId]);
+        const id = await lockProjectScope(manager, groupId, workspaceId);
+        const rows = await manager.query<{ id: string }[]>('SELECT id FROM workflows WHERE id=ANY($1::uuid[]) AND "workspaceId"=$2 ORDER BY id FOR KEY SHARE', [workflowIds, workspaceId]);
+        if (rows.length !== workflowIds.length) throw new NotFoundException('One or more workflows not found');
+        const existing = await manager.find(AssetGroupWorkflow, { where: { assetGroupId: id, workflowId: In(workflowIds) } });
+        if (existing.length) throw new BadRequestException('Workflows are already associated with this project');
+        await manager.save(AssetGroupWorkflow, workflowIds.map(workflowId => ({ id: randomUUID(), assetGroupId: id, workflowId, schedule, jobId: null })));
+        return workflowIds.length;
       });
-      if (!assetGroup) {
-        this.logger.warn(`Asset group with ID "${groupId}" not found`);
-        throw new NotFoundException(
-          `Asset group with ID "${groupId}" not found`,
-        );
-      }
+      await this.legacySchedules.reconcile(groupId, workspaceId).catch(() => this.logger.warn('Legacy project schedule creation will retry'));
+      return { message: `${count} workflows successfully added to asset group "${groupId}"` };
 
-      // Verify that all workflows exist AND belong to the same workspace. A bare
-      // findByIds would let a caller attach another tenant's workflow to their
-      // own group, and the (correctly scoped) group-detail endpoint would then
-      // serialise the foreign workflow.
-      const workflows = await this.workflowRepo.find({
-        where: {
-          id: In(workflowIds),
-          workspace: { id: workspaceId },
-        },
-      });
-      if (workflows.length !== workflowIds.length) {
-        const foundWorkflowIds = workflows.map((workflow) => workflow.id);
-        const missingWorkflowIds = workflowIds.filter(
-          (id) => !foundWorkflowIds.includes(id),
-        );
-        this.logger.warn(
-          `Workflows with IDs "${missingWorkflowIds.join(', ')}" not found`,
-        );
-        throw new NotFoundException(
-          `One or more workflows with IDs "${missingWorkflowIds.join(', ')}" not found`,
-        );
-      }
-
-      // Find existing associations to avoid duplicates
-      const existingAssociations = await this.assetGroupWorkflowRepo.find({
-        where: {
-          assetGroup: { id: groupId },
-          workflow: { id: In(workflowIds) },
-        },
-      });
-
-      const existingWorkflowIds = existingAssociations.map(
-        (assoc) => assoc.workflow.id,
-      );
-      if (existingWorkflowIds.length > 0) {
-        this.logger.warn(
-          `Workflows with IDs "${existingWorkflowIds.join(', ')}" are already associated with asset group "${groupId}"`,
-        );
-        throw new BadRequestException(
-          `Workflows with IDs "${existingWorkflowIds.join(', ')}" are already associated with asset group "${groupId}"`,
-        );
-      }
-      const assetGroupWorkflowRecords: AssetGroupWorkflow[] = [];
-
-      for (const workflowId of workflowIds) {
-        const assetGroupWorkflowId = randomUUID();
-        // 'disabled' is not a valid BullMQ repeat pattern (cron-parser would
-        // reject it), so only register a scheduler for real schedules.
-        let jobId: string | null = null;
-        if (schedule !== 'disabled') {
-          const job = await this.scanScheduleQueue.add(
-            assetGroupWorkflowId,
-            { id: assetGroupWorkflowId } as AssetGroupWorkflow,
-            {
-              repeat: {
-                pattern: schedule,
-              },
-            },
-          );
-          jobId = job.repeatJobKey ?? null;
-        }
-
-        const record = this.assetGroupWorkflowRepo.create({
-          id: assetGroupWorkflowId,
-          assetGroup: { id: groupId },
-          workflow: { id: workflowId },
-          schedule,
-          jobId,
-        });
-
-        assetGroupWorkflowRecords.push(record);
-      }
-
-      await this.assetGroupWorkflowRepo.save(assetGroupWorkflowRecords);
-
-      return {
-        message: `${assetGroupWorkflowRecords.length} workflows successfully added to asset group "${groupId}"`,
-      };
     } catch (error) {
       this.logger.error(
         `Error adding workflows to asset group with ID ${groupId}:`,
@@ -256,65 +186,21 @@ export class AssetGroupWorkflowService {
     workspaceId?: string,
   ): Promise<DefaultMessageResponseDto> {
     try {
-      // Validate group exists and belongs to the workspace
-      const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id: groupId },
-        relations: ['workspace'],
+      const group = await this.assetGroupRepo.findOne({ where: { id: groupId }, relations: ['workspace'] });
+      if (!group) throw new NotFoundException('Project not found');
+      if (workspaceId && group.workspace.id !== workspaceId) throw new ForbiddenException('Group does not belong to this workspace');
+      const rows = await this.assetGroupRepo.manager.transaction(async manager => {
+        await manager.query('SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE', [group.workspace.id]);
+        const id = await lockProjectScope(manager, groupId, group.workspace.id);
+        await manager.query('SELECT id FROM workflows WHERE id=ANY($1::uuid[]) AND "workspaceId"=$2 ORDER BY id FOR KEY SHARE', [workflowIds, group.workspace.id]);
+        const bindings = await manager.find(AssetGroupWorkflow, { where: { assetGroupId: id, workflowId: In(workflowIds) } });
+        if (!bindings.length || bindings.length !== workflowIds.length) throw new NotFoundException('One or more workflow assignments not found');
+        await manager.delete(AssetGroupWorkflow, { id: In(bindings.map(binding => binding.id)) });
+        return bindings;
       });
-      if (!assetGroup) {
-        throw new NotFoundException(
-          `Asset group with ID "${groupId}" not found`,
-        );
-      }
-      if (workspaceId && assetGroup.workspace?.id !== workspaceId) {
-        throw new ForbiddenException(
-          'Group does not belong to this workspace',
-        );
-      }
+      await this.legacySchedules.remove(rows).catch(() => this.logger.warn('Legacy project schedule removal deferred to delivery cleanup'));
+      return { message: `${rows.length} workflows successfully removed from asset group "${groupId}"` };
 
-      // Find existing associations
-      const associations = await this.assetGroupWorkflowRepo.find({
-        where: {
-          assetGroup: { id: groupId },
-          workflow: { id: In(workflowIds) },
-        },
-        relations: ['workflow', 'assetGroup'],
-      });
-
-      if (associations.length === 0) {
-        this.logger.warn(
-          `No workflows with IDs "${workflowIds.join(', ')}" are associated with asset group "${groupId}"`,
-        );
-        throw new NotFoundException(
-          `No workflows with IDs "${workflowIds.join(', ')}" are associated with asset group "${groupId}"`,
-        );
-      }
-
-      // Check for missing associations
-      const associatedWorkflowIds = associations.map(
-        (assoc) => assoc.workflow.id,
-      );
-      const missingWorkflowIds = workflowIds.filter(
-        (id) => !associatedWorkflowIds.includes(id),
-      );
-      if (missingWorkflowIds.length > 0) {
-        throw new NotFoundException(
-          `Workflows with IDs "${missingWorkflowIds.join(', ')}" are not associated with asset group "${groupId}"`,
-        );
-      }
-
-      await Promise.all(
-        associations
-          .map((a) => a.jobId)
-          .filter((jobId): jobId is string => Boolean(jobId))
-          .map((jobId) => this.scanScheduleQueue.removeJobScheduler(jobId)),
-      );
-      // Remove the associations
-      await this.assetGroupWorkflowRepo.remove(associations);
-
-      return {
-        message: `${associations.length} workflows successfully removed from asset group "${groupId}"`,
-      };
     } catch (error) {
       this.logger.error(
         `Error removing workflows from asset group with ID ${groupId}:`,
@@ -352,41 +238,25 @@ export class AssetGroupWorkflowService {
         );
       }
 
-      // Update the relationship with provided data
+      // Commit the definition under the same locks as canonical removal. Never
+      // save the detached entity after Redis I/O: save() could INSERT it again.
+      const committed = await this.assetGroupWorkflowRepo.manager.transaction(async manager => {
+        const { binding } = await lockProjectWorkflow(manager, assetGroupWorkspace.assetGroup.id, workspaceId, assetGroupWorkflowId);
+        const previousJobId = binding.jobId;
+        if (updateData.schedule !== undefined) {
+          binding.schedule = updateData.schedule;
+          binding.jobId = null;
+          await manager.update(AssetGroupWorkflow, { id: binding.id }, { schedule: binding.schedule, jobId: null });
+        }
+        return { binding, previousJobId };
+      });
       if (updateData.schedule !== undefined) {
-        assetGroupWorkspace.schedule = updateData.schedule;
-
-        if (assetGroupWorkspace.jobId) {
-          await this.scanScheduleQueue.removeJobScheduler(
-            assetGroupWorkspace.jobId,
-          );
-        }
-
-        if (updateData.schedule !== 'disabled') {
-          const newJob = await this.scanScheduleQueue.add(
-            assetGroupWorkspace.id,
-            { id: assetGroupWorkspace.id } as AssetGroupWorkflow,
-            {
-              repeat: {
-                pattern: assetGroupWorkspace.schedule,
-              },
-            },
-          );
-          if (newJob.repeatJobKey) {
-            assetGroupWorkspace.jobId = newJob.repeatJobKey;
-          }
-        } else {
-          // The old scheduler was removed above; drop the stale jobId so
-          // it no longer references a removed repeat job.
-          assetGroupWorkspace.jobId = null;
-        }
+        await this.legacySchedules.remove([{ id: committed.binding.id, jobId: committed.previousJobId }]);
+        await this.legacySchedules.reconcile(assetGroupWorkspace.assetGroup.id, workspaceId);
       }
-
-      // Save the updated relationship
-      const updatedRelationship =
-        await this.assetGroupWorkflowRepo.save(assetGroupWorkspace);
-
-      return updatedRelationship;
+      const current = await this.assetGroupWorkflowRepo.findOne({ where: { id: assetGroupWorkflowId, assetGroup: { workspace: { id: workspaceId } } }, relations: ['assetGroup', 'workflow'] });
+      if (!current) throw new NotFoundException('Workflow assignment was removed');
+      return current;
     } catch (error) {
       this.logger.error(
         `Error updating asset group workflow relationship with ID ${assetGroupWorkflowId}:`,
@@ -424,6 +294,7 @@ async getBindingWorkspace(assetGroupWorkflowId: string): Promise<string> {
     assetGroupWorkflowId: string,
     jobRunType: JobRunType,
     workspaceId: string,
+    repeatJobKey?: string,
   ): Promise<DefaultMessageResponseDto> {
     // Get the asset group workflow to access the workflow and asset group.
     // The run executes under `workflow.workspace`, so constrain the lookup to the
@@ -433,6 +304,7 @@ async getBindingWorkspace(assetGroupWorkflowId: string): Promise<string> {
       .createQueryBuilder('assetGroupWorkflow')
       .innerJoinAndSelect('assetGroupWorkflow.workflow', 'workflow')
       .leftJoinAndSelect('workflow.workspace', 'workspace')
+      .addSelect('assetGroup.archivedAt')
       .innerJoinAndSelect('assetGroupWorkflow.assetGroup', 'assetGroup')
       .where('assetGroupWorkflow.id = :assetGroupWorkflowId', {
         assetGroupWorkflowId,
@@ -447,6 +319,7 @@ async getBindingWorkspace(assetGroupWorkflowId: string): Promise<string> {
       );
     }
 
+    if (assetGroupWorkflow.assetGroup.archivedAt) throw new ProjectArchivedException();
     const workflow = assetGroupWorkflow.workflow;
     const assetGroupName = assetGroupWorkflow.assetGroup.name;
 
@@ -469,16 +342,17 @@ async getBindingWorkspace(assetGroupWorkflowId: string): Promise<string> {
     // first step silently fails is worse than a clear 400 here.
     await this.assertWorkflowRootToolsInstalled(workflow);
 
-    await this.workflowRunnerService.startRun({
-      workflow,
-      workspaceId: workflow.workspace.id,
-      jobName: assetGroupName,
-      jobRunType,
-      // Group runs stay pinned to the assets the group selected — the scope is
-      // what stops a subdomain step from fanning the run out to the whole target.
-      assetIds: assets.map((asset) => asset.id),
-      projectId: assetGroupWorkflow.assetGroup.id,
-      projectWorkflowId: assetGroupWorkflow.id,
+    const input: StartRunInput = {
+      workflow, workspaceId, jobName: assetGroupName, jobRunType,
+      assetIds: assets.map(asset => asset.id), projectId: assetGroupWorkflow.assetGroup.id, projectWorkflowId: assetGroupWorkflow.id,
+    };
+    await this.workflowRunnerService.startRun(input, async manager => {
+      const locked = await lockProjectWorkflow(manager, assetGroupWorkflow.assetGroup.id, workspaceId, assetGroupWorkflowId);
+      if (locked.workflow.id !== workflow.id || JSON.stringify(locked.workflow.content) !== JSON.stringify(workflow.content)) throw new BadRequestException('Workflow changed before launch');
+      if (repeatJobKey && (locked.binding.jobId !== repeatJobKey || locked.binding.schedule === 'disabled')) throw new NotFoundException('Stale project schedule');
+      const scope = await manager.query<{ id: string }[]>('SELECT a.id FROM project_assets pa JOIN assets a ON a.id=pa."assetId" JOIN targets t ON t.id=a."targetId" WHERE pa."projectId"=$1 AND t."workspaceId"=$2 AND a."isEnabled"=true ORDER BY a.id FOR SHARE OF a,t', [assetGroupWorkflow.assetGroup.id, workspaceId]);
+      if (!scope.length) throw new BadRequestException('No eligible project assets');
+      input.assetIds = scope.map(asset => asset.id);
     });
 
     return {

@@ -1,10 +1,18 @@
+import type { ProjectAgentService } from '@/modules/projects/project-agent.service';
 import type { Repository } from 'typeorm';
 
 import type { WrapperType } from '@/common/types/app.types';
+import type { ArtifactBufferService } from '@/modules/artifacts/artifact-buffer.service';
+import type { WorkspacesService } from '@/modules/workspaces/workspaces.service';
 import type { AssetsService } from '@/modules/assets/assets.service';
 import type { ConnectorRegistryService } from '@/modules/connectors/connector-registry.service';
 import type { IssuesService } from '@/modules/issues/issues.service';
 import type { JobsRegistryService } from '@/modules/jobs-registry/jobs-registry.service';
+import type { ProjectFilesService } from '@/modules/projects/project-files.service';
+import type { ProjectScopeReadService as ProjectScopeService } from '@/modules/projects/project-scope-read.service';
+import type { ProjectTriggerCreateService as ProjectTriggersService } from '@/modules/projects/project-trigger-create.service';
+import type { ProjectWorkflowTemplatesService as ProjectWorkflowsService } from '@/modules/projects/project-workflow-templates.service';
+import type { EventBridgeService } from '@/modules/event-bridge/publishing/event-bridge.service';
 import type { RemoteExecuteService } from '@/modules/remote-execute/remote-execute.service';
 import type { StatisticService } from '@/modules/statistic/statistic.service';
 import type { TargetsService } from '@/modules/targets/targets.service';
@@ -30,6 +38,8 @@ export interface ToolCallOptions {
 
 /** Everything AgentTool injects; each tool file takes the slice it uses. */
 export interface AgentToolDeps {
+  artifactBufferService: ArtifactBufferService;
+  workspacesService: WorkspacesService;
   assetsService: AssetsService;
   targetsService: TargetsService;
   vulnerabilitiesService: WrapperType<VulnerabilitiesService>;
@@ -47,6 +57,28 @@ export interface AgentToolDeps {
   toolConfigProfiles: ToolConfigProfilesService;
   remoteExecuteSubscribe: RemoteExecuteSubscribeService;
   redisService: RedisService;
+  projectsService: ProjectAgentService;
+  projectAssetsService: ProjectAgentService;
+  projectFilesService: ProjectFilesService;
+  projectResultsService: ProjectAgentService;
+  projectScopeService: ProjectScopeService;
+  projectTriggersService: ProjectTriggersService;
+  projectWorkflowsService: ProjectWorkflowsService;
+  eventBridge: EventBridgeService;
 }
 
 export type Deps<K extends keyof AgentToolDeps> = Pick<AgentToolDeps, K>;
+
+/**
+ * What a tool set is built for. A conversation about a project locks every
+ * project-aware tool to it; elsewhere the model picks one with `projectId`.
+ */
+export interface ToolScope {
+  /** Set only by the authenticated workspace API-key MCP entry point. */
+  workspaceApiKey?: boolean;
+  projectId?: string | null;
+  /** Whose run it is: write tools check this member's workspace permissions. */
+  userId?: string;
+  /** The chat a new project gets linked to. */
+  conversationId?: string;
+}

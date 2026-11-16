@@ -11,11 +11,13 @@ export function TargetFindingsCard({
   targetId,
   counts,
   newCount,
+  fixedCount,
   onKeyboardNavigate,
 }: {
   targetId: string;
   counts: SeverityCountsDto;
   newCount: number;
+  fixedCount?: number | null;
   onKeyboardNavigate: () => void;
 }) {
   const total = severities.reduce((sum, severity) => sum + counts[severity], 0);
@@ -31,6 +33,11 @@ export function TargetFindingsCard({
             <p className="text-sm text-muted-foreground">
               {formatCount.format(newCount)} new in the last 7 days
             </p>
+            {fixedCount != null && (
+              <p className="text-sm text-muted-foreground">
+                {formatCount.format(fixedCount)} fixed in the last 7 days
+              </p>
+            )}
           </div>
           <Button variant="outline" size="sm" asChild>
             <Link

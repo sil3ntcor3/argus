@@ -18,7 +18,7 @@ export interface AuditActionEntry {
   action: string;
   /** English display name served via GET /workspaces/:id/audit/actions. */
   label: string;
-  /** Controller class that emits the event (S11 wiring guard). */
+  /** Producer class (controller or background service; S11 wiring guard). */
   controller: string;
   /** Handler method on the controller that emits the event (S11). */
   method: string;
@@ -56,12 +56,16 @@ export const AUDIT_ACTION_CATALOG = [
   { action: 'project.created', label: 'Created project', controller: 'ProjectsController', method: 'create' },
   { action: 'project.updated', label: 'Updated project', controller: 'ProjectsController', method: 'update' },
   { action: 'project.deleted', label: 'Deleted project', controller: 'ProjectsController', method: 'delete' },
+  { action: 'project.archived', label: 'Archived project', controller: 'ProjectsController', method: 'archive' },
+  { action: 'project.unarchived', label: 'Reopened project', controller: 'ProjectsController', method: 'unarchive' },
   // internal networks (19–20)
   { action: 'network.created', label: 'Created network', controller: 'InternalNetworksController', method: 'createInternalNetwork' },
   { action: 'network.deleted', label: 'Deleted network', controller: 'InternalNetworksController', method: 'deleteInternalNetwork' },
   // vulnerabilities (21–22)
   { action: 'vulnerability.status.updated', label: 'Changed vulnerability status', controller: 'VulnerabilitiesController', method: 'bulkDismissVulnerabilities' },
   { action: 'vulnerability.bulk_updated', label: 'Bulk updated vulnerabilities', controller: 'VulnerabilitiesController', method: 'bulkReopenVulnerabilities' },
+  { action: 'vulnerability.settings.updated', label: 'Changed finding management policy', controller: 'VulnerabilitiesController', method: 'updateSettings' },
+  { action: 'vulnerability.fixed', label: 'Scanner verified findings fixed', controller: 'FindingScanAccountingService', method: 'onWorkflowEnd' },
   // reports (23–25)
   { action: 'report.generated', label: 'Generated report', controller: 'ReportsController', method: 'generateSummaryReport' },
   { action: 'report.exported', label: 'Exported report', controller: 'ReportsController', method: 'previewSummaryReport' },
@@ -84,6 +88,17 @@ export const AUDIT_ACTION_CATALOG = [
   // tools (36–37)
   { action: 'tool.installed', label: 'Installed tool', controller: 'ToolsController', method: 'installTool' },
   { action: 'tool.uninstalled', label: 'Uninstalled tool', controller: 'ToolsController', method: 'uninstallTool' },
+  { action: 'artifact.created', label: 'Agent saved file', controller: 'AgentsController', method: 'streamMessage' },
+  { action: 'artifact.downloaded', label: 'Requested file download', controller: 'ArtifactsController', method: 'download' },
+  { action: 'artifact.deleted', label: 'Deleted file', controller: 'ArtifactsController', method: 'remove' },
+  { action: 'artifact.updated', label: 'Changed file access', controller: 'ArtifactsController', method: 'updateAccess' },
+  { action: 'artifact.shared', label: 'Added file recipients', controller: 'ArtifactsController', method: 'addShares' },
+  { action: 'artifact.unshared', label: 'Removed file recipient', controller: 'ArtifactsController', method: 'removeShare' },
+  { action: 'storage.quota.updated', label: 'Changed workspace storage quota', controller: 'AdminWorkspacesController', method: 'updateStorageQuota' },
+  { action: 'vulnerability.proposed', label: 'AI finding proposed', controller: 'AgentsController', method: 'streamMessage' },
+  { action: 'vulnerability.review.approved', label: 'Approved finding proposal', controller: 'VulnerabilitiesController', method: 'approve' },
+  { action: 'vulnerability.review.rejected', label: 'Rejected finding proposal', controller: 'VulnerabilitiesController', method: 'reject' },
+  { action: 'vulnerability.review.merged', label: 'Merged finding proposal', controller: 'VulnerabilitiesController', method: 'merge' },
 ] as const satisfies readonly AuditActionEntry[];
 
 /** Union of every catalog action key — the type for the audit DTOs' `@IsIn`. */

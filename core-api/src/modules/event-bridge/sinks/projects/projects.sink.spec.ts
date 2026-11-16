@@ -22,13 +22,14 @@ describe('ProjectsSink discovery', () => {
     return {
       scope,
       bridge,
-      sink: new ProjectsSink(scope as never, bridge as never),
+      sink: new ProjectsSink(scope as never, bridge as never, { handleEvent: jest.fn().mockResolvedValue(undefined) } as never),
     };
   };
-  it('accepts only discovered asset batches, keeping its output out of its input', () => {
+  it('accepts discovery and the three trigger event kinds', () => {
     const { sink } = setup();
     expect(sink.group).toBe('projects');
-    expect(sink.domains).toEqual(['asset']);
+    expect(sink.domains).toEqual(['asset', 'project', 'vulnerability']);
+    for (const name of ['project.assets.added', 'project.run.completed', 'vulnerability.detected'] as const) expect(sink.accepts(name)).toBe(true);
     expect(sink.accepts('asset.discovered')).toBe(true);
     expect(sink.accepts('project.updated')).toBe(false);
     expect(sink.accepts('asset.deleted')).toBe(false);

@@ -181,7 +181,9 @@ describe('Project finding sightings (e2e)', () => {
       unknown,
       { payload: Record<string, unknown> },
     ];
-    expect(envelope.payload).not.toHaveProperty('projectId');
+    // The approved trigger runtime includes scoped project context in this
+    // internal event; the finding detail above still hides private provenance.
+    expect(envelope.payload.projectId).toBe(projects[0]);
   });
 
   it('links an existing workspace finding to each project without cloning it', async () => {

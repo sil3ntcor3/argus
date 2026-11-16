@@ -152,9 +152,11 @@ function createFakeDb(overrides: Partial<JobHistory> = {}): FakeDb {
     getOne: jest.fn(() => Promise.resolve(lastJob)),
     getRawMany: jest.fn(() => Promise.resolve(summaries)),
     getCount: jest.fn(() => Promise.resolve(activeCount)),
+    getExists: jest.fn(() => Promise.resolve(false)),
   };
 
   const manager = {
+    count: jest.fn(() => Promise.resolve(activeCount)),
     create: jest.fn(
       (entity: unknown, data: Record<string, unknown>): unknown => {
         if (entity === JobHistory) {
@@ -538,7 +540,7 @@ describe('WorkflowRunnerService', () => {
     it('persists project provenance supplied by a binding', async () => {
       await setup(createFakeDb());
       getToolByNames.mockResolvedValue([tool('naabu', ToolCategory.PORTS_SCANNER)]);
-      const provenance = { projectId: randomUUID(), projectWorkflowId: randomUUID() };
+      const provenance = { projectId: randomUUID(), projectWorkflowId: randomUUID(), triggerId: randomUUID(), causedByRunId: randomUUID(), chainDepth: 2 };
       await service.startRun({
         workflow: workflow([{ run: 'naabu' }]),
         workspaceId: 'workspace-1',

@@ -3,6 +3,7 @@ import {
   ARTIFACT_MAX_FILE_BYTES,
   ARTIFACT_UPLOAD_TTL_SECONDS,
   workspaceArtifactKey,
+  workspaceArtifactRevisionKey,
   workspaceArtifactUploadKey,
 } from '@/common/constants/artifact-storage';
 import {
@@ -446,7 +447,9 @@ export class StorageService implements OnModuleInit {
     buffer: Buffer,
     bucket: string = 'default',
     contentType?: string,
+    abortSignal?: AbortSignal,
   ) {
+    abortSignal?.throwIfAborted();
     const client = this.rustFsClient.getClient();
     const dotIndex = fileName.lastIndexOf('.');
     const derivedType =
@@ -463,11 +466,13 @@ export class StorageService implements OnModuleInit {
           Body: buffer,
           ContentType: resolvedContentType,
         }),
+        { abortSignal },
       );
 
     try {
       await putObject();
     } catch (error: unknown) {
+      abortSignal?.throwIfAborted();
       // The happy path stays a single round-trip — no HeadBucket probe, no
       // bucket churn. Only a genuinely missing bucket pays for a CreateBucket
       // plus exactly one retry. A concurrent `onModuleInit` caller can reach
@@ -479,9 +484,10 @@ export class StorageService implements OnModuleInit {
       }
 
       try {
-        await client.send(new CreateBucketCommand({ Bucket: bucket }));
+        await client.send(new CreateBucketCommand({ Bucket: bucket }), { abortSignal });
         this.logger.log(`Created bucket on demand: ${bucket}`);
       } catch (createError: unknown) {
+        abortSignal?.throwIfAborted();
         // Lost the race against another instance that created it first — the
         // bucket exists either way, so the retry below is still correct.
         if (!this.isBucketAlreadyExists(createError)) {
@@ -492,10 +498,12 @@ export class StorageService implements OnModuleInit {
       try {
         await putObject();
       } catch (retryError: unknown) {
+        abortSignal?.throwIfAborted();
         throw this.toUploadError(retryError);
       }
     }
 
+    abortSignal?.throwIfAborted();
     return { path: `${bucket}/${fileName}` };
   }
 
@@ -664,6 +672,34 @@ export class StorageService implements OnModuleInit {
     }
   }
 
+  /** Publish a fresh server-owned revision without replacing any existing bytes. */
+  public async publishArtifactRevision(input: ArtifactLocation & {
+    revisionId: string; buffer: Buffer; contentType: string; abortSignal?: AbortSignal;
+  }): Promise<string> {
+    validateArtifactUpload({ ...input, sizeBytes: input.buffer.length });
+    if (input.revisionId.length !== 36 || !isUUID(input.revisionId)) {
+      throw new BadRequestException('Invalid artifact revision');
+    }
+    const key = workspaceArtifactRevisionKey(input.workspaceId, input.artifactId, input.revisionId);
+    const deadline = AbortSignal.timeout(15_000);
+    const abortSignal = input.abortSignal ? AbortSignal.any([input.abortSignal, deadline]) : deadline;
+    abortSignal.throwIfAborted();
+    try {
+      await this.rustFsClient.getClient().send(new PutObjectCommand({
+        Bucket: ARTIFACT_BUCKET, Key: key, Body: input.buffer,
+        ContentType: input.contentType, CacheControl: 'private, no-store',
+        Metadata: { 'argus-artifact-id': input.artifactId.toLowerCase() },
+        IfNoneMatch: '*',
+      }), { abortSignal });
+    } catch (error: unknown) {
+      if (error instanceof S3ServiceException && [409, 412].includes(error.$metadata.httpStatusCode ?? 0)) {
+        throw new ConflictException('Artifact revision already exists');
+      }
+      throw error;
+    }
+    return key;
+  }
+
   /** Remove the two canonical keys of an expired upload or deleted file. */
   public async deleteArtifactUploadObjects(location: ArtifactLocation): Promise<void> {
     validateArtifactLocation(location);
@@ -688,6 +724,41 @@ export class StorageService implements OnModuleInit {
       }
       throw error;
     }
+  }
+
+  /** Durable private import tombstone. Never metered or treated as file content. */
+  public async hasLegacyTemplateImport(workspaceId: string, templateId: string): Promise<boolean> {
+    if (![workspaceId, templateId].every(id => isUUID(id))) throw new BadRequestException('Invalid template import marker');
+    try {
+      await this.rustFsClient.getClient().send(new HeadObjectCommand({ Bucket: ARTIFACT_BUCKET, Key: `workspaces/${workspaceId}/template-imports/${templateId}` }), { abortSignal: AbortSignal.timeout(15_000) });
+      return true;
+    } catch (error) {
+      if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 404) return false;
+      throw error;
+    }
+  }
+
+  public async claimLegacyTemplateImport(workspaceId: string, templateId: string, digest: string): Promise<boolean> {
+    if (![workspaceId, templateId].every(id => isUUID(id)) || !/^[a-f0-9]{64}$/.test(digest)) throw new BadRequestException('Invalid template import marker');
+    try {
+      await this.rustFsClient.getClient().send(new PutObjectCommand({
+        Bucket: ARTIFACT_BUCKET, Key: `workspaces/${workspaceId}/template-imports/${templateId}`,
+        Body: JSON.stringify({ digest }), ContentType: 'application/json', CacheControl: 'private, no-store', IfNoneMatch: '*',
+      }), { abortSignal: AbortSignal.timeout(15_000) });
+      return true;
+    } catch (error) {
+      if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === 412) return false;
+      throw error;
+    }
+  }
+
+  /** Connector containers cannot resolve a browser-relative storage URL. */
+  public async getTemplateWorkerDownloadUrl(opts: { bucket: string; key: string; expiresIn: number }): Promise<{ url: string; expiresIn: number }> {
+    const signed = await this.getPresignedDownloadUrl(opts);
+    if (/^https?:\/\//.test(signed.url)) return signed;
+    const base = this.configService.get<string>('BASE_URL');
+    if (!base || !/^https?:\/\//.test(base)) throw new BadRequestException('Set a worker-reachable BASE_URL for template downloads');
+    return { ...signed, url: new URL(signed.url, base).href };
   }
 
   public async getPresignedDownloadUrl(opts: {
@@ -1028,6 +1099,11 @@ export class StorageService implements OnModuleInit {
 
   /** Delete exact keys already authorized by the bounded artifact sweep. */
   public async deleteArtifactSweepObjects(keys: string[]): Promise<number> {
+    return (await this.deleteArtifactSweepFailures(keys)).length;
+  }
+
+  /** Return exact failed keys so retirement records survive partial S3 failures. */
+  public async deleteArtifactSweepFailures(keys: string[]): Promise<string[]> {
     const result = await this.rustFsClient.getClient().send(new DeleteObjectsCommand({
       Bucket: ARTIFACT_BUCKET,
       Delete: {
@@ -1035,7 +1111,8 @@ export class StorageService implements OnModuleInit {
         Quiet: true,
       },
     }), { abortSignal: AbortSignal.timeout(15_000) });
-    return result.Errors?.length ?? 0;
+    if (result.Errors?.some(error => !error.Key || !keys.includes(error.Key))) return keys;
+    return result.Errors?.map(error => error.Key!) ?? [];
   }
 
   /**

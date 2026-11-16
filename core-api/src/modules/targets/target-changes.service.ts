@@ -30,7 +30,10 @@ export class TargetChangesService {
     canReadFindings: boolean,
   ) {
     const { page, limit, kind } = query;
-    if (kind === TargetChangeKind.VULNERABILITY && !canReadFindings) {
+    if (
+      (kind === TargetChangeKind.VULNERABILITY || kind === TargetChangeKind.FIXED) &&
+      !canReadFindings
+    ) {
       throw new ForbiddenException(
         'Vulnerability read access is required for finding discoveries',
       );
@@ -56,18 +59,24 @@ export class TargetChangesService {
          SELECT a.id, a."createdAt", a."isPrimary"
          FROM assets a JOIN owned t ON a."targetId" = t.id
        ), matching AS MATERIALIZED (
-         SELECT '${TargetChangeKind.ASSET}' AS kind, a."createdAt" AS at,
+         SELECT '${TargetChangeKind.ASSET}' AS kind, a."createdAt" AT TIME ZONE $8 AS at,
                 a.id, a.id AS "assetId"
          FROM target_assets a
          WHERE NOT a."isPrimary" AND ($3::text IS NULL OR $3 = '${TargetChangeKind.ASSET}')
          UNION ALL
-         SELECT '${TargetChangeKind.SERVICE}', s."createdAt", s.id, a.id
+         SELECT '${TargetChangeKind.SERVICE}', s."createdAt" AT TIME ZONE $8, s.id, a.id
          FROM target_assets a JOIN asset_services s ON s."assetId" = a.id
          WHERE $3::text IS NULL OR $3 = '${TargetChangeKind.SERVICE}'
          UNION ALL
-         SELECT '${TargetChangeKind.VULNERABILITY}', v."createdAt", v.id, a.id
+         SELECT '${TargetChangeKind.VULNERABILITY}', COALESCE(v."firstDetectedDate",v."createdAt" AT TIME ZONE $8), v.id, a.id
          FROM target_assets a JOIN vulnerabilities v ON v."assetId" = a.id
-         WHERE $6::boolean AND ($3::text IS NULL OR $3 = '${TargetChangeKind.VULNERABILITY}')
+         WHERE v."reviewStatus"='approved' AND $6::boolean AND ($3::text IS NULL OR $3 = '${TargetChangeKind.VULNERABILITY}')
+         UNION ALL
+         SELECT '${TargetChangeKind.FIXED}', v."fixedAt", v.id, a.id
+         FROM target_assets a JOIN vulnerabilities v ON v."assetId"=a.id
+         WHERE v."reviewStatus"='approved' AND v."detectionStatus"='fixed'
+           AND v."fixedAt"<=statement_timestamp() AND $6::boolean
+           AND ($3::text IS NULL OR $3='${TargetChangeKind.FIXED}')
        ), page AS (
          SELECT * FROM matching ORDER BY at DESC, kind, id LIMIT $4 OFFSET $5
        )
@@ -83,7 +92,7 @@ export class TargetChangesService {
        LEFT JOIN page p ON true
        LEFT JOIN assets a ON a.id = p."assetId"
        LEFT JOIN asset_services s ON p.kind = '${TargetChangeKind.SERVICE}' AND s.id = p.id
-       LEFT JOIN vulnerabilities v ON p.kind = '${TargetChangeKind.VULNERABILITY}' AND v.id = p.id
+       LEFT JOIN vulnerabilities v ON p.kind IN ('${TargetChangeKind.VULNERABILITY}','${TargetChangeKind.FIXED}') AND v.id = p.id
        ORDER BY p.at DESC, p.kind, p.id`,
       [
         id,
@@ -93,6 +102,7 @@ export class TargetChangesService {
         offset,
         canReadFindings,
         Object.values(Severity),
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
       ],
     );
     if (!rows.length) throw new NotFoundException('Target not found');

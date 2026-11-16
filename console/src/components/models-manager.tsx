@@ -20,11 +20,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  EFFORT_LABELS,
+  type ReasoningEffort,
+} from '@/components/ui/reasoning-effort-select';
+import { setDefaultApprovalMode } from '@/hooks/use-approval-mode';
 import { useLLMConfigs } from '@/hooks/use-llm-configs';
 import { useAgentSettingsDialog } from '@/hooks/useAgentSettingsDialog';
 import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
 import {
   AgentModelRefDtoReasoningEffort,
+  type UpsertAgentConfigDto,
   getAgentsControllerGetAgentConfigQueryKey,
   getAgentsControllerGetConnectedProvidersQueryKey,
   getAgentsControllerGetProviderModelsQueryOptions,
@@ -35,7 +41,8 @@ import {
   type LLMConfigWithProviderDto,
   type ProviderModelDto,
 } from '@/services/apis/gen/queries';
-import { useQueries, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useQueries, useQueryClient } from '@tanstack/react-query';
+import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import { defaultFilter } from 'cmdk';
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -45,13 +52,20 @@ type ModelRef = AgentModelRefDto;
 type Effort = AgentModelRefDto['reasoningEffort'];
 
 /** Radix Select cannot hold an empty value, so "not set" gets a token. */
-const EFFORT_UNSET = 'unset';
+const UNSET = 'unset';
 
 const EFFORT_OPTIONS: Array<{ value: NonNullable<Effort>; label: string }> = [
   { value: AgentModelRefDtoReasoningEffort.low, label: 'Low' },
   { value: AgentModelRefDtoReasoningEffort.medium, label: 'Medium' },
   { value: AgentModelRefDtoReasoningEffort.high, label: 'High' },
 ];
+
+const DEFAULT_EFFORTS = Object.keys(EFFORT_LABELS) as ReasoningEffort[];
+
+const APPROVAL_OPTIONS = [
+  { value: 'manual', label: 'Manual' },
+  { value: 'auto', label: 'Auto' },
+] as const;
 
 /**
  * The ref to save when the user picks `picked`. Picking the same model keeps
@@ -253,9 +267,20 @@ export function ModelsManager() {
   } = useAgentsControllerGetAgentConfig({
     query: { enabled: !!selectedWorkspaceId },
   });
-  const upsert = useAgentsControllerUpsertAgentConfig();
+  const upsert = useAgentsControllerUpsertAgentConfig({ mutation: {
+    mutationKey: ['agent-config-save', selectedWorkspaceId], networkMode: 'always', retry: false,
+    onMutate: () => {
+      if (!navigator.onLine || !selectedWorkspaceId || selectedWorkspaceId !== getGlobalWorkspaceId()) throw new Error('The workspace changed or you are offline');
+    },
+    onSettled: () => { saving.current.delete(selectedWorkspaceId); },
+    onSuccess: (saved) => {
+      if (selectedWorkspaceId !== getGlobalWorkspaceId()) return;
+      queryClient.setQueryData(getAgentsControllerGetAgentConfigQueryKey(), saved);
+    },
+  } });
+  const sharedSaving = useIsMutating({ mutationKey: ['agent-config-save', selectedWorkspaceId] }) > 0;
   // Set synchronously, unlike isPending, so a second pick cannot slip in
-  const saving = useRef(false);
+  const saving = useRef(new Set<string | undefined>());
 
   const models: AgentModelsConfigDto = config?.modelsConfig ?? {};
   const subagent = models.subagents?.[0];
@@ -264,12 +289,13 @@ export function ModelsManager() {
   // while another is in flight would overwrite it from stale data: skip it.
   const save = useCallback(
     (next: AgentModelsConfigDto) => {
-      if (!config || saving.current) return;
-      saving.current = true;
+      if (!config || saving.current.has(selectedWorkspaceId) || sharedSaving || !navigator.onLine || selectedWorkspaceId !== getGlobalWorkspaceId()) return;
+      saving.current.add(selectedWorkspaceId);
       upsert.mutate(
         { data: { modelsConfig: next } },
         {
           onSuccess: (saved) => {
+            if (selectedWorkspaceId !== getGlobalWorkspaceId()) return;
             queryClient.setQueryData(
               getAgentsControllerGetAgentConfigQueryKey(),
               saved,
@@ -280,15 +306,42 @@ export function ModelsManager() {
             });
             toast.success('Models updated');
           },
-          onError: () => toast.error('Failed to update models'),
+          onError: () => { if (selectedWorkspaceId === getGlobalWorkspaceId()) toast.error('Failed to update models'); },
           onSettled: () => {
-            saving.current = false;
+            saving.current.delete(selectedWorkspaceId);
           },
         },
       );
     },
-    [config, upsert, queryClient],
+    [config, upsert, queryClient, selectedWorkspaceId, sharedSaving],
   );
+
+  // New chat defaults: a partial upsert, so it never touches modelsConfig
+  const saveDefaults = (
+    patch: Pick<
+      UpsertAgentConfigDto,
+      'defaultReasoningEffort' | 'defaultApprovalMode'
+    >,
+  ) => {
+    if (saving.current.has(selectedWorkspaceId) || sharedSaving || !navigator.onLine || selectedWorkspaceId !== getGlobalWorkspaceId()) return;
+    saving.current.add(selectedWorkspaceId);
+    upsert.mutate(
+      { data: patch },
+      {
+        onSuccess: (saved) => {
+          if (selectedWorkspaceId !== getGlobalWorkspaceId()) return;
+          queryClient.setQueryData(
+            getAgentsControllerGetAgentConfigQueryKey(),
+            saved,
+          );
+          setDefaultApprovalMode(saved.defaultApprovalMode);
+          toast.success('Defaults updated');
+        },
+        onError: () => { if (selectedWorkspaceId === getGlobalWorkspaceId()) toast.error('Failed to update defaults'); },
+        onSettled: () => { saving.current.delete(selectedWorkspaceId); },
+      },
+    );
+  };
 
   // The row stands for all subagent models: unset clears them all
   const setSubagent = (ref: ModelRef | undefined) => {
@@ -349,7 +402,7 @@ export function ModelsManager() {
   }
 
   return (
-    <div className="divide-y rounded-xl border bg-card/50 px-4">
+    <fieldset disabled={sharedSaving || upsert.isPending} aria-busy={sharedSaving || upsert.isPending} className="min-w-0 divide-y rounded-xl border bg-card/50 px-4">
       <SettingRow
         title="Default Model"
         description="Primary model for new conversations"
@@ -391,13 +444,13 @@ export function ModelsManager() {
           onChange={(picked) => setSubagent(nextRef(subagent, picked))}
         />
         <Select
-          value={subagent?.reasoningEffort ?? EFFORT_UNSET}
+          value={subagent?.reasoningEffort ?? UNSET}
           disabled={!subagent}
           onValueChange={(effort) => {
             if (!subagent) return;
             const { reasoningEffort: _old, ...ref } = subagent;
             setSubagent(
-              effort === EFFORT_UNSET
+              effort === UNSET
                 ? ref
                 : { ...ref, reasoningEffort: effort as NonNullable<Effort> },
             );
@@ -411,7 +464,7 @@ export function ModelsManager() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent align="end">
-            <SelectItem value={EFFORT_UNSET}>
+            <SelectItem value={UNSET}>
               Not Set (Use Provider Default)
             </SelectItem>
             {EFFORT_OPTIONS.map((option) => (
@@ -422,6 +475,72 @@ export function ModelsManager() {
           </SelectContent>
         </Select>
       </SettingRow>
-    </div>
+      <SettingRow
+        title="Default Reasoning Effort"
+        description="Effort a new chat starts with when none is picked in the chat. A model without the level runs at its provider default."
+      >
+        <Select
+          value={config.defaultReasoningEffort ?? UNSET}
+          onValueChange={(effort) =>
+            saveDefaults({
+              defaultReasoningEffort:
+                effort === UNSET ? null : (effort as ReasoningEffort),
+            })
+          }
+        >
+          <SelectTrigger
+            size="sm"
+            aria-label="Default reasoning effort"
+            className="border-0 bg-transparent shadow-none"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value={UNSET}>
+              Not Set (Use Provider Default)
+            </SelectItem>
+            {DEFAULT_EFFORTS.map((effort) => (
+              <SelectItem key={effort} value={effort}>
+                {EFFORT_LABELS[effort]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      <SettingRow
+        title="Default Approval Mode"
+        description="How commands run when a new chat starts. Manual asks before each new command; Auto runs them all."
+      >
+        <Select
+          value={config.defaultApprovalMode ?? UNSET}
+          onValueChange={(mode) =>
+            saveDefaults({
+              defaultApprovalMode:
+                mode === UNSET
+                  ? null
+                  : (mode as (typeof APPROVAL_OPTIONS)[number]['value']),
+            })
+          }
+        >
+          <SelectTrigger
+            size="sm"
+            aria-label="Default approval mode"
+            className="border-0 bg-transparent shadow-none"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value={UNSET}>
+              Not Set (Use Last Choice)
+            </SelectItem>
+            {APPROVAL_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+    </fieldset>
   );
 }

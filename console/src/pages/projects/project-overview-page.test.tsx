@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectOverviewPage } from './project-overview-page';
+vi.mock('./project-agent-context', () => ({ ProjectAgentContext: () => <div>Project AI context</div> }));
 
 const mock = vi.hoisted(() => ({
   usePermission: vi.fn(),

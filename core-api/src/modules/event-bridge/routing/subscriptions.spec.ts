@@ -152,13 +152,13 @@ describe('event bus subscriptions', () => {
       expect(unclaimed).toEqual(
         [
           'api_key',
+          'artifact',
           'asset_group',
           'audit',
           'member',
           'network',
           'notification',
           'permission_group',
-          'project',
           'report',
           'storage',
           'system_config',

@@ -1,7 +1,6 @@
-import { Roles } from '@/common/decorators/app.decorator';
+import { requestClientIp } from '@/common/config/trusted-proxies';
 import { Doc } from '@/common/doc/doc.decorator';
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
-import { Role } from '@/common/enums/enum';
 import { StorageService } from '@/modules/storage/storage.service';
 import {
   BadRequestException,
@@ -14,6 +13,7 @@ import {
   Patch,
   Post,
   Put,
+  Req,
 } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
@@ -27,6 +27,8 @@ import {
 } from './dto/system-configs.dto';
 import { MailService } from './mail.service';
 import { SystemConfigsService } from './system-configs.service';
+import { Admin } from '../admin.decorator';
+import type { IncomingMessage } from 'node:http';
 
 const LOGO_MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
@@ -36,7 +38,7 @@ const LOGO_MAX_SIZE_BYTES = 5 * 1024 * 1024;
  */
 @ApiTags('System Configs')
 @Controller('admin/system-configs')
-@Roles(Role.ADMIN)
+@Admin()
 export class SystemConfigsController {
   constructor(
     private readonly systemConfigsService: SystemConfigsService,
@@ -105,13 +107,14 @@ export class SystemConfigsController {
   @Doc<DefaultMessageResponseDto>({
     summary: 'Update system settings',
     description:
-      'Merges supplied fields into stored settings. Omitted or null fields retain their value; an empty password retains the saved credential. Saving these preferences does not activate public registration or send email.',
+      'Merges supplied fields into stored settings. Omitted or null fields retain their value; an empty password retains the saved credential. A nonempty admin IP list must include the requester. Saving these preferences does not send email.',
     response: { serialization: DefaultMessageResponseDto },
   })
   updateSettings(
     @Body() dto: SystemSettingsDto,
+    @Req() request: IncomingMessage,
   ): Promise<DefaultMessageResponseDto> {
-    return this.systemConfigsService.updateSettings(dto);
+    return this.systemConfigsService.updateSettings(dto, requestClientIp(request));
   }
 
   /** Send a test message to one validated recipient through the saved server. */

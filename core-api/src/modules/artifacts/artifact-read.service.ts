@@ -106,14 +106,16 @@ export class ArtifactReadService {
       .getOne();
     if (!file) throw new NotFoundException('File not found');
 
-    return this.storage.getPresignedDownloadUrl({
-      bucket: ARTIFACT_BUCKET,
-      key: file.objectKey,
-      fileName: file.name || 'file',
-      // The storage proxy can share the console's origin. Serve bytes as an attachment.
-      contentType: 'application/octet-stream',
-      expiresIn: DOWNLOAD_TTL_SECONDS,
+    return this.signDownload(file);
+  }
+
+  async getPublicDownloadUrl(id: string): Promise<ArtifactDownloadDto> {
+    const file = await this.artifacts.findOne({
+      where: { id, status: 'ready', shareType: 'public' },
+      select: { name: true, objectKey: true },
     });
+    if (!file) throw new NotFoundException('File not found');
+    return this.signDownload(file);
   }
 
   async getShares(workspaceId: string, userId: string, id: string): Promise<ArtifactListCreatorDto[]> {
@@ -156,7 +158,18 @@ export class ArtifactReadService {
     return permissions.includes('artifact.manage') || permissions.includes('*');
   }
 
-  private toMetadata(row: WorkspaceArtifact, userId: string): ArtifactListItemDto {
+  private signDownload(file: Pick<WorkspaceArtifact, 'name' | 'objectKey'>): Promise<ArtifactDownloadDto> {
+    return this.storage.getPresignedDownloadUrl({
+      bucket: ARTIFACT_BUCKET,
+      key: file.objectKey,
+      fileName: file.name || 'file',
+      // The storage proxy can share the console's origin. Serve bytes as an attachment.
+      contentType: 'application/octet-stream',
+      expiresIn: DOWNLOAD_TTL_SECONDS,
+    });
+  }
+
+  toMetadata(row: WorkspaceArtifact, userId: string): ArtifactListItemDto {
     return {
       id: row.id,
       name: row.name,

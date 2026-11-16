@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { workspaceArtifactKey } from '@/common/constants/artifact-storage';
+import { WorkspaceArtifact } from '@/modules/artifacts/entities/workspace-artifact.entity';
 import * as request from 'supertest';
 import { closeTestApp, createTestApp, type TestApp } from './helpers/app';
 import { wsHeaders } from './helpers/auth';
@@ -8,7 +10,7 @@ describe('Workspace artifact usage API (e2e)', () => {
   let app: TestApp;
   let owner: Awaited<ReturnType<typeof createUserWithWorkspace>>;
   let other: typeof owner;
-  const defaults = { quotaBytes: 1073741824, usedBytes: 0, reservedBytes: 0, maxFileBytes: 52428800 };
+  const defaults = { quotaBytes: 1073741824, usedBytes: 0, reservedBytes: 0, maxFileBytes: 52428800, bySource: [], byUser: [] };
   const get = (headers: Record<string, string>) => request(app.server).get('/api/artifacts/usage').set(headers);
 
   beforeAll(async () => {
@@ -73,6 +75,54 @@ describe('Workspace artifact usage API (e2e)', () => {
       await app.dataSource.query('UPDATE workspace_permissions SET permissions=$1 WHERE id=$2', [[permission], group]);
       await get(headers).expect(200, expected);
       await get(other.headers).expect(200, { ...defaults, usedBytes: 8, reservedBytes: 5 });
+    }
+  });
+
+  it('groups only scoped ready files, preserves equal totals, and redacts creator data', async () => {
+    const removedCreator = randomUUID();
+    await app.dataSource.query('INSERT INTO users(id,name,email,"emailVerified") VALUES ($1,$2,$3,true)', [
+      removedCreator, 'Removed creator', `${removedCreator}@example.test`,
+    ]);
+    async function add(
+      workspaceId: string, createdByUserId: string, source: WorkspaceArtifact['source'],
+      status: WorkspaceArtifact['status'], bytes: number,
+    ) {
+      const id = randomUUID();
+      await app.dataSource.getRepository(WorkspaceArtifact).insert({
+        id, workspaceId, createdByUserId, source, status, sizeBytes: String(bytes),
+        name: 'Private filename.txt', mimeType: 'text/plain', objectKey: workspaceArtifactKey(workspaceId, id),
+        expiresAt: new Date(Date.now() + 900_000),
+      });
+    }
+    try {
+      await add(owner.workspace.id, owner.user.userId, 'upload', 'ready', 7);
+      await add(owner.workspace.id, owner.user.userId, 'agent', 'ready', 3);
+      await add(owner.workspace.id, other.user.userId, 'upload', 'ready', 10);
+      await add(owner.workspace.id, removedCreator, 'agent', 'ready', 5);
+      await add(owner.workspace.id, owner.user.userId, 'agent', 'pending', 100);
+      await add(owner.workspace.id, owner.user.userId, 'upload', 'deleted', 50);
+      await add(other.workspace.id, other.user.userId, 'upload', 'ready', 999);
+    } finally {
+      await app.dataSource.query('DELETE FROM users WHERE id=$1', [removedCreator]);
+    }
+    const expectedUsers = [
+      { user: { id: owner.user.userId, name: 'E2E artifact-usage-owner', image: null }, bytes: 10 },
+      { user: { id: other.user.userId, name: 'E2E artifact-usage-other', image: null }, bytes: 10 },
+    ].sort((left, right) => left.user.id.localeCompare(right.user.id));
+    const response = await get(owner.headers).expect(200, {
+      ...defaults, quotaBytes: 0, usedBytes: 128, reservedBytes: 19,
+      bySource: [{ source: 'upload', bytes: 17 }, { source: 'agent', bytes: 8 }],
+      byUser: [...expectedUsers, { user: null, bytes: 5 }],
+    });
+    await get(wsHeaders(other.user.cookie, owner.workspace.id)).expect(200, response.body);
+    await get(other.headers).expect(200, {
+      ...defaults, usedBytes: 8, reservedBytes: 5,
+      bySource: [{ source: 'upload', bytes: 999 }],
+      byUser: [{ user: expectedUsers.find(row => row.user.id === other.user.userId)?.user, bytes: 999 }],
+    });
+    const serialized = JSON.stringify(response.body);
+    for (const value of [owner.user.email, other.user.email, 'Private filename.txt', 'objectKey', 'password', 'emailVerified']) {
+      expect(serialized).not.toContain(value);
     }
   });
 });

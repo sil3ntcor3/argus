@@ -44,7 +44,7 @@ export class ProjectOverviewRunsService {
         JOIN LATERAL (
           SELECT 1 FROM vulnerabilities v JOIN assets a ON a.id = v."assetId"
           JOIN targets t ON t.id = a."targetId" AND t."workspaceId" = $2
-          WHERE v.id = pv."vulnerabilityId"
+          WHERE v.id = pv."vulnerabilityId" AND v."reviewStatus"='approved'
           LIMIT 1
         ) valid ON true
         WHERE pv."firstSeenJobHistoryId" IS NOT NULL

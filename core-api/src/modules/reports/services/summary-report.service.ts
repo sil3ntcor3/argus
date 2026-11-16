@@ -1,6 +1,7 @@
+import { findingDetectedAt } from '@/modules/vulnerabilities/open-vulnerability';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { Vulnerability } from '@/modules/vulnerabilities/entities/vulnerability.entity';
 import { Target } from '@/modules/targets/entities/target.entity';
 import { AssetService } from '@/modules/assets/entities/asset-services.entity';
@@ -17,6 +18,9 @@ import type { ReportData } from '../types/report-data.type';
 
 type RiskLevel = Exclude<Severity, Severity.INFO>;
 type ScanStatus = VulnerabilityAnalyzeStatus | Exclude<JobStatus, JobStatus.CANCELLED>;
+
+// Legacy archives remain resolved; new scanner fixes need no archive flag.
+const FIXED_FINDING = '(v."detectionStatus" = \'fixed\' OR v."isArchived" = true)';
 
 @Injectable()
 export class SummaryReportService {
@@ -261,11 +265,12 @@ export class SummaryReportService {
       .leftJoin('target.workspace', 'workspace')
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere(openVulnerabilityCondition('v'))
-      .andWhere('v.createdAt >= :startDate', { startDate })
-      .andWhere('v.createdAt <= :endDate', { endDate })
+      .andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate })
+      .andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate })
       .getCount();
   }
 
+  /** Count approved findings once when either valid closure falls in the period. */
   private async getResolvedVulnerabilityCount(
     workspaceId: string,
     startDate: Date,
@@ -282,10 +287,15 @@ export class SummaryReportService {
         activeDismissalCondition('dismissal'),
       )
       .where('workspace.id = :workspaceId', { workspaceId })
-      .andWhere('v.isArchived = :isArchived', { isArchived: false })
-      .andWhere('dismissal.id IS NOT NULL')
-      .andWhere('dismissal.createdAt >= :startDate', { startDate })
-      .andWhere('dismissal.createdAt <= :endDate', { endDate })
+      .andWhere("v.reviewStatus = 'approved'")
+      .andWhere(new Brackets(qb => {
+        // Keep timestamp and timestamptz parameters distinct for non-UTC API hosts.
+        qb.where('dismissal.id IS NOT NULL AND dismissal.createdAt >= :startDate AND dismissal.createdAt <= :endDate')
+          .orWhere(`${FIXED_FINDING} AND (
+            (v."fixedAt" >= :fixedStartDate AND v."fixedAt" <= :fixedEndDate)
+            OR (v."fixedAt" IS NULL AND v."updatedAt" >= :startDate AND v."updatedAt" <= :endDate)
+          )`);
+      }), { startDate, endDate, fixedStartDate: startDate, fixedEndDate: endDate })
       .getCount();
   }
 
@@ -302,14 +312,14 @@ export class SummaryReportService {
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere(openVulnerabilityCondition('v'))
       .andWhere('v.severity != :info', { info: 'info' })
-      .orderBy('v.createdAt', 'DESC')
+      .orderBy(findingDetectedAt('v'), 'DESC')
       .limit(limit);
 
     if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', { startDate: options.startDate });
+      qb.andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate: options.startDate });
     }
     if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
+      qb.andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate: options.endDate });
     }
     if (options?.targetIds?.length) {
       qb.andWhere('target.id IN (:...targetIds)', {
@@ -326,11 +336,12 @@ export class SummaryReportService {
       cvss: v.cvssScore ?? 0,
       asset: v.asset?.value || 'Unknown',
       category: v.tags?.[0] || 'General',
-      discovered: `${String(v.createdAt.getDate()).padStart(2, '0')}/${String(v.createdAt.getMonth() + 1).padStart(2, '0')}/${v.createdAt.getFullYear()}`,
+      discovered: `${String((v.firstDetectedDate ?? v.createdAt).getDate()).padStart(2, '0')}/${String((v.firstDetectedDate ?? v.createdAt).getMonth() + 1).padStart(2, '0')}/${(v.firstDetectedDate ?? v.createdAt).getFullYear()}`,
       status: v.analyzeStatus,
     }));
   }
 
+  /** Merge valid dismissal/fix dates before deduplication, ordering and limits. */
   private async getResolvedFindings(
     workspaceId: string,
     options?: { startDate?: Date; endDate?: Date; targetIds?: string[] },
@@ -348,7 +359,9 @@ export class SummaryReportService {
       )
       .where('workspace.id = :workspaceId', { workspaceId })
       .andWhere('dismissal.id IS NOT NULL')
+      .andWhere("v.reviewStatus = 'approved'")
       .orderBy('dismissal.createdAt', 'DESC')
+      .addOrderBy('v.id', 'ASC')
       .limit(limit);
 
     if (options?.startDate) {
@@ -365,45 +378,52 @@ export class SummaryReportService {
 
     const dismissedVulns = await dismissedQb.getMany();
 
-    const archivedQb = this.vulnRepo
-      .createQueryBuilder('v')
-      .leftJoinAndSelect('v.asset', 'asset')
-      .leftJoin('asset.target', 'target')
-      .leftJoin('target.workspace', 'workspace')
-      .where('workspace.id = :workspaceId', { workspaceId })
-      .andWhere('v.isArchived = :isArchived', { isArchived: true })
-      .orderBy('v.updatedAt', 'DESC')
-      .limit(limit);
+    // Query each clock separately: legacy updatedAt is a timestamp, fixedAt is timestamptz.
+    const fixedVulns = (await Promise.all(['fixedAt', 'updatedAt'].map(async column => {
+      const fixedQb = this.vulnRepo
+        .createQueryBuilder('v')
+        .addSelect('v.fixedAt')
+        .leftJoinAndSelect('v.asset', 'asset')
+        .leftJoin('asset.target', 'target')
+        .leftJoin('target.workspace', 'workspace')
+        .where('workspace.id = :workspaceId', { workspaceId })
+        .andWhere(FIXED_FINDING)
+        .andWhere(`v.fixedAt IS ${column === 'fixedAt' ? 'NOT ' : ''}NULL`)
+        .andWhere("v.reviewStatus = 'approved'")
+        .orderBy(`v.${column}`, 'DESC')
+        .addOrderBy('v.id', 'ASC')
+        .limit(limit);
 
-    if (options?.startDate) {
-      archivedQb.andWhere('v.updatedAt >= :startDate', { startDate: options.startDate });
-    }
-    if (options?.endDate) {
-      archivedQb.andWhere('v.updatedAt <= :endDate', { endDate: options.endDate });
-    }
-    if (options?.targetIds?.length) {
-      archivedQb.andWhere('target.id IN (:...targetIds)', {
-        targetIds: options.targetIds,
-      });
-    }
-
-    const archivedVulns = await archivedQb.getMany();
-
-    const allVulns = new Map<string, Vulnerability>();
-    for (const v of [...dismissedVulns, ...archivedVulns]) {
-      if (!allVulns.has(v.id)) {
-        allVulns.set(v.id, v);
+      if (options?.startDate) {
+        fixedQb.andWhere(`v.${column} >= :startDate`, { startDate: options.startDate });
       }
+      if (options?.endDate) {
+        fixedQb.andWhere(`v.${column} <= :endDate`, { endDate: options.endDate });
+      }
+      if (options?.targetIds?.length) {
+        fixedQb.andWhere('target.id IN (:...targetIds)', { targetIds: options.targetIds });
+      }
+      return fixedQb.getMany();
+    }))).flat();
+    const candidates = [
+      ...dismissedVulns.map(finding => ({ finding, resolvedDate: finding.vulnerabilityDismissal?.createdAt ?? finding.updatedAt })),
+      ...fixedVulns.map(finding => ({ finding, resolvedDate: finding.fixedAt ?? finding.updatedAt })),
+    ];
+    const allVulns = new Map<string, (typeof candidates)[number]>();
+    for (const candidate of candidates) {
+      const previous = allVulns.get(candidate.finding.id);
+      if (!previous || candidate.resolvedDate > previous.resolvedDate)
+        allVulns.set(candidate.finding.id, candidate);
     }
 
     const now = new Date();
     return Array.from(allVulns.values())
+      .sort((a, b) => b.resolvedDate.getTime() - a.resolvedDate.getTime() || a.finding.id.localeCompare(b.finding.id))
       .slice(0, limit)
-      .map((v) => {
-        const resolvedDate = v.vulnerabilityDismissal?.createdAt || v.updatedAt;
+      .map(({ finding: v, resolvedDate }) => {
         const daysOpen = Math.max(
           0,
-          Math.floor((now.getTime() - v.createdAt.getTime()) / (1000 * 60 * 60 * 24)),
+          Math.floor((now.getTime() - (v.firstDetectedDate ?? v.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
         );
         return {
           id: v.cveId?.[0] || v.fingerprint || v.id.substring(0, 8),
@@ -449,10 +469,10 @@ export class SummaryReportService {
       .limit(limit);
 
     if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', { startDate: options.startDate });
+      qb.andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate: options.startDate });
     }
     if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
+      qb.andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate: options.endDate });
     }
     if (options?.targetIds?.length) {
       qb.andWhere('t.id IN (:...targetIds)', { targetIds: options.targetIds });
@@ -517,10 +537,10 @@ export class SummaryReportService {
       .orderBy('COUNT(v.id)', 'DESC');
 
     if (options?.startDate) {
-      qb.andWhere('v.createdAt >= :startDate', { startDate: options.startDate });
+      qb.andWhere(`${findingDetectedAt('v')} >= :startDate`, { startDate: options.startDate });
     }
     if (options?.endDate) {
-      qb.andWhere('v.createdAt <= :endDate', { endDate: options.endDate });
+      qb.andWhere(`${findingDetectedAt('v')} <= :endDate`, { endDate: options.endDate });
     }
     if (options?.targetIds?.length) {
       qb.andWhere('t.id IN (:...targetIds)', { targetIds: options.targetIds });
@@ -560,6 +580,7 @@ export class SummaryReportService {
       .leftJoin('target.workspace', 'workspace')
       .select('COUNT(DISTINCT v.jobHistoryId)', 'count')
       .where('workspace.id = :workspaceId', { workspaceId })
+      .andWhere("v.reviewStatus = 'approved'")
       .andWhere('v.createdAt >= :startDate', { startDate })
       .andWhere('v.createdAt <= :endDate', { endDate });
 

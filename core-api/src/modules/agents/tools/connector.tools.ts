@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
 import type { RemoteExecuteService } from '@/modules/remote-execute/remote-execute.service';
+import { validateTemplate } from '@/modules/templates/template-validation';
 
 import { defineTool, errorMessage } from './helpers';
 import type { Deps, ToolCallOptions } from './types';
@@ -184,6 +185,8 @@ export function runConnectorTool(
       .min(1)
       .describe('Target passed to the tool: domain, IP, host:port or URL'),
     configProfileId: z.string().uuid().optional(),
+    templates: z.array(z.string().min(1)).max(20).optional()
+      .describe('Nuclei only: inline YAML templates for this invocation, at most 64 KiB total. Not saved.'),
   });
   const catalog = connectors
     .map(
@@ -198,7 +201,7 @@ export function runConnectorTool(
       'Nothing is saved: results are not stored as assets or vulnerabilities.',
       `Waits up to ${AGENT_TOOL_RUN_TIMEOUT_MS / 60_000} minutes. Output: stdout (first ${AGENT_TOOL_OUTPUT_PAGE / 1024}KB), exitCode, error, timedOut, truncated, totalLines.`,
       'When truncated is true the full output is kept for 1 hour: read it with read_tool_output(runId), filtering with pattern instead of paging through everything.',
-      'Params: tool (slug), target, optional configProfileId.',
+      'Params: tool (slug), target, optional configProfileId and templates (Nuclei only).',
       'Tools:',
       catalog,
     ].join('\n'),
@@ -208,6 +211,16 @@ export function runConnectorTool(
       options: ToolCallOptions,
     ) => {
       const { tool: slug, target, configProfileId } = params;
+      const templates = params.templates;
+      if (templates?.length) {
+        try {
+          if (slug !== 'nuclei') throw new Error('Inline templates require Nuclei');
+          if (templates.length > 20 || templates.reduce((bytes, content) => bytes + Buffer.byteLength(content, 'utf8'), 0) > 64 * 1024) {
+            throw new Error('Use at most 20 inline templates and 64 KiB total');
+          }
+          for (const content of templates) validateTemplate(undefined, content);
+        } catch (error) { return { error: errorMessage(error) }; }
+      }
       const entry = deps.connectorRegistry.getConnector(slug);
       // Tool.name IS the connector slug; getToolById sets isInstalled from
       // an enabled workspace_tools row, so a connector of another workspace
@@ -248,6 +261,13 @@ export function runConnectorTool(
         return {
           error: `Tool ${slug} needs configuration (${missing.join(', ')}). Add a config profile for it in this workspace.`,
         };
+      }
+
+      if (templates?.length) {
+        // Resolve credentials first so profile values cannot replace this
+        // invocation's validated selection. Never mutate the profile object.
+        config = { ...config, customTemplates: templates.map(content => ({ content })) };
+        delete config.customTemplateIds;
       }
 
       const limits = deps.connectorRegistry.getResourceDefaults(slug);

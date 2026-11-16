@@ -31,30 +31,48 @@ const findingsSearch = z.object({
     .nativeEnum(ProjectsControllerGetFindingsProvenance)
     .optional()
     .catch(undefined),
+  overdue: z
+    .preprocess(
+      (value) => (value === 'true' ? true : value === 'false' ? false : value),
+      z.boolean().optional(),
+    )
+    .catch(undefined),
+  discoveredBy: z
+    .preprocess(
+      (value) => (typeof value === 'string' ? value.split(',') : value),
+      z
+        .array(z.enum(['tool', 'ai', 'ai_tool', 'manual']))
+        .max(4)
+        .optional(),
+    )
+    .catch(undefined),
+  createdFrom: z.string().date().optional().catch(undefined),
+  createdTo: z.string().date().optional().catch(undefined),
+  filter: z.preprocess(value => typeof value === 'string' ? value : JSON.stringify(value), z.string().max(16384).optional()).catch(undefined),
+  sortBy: z
+    .enum([
+      'severity',
+      'name',
+      'firstDetectedDate',
+      'lastSeenDate',
+      'firstSeenAt',
+      'lastSeenAt',
+      'dueAt',
+    ])
+    .optional()
+    .catch(undefined),
+  sortOrder: z.enum(['ASC', 'DESC']).optional().catch(undefined),
 });
 
 function ProjectFindingsRoute() {
   const { id } = Route.useParams();
-  const {
-    page = 1,
-    query,
-    run,
-    workflow,
-    provenance,
-    severity,
-    status,
-  } = Route.useSearch();
+  const { page = 1, ...search } = Route.useSearch();
   const navigate = Route.useNavigate();
   return (
     <ProjectFindingsPage
       projectId={id}
       page={page}
-      query={query}
-      run={run}
-      workflow={workflow}
-      provenance={provenance}
-      severity={severity}
-      status={status}
+      {...search}
       onChange={(search) => void navigate({ search })}
     />
   );

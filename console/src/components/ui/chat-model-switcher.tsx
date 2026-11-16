@@ -1,5 +1,7 @@
 import { useLLMConfigs } from '@/hooks/use-llm-configs';
 import { useAgentSettingsDialog } from '@/hooks/useAgentSettingsDialog';
+import { useWorkspaceState } from '@/hooks/useWorkspaceSelector';
+import { getGlobalWorkspaceId } from '@/utils/workspaceState';
 import type {
   ProviderModelDto,
 } from '@/services/apis/gen/queries';
@@ -7,9 +9,9 @@ import {
   useAgentsControllerGetProviderModels,
   useAgentsControllerUpdateLLMConfig,
 } from '@/services/apis/gen/queries';
-import { useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronsUpDown, Loader2, Settings } from 'lucide-react';
-import { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Command,
@@ -20,6 +22,11 @@ import {
 } from './command';
 import Image from './image';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
+import {
+  FALLBACK_EFFORTS,
+  type ReasoningEffort,
+  ReasoningEffortSelect,
+} from './reasoning-effort-select';
 
 interface ChatModelSwitcherProps {
   /** configId of the currently selected LLM config */
@@ -124,6 +131,9 @@ export function ChatModelSwitcher({
   const [searchQuery, setSearchQuery] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const queryClient = useQueryClient();
+  const { state: { selectedWorkspaceId } } = useWorkspaceState();
+  const saving = useRef(new Set<string | undefined>());
+  useEffect(() => { setIsUpdating(false); setPickedEffort(null); }, [selectedWorkspaceId]);
 
   const { connectedProviders } = useLLMConfigs();
 
@@ -153,7 +163,16 @@ export function ChatModelSwitcher({
     { query: { enabled: !!configId } },
   );
 
-  const updateLLMConfig = useAgentsControllerUpdateLLMConfig();
+  const updateLLMConfig = useAgentsControllerUpdateLLMConfig({ mutation: {
+    mutationKey: ['agent-llm-save', selectedWorkspaceId, configId], networkMode: 'always', retry: false,
+    onMutate: () => { if (!navigator.onLine || selectedWorkspaceId !== getGlobalWorkspaceId()) throw new Error('The workspace changed or you are offline'); },
+    onSettled: () => { saving.current.delete(selectedWorkspaceId); if (selectedWorkspaceId === getGlobalWorkspaceId()) setIsUpdating(false); },
+    onSuccess: async () => {
+      if (selectedWorkspaceId !== getGlobalWorkspaceId()) return;
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ['/api/agents/llm-configs'] }), queryClient.invalidateQueries({ queryKey: ['/api/agents/providers/connected'] })]);
+    },
+  } });
+  const sharedSaving = useIsMutating({ mutationKey: ['agent-llm-save', selectedWorkspaceId, configId] }) > 0;
   const deferredSearch = useDeferredValue(searchQuery);
 
   const filteredModels = useMemo((): ProviderModelDto[] => {
@@ -185,7 +204,8 @@ export function ChatModelSwitcher({
 
   const handleSelect = useCallback(
     (modelId: string) => {
-      if (!activeConfig?.configId) return;
+      if (!activeConfig?.configId || saving.current.has(selectedWorkspaceId) || sharedSaving || !navigator.onLine || selectedWorkspaceId !== getGlobalWorkspaceId()) return;
+      saving.current.add(selectedWorkspaceId);
 
       onSelectModel(activeConfig.providerId, modelId, activeConfig.configId);
       setOpen(false);
@@ -196,17 +216,18 @@ export function ChatModelSwitcher({
         { id: activeConfig.configId, data: { model: modelId } },
         {
           onSuccess: () => {
+            if (selectedWorkspaceId !== getGlobalWorkspaceId()) return;
             void queryClient.invalidateQueries({
               queryKey: ['/api/agents/llm-configs'],
             });
             toast.success('Model updated');
           },
-          onError: () => toast.error('Failed to sync model preference'),
-          onSettled: () => setIsUpdating(false),
+          onError: () => { if (selectedWorkspaceId === getGlobalWorkspaceId()) toast.error('Failed to sync model preference'); },
+          onSettled: () => { saving.current.delete(selectedWorkspaceId); if (selectedWorkspaceId === getGlobalWorkspaceId()) setIsUpdating(false); },
         },
       );
     },
-    [activeConfig, onSelectModel, updateLLMConfig, queryClient],
+    [activeConfig, onSelectModel, updateLLMConfig, queryClient, selectedWorkspaceId, sharedSaving],
   );
 
   const handleOpenChange = useCallback((isOpen: boolean) => {
@@ -215,6 +236,46 @@ export function ChatModelSwitcher({
   }, []);
 
   const isActiveConfig = activeConfig?.configId === selectedConfigId;
+
+  // The effort is saved on the connection, next to its model
+  const currentModelId =
+    isActiveConfig && selectedModel ? selectedModel : activeConfig?.model;
+  const efforts = useMemo(
+    () =>
+      (Array.isArray(models) ? models : []).find((m) => m.id === currentModelId)
+        ?.reasoningEfforts ?? FALLBACK_EFFORTS,
+    [models, currentModelId],
+  );
+  // Shown right away; the saved value takes over once the list refetches
+  const [pickedEffort, setPickedEffort] = useState<{
+    configId: string;
+    effort: ReasoningEffort | null;
+  } | null>(null);
+  const effort =
+    pickedEffort && pickedEffort.configId === configId
+      ? pickedEffort.effort
+      : (activeConfig?.reasoningEffort ?? null);
+
+  const handleEffortChange = useCallback(
+    (next: ReasoningEffort | null) => {
+      if (!configId || saving.current.has(selectedWorkspaceId) || sharedSaving || !navigator.onLine || selectedWorkspaceId !== getGlobalWorkspaceId()) return;
+      saving.current.add(selectedWorkspaceId); setIsUpdating(true);
+      setPickedEffort({ configId, effort: next });
+      updateLLMConfig.mutate(
+        { id: configId, data: { reasoningEffort: next } },
+        {
+          onSuccess: () => { if (selectedWorkspaceId === getGlobalWorkspaceId()) setPickedEffort(null); },
+          onError: () => {
+            if (selectedWorkspaceId !== getGlobalWorkspaceId()) return;
+            setPickedEffort(null);
+            toast.error('Failed to save reasoning effort');
+          },
+          onSettled: () => { saving.current.delete(selectedWorkspaceId); if (selectedWorkspaceId === getGlobalWorkspaceId()) setIsUpdating(false); },
+        },
+      );
+    },
+    [configId, updateLLMConfig, selectedWorkspaceId, sharedSaving],
+  );
 
   if (connectedConfigs.length === 0) {
     return (
@@ -235,7 +296,7 @@ export function ChatModelSwitcher({
         <Popover open={open} onOpenChange={handleOpenChange}>
           <PopoverTrigger asChild>
             <button
-              disabled={isUpdating}
+              disabled={isUpdating || sharedSaving}
               className="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent transition-colors disabled:opacity-50"
               aria-label="Select model"
             >
@@ -277,6 +338,12 @@ export function ChatModelSwitcher({
             </Command>
           </PopoverContent>
         </Popover>
+        <ReasoningEffortSelect
+          efforts={efforts}
+          value={effort}
+          onChange={handleEffortChange}
+          disabled={isUpdating || sharedSaving}
+        />
         {showSettingsButton && (
           <button
             type="button"

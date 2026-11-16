@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -49,6 +50,7 @@ import {
   Download,
   LayoutGrid,
   List,
+  Share2,
   Trash2,
 } from 'lucide-react';
 import {
@@ -61,6 +63,7 @@ import {
 import { toast } from 'sonner';
 import { FileFolderNavigation } from './file-folder-navigation';
 import { FileIcon } from './file-icon';
+import { FileSharingDialog } from './file-sharing-dialog';
 
 const DEFAULT_PAGE_SIZE = 20;
 const FILE_PAGE_SIZES = [5, 10, 20, 50, 100] as const;
@@ -107,6 +110,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** unit).toFixed(1)} ${BYTE_UNITS[unit]}`;
 }
 
+/** Displays the quota totals and allocation, including in-flight reservations. */
 function StorageUsage({
   data,
   failed,
@@ -117,6 +121,10 @@ function StorageUsage({
   onRetry: () => void;
 }) {
   const summary = useRef<HTMLElement>(null);
+  const allocatedBytes = (data?.usedBytes ?? 0) + (data?.reservedBytes ?? 0);
+  const percent = data?.quotaBytes
+    ? Math.min(100, (allocatedBytes / data.quotaBytes) * 100)
+    : 100;
   return (
     <section
       ref={summary}
@@ -154,6 +162,17 @@ function StorageUsage({
               <dd className="font-medium">{formatBytes(bytes)}</dd>
             </div>
           ))}
+          <div className="col-span-full">
+            <dt className="sr-only">Allocated</dt>
+            <dd>
+              <Progress
+                value={percent}
+                aria-label="Workspace storage allocated"
+                aria-valuenow={percent}
+                aria-valuetext={`${formatBytes(allocatedBytes)} of ${formatBytes(data.quotaBytes)} allocated`}
+              />
+            </dd>
+          </div>
         </dl>
       ) : (
         <p role="status" className="text-sm text-muted-foreground">
@@ -186,25 +205,42 @@ function FileAccessError({ onRetry }: { onRetry: () => void }) {
 function FileActions({
   file,
   canDownload,
+  canShare,
   canDelete,
   downloading,
   deleting,
   focusAfterDelete,
   onDownload,
+  onShare,
   onDelete,
 }: {
   file: ArtifactListItemDto;
   canDownload: boolean;
+  canShare: boolean;
   canDelete: boolean;
   downloading: boolean;
   deleting: boolean;
   focusAfterDelete: RefObject<HTMLElement | null>;
   onDownload: () => void;
+  onShare: (trigger: HTMLButtonElement) => void;
   onDelete: () => void;
 }) {
   const confirmed = useRef(false);
   return (
     <div className="flex justify-end gap-1">
+      {canShare ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          aria-label={`Share ${file.name}`}
+          title="Share"
+          disabled={deleting || downloading}
+          onClick={(event) => onShare(event.currentTarget)}
+        >
+          <Share2 aria-hidden="true" className="size-4" />
+        </Button>
+      ) : null}
       {canDownload ? (
         <Button
           type="button"
@@ -290,7 +326,7 @@ function FileGrid({
               {dateFormat.format(new Date(file[dateField]))}
             </p>
             <p className="break-all text-xs text-muted-foreground">
-              {file.source === 'agent' ? 'Agent' : 'Upload'}
+              {file.source === 'template' ? 'Template' : file.source === 'agent' ? 'Agent' : 'Upload'}
               {file.createdBy ? ` · ${file.createdBy.name}` : ''}
             </p>
             {renderActions(file)}
@@ -340,6 +376,11 @@ function WorkspaceFiles({
   }
   const [view, setView] = useState(readFileView);
   const [downloading, setDownloading] = useState(false);
+  const [sharingFile, setSharingFile] = useState<ArtifactListItemDto | null>(
+    null,
+  );
+  const sharingTrigger = useRef<HTMLElement | null>(null);
+  if (sharingFile && !canWrite) setSharingFile(null);
   const queryClient = useQueryClient();
   const listRegion = useRef<HTMLDivElement>(null);
   const folderRegion = useRef<HTMLDivElement>(null);
@@ -546,11 +587,16 @@ function WorkspaceFiles({
       <FileActions
         file={file}
         canDownload={file.isOwner || scope === 'shared'}
+        canShare={canWrite && file.isOwner}
         canDelete={canManage || (canWrite && file.isOwner)}
         downloading={downloading}
         deleting={removeFile.isPending}
         focusAfterDelete={listRegion}
         onDownload={() => void downloadFile(file)}
+        onShare={(trigger) => {
+          sharingTrigger.current = trigger;
+          setSharingFile(file);
+        }}
         onDelete={() => {
           if (pendingDelete.current || getGlobalWorkspaceId() !== workspaceId)
             return;
@@ -563,6 +609,16 @@ function WorkspaceFiles({
 
   return (
     <div className="min-w-0 space-y-4">
+      {sharingFile && canWrite && (
+        <FileSharingDialog
+          key={sharingFile.id}
+          file={sharingFile}
+          workspaceId={workspaceId}
+          focusAfterClose={sharingTrigger}
+          onClose={() => setSharingFile(null)}
+          onAccessDenied={onAccessDenied}
+        />
+      )}
       <StorageUsage
         data={usageData}
         failed={usage.isError}
@@ -750,13 +806,13 @@ function WorkspaceFiles({
               <TableBody>
                 {rows.map((file) => (
                   <TableRow key={file.id}>
-                    <TableCell className="max-w-48 break-all whitespace-normal sm:max-w-96">
+                    <TableCell className="min-w-48 max-w-48 break-all whitespace-normal sm:max-w-96">
                       <div className="flex items-start gap-2">
                         <FileIcon name={file.name} mimeType={file.mimeType} />
                         <div className="min-w-0">
                           <span className="font-medium">{file.name}</span>
                           <span className="block text-xs text-muted-foreground">
-                            {file.source === 'agent' ? 'Agent' : 'Upload'}
+                            {file.source === 'template' ? 'Template' : file.source === 'agent' ? 'Agent' : 'Upload'}
                             {file.createdBy ? ` · ${file.createdBy.name}` : ''}
                           </span>
                         </div>

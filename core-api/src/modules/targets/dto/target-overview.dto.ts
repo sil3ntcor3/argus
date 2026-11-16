@@ -75,7 +75,7 @@ export class TargetTopVulnerabilityDto {
   createdAt: Date;
 }
 
-class TargetProjectRefDto {
+export class TargetProjectRefDto {
   @ApiProperty({ type: String, format: 'uuid' })
   id: string;
 
@@ -89,7 +89,16 @@ class TargetProjectRefDto {
   assets: number;
 }
 
+export class TargetIssueRefDto {
+  @ApiProperty() id: string;
+  @ApiProperty() no: number;
+  @ApiProperty() title: string;
+  @ApiProperty() status: string;
+  @ApiProperty() priority: string;
+}
+
 export class TargetOverviewDto {
+  @ApiProperty({ type: [TargetIssueRefDto] }) issues: TargetIssueRefDto[];
   @ApiProperty({ description: 'Enabled assets on the target' })
   totalAssets: number;
 
@@ -144,6 +153,12 @@ export class TargetOverviewDto {
     description: 'Open findings first seen in the last seven days, or null without vulnerability read access',
   })
   newVulnerabilities: number | null;
+
+  @ApiProperty({
+    type: 'integer', minimum: 0, nullable: true,
+    description: 'Approved scan-fixed findings recorded in the last seven days, or null without vulnerability read access',
+  })
+  fixedVulnerabilities: number | null;
 
   @ApiProperty({
     type: () => [TargetTopVulnerabilityDto],

@@ -1,4 +1,6 @@
 import { DefaultMessageResponseDto } from '@/common/dtos/default-message-response.dto';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PROJECT_DELETING_EVENT } from '../projects/project-conversation-events';
 import { BullMQName, CronSchedule, WorkerType } from '@/common/enums/enum';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { getManyResponse } from '@/utils/getManyResponse';
@@ -8,6 +10,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
@@ -36,7 +39,7 @@ import { isGroupOwnedWorkflow } from './workflow-ownership';
 import { buildPipelineJobs } from './pipeline';
 
 type ProjectMetadataInput = Partial<
-  Pick<AssetGroup, 'description' | 'autoAddAssets'>
+  Pick<AssetGroup, 'description' | 'instruction' | 'autoAddAssets'>
 >;
 
 @Injectable()
@@ -57,6 +60,7 @@ export class AssetGroupService {
     private encryptionService: WorkspaceEncryptionService,
     private readonly workflowService: AssetGroupWorkflowService,
     private readonly assetAssetService: AssetGroupAssetService,
+    @Optional() private readonly events?: EventEmitter2,
   ) {}
 
   /**
@@ -67,6 +71,7 @@ export class AssetGroupService {
     query: GetAllAssetGroupsQueryDto,
     workspaceId: string,
     projectScoped = false,
+    projectStatus?: 'active' | 'archived' | 'all',
   ) {
     try {
       const { page, limit, sortBy, sortOrder } = query;
@@ -77,6 +82,8 @@ export class AssetGroupService {
         .createQueryBuilder('assetGroup')
         .leftJoin('assetGroup.workspace', 'workspace')
         .where('workspace.id = :workspaceId', { workspaceId });
+      if (projectScoped && projectStatus && projectStatus !== 'all')
+        queryBuilder.andWhere(`assetGroup.archivedAt IS ${projectStatus === 'archived' ? 'NOT ' : ''}NULL`);
 
       // Add search filter if provided
       if (query.search && query.search.trim() !== '') {
@@ -312,6 +319,7 @@ export class AssetGroupService {
         ...(metadata
           ? {
               description: metadata.description?.trim() || null,
+              instruction: metadata.instruction?.trim() || null,
               autoAddAssets: metadata.autoAddAssets ?? true,
             }
           : {}),
@@ -582,6 +590,10 @@ export class AssetGroupService {
           throw new NotFoundException(`Asset group with ID "${id}" not found`);
         }
 
+        // New project chats take FOR SHARE, so the cleanup snapshot includes
+        // every chat that can commit before this deletion.
+        await this.events?.emitAsync(PROJECT_DELETING_EVENT, { projectId: id, workspaceId });
+
         const groupWorkflows = assetGroup.assetGroupWorkflows ?? [];
         await Promise.all(
           groupWorkflows
@@ -617,33 +629,23 @@ export class AssetGroupService {
     metadata?: ProjectMetadataInput,
   ): Promise<AssetGroup> {
     try {
-      // Find the asset group
-      const assetGroup = await this.assetGroupRepo.findOne({
-        where: { id, workspace: { id: workspaceId } },
+      return await this.assetGroupRepo.manager.transaction(async manager => {
+        await manager.query('SELECT id FROM workspaces WHERE id=$1 FOR KEY SHARE', [workspaceId]);
+        const [project] = await manager.query<{ id: string; archivedAt: Date | null }[]>(
+          'SELECT id,"archivedAt" FROM projects WHERE id=$1 AND "workspaceId"=$2 FOR NO KEY UPDATE', [id, workspaceId]);
+        if (!project) throw new NotFoundException('Project not found');
+        if (project.archivedAt) throw new BadRequestException('Project is archived');
+        const repo = manager.getRepository(AssetGroup);
+        const patch = {
+          ...(updateAssetGroupDto.name !== undefined ? { name: updateAssetGroupDto.name } : {}),
+          ...(updateAssetGroupDto.hexColor !== undefined ? { hexColor: updateAssetGroupDto.hexColor } : {}),
+          ...(metadata?.description !== undefined ? { description: metadata.description?.trim() || null } : {}),
+          ...(metadata?.autoAddAssets !== undefined ? { autoAddAssets: metadata.autoAddAssets } : {}),
+          ...(metadata?.instruction !== undefined ? { instruction: metadata.instruction?.trim() || null } : {}),
+        };
+        if (Object.keys(patch).length) await repo.update({ id: project.id }, patch);
+        return repo.findOneByOrFail({ id: project.id, workspace: { id: workspaceId } });
       });
-
-      if (!assetGroup) {
-        throw new NotFoundException(
-          `Asset group with ID "${id}" not found in workspace "${workspaceId}"`,
-        );
-      }
-
-      // Update fields if provided
-      if (updateAssetGroupDto.name !== undefined) {
-        assetGroup.name = updateAssetGroupDto.name;
-      }
-      if (updateAssetGroupDto.hexColor !== undefined) {
-        assetGroup.hexColor = updateAssetGroupDto.hexColor;
-      }
-
-      // Save the updated asset group
-      if (metadata?.description !== undefined)
-        assetGroup.description = metadata.description?.trim() || null;
-      if (metadata?.autoAddAssets !== undefined)
-        assetGroup.autoAddAssets = metadata.autoAddAssets;
-      const updatedAssetGroup = await this.assetGroupRepo.save(assetGroup);
-
-      return updatedAssetGroup;
     } catch (error) {
       this.logger.error(
         `Error updating asset group with ID ${id} in workspace ${workspaceId}:`,

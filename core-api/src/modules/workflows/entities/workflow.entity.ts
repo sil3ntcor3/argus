@@ -1,3 +1,4 @@
+import { ProjectTriggerConfigDto } from '@/modules/projects/dto/project-trigger-read.dto';
 import { BaseEntity } from '@/common/entities/base.entity';
 import { DataKind, ToolCategory } from '@/common/enums/enum';
 import { AssetGroupWorkflow } from '@/modules/asset-group/entities/asset-groups-workflows.entity';
@@ -30,11 +31,30 @@ import {
 export class On {
   @ApiProperty()
   target?: string[];
-  // Plain string: arbitrary 5-field cron expressions are written into this
-  // JSONB content field (e.g. from asset-group workflow creation).
-  @ApiProperty({ example: '0 0 * * *' })
+  // Workspace workflows retain strings; project definitions use a cron list.
+  @ApiProperty({
+    required: false,
+    oneOf: [
+      { type: 'string', example: '0 0 * * *' },
+      {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { cron: { type: 'string' } },
+          required: ['cron'],
+        },
+      },
+    ],
+  })
   @IsOptional()
-  schedule?: string;
+  schedule?: string | { cron: string }[];
+  @ApiProperty({ required: false, type: ProjectTriggerConfigDto })
+  'project.assets.added'?: ProjectTriggerConfigDto;
+  @ApiProperty({ required: false, type: ProjectTriggerConfigDto })
+  'project.run.completed'?: ProjectTriggerConfigDto;
+  @ApiProperty({ required: false, type: ProjectTriggerConfigDto })
+  'vulnerability.detected'?: ProjectTriggerConfigDto;
+
 }
 
 export class WorkflowJob {

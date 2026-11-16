@@ -3,16 +3,23 @@ import { StorageService } from '@/modules/storage/storage.service';
 import { Workspace } from '@/modules/workspaces/entities/workspace.entity';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { isUUID } from 'class-validator';
 import { DataSource } from 'typeorm';
 import { ArtifactQuotaService } from './artifact-quota.service';
 import { WorkspaceArtifact } from './entities/workspace-artifact.entity';
 
 interface ReserveArtifactUpload {
+  /** Trusted legacy template importer only. Never bound from an HTTP DTO. */
+  legacyTemplateId?: string;
   workspaceId: string;
   createdByUserId: string;
   name: string;
   contentType: string;
   sizeBytes: number;
+  source?: WorkspaceArtifact['source'];
+  parentFolderId?: string;
+  metadata?: Record<string, unknown>;
+  abortSignal?: AbortSignal;
 }
 
 @Injectable()
@@ -28,8 +35,9 @@ export class ArtifactUploadReservationService {
    * returned until its pending record and quota reservation both commit.
    */
   async reserveUpload({
-    workspaceId, createdByUserId, name, contentType, sizeBytes,
+    workspaceId, createdByUserId, name, contentType, sizeBytes, source = 'upload', parentFolderId, metadata = {}, abortSignal, legacyTemplateId,
   }: ReserveArtifactUpload) {
+    abortSignal?.throwIfAborted();
     if (!name.trim() || name.length > 255 || [...name].some(character => {
       const code = character.charCodeAt(0);
       return code < 32 || code === 127;
@@ -37,7 +45,8 @@ export class ArtifactUploadReservationService {
       throw new BadRequestException('Invalid artifact display name');
     }
 
-    const id = randomUUID();
+    if (legacyTemplateId && (source !== 'template' || !isUUID(legacyTemplateId))) throw new BadRequestException('Invalid legacy template identity');
+    const id = legacyTemplateId ?? randomUUID();
     // Resolve credentials and sign before taking database locks. No object is
     // written, and failed reservations never return their form to callers.
     const upload = await this.storage.getPresignedArtifactUpload({
@@ -45,6 +54,7 @@ export class ArtifactUploadReservationService {
     });
 
     const assertLiveUpload = () => {
+      abortSignal?.throwIfAborted();
       if (upload.expiresAt.getTime() <= Date.now()) {
         throw new ConflictException('Artifact upload policy already expired');
       }
@@ -64,19 +74,27 @@ export class ArtifactUploadReservationService {
       }
 
       const repo = manager.getRepository(WorkspaceArtifact);
-      const pending = await repo.save(repo.create({
+      const pending = repo.create({
         id,
         workspaceId: workspace.id,
+        parentFolderId,
         createdByUserId,
         name,
         mimeType: contentType,
         sizeBytes: String(sizeBytes),
         objectKey: workspaceArtifactKey(workspace.id, id),
-        source: 'upload',
+        source,
         status: 'pending',
-        metadata: {},
+        metadata,
         expiresAt: upload.expiresAt,
-      }));
+      });
+      // Import must never upsert over a current artifact with the same ID.
+      if (legacyTemplateId) await repo.createQueryBuilder().insert().values({
+        id, workspaceId: workspace.id, parentFolderId, createdByUserId, name,
+        mimeType: contentType, sizeBytes: String(sizeBytes), objectKey: pending.objectKey,
+        source, status: 'pending', metadata: () => ':importMetadata', expiresAt: upload.expiresAt,
+      }).setParameter('importMetadata', JSON.stringify(metadata)).execute();
+      else await repo.save(pending);
       // Quota or foreign key locks may have held the transaction past expiry.
       assertLiveUpload();
       return pending;

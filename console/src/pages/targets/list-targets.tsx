@@ -14,8 +14,12 @@ import {
   TargetType,
   useTargetsControllerGetTargetsInWorkspace,
 } from '@/services/apis/gen/queries';
-import { useEffect, useRef, useState } from 'react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,6 +40,12 @@ import { TargetBulkActions } from './components/target-bulk-actions';
 import { TargetLogo } from './components/target-logo';
 import { TargetTypeBadge } from './components/target-type-badge';
 import { TargetTypeFilter } from './components/target-type-filter';
+import {
+  TargetRowFindings,
+  TargetRowNextScan,
+  TargetRowProgress,
+  TargetRowProjects,
+} from './components/target-row-context';
 
 interface TargetSourceCellProps {
   icon: string;
@@ -70,129 +80,161 @@ function TargetSourceCell({ icon, source }: TargetSourceCellProps) {
   );
 }
 
-const targetColumns: ColumnDef<GetManyTargetResponseDto>[] = [
-  {
-    accessorKey: 'value',
-    header: 'Target',
-    cell: ({ row }) => (
-      <div className="flex items-center gap-2">
-        <TargetLogo url={row.original.logo} />
-        <span className="font-medium">{row.getValue('value')}</span>
+/** Rebuild sensitive cells from current permissions, independent of cached rows. */
+function targetColumns(access: {
+  findings: boolean;
+  jobs: boolean;
+  projects: boolean;
+}) {
+  const columns: ColumnDef<GetManyTargetResponseDto>[] = [
+    {
+      accessorKey: 'value',
+      header: 'Target',
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <TargetLogo url={row.original.logo} />
+          <span className="font-medium">{row.getValue('value')}</span>
 
-        {row.original.source?.icon && (
-          <TargetSourceCell
-            icon={row.original.source.icon}
-            source={row.original.source.source}
-          />
-        )}
-        {row.original.internalNetworkId && (
-          <Badge variant="secondary" className="text-xs">
-            Internal
-          </Badge>
-        )}
-      </div>
-    ),
-  },
-  {
-    accessorKey: 'type',
-    header: 'Type',
-    enableSorting: false,
-    cell: ({ row }) => <TargetTypeBadge type={row.original.type} />,
-  },
-  {
-    accessorKey: 'totalAssetServices',
-    header: () => (
-      <div className="flex flex-col">
-        <span>Surface</span>
-        <span className="text-xs font-normal text-muted-foreground">
-          Sort by services
-        </span>
-      </div>
-    ),
-    cell: ({ row }) => {
-      const { type, totalAssets, totalAssetServices } = row.original;
-      // A Git organization has no services; its size is its repositories.
-      if (type === TargetType.GIT_ORG) {
-        return (
-          <span className="font-medium">
-            {totalAssets} {totalAssets === 1 ? 'repository' : 'repositories'}
-          </span>
-        );
-      }
-      return (
-        <div className="flex flex-col">
-          <span className="font-medium">
-            {totalAssetServices}{' '}
-            {totalAssetServices === 1 ? 'service' : 'services'}
-          </span>
-          <span className="text-muted-foreground">
-            {totalAssets} {totalAssets === 1 ? 'asset' : 'assets'}
-          </span>
-        </div>
-      );
-    },
-  },
-  // {
-  //   accessorKey: 'duration',
-  //   header: 'Duration',
-  //   cell: ({ row }) => {
-  //     const status = row.getValue('status');
-  //     if (status === 'in_progress') {
-  //       return null;
-  //     }
-
-  //     const value: number = parseInt(row.getValue('duration'));
-  //     const duration = dayjs.duration(value, 'seconds');
-  //     const hours = duration.hours();
-  //     const minutes = duration.minutes();
-  //     const seconds = duration.seconds();
-
-  //     return (
-  //       <div className="text-gray-400 font-semibold">
-  //         {hours > 0 && `${hours}h`}
-  //         {minutes > 0 && `${minutes}m`}
-  //         {seconds > 0 && `${seconds}s`}
-  //       </div>
-  //     );
-  //   },
-  // },
-  {
-    accessorKey: 'lastDiscoveredAt',
-    header: 'Discovery',
-    cell: ({ row }) => {
-      const { lastDiscoveredAt, scanSchedule } = row.original;
-      const discovered = lastDiscoveredAt ? dayjs(lastDiscoveredAt) : null;
-      const schedule =
-        !scanSchedule || scanSchedule === 'disabled'
-          ? 'Manual'
-          : (scanScheduleOptions.find(({ value }) => value === scanSchedule)
-              ?.label ?? 'Scheduled');
-      return (
-        <div className="flex flex-col">
-          {discovered ? (
-            <time className="flex flex-col" dateTime={lastDiscoveredAt}>
-              <span>{discovered.fromNow()}</span>
-              <span className="text-xs text-muted-foreground">
-                {discovered.format('MMM D, YYYY HH:mm')}
-              </span>
-            </time>
-          ) : (
-            <span>Never</span>
+          {row.original.source?.icon && (
+            <TargetSourceCell
+              icon={row.original.source.icon}
+              source={row.original.source.source}
+            />
           )}
-          <span className="text-muted-foreground">{schedule}</span>
+          {row.original.internalNetworkId && (
+            <Badge variant="secondary" className="text-xs">
+              Internal
+            </Badge>
+          )}
         </div>
-      );
+      ),
     },
-  },
-  {
-    accessorKey: 'status',
-    header: 'Scan status',
-    cell: ({ row }) => {
-      const value: JobStatus = row.getValue('status');
-      return <JobStatusBadge status={value} />;
+    {
+      accessorKey: 'type',
+      header: 'Type',
+      enableSorting: false,
+      cell: ({ row }) => <TargetTypeBadge type={row.original.type} />,
     },
-  },
-];
+    {
+      accessorKey: 'totalAssetServices',
+      header: () => (
+        <div className="flex flex-col">
+          <span>Surface</span>
+          <span className="text-xs font-normal text-muted-foreground">
+            Sort by services
+          </span>
+        </div>
+      ),
+      cell: ({ row }) => {
+        const { type, totalAssets, totalAssetServices } = row.original;
+        // A Git organization has no services; its size is its repositories.
+        if (type === TargetType.GIT_ORG) {
+          return (
+            <span className="font-medium">
+              {totalAssets} {totalAssets === 1 ? 'repository' : 'repositories'}
+            </span>
+          );
+        }
+        return (
+          <div className="flex flex-col">
+            <span className="font-medium">
+              {totalAssetServices}{' '}
+              {totalAssetServices === 1 ? 'service' : 'services'}
+            </span>
+            <span className="text-muted-foreground">
+              {totalAssets} {totalAssets === 1 ? 'asset' : 'assets'}
+            </span>
+          </div>
+        );
+      },
+    },
+    // {
+    //   accessorKey: 'duration',
+    //   header: 'Duration',
+    //   cell: ({ row }) => {
+    //     const status = row.getValue('status');
+    //     if (status === 'in_progress') {
+    //       return null;
+    //     }
+
+    //     const value: number = parseInt(row.getValue('duration'));
+    //     const duration = dayjs.duration(value, 'seconds');
+    //     const hours = duration.hours();
+    //     const minutes = duration.minutes();
+    //     const seconds = duration.seconds();
+
+    //     return (
+    //       <div className="text-gray-400 font-semibold">
+    //         {hours > 0 && `${hours}h`}
+    //         {minutes > 0 && `${minutes}m`}
+    //         {seconds > 0 && `${seconds}s`}
+    //       </div>
+    //     );
+    //   },
+    // },
+    {
+      accessorKey: 'lastDiscoveredAt',
+      header: 'Discovery',
+      cell: ({ row }) => {
+        const { lastDiscoveredAt, scanSchedule } = row.original;
+        const discovered = lastDiscoveredAt ? dayjs(lastDiscoveredAt) : null;
+        const schedule =
+          !scanSchedule || scanSchedule === 'disabled'
+            ? 'Manual'
+            : (scanScheduleOptions.find(({ value }) => value === scanSchedule)
+                ?.label ?? 'Scheduled');
+        return (
+          <div className="flex flex-col">
+            {discovered ? (
+              <time className="flex flex-col" dateTime={lastDiscoveredAt}>
+                <span>{discovered.fromNow()}</span>
+                <span className="text-xs text-muted-foreground">
+                  {discovered.format('MMM D, YYYY HH:mm')}
+                </span>
+              </time>
+            ) : (
+              <span>Never</span>
+            )}
+            <span className="text-muted-foreground">{schedule}</span>
+            <TargetRowNextScan at={row.original.nextScanAt} />
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'status',
+      header: 'Scan status',
+      cell: ({ row }) => {
+        const value: JobStatus = row.getValue('status');
+        return (
+          <div>
+            <JobStatusBadge status={value} />
+            {access.jobs && (
+              <TargetRowProgress progress={row.original.scanProgress} />
+            )}
+          </div>
+        );
+      },
+    },
+  ];
+  if (access.findings)
+    columns.splice(3, 0, {
+      accessorKey: 'openVulnerabilities',
+      header: 'Open findings',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <TargetRowFindings counts={row.original.openVulnerabilities} />
+      ),
+    });
+  if (access.projects)
+    columns.push({
+      accessorKey: 'projects',
+      header: 'Projects',
+      enableSorting: false,
+      cell: ({ row }) => <TargetRowProjects projects={row.original.projects} />,
+    });
+  return columns;
+}
 
 const routeApi = getRouteApi('/_authed/targets/');
 const targetViews = [
@@ -206,32 +248,54 @@ const criticalAccessMessage =
 
 /** A background refresh can reject a view after its rows were cached. */
 function isAccessDenied(error: unknown) {
-  return isAxiosError(error) && [401, 403].includes(error.response?.status ?? 0);
+  return (
+    isAxiosError(error) && [401, 403].includes(error.response?.status ?? 0)
+  );
 }
 
 export function ListTargets() {
-  const { selectedWorkspace: selectedWorkspaceId, workspaces } = useWorkspaceSelector();
+  const { selectedWorkspace: selectedWorkspaceId, workspaces } =
+    useWorkspaceSelector();
   const { data: session } = useSession();
   const permission = usePermission();
   const targetList = useRef<HTMLElement>(null);
-  const canSchedule = Boolean(selectedWorkspaceId) && permission.hasPermission('target.write');
-  const canDelete = canSchedule && workspaces.some(
-    (workspace) => workspace.id === selectedWorkspaceId && workspace.ownerId === session?.user.id,
-  );
+  const canSchedule =
+    Boolean(selectedWorkspaceId) && permission.hasPermission('target.write');
+  const canDelete =
+    canSchedule &&
+    workspaces.some(
+      (workspace) =>
+        workspace.id === selectedWorkspaceId &&
+        workspace.ownerId === session?.user.id,
+    );
   const [selection, setSelection] = useState<{
     scope: string;
     rows: Record<string, boolean>;
   }>({ scope: '', rows: {} });
   const navigate = routeApi.useNavigate();
   const search = routeApi.useSearch();
+  const accessReady =
+    !permission.error && !permission.isLoading && !permission.isFetching;
   const canReadFindings =
-    !permission.error && permission.hasPermission('vulnerability.read');
+    accessReady && permission.hasPermission('vulnerability.read');
+  const canReadJobs = accessReady && permission.hasPermission('job.read');
+  const canReadProjects =
+    accessReady && permission.hasPermission('project.read');
+  const columns = useMemo(
+    () =>
+      targetColumns({
+        findings: canReadFindings,
+        jobs: canReadJobs,
+        projects: canReadProjects,
+      }),
+    [canReadFindings, canReadJobs, canReadProjects],
+  );
   const view: TargetView =
     search.view === 'stale' || (search.view === 'critical' && canReadFindings)
       ? search.view
       : 'all';
   const deniedLink =
-    search.view === 'critical' && !permission.isLoading && !canReadFindings;
+    search.view === 'critical' && accessReady && !canReadFindings;
   const criticalView = view === 'critical';
   const refreshPermissions = permission.refetch;
 
@@ -318,6 +382,9 @@ export function ListTargets() {
     statusFilter,
     scopeFilter,
     view,
+    canReadFindings,
+    canReadJobs,
+    canReadProjects,
   ];
   const { data, error, isFetchedAfterMount, isLoading, refetch } =
     useTargetsControllerGetTargetsInWorkspace(
@@ -335,15 +402,17 @@ export function ListTargets() {
       },
       {
         query: {
+          enabled: Boolean(selectedWorkspaceId) && accessReady,
+          retry: false,
           refetchInterval: ({ state }) =>
-            criticalView && isAccessDenied(state.error) ? false : 3000,
-          refetchOnMount: criticalView ? 'always' : undefined,
+            isAccessDenied(state.error) ? false : 3000,
+          refetchOnMount: 'always',
           queryKey: listKey,
         },
       },
     );
 
-  const deniedResults = criticalView && isAccessDenied(error);
+  const deniedResults = isAccessDenied(error);
   useEffect(() => {
     if (deniedResults) void refreshPermissions();
   }, [deniedResults, refreshPermissions]);
@@ -351,9 +420,10 @@ export function ListTargets() {
   // Every critical view entry needs a fresh server authorization, including
   // returning to a cached page or switching from a different set of filters.
   const visibleData =
-    criticalView && (!isFetchedAfterMount || error) ? undefined : data;
+    accessReady && isFetchedAfterMount && !error ? data : undefined;
   const loading =
-    isLoading || (criticalView && !isFetchedAfterMount && !error);
+    !permission.error &&
+    (isLoading || !accessReady || (!isFetchedAfterMount && !error));
   const selectionScope = JSON.stringify([listKey, canSchedule, deniedResults]);
   if (selection.scope !== selectionScope) {
     setSelection({ scope: selectionScope, rows: {} });
@@ -376,7 +446,9 @@ export function ListTargets() {
         ? {
             scope: selectionScope,
             rows: Object.fromEntries(
-              Object.entries(previous.rows).filter(([id]) => !completed.has(id)),
+              Object.entries(previous.rows).filter(
+                ([id]) => !completed.has(id),
+              ),
             ),
           }
         : previous,
@@ -394,18 +466,24 @@ export function ListTargets() {
     !visibleData && !loading ? (
       <DataTableError
         message={
-          deniedResults ? criticalAccessMessage : 'Failed to load targets.'
+          deniedResults
+            ? criticalView
+              ? criticalAccessMessage
+              : 'Target access is no longer available.'
+            : 'Failed to load targets.'
         }
         onRetry={refetch}
       />
     ) : (
       <DataTable
         data={targets}
-        columns={targetColumns}
+        columns={columns}
         getRowId={(target) => target.id}
         showCheckBox={canSchedule}
         rowSelection={rowSelection}
-        onRowSelectionChange={(rows) => setSelection({ scope: selectionScope, rows })}
+        onRowSelectionChange={(rows) =>
+          setSelection({ scope: selectionScope, rows })
+        }
         selectionHeader={() => (
           <TargetBulkActions
             key={selectionScope}

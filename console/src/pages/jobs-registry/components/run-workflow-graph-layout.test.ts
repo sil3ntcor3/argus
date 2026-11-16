@@ -25,7 +25,12 @@ function step(
 
 /** The shipped domain_discovery chain, as the API returns it. */
 const chain: WorkflowStepStatusDto[] = [
-  step('scan_subdomain', { name: 'Scan Subdomain', run: 'subfinder', status: 'done', jobs: 1 }),
+  step('scan_subdomain', {
+    name: 'Scan Subdomain',
+    run: 'subfinder',
+    status: 'done',
+    jobs: 1,
+  }),
   step('port_scan', {
     name: 'Port Scan',
     run: 'naabu',
@@ -91,7 +96,9 @@ describe('computeStepWaves', () => {
     ]);
 
     expect(waves.size).toBe(2);
-    expect([...waves.values()].every((wave) => Number.isFinite(wave))).toBe(true);
+    expect([...waves.values()].every((wave) => Number.isFinite(wave))).toBe(
+      true,
+    );
   });
 });
 
@@ -106,9 +113,12 @@ describe('buildWorkflowGraphLayout', () => {
 
   it('left-to-right columns follow the waves, one step per column for a chain', () => {
     const { nodes } = buildWorkflowGraphLayout(chain);
-    const xs = ['scan_subdomain', 'port_scan', 'http_probe', 'take_screenshot'].map(
-      (id) => nodes.find((node) => node.id === id)!.position.x,
-    );
+    const xs = [
+      'scan_subdomain',
+      'port_scan',
+      'http_probe',
+      'take_screenshot',
+    ].map((id) => nodes.find((node) => node.id === id)!.position.x);
 
     expect(xs).toEqual([...xs].sort((a, b) => a - b));
     expect(new Set(xs).size).toBe(4);
@@ -225,7 +235,11 @@ describe('buildWorkflowGraphLayout', () => {
     const { edges } = buildWorkflowGraphLayout([
       step('a', { status: 'done' }),
       step('b', { needs: ['a'], status: 'failed' }),
-      step('c', { needs: ['b'], status: 'skipped', reason: 'blocked-by-failure' }),
+      step('c', {
+        needs: ['b'],
+        status: 'skipped',
+        reason: 'blocked-by-failure',
+      }),
     ]);
 
     expect(edges[0].style?.stroke).toBe('var(--destructive)');
@@ -285,7 +299,9 @@ describe('buildWorkflowGraphLayout', () => {
   });
 
   it('adds no trigger to a run without steps', () => {
-    const { nodes, edges } = buildWorkflowGraphLayout([], { trigger: 'manual' });
+    const { nodes, edges } = buildWorkflowGraphLayout([], {
+      trigger: 'manual',
+    });
 
     expect(nodes).toEqual([]);
     expect(edges).toEqual([]);
@@ -336,7 +352,12 @@ describe('buildWorkflowGraphLayout', () => {
 
   it('describes a step with no id, deps or reason as the plainest summary', () => {
     expect(
-      describeStep({ name: '', run: 'nuclei', status: 'pending', jobs: 0 } as WorkflowStepStatusDto),
+      describeStep({
+        name: '',
+        run: 'nuclei',
+        status: 'pending',
+        jobs: 0,
+      } as WorkflowStepStatusDto),
     ).toBe('nuclei, nuclei, pending, 0 jobs');
   });
 
@@ -371,5 +392,13 @@ describe('step category', () => {
 
   it('spells the category out for assistive technology', () => {
     expect(describeStep(twoNmapSteps[1])).toContain('nmap (Vulnerabilities)');
+  });
+  it('announces event-triggered runs without calling them manual', () => {
+    const { nodes } = buildWorkflowGraphLayout([step('probe')], {
+      trigger: 'event',
+    });
+    expect(nodes.find((node) => node.id === TRIGGER_NODE_ID)?.ariaLabel).toBe(
+      'Started by an event',
+    );
   });
 });

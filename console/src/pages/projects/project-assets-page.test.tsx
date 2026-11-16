@@ -7,6 +7,7 @@ import { ProjectAssetsPage } from './project-assets-page';
 
 const mock = vi.hoisted(() => ({
   permission: vi.fn(),
+  project: vi.fn(),
   assets: vi.fn(),
   scope: vi.fn(),
   remove: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('@/utils/workspaceState', () => ({
 vi.mock(import('@/services/apis/gen/queries'), async (original) => ({
   ...(await original()),
   useProjectsControllerGetAssets: mock.assets,
+  useProjectsControllerGetById: mock.project,
   useProjectsControllerGetScopeRules: mock.scope,
   useProjectsControllerRemoveAssets: mock.remove,
 }));
@@ -66,6 +68,7 @@ const asset: ProjectAssetDto = {
 describe('ProjectAssetsPage', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mock.project.mockReturnValue({ data: { archivedAt: null } });
     mock.remove.mockReturnValue({ reset: vi.fn(), mutateAsync: vi.fn() });
     mock.scope.mockReturnValue({
       data: { rules: [], manualAssets: 0, ruleAssets: 0, autoAddAssets: false },
@@ -77,6 +80,14 @@ describe('ProjectAssetsPage', () => {
     mock.assets.mockReturnValue({
       data: { data: [asset], hasNextPage: true, pageCount: 3 },
     });
+  });
+
+  it('hides membership and scope mutation controls for archived projects', () => {
+    mock.permission.mockReturnValue({ hasPermission: () => true });
+    mock.project.mockReturnValue({ data: { archivedAt: '2026-11-13T00:00:00Z' } });
+    render(<QueryClientProvider client={new QueryClient()}><ProjectAssetsPage projectId={projectId} page={1} onChange={vi.fn()} /></QueryClientProvider>);
+    expect(screen.getByText(/Archived project/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Add assets|Remove demo|Edit scope/ })).toBeNull();
   });
 
   it('shows membership evidence and authorized detail links', () => {

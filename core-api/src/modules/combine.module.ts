@@ -9,6 +9,7 @@ import { DataAdapterModule } from './data-adapter/data-adapter.module';
 import { EventsModule } from './events/events.module';
 import { InternalNetworksModule } from './internal-networks/internal-networks.module';
 import { IssuesModule } from './issues/issues.module';
+import { CommentsModule } from './comments/comments.module';
 import { JobsRegistryModule } from './jobs-registry/jobs-registry.module';
 import { ProvidersModule } from './providers/providers.module';
 import { RootModule } from './root/root.module';
@@ -57,6 +58,7 @@ import { ArtifactsModule } from './artifacts/artifacts.module';
     AssetGroupModule,
     ProjectsModule,
     IssuesModule,
+    CommentsModule,
     AdminModule,
     InternalNetworksModule,
     AgentsModule,

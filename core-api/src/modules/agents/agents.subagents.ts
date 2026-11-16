@@ -2,6 +2,8 @@ import { AgentApprovalMode, AgentMode } from '@/common/enums/enum';
 import {
   BadRequestException,
   Injectable,
+  Inject,
+  forwardRef,
   Logger,
   NotFoundException,
   type OnModuleDestroy,
@@ -35,7 +37,6 @@ import type {
 import { AgentConversation } from './entities/agent-conversation.entity';
 import { AgentSubagent } from './entities/agent-subagent.entity';
 import { SubagentStatus } from './enums/agent.enums';
-import { getReasoningProviderOptions } from './llm-provider-supported';
 import {
   type SubagentMetadata,
   type SubagentStep,
@@ -188,6 +189,7 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
     private readonly subagentRepository: Repository<AgentSubagent>,
     @InjectRepository(AgentConversation)
     private readonly conversationRepository: Repository<AgentConversation>,
+    @Inject(forwardRef(() => AgentTool))
     private readonly agentTool: AgentTool,
     private readonly agentsConfig: AgentsConfigService,
     private readonly modelsCatalog: AgentsModelsCatalogService,
@@ -587,6 +589,9 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
         toolEvents,
         conversation.id,
         approval,
+        conversation.projectId,
+        userId,
+        job.name,
       ) as Record<string, Tool>;
       // The skills the definition declares, offered as the main agent's are:
       // listed in the prompt, loaded on demand with load_skill
@@ -626,7 +631,7 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
         agentConfig,
       );
       const hasTools = Object.keys(tools).length > 0;
-      const providerOptions = getReasoningProviderOptions(llmConfig.provider);
+      const reasoning = this.modelsCatalog.reasoningOptions(llmConfig);
       const maxSteps =
         overrides.maxSteps ?? llmConfig.maxSteps ?? DEFAULT_MAX_STEPS;
 
@@ -661,7 +666,7 @@ export class AgentsSubagentsService implements OnModuleInit, OnModuleDestroy {
           ? { temperature: overrides.temperature }
           : {}),
         ...(overrides.topP !== undefined ? { topP: overrides.topP } : {}),
-        ...(providerOptions ? { providerOptions } : {}),
+        ...reasoning,
         ...(llmConfig.maxOutputTokens
           ? { maxOutputTokens: llmConfig.maxOutputTokens }
           : {}),
