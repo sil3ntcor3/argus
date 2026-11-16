@@ -4,12 +4,87 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"oasm-worker/internal/connector"
 	"oasm-worker/internal/execution"
 	pb "oasm-worker/internal/gen/jobs_registry"
 )
+
+// A legitimate scan may outlast the queue's no-progress budget. Waiting for
+// its single replica must not fail the next job or consume a Core retry.
+func TestProcessConnectorJobWaitsForLongRunningScan(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		resetWorkerGlobals()
+		oldBackoff := swapImageBackoff(execution.NewImageBackoff())
+		t.Cleanup(func() { imageBackoff = oldBackoff })
+		client, jobs, rt := newWorkerTestSetup(t)
+		mgr := execution.NewManager(rt, 0)
+		mgr.SetPool(execution.NewPoolManager(0, 1, 1))
+		proxy := connector.NewProxy()
+		mgr.SetStreamBinder(proxy)
+		mgr.SetEvictor(proxy)
+		const image = "ghcr.io/sil3ntcor3/connector-nuclei:3.11.1"
+		occupied, err := mgr.Submit(context.Background(), execution.JobSpec{
+			Tool: "nuclei", Image: image, JobID: "running-scan",
+			Limits: map[string]any{execution.JobTimeoutSecondsKey: 1800},
+		})
+		if err != nil {
+			t.Fatalf("submit running scan: %v", err)
+		}
+		stream := &captureStream{}
+		if err := proxy.RegisterConnector(occupied, stream); err != nil {
+			t.Fatalf("register running scan: %v", err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		events := make(chan TuiEvent, 256)
+		done := make(chan bool, 1)
+		released := make(chan struct{}, 1)
+		go func() {
+			_, async := processConnectorJob(ctx, &pb.Job{
+				Id: "queued-scan", Tool: "nuclei", Image: image,
+			}, client, events, mgr, proxy, func() { released <- struct{}{} }, time.Now(), "vulnerabilities")
+			done <- async
+		}()
+		synctest.Wait()
+		time.Sleep(2 * poolWaitBudget)
+		synctest.Wait()
+		select {
+		case async := <-done:
+			t.Fatalf("queued scan returned async=%t while its replica was still running", async)
+		default:
+		}
+		if got := jobs.getResults(); len(got) != 0 {
+			t.Fatalf("waiting for capacity must not report a scan failure: %+v", got)
+		}
+
+		if err := mgr.Release(context.Background(), occupied); err != nil {
+			t.Fatalf("release running scan: %v", err)
+		}
+		select {
+		case async := <-done:
+			if !async {
+				t.Fatal("queued scan did not start after its replica became idle")
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("queued scan did not acquire the released replica")
+		}
+		executes := stream.executes()
+		if len(executes) != 1 || executes[0].JobId != "queued-scan" {
+			t.Fatalf("expected queued scan on the reused stream, got %+v", executes)
+		}
+		if rt.CreateCount != 1 {
+			t.Fatalf("expected one reused container, got %d", rt.CreateCount)
+		}
+		execID := executes[0].ExecutionId
+		proxy.MarkDone(execID)
+		mgr.ReleaseToIdle(execID)
+		proxy.OnConnectorDown(execID)
+		<-released
+	})
+}
 
 // TestProcessConnectorJobPoolWaitIsSilent: when every replica of an image is
 // busy, the job simply queues. The retry loop used to log a "Pool at replica
@@ -107,25 +182,41 @@ func TestProcessConnectorJobPoolWaitIsSilent(t *testing.T) {
 // TestPoolWaitDeadlineRestartsOnFreedSlot (#717): nuclei's own timeout (600s)
 // equals the pool wait budget, so a fixed total budget failed every job queued
 // behind one full-length scan. A queue that keeps draining must keep waiting;
-// a pool that frees nothing for the whole budget must still fail.
+// a pool with no tracked work or newly freed slot must still time out.
 func TestPoolWaitDeadlineRestartsOnFreedSlot(t *testing.T) {
 	const budget = 10 * time.Minute
 	start := time.Unix(1_000, 0)
 	d := newPoolWaitDeadline(start, budget)
 
 	// Third job in a cap-1 queue: two full-length scans finish ahead of it.
-	if d.expired(start.Add(budget-time.Second), 0) {
+	if d.expired(start.Add(budget-time.Second), 0, false) {
 		t.Fatal("expired before the budget")
 	}
-	if d.expired(start.Add(budget+time.Second), 1) {
+	if d.expired(start.Add(budget+time.Second), 1, false) {
 		t.Fatal("first scan freed a slot: budget must restart")
 	}
-	if d.expired(start.Add(2*budget), 2) {
+	if d.expired(start.Add(2*budget), 2, false) {
 		t.Fatal("second scan freed a slot: budget must restart")
 	}
 
 	// Wedged: nothing freed for a whole budget after the last progress.
-	if !d.expired(start.Add(3*budget+time.Second), 2) {
+	if !d.expired(start.Add(3*budget+time.Second), 2, false) {
 		t.Fatal("no slot freed for the whole budget: must expire")
+	}
+}
+
+// Active work can exceed the queue budget; stale capacity remains bounded once
+// that work disappears without freeing a slot.
+func TestPoolWaitDeadlineRestartsWhileWorkIsActive(t *testing.T) {
+	start := time.Unix(1_000, 0)
+	d := newPoolWaitDeadline(start, poolWaitBudget)
+	if d.expired(start.Add(2*poolWaitBudget), 0, true) {
+		t.Fatal("active work must keep a queued job alive")
+	}
+	if d.expired(start.Add(3*poolWaitBudget-time.Second), 0, false) {
+		t.Fatal("stale capacity must get the full budget after work stops")
+	}
+	if !d.expired(start.Add(3*poolWaitBudget+time.Second), 0, false) {
+		t.Fatal("stale capacity without work or a freed slot must expire")
 	}
 }
